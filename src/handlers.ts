@@ -123,9 +123,8 @@ export const refreshLastMessageInChat = async (
     }
 }
 
-/** Прошёл ли пользователь все проверки. Если нет — отвечает пользователю и возвращает false. */
-const requireChatAdminInAllowedChat = async (
-    client: TelegramClient,
+/** Чат в allowlist и сообщение от обычного пользователя. Иначе — молча или с ответом, что только пользователям. */
+const requireUserInAllowedChat = async (
     msg: MessageContext,
     allowed: AllowedChats,
 ): Promise<boolean> => {
@@ -138,7 +137,18 @@ const requireChatAdminInAllowedChat = async (
         await msg.answerText('Команды доступны только пользователям.')
         return false
     }
-    if (!(await isChatAdmin(client, chatId, msg.sender.id))) {
+    return true
+}
+
+/** Прошёл ли пользователь все проверки (чат в allowlist + админ). Если нет — отвечает и возвращает false. */
+const requireChatAdminInAllowedChat = async (
+    client: TelegramClient,
+    msg: MessageContext,
+    allowed: AllowedChats,
+): Promise<boolean> => {
+    if (!(await requireUserInAllowedChat(msg, allowed))) return false
+    const chatId = Number(msg.chat.id)
+    if (!(await isChatAdmin(client, chatId, msg.sender!.id))) {
         await msg.answerText('Эта команда доступна только админам этой группы.')
         return false
     }
@@ -159,7 +169,7 @@ export const registerHandlers = (
         if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
         await msg.answerText(
             [
-                'Бот ведёт ежемесячные сборы донатов. Команды доступны только админам этой группы.',
+                'Бот ведёт ежемесячные сборы донатов. Большинство команд доступны только админам этой группы; /inside — любому участнику.',
                 '',
                 '/goals — показать текущий сбор (с кнопкой «Обновить»)',
                 '/inside — показать (или обновить) список тех, кто сейчас в спейсе',
@@ -176,7 +186,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('inside'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         // Всегда новое сообщение — это и есть «принудительный вызов».
         await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')
     })

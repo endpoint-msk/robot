@@ -52,9 +52,8 @@ const main = async () => {
     console.log(`Logged in as @${self.username ?? self.id} (${self.displayName})`)
 
     // Список команд, который Telegram показывает по / в меню.
-    // Скоупим на админов групп — обычные участники в этих чатах меню не увидят.
-    const commands = [
-        BotCommands.cmd('start', 'Меню резидента (в личке): отметиться в спейсе'),
+    // Большинство админских команд показываем только админам группы; /inside — всем участникам.
+    const adminCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
         BotCommands.cmd('donate', 'Добавить донат: /donate <сумма> <ник>'),
@@ -63,9 +62,14 @@ const main = async () => {
         BotCommands.cmd('settitle', 'Изменить тему сбора'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]
+    const memberCommands = [
+        BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
+    ]
     try {
-        // В группах админам — полный набор админских команд
-        await tg.setMyCommands({ commands, scope: BotCommands.allGroupAdmins })
+        // Всем участникам групп — только /inside в меню.
+        await tg.setMyCommands({ commands: memberCommands, scope: BotCommands.allGroups })
+        // Админам групп — полный набор админских команд (перекрывает allGroups для админов).
+        await tg.setMyCommands({ commands: adminCommands, scope: BotCommands.allGroupAdmins })
         // В личке — только /start (для меню резидента)
         await tg.setMyCommands({
             commands: [BotCommands.cmd('start', 'Отметиться в спейсе')],
