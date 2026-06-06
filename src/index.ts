@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { BotCommands, TelegramClient } from '@mtcute/node'
 import { Dispatcher } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
+import { parseChatId, registerForwarder } from './forwarder.js'
 import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
@@ -26,9 +27,15 @@ const main = async () => {
     const botToken = required('BOT_TOKEN')
     const allowedChats = parseAllowedChats(process.env.ALLOWED_CHATS)
     const dataFile = process.env.DATA_FILE ?? './data.json'
+    const forwardFrom = parseChatId(process.env.FORWARD_FROM_CHAT)
+    const forwardTo = parseChatId(process.env.FORWARD_TO_CHAT)
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
+    }
+
+    if ((forwardFrom === null) !== (forwardTo === null)) {
+        console.warn('[warn] FORWARD_FROM_CHAT и FORWARD_TO_CHAT должны быть заданы вместе — форвардинг отключён.')
     }
 
     const storage = new Storage(dataFile)
@@ -47,6 +54,10 @@ const main = async () => {
     registerChatActivityTracker(dp, storage, allowedChats)
     registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
     registerHandlers(dp, { client: tg, storage, allowedChats })
+    if (forwardFrom !== null && forwardTo !== null) {
+        registerForwarder(dp, tg, forwardFrom, forwardTo)
+        console.log(`[forward] forwarding ${forwardFrom} -> ${forwardTo}`)
+    }
 
     const self = await tg.start({ botToken })
     console.log(`Logged in as @${self.username ?? self.id} (${self.displayName})`)
