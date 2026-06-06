@@ -18,6 +18,7 @@ export class Storage {
                 presence: parsed.presence ?? {},
                 chatLastActivity: parsed.chatLastActivity ?? {},
                 presenceListMessages: parsed.presenceListMessages ?? {},
+                presenceListPostedAt: parsed.presenceListPostedAt ?? {},
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

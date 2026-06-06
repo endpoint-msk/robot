@@ -9,6 +9,9 @@ export const CHAT_SILENCE_MS = 5 * 60 * 60 * 1000
 export const PRESENCE_PING_INTERVAL_MS = 3 * 60 * 60 * 1000
 /** Сколько ждём ответа на ping, прежде чем снять отметку (15 минут). */
 export const PRESENCE_PING_TIMEOUT_MS = 15 * 60 * 1000
+/** Если предыдущее сообщение со списком в чате было отправлено больше этого срока назад,
+ *  при checkin/checkout публикуем новое сообщение, а не редактируем старое (его в истории уже не видно). */
+export const PRESENCE_LIST_REPOST_AFTER_MS = 4 * 60 * 60 * 1000
 /** Как часто крутим планировщик. */
 const TICK_INTERVAL_MS = 60 * 1000
 
@@ -87,7 +90,19 @@ export const upsertPresenceListInChat = async (
 
     const existingId = storage.get().presenceListMessages[String(chatId)]
 
-    if (mode === 'edit' && existingId) {
+    // Если редактирование запросили, но прошлое сообщение со списком было отправлено
+    // давно, оно похоронено в истории — апгрейдим до отправки нового, иначе апдейт
+    // никто из чата не увидит.
+    let effectiveMode = mode
+    if (effectiveMode === 'edit' && existingId) {
+        const postedAtIso = storage.get().presenceListPostedAt[String(chatId)]
+        const postedAt = postedAtIso ? Date.parse(postedAtIso) : 0
+        if (!Number.isFinite(postedAt) || Date.now() - postedAt >= PRESENCE_LIST_REPOST_AFTER_MS) {
+            effectiveMode = 'new'
+        }
+    }
+
+    if (effectiveMode === 'edit' && existingId) {
         try {
             await client.editMessage({ chatId, message: existingId, text })
             return
@@ -101,15 +116,18 @@ export const upsertPresenceListInChat = async (
             // редактировать нечего — забываем id и отправим новое сообщение
             await storage.update((s) => {
                 delete s.presenceListMessages[String(chatId)]
+                delete s.presenceListPostedAt[String(chatId)]
             })
         }
     }
 
     try {
         const sent = await client.sendText(chatId, text)
+        const nowIso = new Date().toISOString()
         await storage.update((s) => {
             s.presenceListMessages[String(chatId)] = sent.id
-            s.chatLastActivity[String(chatId)] = new Date().toISOString()
+            s.presenceListPostedAt[String(chatId)] = nowIso
+            s.chatLastActivity[String(chatId)] = nowIso
         })
     } catch (err) {
         console.error(`[presence] failed to post list to chat ${chatId}:`, err)
@@ -360,6 +378,7 @@ export const registerPresenceDeleteWatcher = (
         for (const chatId of candidates) {
             await storage.update((s) => {
                 delete s.presenceListMessages[String(chatId)]
+                delete s.presenceListPostedAt[String(chatId)]
             })
             if (Object.keys(storage.get().presence).length > 0) {
                 await upsertPresenceListInChat(client, storage, chatId, 'new')
@@ -391,6 +410,7 @@ export const startPresenceScheduler = (
                     if (m == null) {
                         await storage.update((s) => {
                             delete s.presenceListMessages[String(chatId)]
+                            delete s.presenceListPostedAt[String(chatId)]
                         })
                         // Сразу постим новый список, чтобы участники чата его увидели.
                         await upsertPresenceListInChat(client, storage, chatId, 'new')

@@ -42,6 +42,9 @@ export type State = {
     chatLastActivity: Record<string, string>
     /** ID последнего сообщения со списком присутствующих в каждом чате (для редактирования вместо нового). */
     presenceListMessages: Record<string, number>
+    /** Когда сообщение со списком было ОТПРАВЛЕНО (не отредактировано) в каждом чате (ISO). Используется, чтобы при checkin/checkout
+     *  публиковать новое сообщение, если предыдущее «протухло» — иначе апдейт никто не увидит. */
+    presenceListPostedAt: Record<string, string>
 }
 
 /** Отметка резидента, что он сейчас внутри хакерспейса. */
@@ -65,4 +68,5 @@ export const emptyState = (): State => ({
     presence: {},
     chatLastActivity: {},
     presenceListMessages: {},
+    presenceListPostedAt: {},
 })
