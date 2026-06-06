@@ -3,6 +3,7 @@ import { BotCommands, TelegramClient } from '@mtcute/node'
 import { Dispatcher } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
+import { registerLiveChatGuard } from './livechat.js'
 import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
@@ -29,6 +30,7 @@ const main = async () => {
     const dataFile = process.env.DATA_FILE ?? './data.json'
     const forwardFrom = parseChatId(process.env.FORWARD_FROM_CHAT)
     const forwardTo = parseChatId(process.env.FORWARD_TO_CHAT)
+    const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -48,6 +50,12 @@ const main = async () => {
     })
 
     const dp = Dispatcher.for(tg)
+    // livechat guard регистрируем ПЕРВЫМ — чтобы служебные сообщения о входе/выходе
+    // были перехвачены и удалены до того, как доберутся до других хендлеров.
+    if (liveChatId !== null) {
+        registerLiveChatGuard(dp, tg, liveChatId)
+        console.log(`[livechat] guard active for chat ${liveChatId}`)
+    }
     // presence-хендлеры регистрируем РАНЬШЕ — чтобы /start в личке ловил presence,
     // а групповой /start (алиас /help) — общий обработчик ниже
     registerPresenceHandlers(dp, { client: tg, storage, allowedChats })

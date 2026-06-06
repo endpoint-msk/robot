@@ -2,6 +2,10 @@
 
 Гайд для LLM по проекту `endpoint-robot` — телеграм-бота хакерспейса на TypeScript + [mtcute](https://mtcute.dev).
 
+## Документация mtcute
+
+Полный индекс гайда и API-референса в формате для LLM лежит здесь: <https://mtcute.dev/llms.txt>. Это «table of contents» с прямыми ссылками на `.md`-страницы; используй его как первый источник, когда нужны сигнатуры/имена методов или примеры (handlers, filters, banChatMember, deleteMessages и т. п.). Полный API-референс: <https://ref.mtcute.dev>.
+
 ## Что делает бот
 
 Две независимые подсистемы, разделяющие общий стейт:
