@@ -103,6 +103,24 @@ export const upsertPresenceListInChat = async (
     }
 
     if (effectiveMode === 'edit' && existingId) {
+        // onDeleteMessage у бота приходит ненадёжно — перед редактированием пробиваем,
+        // что сообщение ещё живо. Иначе восстановление откладывалось бы до тика
+        // шедулера (до ~60с).
+        try {
+            const [probe] = await client.getMessages(chatId, existingId)
+            if (probe == null) {
+                await storage.update((s) => {
+                    delete s.presenceListMessages[String(chatId)]
+                    delete s.presenceListPostedAt[String(chatId)]
+                })
+                effectiveMode = 'new'
+            }
+        } catch (err) {
+            console.warn(`[presence] getMessages probe failed in chat ${chatId}:`, err)
+        }
+    }
+
+    if (effectiveMode === 'edit' && existingId) {
         try {
             await client.editMessage({ chatId, message: existingId, text })
             return
