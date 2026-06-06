@@ -2,8 +2,9 @@ import { filters, PropagationAction, type Dispatcher, type MessageContext } from
 import type { TelegramClient } from '@mtcute/node'
 
 /**
- * Гард для «живого» чата (LIVE_CHAT_ID): любого, кто пытается зайти, банит,
- * и удаляет служебные сообщения о входе и о последующем кике.
+ * Гард для «живого» чата (LIVE_CHAT_ID): любого, кто пытается зайти, кикает
+ * (без занесения в ЧС — через kickChatMember = ban+unban) и удаляет служебные
+ * сообщения о входе и о последующем кике.
  *
  * Бот должен быть админом этого чата с правом банить и удалять сообщения.
  */
@@ -19,9 +20,19 @@ export const registerLiveChatGuard = (
 
             for (const userId of collectJoinedUserIds(msg)) {
                 try {
-                    await client.banChatMember({ chatId: liveChatId, participantId: userId })
+                    const kickServiceMsg = await client.kickChatMember({ chatId: liveChatId, userId })
+                    if (kickServiceMsg) {
+                        try {
+                            await client.deleteMessages([kickServiceMsg])
+                        } catch (err) {
+                            console.error(
+                                `[livechat] failed to delete kick service message ${kickServiceMsg.id}:`,
+                                err,
+                            )
+                        }
+                    }
                 } catch (err) {
-                    console.error(`[livechat] failed to ban user ${userId} in ${liveChatId}:`, err)
+                    console.error(`[livechat] failed to kick user ${userId} in ${liveChatId}:`, err)
                 }
             }
 
@@ -33,17 +44,6 @@ export const registerLiveChatGuard = (
             return PropagationAction.Stop
         },
     )
-
-    // Бан в супергруппе порождает служебку «X removed Y» — тоже подчищаем.
-    dp.onNewMessage(filters.action(['user_removed', 'user_left']), async (msg) => {
-        if (Number(msg.chat.id) !== liveChatId) return PropagationAction.Continue
-        try {
-            await msg.delete()
-        } catch (err) {
-            console.error(`[livechat] failed to delete kick service message ${msg.id}:`, err)
-        }
-        return PropagationAction.Stop
-    })
 }
 
 const collectJoinedUserIds = (msg: MessageContext): number[] => {
