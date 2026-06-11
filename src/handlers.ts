@@ -84,6 +84,21 @@ const rememberLastMessage = async (
     })
 }
 
+/** Публикует новое сообщение со сбором в чат и запоминает его как «последнее актуальное». */
+export const postFundraiserToChat = async (
+    client: TelegramClient,
+    storage: Storage,
+    chatId: number,
+    now: Date = new Date(),
+): Promise<void> => {
+    const f = ensureCurrentFundraiser(storage, now)
+    const rendered = renderFundraiser(f, 1)
+    const sent = await client.sendText(chatId, rendered.text, {
+        replyMarkup: buildKeyboard(rendered.page, rendered.pages),
+    })
+    await rememberLastMessage(storage, chatId, sent.id, f.periodKey)
+}
+
 /** Перерисовывает «последнее сообщение со сбором» для конкретного чата под актуальный месяц. */
 export const refreshLastMessageInChat = async (
     client: TelegramClient,
@@ -181,6 +196,7 @@ export const registerHandlers = (
                 '/help — это сообщение',
                 '',
                 'С наступлением нового месяца последнее сообщение со сбором обновится автоматически.',
+                'Каждый день в 00:00 и 12:00 по МСК бот сам постит свежее сообщение со сбором.',
             ].join('\n'),
         )
     })

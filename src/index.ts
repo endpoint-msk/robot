@@ -10,7 +10,7 @@ import {
     registerPresenceHandlers,
     startPresenceScheduler,
 } from './presence.js'
-import { startMonthlyScheduler } from './scheduler.js'
+import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 
 const required = (name: string): string => {
@@ -101,10 +101,12 @@ const main = async () => {
     }
 
     const scheduler = startMonthlyScheduler(tg, storage)
+    const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     const presence = startPresenceScheduler(tg, storage, allowedChats)
 
     const shutdown = async () => {
         scheduler.stop()
+        dailyPoster.stop()
         presence.stop()
         await tg.destroy()
         process.exit(0)
