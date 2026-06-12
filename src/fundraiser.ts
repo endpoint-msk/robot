@@ -61,6 +61,20 @@ const formatAmount = (n: number): string => {
 
 const escapeNick = (raw: string): string => raw.trim().replace(/^@+/, '')
 
+const escapeHtml = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/**
+ * Ник как кликабельная t.me-ссылка вместо «сырого» @username.
+ * Текст-ссылка не является mention-сущностью, поэтому Telegram не шлёт пинг
+ * упомянутому пользователю (в отличие от plain @username).
+ */
+const nickLink = (rawNick: string): string => {
+    const nick = escapeNick(rawNick)
+    const href = `https://t.me/${encodeURIComponent(nick)}`
+    return `<a href="${href}">@${escapeHtml(nick)}</a>`
+}
+
 /** Размер одной страницы лидерборда. */
 export const PAGE_SIZE = 10
 
@@ -105,6 +119,7 @@ export const clampPage = (page: number, pages: number): number => {
 }
 
 export type RenderResult = {
+    /** HTML-разметка сообщения (ники — t.me-ссылки, чтобы не пинговать). Парсить через `html()`. */
     text: string
     page: number
     pages: number
@@ -118,7 +133,7 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
     const page = clampPage(requestedPage, pages)
     const closed = f.goal > 0 && total >= f.goal
 
-    const header = `Сбор на ${f.title} за ${monthNameRu(f.month)} ${f.year}.`
+    const header = `Сбор на ${escapeHtml(f.title)} за ${monthNameRu(f.month)} ${f.year}.`
     const bar = renderProgressBar(total, f.goal)
 
     const lines: string[] = [header, bar]
@@ -132,7 +147,7 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
             const entry = board[i]!
             const place = i + 1
             const medal = i < MEDAL_EMOJI.length ? `${MEDAL_EMOJI[i]} ` : ''
-            lines.push(`${medal}${place}. @${escapeNick(entry.nick)} — ${formatAmount(entry.total)}${f.currency}`)
+            lines.push(`${medal}${place}. ${nickLink(entry.nick)} — ${formatAmount(entry.total)}${f.currency}`)
         }
         lines.push('')
         const goalSuffix = f.goal > 0 ? ` из ${formatAmount(f.goal)}${f.currency}` : ''
@@ -144,7 +159,7 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
     if (closed) {
         lines.push('', '✅ Сбор закрыт — цель достигнута!')
     }
-    return { text: lines.join('\n'), page, pages, closed }
+    return { text: lines.join('<br>'), page, pages, closed }
 }
 
 /**

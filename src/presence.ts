@@ -1,4 +1,4 @@
-import { BotKeyboard, type TelegramClient } from '@mtcute/node'
+import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
 import type { Storage } from './storage.js'
 import type { ResidentPresence } from './types.js'
@@ -59,14 +59,20 @@ const findChatsWhereUserIsAdmin = async (
     return result
 }
 
+/**
+ * HTML-разметка списка. Ники — t.me-ссылки, а не plain @username: текст-ссылка
+ * не является mention-сущностью, поэтому Telegram не пингует упомянутых.
+ * Парсить результат через `html()`.
+ */
 const buildPresenceMessage = (presents: ResidentPresence[]): string => {
     const named = presents.filter((p) => p.username)
     const lines: string[] = []
     lines.push(`Внутри [${presents.length}], отметились [${named.length}]:`)
     for (const p of named) {
-        lines.push(`@${p.username}`)
+        const nick = p.username!
+        lines.push(`<a href="https://t.me/${encodeURIComponent(nick)}">@${nick}</a>`)
     }
-    return lines.join('\n')
+    return lines.join('<br>')
 }
 
 /**
@@ -122,7 +128,7 @@ export const upsertPresenceListInChat = async (
 
     if (effectiveMode === 'edit' && existingId) {
         try {
-            await client.editMessage({ chatId, message: existingId, text })
+            await client.editMessage({ chatId, message: existingId, text: html(text) })
             return
         } catch (err) {
             const msg = (err as Error)?.message ?? ''
@@ -140,7 +146,7 @@ export const upsertPresenceListInChat = async (
     }
 
     try {
-        const sent = await client.sendText(chatId, text)
+        const sent = await client.sendText(chatId, html(text))
         const nowIso = new Date().toISOString()
         await storage.update((s) => {
             s.presenceListMessages[String(chatId)] = sent.id

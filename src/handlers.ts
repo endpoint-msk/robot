@@ -1,4 +1,4 @@
-import { BotKeyboard, type TelegramClient } from '@mtcute/node'
+import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import {
     buildLeaderboard,
@@ -93,7 +93,7 @@ export const postFundraiserToChat = async (
 ): Promise<void> => {
     const f = ensureCurrentFundraiser(storage, now)
     const rendered = renderFundraiser(f, 1)
-    const sent = await client.sendText(chatId, rendered.text, {
+    const sent = await client.sendText(chatId, html(rendered.text), {
         replyMarkup: buildKeyboard(rendered.page, rendered.pages),
     })
     await rememberLastMessage(storage, chatId, sent.id, f.periodKey)
@@ -114,7 +114,7 @@ export const refreshLastMessageInChat = async (
         await client.editMessage({
             chatId: last.chatId,
             message: last.messageId,
-            text: rendered.text,
+            text: html(rendered.text),
             replyMarkup: buildKeyboard(rendered.page, rendered.pages),
         })
         if (last.periodKey !== f.periodKey) {
@@ -211,7 +211,7 @@ export const registerHandlers = (
         if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
         const f = ensureCurrentFundraiser(storage)
         const rendered = renderFundraiser(f, 1)
-        const sent = await msg.answerText(rendered.text, {
+        const sent = await msg.answerText(html(rendered.text), {
             replyMarkup: buildKeyboard(rendered.page, rendered.pages),
         })
         await rememberLastMessage(storage, Number(msg.chat.id), sent.id, f.periodKey)
@@ -346,7 +346,7 @@ export const registerHandlers = (
         const messageId = ctx.messageId
         try {
             await ctx.editMessage({
-                text: rendered.text,
+                text: html(rendered.text),
                 replyMarkup: buildKeyboard(rendered.page, rendered.pages),
             })
             await rememberLastMessage(storage, chatId, messageId, f.periodKey)
