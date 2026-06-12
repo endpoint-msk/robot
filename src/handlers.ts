@@ -95,6 +95,7 @@ export const postFundraiserToChat = async (
     const rendered = renderFundraiser(f, 1)
     const sent = await client.sendText(chatId, html(rendered.text), {
         replyMarkup: buildKeyboard(rendered.page, rendered.pages),
+        disableWebPreview: true,
     })
     await rememberLastMessage(storage, chatId, sent.id, f.periodKey)
 }
@@ -116,6 +117,7 @@ export const refreshLastMessageInChat = async (
             message: last.messageId,
             text: html(rendered.text),
             replyMarkup: buildKeyboard(rendered.page, rendered.pages),
+            disableWebPreview: true,
         })
         if (last.periodKey !== f.periodKey) {
             await storage.update((s) => {
@@ -213,6 +215,7 @@ export const registerHandlers = (
         const rendered = renderFundraiser(f, 1)
         const sent = await msg.answerText(html(rendered.text), {
             replyMarkup: buildKeyboard(rendered.page, rendered.pages),
+            disableWebPreview: true,
         })
         await rememberLastMessage(storage, Number(msg.chat.id), sent.id, f.periodKey)
     })
@@ -348,6 +351,7 @@ export const registerHandlers = (
             await ctx.editMessage({
                 text: html(rendered.text),
                 replyMarkup: buildKeyboard(rendered.page, rendered.pages),
+                disableWebPreview: true,
             })
             await rememberLastMessage(storage, chatId, messageId, f.periodKey)
             await ctx.answer({ text: isRefresh ? 'Обновлено' : `Страница ${rendered.page}` })
