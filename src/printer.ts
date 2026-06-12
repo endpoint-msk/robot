@@ -56,13 +56,33 @@ export const parsePrinterAuth = (raw: string | undefined): string | null => {
 const authHeaders = (auth: string | null): Record<string, string> =>
     auth ? { Authorization: auth } : {}
 
+/** Сколько раз пробуем достучаться до принтера и пауза между попытками. */
+const FETCH_RETRIES = 3
+const FETCH_RETRY_DELAY_MS = 400
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * GET с парой повторов: хост принтера (Raspberry Pi/Klipper) часто отвечает не с первого
+ * раза — WiFi power-save, холодный TCP, занятый Moonraker. Ретраи прячут транзиентные сбои,
+ * чтобы пользователь не видел «не удалось связаться», когда принтер на самом деле в сети.
+ */
 const fetchJson = async (url: string, auth: string | null): Promise<unknown> => {
-    const res = await fetch(url, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: authHeaders(auth),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status} при запросе ${url}`)
-    return res.json()
+    let lastErr: unknown
+    for (let attempt = 1; attempt <= FETCH_RETRIES; attempt++) {
+        try {
+            const res = await fetch(url, {
+                signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+                headers: authHeaders(auth),
+            })
+            if (!res.ok) throw new Error(`HTTP ${res.status} при запросе ${url}`)
+            return await res.json()
+        } catch (err) {
+            lastErr = err
+            if (attempt < FETCH_RETRIES) await sleep(FETCH_RETRY_DELAY_MS)
+        }
+    }
+    throw lastErr
 }
 
 /** Запрашивает у Moonraker состояние печати, имя файла и прогресс. */
