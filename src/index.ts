@@ -1,14 +1,16 @@
 import 'dotenv/config'
 import { BotCommands, TelegramClient } from '@mtcute/node'
-import { Dispatcher } from '@mtcute/dispatcher'
+import { Dispatcher, filters } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
 import { normalizePrinterUrl, parsePrinterAuth, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
+import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
 import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
     registerPresenceHandlers,
+    startMacPresencePoller,
     startPresenceScheduler,
 } from './presence.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
@@ -34,6 +36,14 @@ const main = async () => {
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
+    const keeneticConfig = parseKeeneticConfig({
+        url: process.env.KEENETIC_URL,
+        login: process.env.KEENETIC_LOGIN,
+        password: process.env.KEENETIC_PASSWORD,
+        rciPath: process.env.KEENETIC_RCI_PATH,
+    })
+    // userId дев-аккаунтов, которым доступны отладочные команды (через запятую).
+    const devUserIds = parseAllowedChats(process.env.DEV_USER_IDS)
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -100,11 +110,15 @@ const main = async () => {
         await tg.setMyCommands({ commands: memberCommands, scope: BotCommands.allGroups })
         // Админам групп — полный набор админских команд (перекрывает allGroups для админов).
         await tg.setMyCommands({ commands: adminCommands, scope: BotCommands.allGroupAdmins })
-        // В личке — /start (меню резидента) и /printer (статус принтера)
+        // В личке — /start (меню резидента), /printer (статус принтера), /bindmac (привязка MAC)
         await tg.setMyCommands({
             commands: [
                 BotCommands.cmd('start', 'Отметиться в спейсе'),
                 BotCommands.cmd('printer', 'Статус 3D-принтера'),
+                BotCommands.cmd('bindmac', 'Привязать MAC для авто-отметок'),
+                BotCommands.cmd('unbindmac', 'Убрать привязку MAC'),
+                BotCommands.cmd('maclist', 'Показать свои привязанные MAC'),
+                BotCommands.cmd('settings', 'Настройки авто-отметки (ник/аноним)'),
             ],
             scope: BotCommands.allPrivate,
         })
@@ -118,12 +132,40 @@ const main = async () => {
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     const presence = startPresenceScheduler(tg, storage, allowedChats)
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
+    let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
+    if (keeneticConfig !== null) {
+        macPoller = startMacPresencePoller(tg, storage, allowedChats, new KeeneticClient(keeneticConfig))
+        console.log(`[keenetic] MAC presence poller active for ${keeneticConfig.baseUrl}`)
+    } else {
+        console.warn('[warn] KEENETIC_URL/LOGIN/PASSWORD не заданы — авто-отметки по MAC отключены.')
+    }
+
+    // Дев-команда: форсировать опрос Keenetic и пересчёт авто-отметок прямо сейчас.
+    if (devUserIds.size > 0) {
+        dp.onNewMessage(filters.and(filters.chat('user'), filters.command('forcemacupdate')), async (msg) => {
+            if (!msg.sender || msg.sender.type !== 'user') return
+            if (!devUserIds.has(msg.sender.id)) return
+            if (macPoller === null) {
+                await msg.answerText('Поллер MAC выключен (нет KEENETIC_*).')
+                return
+            }
+            try {
+                await macPoller.triggerNow()
+                await msg.answerText('Готово: опросил Keenetic и пересчитал отметки.')
+            } catch (err) {
+                console.error('[keenetic] forcemacupdate failed:', err)
+                await msg.answerText('Ошибка при опросе Keenetic — см. логи.')
+            }
+        })
+        console.log(`[keenetic] /forcemacupdate enabled for dev users: ${[...devUserIds].join(', ')}`)
+    }
 
     const shutdown = async () => {
         scheduler.stop()
         dailyPoster.stop()
         presence.stop()
         printerWatcher?.stop()
+        macPoller?.stop()
         await tg.destroy()
         process.exit(0)
     }

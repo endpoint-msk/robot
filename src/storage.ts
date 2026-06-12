@@ -1,6 +1,39 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { emptyState, type State } from './types.js'
+import { emptyState, type ResidentMacs, type State } from './types.js'
+
+/**
+ * Приводит macBindings к актуальной схеме (`macs: MacEntry[]`, `anon`).
+ * Старый формат хранил один MAC в поле `mac` без массива — конвертируем его,
+ * чтобы существующие записи на диске не роняли код.
+ */
+const normalizeMacBindings = (raw: unknown): Record<string, ResidentMacs> => {
+    if (!raw || typeof raw !== 'object') return {}
+    const out: Record<string, ResidentMacs> = {}
+    for (const [key, value] of Object.entries(raw as Record<string, any>)) {
+        if (!value || typeof value !== 'object') continue
+        const userId = Number(value.userId ?? key)
+        const username = typeof value.username === 'string' ? value.username : null
+        const anon = value.anon === true
+        const updatedAt = typeof value.updatedAt === 'string'
+            ? value.updatedAt
+            : (typeof value.boundAt === 'string' ? value.boundAt : new Date().toISOString())
+        let macs: { mac: string; label: string }[] = []
+        if (Array.isArray(value.macs)) {
+            macs = value.macs
+                .map((e: any) => (typeof e === 'string'
+                    ? { mac: e, label: '' }
+                    : { mac: String(e?.mac ?? ''), label: typeof e?.label === 'string' ? e.label : '' }))
+                .filter((e: { mac: string }) => e.mac.length > 0)
+        } else if (typeof value.mac === 'string' && value.mac.length > 0) {
+            // старый формат: один MAC в поле `mac`
+            macs = [{ mac: value.mac, label: '' }]
+        }
+        if (macs.length === 0) continue
+        out[key] = { userId, username, macs, anon, updatedAt }
+    }
+    return out
+}
 
 export class Storage {
     private state: State = emptyState()
@@ -20,6 +53,7 @@ export class Storage {
                 presenceListMessages: parsed.presenceListMessages ?? {},
                 presenceListPostedAt: parsed.presenceListPostedAt ?? {},
                 printerSubscribers: parsed.printerSubscribers ?? {},
+                macBindings: normalizeMacBindings(parsed.macBindings),
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

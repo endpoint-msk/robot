@@ -1,5 +1,6 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
+import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
 import type { Storage } from './storage.js'
 import type { ResidentPresence } from './types.js'
 
@@ -9,6 +10,8 @@ export const CHAT_SILENCE_MS = 5 * 60 * 60 * 1000
 export const PRESENCE_PING_INTERVAL_MS = 3 * 60 * 60 * 1000
 /** Сколько ждём ответа на ping, прежде чем снять отметку (15 минут). */
 export const PRESENCE_PING_TIMEOUT_MS = 15 * 60 * 1000
+/** Через сколько отсутствия MAC в сети снимаем авто-отметку (10 минут — телефоны «засыпают» в WiFi). */
+export const MAC_ABSENCE_GRACE_MS = 10 * 60 * 1000
 /** Если предыдущее сообщение со списком в чате было отправлено больше этого срока назад,
  *  при checkin/checkout публикуем новое сообщение, а не редактируем старое (его в истории уже не видно). */
 export const PRESENCE_LIST_REPOST_AFTER_MS = 4 * 60 * 60 * 1000
@@ -19,6 +22,8 @@ const CB_CHECKIN_NICK = 'presence:checkin:nick'
 const CB_CHECKIN_ANON = 'presence:checkin:anon'
 const CB_CHECKOUT = 'presence:checkout'
 const CB_CONFIRM = 'presence:confirm'
+const CB_SETTINGS_NICK = 'presence:settings:nick'
+const CB_SETTINGS_ANON = 'presence:settings:anon'
 
 const ANON_LABEL = 'Без ника'
 
@@ -26,6 +31,13 @@ const startMenuKeyboard = () =>
     BotKeyboard.inline([
         [BotKeyboard.callback('Отметиться с ником', CB_CHECKIN_NICK)],
         [BotKeyboard.callback('Отметиться без ника', CB_CHECKIN_ANON)],
+    ])
+
+/** Клавиатура настроек авто-отметки по MAC. У текущего выбора — галочка. */
+const settingsKeyboard = (anon: boolean) =>
+    BotKeyboard.inline([
+        [BotKeyboard.callback(`${anon ? '' : '✅ '}С ником`, CB_SETTINGS_NICK)],
+        [BotKeyboard.callback(`${anon ? '✅ ' : ''}Без ника`, CB_SETTINGS_ANON)],
     ])
 
 const checkedInKeyboard = () =>
@@ -128,7 +140,7 @@ export const upsertPresenceListInChat = async (
 
     if (effectiveMode === 'edit' && existingId) {
         try {
-            await client.editMessage({ chatId, message: existingId, text: html(text) })
+            await client.editMessage({ chatId, message: existingId, text: html(text), disableWebPreview: true })
             return
         } catch (err) {
             const msg = (err as Error)?.message ?? ''
@@ -146,7 +158,7 @@ export const upsertPresenceListInChat = async (
     }
 
     try {
-        const sent = await client.sendText(chatId, html(text))
+        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true })
         const nowIso = new Date().toISOString()
         await storage.update((s) => {
             s.presenceListMessages[String(chatId)] = sent.id
@@ -210,6 +222,8 @@ const checkInResident = async (
         checkedInAt: existing?.checkedInAt ?? now,
         lastConfirmedAt: now,
         pendingPingAt: null,
+        source: 'manual',
+        lastSeenOnlineAt: null,
     }
     await storage.update((s) => {
         s.presence[String(user.id)] = presence
@@ -257,6 +271,163 @@ export const registerPresenceHandlers = (
     // не считается подтверждением (по решению пользователя ответом считается только кнопка).
     // Но мы всё же отслеживаем активность групповых чатов отдельно (см. trackChatActivity).
 
+    // /bindmac <MAC> в личке — добавить MAC-адрес устройства для авто-отметок (можно несколько).
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('bindmac')), async (msg) => {
+        if (!msg.sender || msg.sender.type !== 'user') return
+        const userId = msg.sender.id
+        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, userId)
+        if (adminChats.length === 0) {
+            await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
+            return
+        }
+        const arg = msg.command[1]
+        if (!arg) {
+            const cur = storage.get().macBindings[String(userId)]
+            const list = cur && cur.macs.length > 0
+                ? cur.macs.map((e) => `<code>${e.mac}</code>${e.label ? ` — ${e.label}` : ''}`).join('<br>')
+                : null
+            await msg.answerText(
+                html(
+                    list
+                        ? `Твои устройства:<br>${list}<br><br>Добавить ещё — /bindmac &lt;MAC&gt; [имя], убрать — /unbindmac &lt;MAC&gt;.`
+                        : 'Использование: /bindmac AA:BB:CC:DD:EE:FF [имя]<br>Например: /bindmac AA:BB:CC:DD:EE:FF Телефон<br>MAC устройства можно посмотреть в настройках Wi-Fi телефона/ноутбука. После привязки бот сам отметит тебя, когда устройство в сети спейса. Можно добавить несколько устройств.',
+                ),
+                { disableWebPreview: true },
+            )
+            return
+        }
+        if (!isValidMac(arg)) {
+            await msg.answerText('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF (12 hex-символов).')
+            return
+        }
+        const mac = normalizeMac(arg)
+        const label = msg.command.slice(2).join(' ').trim()
+        // MAC уникален: если он уже привязан к другому юзеру — отказываем.
+        const owner = Object.values(storage.get().macBindings).find(
+            (b) => b.userId !== userId && b.macs.some((e) => e.mac === mac),
+        )
+        if (owner) {
+            await msg.answerText('Этот MAC уже привязан к другому резиденту.')
+            return
+        }
+        const existing = storage.get().macBindings[String(userId)]
+        if (existing?.macs.some((e) => e.mac === mac)) {
+            await msg.answerText(`MAC ${mac} уже привязан к тебе. Чтобы переименовать — сначала /unbindmac ${mac}, потом добавь заново с именем.`)
+            return
+        }
+        await storage.update((s) => {
+            const now = new Date().toISOString()
+            const cur = s.macBindings[String(userId)]
+            if (cur) {
+                cur.macs.push({ mac, label })
+                cur.username = msg.sender!.username ?? null
+                cur.updatedAt = now
+            } else {
+                s.macBindings[String(userId)] = {
+                    userId,
+                    username: msg.sender!.username ?? null,
+                    macs: [{ mac, label }],
+                    anon: false,
+                    updatedAt: now,
+                }
+            }
+        })
+        await msg.answerText(`Привязал MAC ${mac}${label ? ` («${label}»)` : ''}. Теперь отмечу тебя автоматически, когда устройство появится в сети спейса.`)
+    })
+
+    // /unbindmac [MAC] в личке — убрать один MAC или все привязки.
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('unbindmac')), async (msg) => {
+        if (!msg.sender || msg.sender.type !== 'user') return
+        const userId = msg.sender.id
+        const cur = storage.get().macBindings[String(userId)]
+        if (!cur || cur.macs.length === 0) {
+            await msg.answerText('У тебя нет привязанных MAC.')
+            return
+        }
+        const arg = msg.command[1]
+        // Без аргумента — убираем все привязки.
+        if (!arg) {
+            await storage.update((s) => {
+                delete s.macBindings[String(userId)]
+            })
+            const present = storage.get().presence[String(userId)]
+            if (present?.source === 'mac') {
+                await removePresence(client, storage, allowedChats, userId, 'manual')
+            }
+            await msg.answerText('Убрал все привязки MAC. Авто-отметки больше не будут ставиться.')
+            return
+        }
+        if (!isValidMac(arg)) {
+            await msg.answerText('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF, или /unbindmac без аргумента — убрать все.')
+            return
+        }
+        const mac = normalizeMac(arg)
+        if (!cur.macs.some((e) => e.mac === mac)) {
+            await msg.answerText(`MAC ${mac} к тебе не привязан.`)
+            return
+        }
+        let leftEmpty = false
+        await storage.update((s) => {
+            const b = s.macBindings[String(userId)]
+            if (!b) return
+            b.macs = b.macs.filter((e) => e.mac !== mac)
+            b.updatedAt = new Date().toISOString()
+            if (b.macs.length === 0) {
+                delete s.macBindings[String(userId)]
+                leftEmpty = true
+            }
+        })
+        // Если убрали последний MAC и текущая отметка была авто-по-MAC — снимаем её.
+        if (leftEmpty) {
+            const present = storage.get().presence[String(userId)]
+            if (present?.source === 'mac') {
+                await removePresence(client, storage, allowedChats, userId, 'manual')
+            }
+        }
+        await msg.answerText(`Убрал MAC ${mac}.`)
+    })
+
+    // /maclist в личке — показать СВОИ привязанные MAC-адреса.
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('maclist')), async (msg) => {
+        if (!msg.sender || msg.sender.type !== 'user') return
+        const userId = msg.sender.id
+        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, userId)
+        if (adminChats.length === 0) {
+            await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
+            return
+        }
+        const cur = storage.get().macBindings[String(userId)]
+        if (!cur || cur.macs.length === 0) {
+            await msg.answerText('У тебя нет привязанных MAC. Привяжи через /bindmac AA:BB:CC:DD:EE:FF.')
+            return
+        }
+        const online = storage.get().presence[String(userId)]?.source === 'mac'
+        const lines = [`Твои устройства [${cur.macs.length}]:`, '']
+        for (const e of [...cur.macs].sort((a, b) => a.mac.localeCompare(b.mac))) {
+            lines.push(`<code>${e.mac}</code>${e.label ? ` — ${e.label}` : ''}`)
+        }
+        lines.push('', online ? 'Сейчас ты отмечен по MAC.' : 'Сейчас авто-отметка не активна.')
+        await msg.answerText(html(lines.join('<br>')), { disableWebPreview: true })
+    })
+
+    // /settings в личке — переключить, отмечаться по MAC с ником или анонимно.
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('settings')), async (msg) => {
+        if (!msg.sender || msg.sender.type !== 'user') return
+        const userId = msg.sender.id
+        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, userId)
+        if (adminChats.length === 0) {
+            await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
+            return
+        }
+        const cur = storage.get().macBindings[String(userId)]
+        const anon = cur?.anon ?? false
+        await msg.answerText(
+            `Авто-отметка по MAC: сейчас ${anon ? '«без ника»' : 'с ником'}.\nВыбери, как отмечаться:`,
+            { replyMarkup: settingsKeyboard(anon) },
+        )
+    })
+
+
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
         const data = ctx.dataStr
         if (data === null) return
@@ -264,8 +435,48 @@ export const registerPresenceHandlers = (
             data === CB_CHECKIN_NICK ||
             data === CB_CHECKIN_ANON ||
             data === CB_CHECKOUT ||
-            data === CB_CONFIRM
+            data === CB_CONFIRM ||
+            data === CB_SETTINGS_NICK ||
+            data === CB_SETTINGS_ANON
         if (!isOurs) return PropagationAction.Continue
+
+        if (data === CB_SETTINGS_NICK || data === CB_SETTINGS_ANON) {
+            const userId = ctx.user.id
+            const anon = data === CB_SETTINGS_ANON
+            if (storage.get().macBindings[String(userId)] === undefined) {
+                await ctx.answer({ text: 'Сначала привяжи MAC через /bindmac.', alert: true })
+                return
+            }
+            await storage.update((s) => {
+                const b = s.macBindings[String(userId)]
+                if (b) {
+                    b.anon = anon
+                    b.updatedAt = new Date().toISOString()
+                }
+            })
+            // Если сейчас активна авто-отметка — сразу применяем новый режим к ней и спискам.
+            const present = storage.get().presence[String(userId)]
+            if (present?.source === 'mac') {
+                await storage.update((s) => {
+                    const p = s.presence[String(userId)]
+                    if (p) {
+                        p.displayLabel = anon ? ANON_LABEL : (p.username ? `@${p.username}` : ANON_LABEL)
+                        p.username = anon ? null : (storage.get().macBindings[String(userId)]?.username ?? null)
+                    }
+                })
+                for (const chatId of await findChatsWhereUserIsAdmin(client, allowedChats, userId)) {
+                    await upsertPresenceListInChat(client, storage, chatId)
+                }
+            }
+            try {
+                await ctx.editMessage({
+                    text: `Авто-отметка по MAC: теперь ${anon ? '«без ника»' : 'с ником'}.`,
+                    replyMarkup: settingsKeyboard(anon),
+                })
+            } catch {}
+            await ctx.answer({ text: 'Сохранил' })
+            return
+        }
 
         if (data === CB_CHECKIN_NICK || data === CB_CHECKIN_ANON) {
             const user = ctx.user
@@ -449,6 +660,9 @@ export const startPresenceScheduler = (
         // 1) Пинги и таймауты по каждому отмеченному резиденту
         const presents = Object.values(storage.get().presence)
         for (const p of presents) {
+            // Авто-отметки по MAC живут по присутствию устройства в сети (см. startMacPresencePoller),
+            // их не пингуем и не снимаем по таймауту подтверждения.
+            if (p.source === 'mac') continue
             const lastConfirmed = Date.parse(p.lastConfirmedAt)
             if (p.pendingPingAt) {
                 const pingedAt = Date.parse(p.pendingPingAt)
@@ -491,4 +705,108 @@ export const startPresenceScheduler = (
     }, TICK_INTERVAL_MS)
 
     return { stop: () => clearInterval(handle) }
+}
+
+/**
+ * Ставит/обновляет авто-отметку резидента по MAC (источник 'mac').
+ * Не трогает ручную отметку (manual) того же юзера — ручная имеет приоритет.
+ * Возвращает true, если список присутствующих надо перепостить (новая отметка).
+ */
+const macCheckIn = async (
+    client: TelegramClient,
+    storage: Storage,
+    allowed: ReadonlySet<number>,
+    binding: { userId: number; username: string | null; anon: boolean },
+    nowIso: string,
+): Promise<boolean> => {
+    const existing = storage.get().presence[String(binding.userId)]
+    if (existing && existing.source === 'manual') {
+        // Резидент отметился руками — авто-логику не вмешиваем, только не даём ей мешать.
+        return false
+    }
+    if (existing && existing.source === 'mac') {
+        // Уже отмечен по MAC — просто продлеваем «последний раз онлайн».
+        await storage.update((s) => {
+            const p = s.presence[String(binding.userId)]
+            if (p) p.lastSeenOnlineAt = nowIso
+        })
+        return false
+    }
+    // Новой отметки нет — проверяем, что юзер всё ещё резидент (админ чата), и ставим.
+    const chats = await findChatsWhereUserIsAdmin(client, allowed, binding.userId)
+    if (chats.length === 0) return false
+    const useNick = !binding.anon && !!binding.username
+    const presence: ResidentPresence = {
+        userId: binding.userId,
+        displayLabel: useNick ? `@${binding.username}` : ANON_LABEL,
+        username: useNick ? binding.username : null,
+        checkedInAt: nowIso,
+        lastConfirmedAt: nowIso,
+        pendingPingAt: null,
+        source: 'mac',
+        lastSeenOnlineAt: nowIso,
+    }
+    await storage.update((s) => {
+        s.presence[String(binding.userId)] = presence
+    })
+    for (const chatId of chats) {
+        await upsertPresenceListInChat(client, storage, chatId)
+    }
+    return true
+}
+
+/**
+ * Поллер присутствия по MAC. Каждый тик опрашивает Keenetic об активных MAC и:
+ *  - ставит авто-отметку (source 'mac') резидентам, чьи привязанные MAC онлайн;
+ *  - продлевает `lastSeenOnlineAt` для уже отмеченных;
+ *  - снимает 'mac'-отметку, если MAC не виден в сети дольше MAC_ABSENCE_GRACE_MS.
+ *
+ * Ручные ('manual') отметки поллер не трогает.
+ */
+export const startMacPresencePoller = (
+    client: TelegramClient,
+    storage: Storage,
+    allowedChats: ReadonlySet<number>,
+    keenetic: KeeneticClient,
+    intervalMs: number = TICK_INTERVAL_MS,
+): { stop: () => void; triggerNow: () => Promise<void> } => {
+    const tick = async () => {
+        const bindings = Object.values(storage.get().macBindings)
+        if (bindings.length === 0) return
+
+        let activeMacs: Set<string>
+        try {
+            activeMacs = await keenetic.fetchActiveMacs()
+        } catch (err) {
+            console.warn('[keenetic] не удалось получить список устройств:', err)
+            return
+        }
+
+        const nowIso = new Date().toISOString()
+        const now = Date.now()
+
+        for (const binding of bindings) {
+            const online = binding.macs.some((e) => activeMacs.has(e.mac))
+            const present = storage.get().presence[String(binding.userId)]
+
+            if (online) {
+                await macCheckIn(client, storage, allowedChats, binding, nowIso)
+                continue
+            }
+
+            // MAC офлайн. Снимаем только нашу 'mac'-отметку и только после grace-периода.
+            if (present?.source === 'mac') {
+                const lastSeen = present.lastSeenOnlineAt ? Date.parse(present.lastSeenOnlineAt) : 0
+                if (!Number.isFinite(lastSeen) || now - lastSeen >= MAC_ABSENCE_GRACE_MS) {
+                    await removePresence(client, storage, allowedChats, binding.userId, 'manual')
+                }
+            }
+        }
+    }
+
+    const handle = setInterval(() => {
+        void tick().catch((err) => console.error('[keenetic] poller tick error:', err))
+    }, intervalMs)
+
+    return { stop: () => clearInterval(handle), triggerNow: tick }
 }

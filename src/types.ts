@@ -47,6 +47,29 @@ export type State = {
     presenceListPostedAt: Record<string, string>
     /** userId, попросивших уведомить в личку по окончании текущей печати. Чистится после уведомления. */
     printerSubscribers: Record<string, true>
+    /** MAC-адреса резидентов для авто-отметок. Ключ — userId. */
+    macBindings: Record<string, ResidentMacs>
+}
+
+/** MAC-адреса устройств резидента для авто-отметок присутствия. */
+export type ResidentMacs = {
+    userId: number
+    /** Username (без @) на момент привязки — для отображения в списке. null, если username нет. */
+    username: string | null
+    /** Привязанные устройства. */
+    macs: MacEntry[]
+    /** Отмечать анонимно («Без ника») при авто-отметке по MAC. Меняется через /settings. */
+    anon: boolean
+    /** Когда последний раз меняли список (ISO). */
+    updatedAt: string
+}
+
+/** Одно устройство резидента. */
+export type MacEntry = {
+    /** MAC в каноничном виде: lower-case, разделитель `:`. */
+    mac: string
+    /** Человекочитаемое имя устройства для списка. Пусто — если не задано. */
+    label: string
 }
 
 /** Отметка резидента, что он сейчас внутри хакерспейса. */
@@ -62,6 +85,10 @@ export type ResidentPresence = {
     lastConfirmedAt: string
     /** Когда был отправлен последний ping в личку, на который мы ждём ответ. null — нет открытого ping'а. */
     pendingPingAt: string | null
+    /** Источник отметки: 'manual' — через /start, 'mac' — авто по присутствию устройства в сети. */
+    source: 'manual' | 'mac'
+    /** Для 'mac'-отметок: когда MAC последний раз был онлайн в сети (ISO). Снимаем после grace-периода. */
+    lastSeenOnlineAt: string | null
 }
 
 export const emptyState = (): State => ({
@@ -72,4 +99,5 @@ export const emptyState = (): State => ({
     presenceListMessages: {},
     presenceListPostedAt: {},
     printerSubscribers: {},
+    macBindings: {},
 })
