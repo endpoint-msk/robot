@@ -4,6 +4,7 @@ import { Dispatcher } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
+import { normalizePrinterUrl, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
 import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
@@ -31,6 +32,7 @@ const main = async () => {
     const forwardFrom = parseChatId(process.env.FORWARD_FROM_CHAT)
     const forwardTo = parseChatId(process.env.FORWARD_TO_CHAT)
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
+    const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -62,6 +64,12 @@ const main = async () => {
     registerChatActivityTracker(dp, storage, allowedChats)
     registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
     registerHandlers(dp, { client: tg, storage, allowedChats })
+    if (printerUrl !== null) {
+        registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl })
+        console.log(`[printer] /printer active for ${printerUrl}`)
+    } else {
+        console.warn('[warn] PRINTER_URL не задан — команда /printer отключена.')
+    }
     if (forwardFrom !== null && forwardTo !== null) {
         registerForwarder(dp, tg, forwardFrom, forwardTo)
         console.log(`[forward] forwarding ${forwardFrom} -> ${forwardTo}`)
@@ -74,6 +82,7 @@ const main = async () => {
     // Большинство админских команд показываем только админам группы; /inside — всем участникам.
     const adminCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
+        BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
         BotCommands.cmd('donate', 'Добавить донат: /donate <сумма> <ник>'),
         BotCommands.cmd('remove', 'Удалить донат: /remove <номер|ник> [сумма]'),
@@ -83,15 +92,19 @@ const main = async () => {
     ]
     const memberCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
+        BotCommands.cmd('printer', 'Статус 3D-принтера'),
     ]
     try {
         // Всем участникам групп — только /inside в меню.
         await tg.setMyCommands({ commands: memberCommands, scope: BotCommands.allGroups })
         // Админам групп — полный набор админских команд (перекрывает allGroups для админов).
         await tg.setMyCommands({ commands: adminCommands, scope: BotCommands.allGroupAdmins })
-        // В личке — только /start (для меню резидента)
+        // В личке — /start (меню резидента) и /printer (статус принтера)
         await tg.setMyCommands({
-            commands: [BotCommands.cmd('start', 'Отметиться в спейсе')],
+            commands: [
+                BotCommands.cmd('start', 'Отметиться в спейсе'),
+                BotCommands.cmd('printer', 'Статус 3D-принтера'),
+            ],
             scope: BotCommands.allPrivate,
         })
         // Дефолтный scope — пустой
@@ -103,11 +116,13 @@ const main = async () => {
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     const presence = startPresenceScheduler(tg, storage, allowedChats)
+    const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl) : null
 
     const shutdown = async () => {
         scheduler.stop()
         dailyPoster.stop()
         presence.stop()
+        printerWatcher?.stop()
         await tg.destroy()
         process.exit(0)
     }

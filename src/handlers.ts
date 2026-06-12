@@ -1,5 +1,5 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
-import { filters, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
+import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import {
     buildLeaderboard,
     createFundraiser,
@@ -318,10 +318,10 @@ export const registerHandlers = (
 
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
         const data = ctx.dataStr
-        if (data === null) return
+        if (data === null) return PropagationAction.Continue
         const isRefresh = data === REFRESH_CALLBACK
         const isPage = data.startsWith(PAGE_CALLBACK_PREFIX)
-        if (!isRefresh && !isPage) return
+        if (!isRefresh && !isPage) return PropagationAction.Continue
 
         const chatId = Number(ctx.chat.id)
         if (!isAllowedChat(allowedChats, chatId)) {

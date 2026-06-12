@@ -45,6 +45,8 @@ export type State = {
     /** Когда сообщение со списком было ОТПРАВЛЕНО (не отредактировано) в каждом чате (ISO). Используется, чтобы при checkin/checkout
      *  публиковать новое сообщение, если предыдущее «протухло» — иначе апдейт никто не увидит. */
     presenceListPostedAt: Record<string, string>
+    /** userId, попросивших уведомить в личку по окончании текущей печати. Чистится после уведомления. */
+    printerSubscribers: Record<string, true>
 }
 
 /** Отметка резидента, что он сейчас внутри хакерспейса. */
@@ -69,4 +71,5 @@ export const emptyState = (): State => ({
     chatLastActivity: {},
     presenceListMessages: {},
     presenceListPostedAt: {},
+    printerSubscribers: {},
 })

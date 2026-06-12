@@ -3,5 +3,6 @@ dist/
 .env
 data.json
 bot.session
+bot.session-*
 *.log
 .DS_Store
