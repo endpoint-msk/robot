@@ -572,7 +572,7 @@ export const registerChatActivityTracker = (
     storage: Storage,
     allowedChats: ReadonlySet<number>,
 ): void => {
-    dp.onNewMessage(async (msg) => {
+    const track = async (msg: { chat: { id: number | string }; isOutgoing: boolean }) => {
         const chatId = Number(msg.chat.id)
         if (!allowedChats.has(chatId)) return PropagationAction.Continue
         if (msg.isOutgoing) return PropagationAction.Continue
@@ -581,7 +581,10 @@ export const registerChatActivityTracker = (
         })
         // Не глотаем сообщение — пусть командные обработчики тоже видят его.
         return PropagationAction.Continue
-    })
+    }
+    dp.onNewMessage(track)
+    // Альбомы приходят отдельным апдейтом и не дублируются как new_message — учитываем и их.
+    dp.onMessageGroup(track)
 }
 
 /**

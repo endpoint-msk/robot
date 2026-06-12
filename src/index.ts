@@ -60,6 +60,9 @@ const main = async () => {
         apiId,
         apiHash,
         storage: 'bot.session',
+        // Группируем сообщения одного альбома (media group) и отдаём их пачкой
+        // в onMessageGroup, иначе форвардер разбивал бы альбом на отдельные посты.
+        updates: { messageGroupingInterval: 250 },
     })
 
     const dp = Dispatcher.for(tg)
@@ -116,6 +119,7 @@ const main = async () => {
         await tg.setMyCommands({
             commands: [
                 BotCommands.cmd('start', 'Отметиться в спейсе'),
+                BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
                 BotCommands.cmd('printer', 'Статус 3D-принтера'),
                 BotCommands.cmd('bindmac', 'Привязать MAC для авто-отметок'),
                 BotCommands.cmd('unbindmac', 'Убрать привязку MAC'),

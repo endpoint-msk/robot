@@ -15,17 +15,29 @@ export const registerForwarder = (
     fromChatId: number,
     toChatId: number,
 ): void => {
-    dp.onNewMessage(async (msg) => {
-        if (Number(msg.chat.id) !== fromChatId) return PropagationAction.Continue
+    const forward = async (ids: number[]): Promise<void> => {
         try {
             await client.forwardMessagesById({
                 fromChatId,
                 toChatId,
-                messages: [msg.id],
+                messages: ids,
             })
         } catch (err) {
-            console.error(`[forward] failed to forward message ${msg.id} from ${fromChatId} to ${toChatId}:`, err)
+            console.error(`[forward] failed to forward messages ${ids.join(',')} from ${fromChatId} to ${toChatId}:`, err)
         }
+    }
+
+    dp.onNewMessage(async (msg) => {
+        if (Number(msg.chat.id) !== fromChatId) return PropagationAction.Continue
+        await forward([msg.id])
+        return PropagationAction.Continue
+    })
+
+    // Альбомы (media group) приходят отдельным апдейтом пачкой — форвардим все id
+    // одним вызовом, чтобы в целевом чате они тоже остались единым альбомом.
+    dp.onMessageGroup(async (msg) => {
+        if (Number(msg.chat.id) !== fromChatId) return PropagationAction.Continue
+        await forward(msg.messages.map((m) => m.id))
         return PropagationAction.Continue
     })
 }
