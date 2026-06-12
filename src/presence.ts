@@ -51,6 +51,13 @@ const pingKeyboard = () =>
         [BotKeyboard.callback('Уйти', CB_CHECKOUT)],
     ])
 
+/** Подсказка про авто-отметку для тех, у кого ещё не привязан MAC. Пустая строка, если MAC уже есть. */
+const macHintFor = (storage: Storage, userId: number): string => {
+    const cur = storage.get().macBindings[String(userId)]
+    if (cur && cur.macs.length > 0) return ''
+    return '\n\n💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса.'
+}
+
 /** Возвращает список chatId из allowedChats, в которых данный пользователь — админ. */
 const findChatsWhereUserIsAdmin = async (
     client: TelegramClient,
@@ -262,13 +269,13 @@ export const registerPresenceHandlers = (
         const present = storage.get().presence[String(msg.sender.id)]
         if (present) {
             await msg.answerText(
-                `Ты уже отмечен как «${present.displayLabel}». Если уходишь — нажми кнопку ниже.`,
+                `Ты уже отмечен как «${present.displayLabel}». Если уходишь — нажми кнопку ниже.${macHintFor(storage, msg.sender.id)}`,
                 { replyMarkup: checkedInKeyboard() },
             )
             return
         }
         await msg.answerText(
-            'Привет! Отметься, чтобы остальные видели, что ты в спейсе.',
+            `Привет! Отметься, чтобы остальные видели, что ты в спейсе.${macHintFor(storage, msg.sender.id)}`,
             { replyMarkup: startMenuKeyboard() },
         )
     })
@@ -505,7 +512,7 @@ export const registerPresenceHandlers = (
             const present = storage.get().presence[String(user.id)]!
             try {
                 await ctx.editMessage({
-                    text: `Готово, отметил тебя как «${present.displayLabel}». Каждые 3 часа буду спрашивать, ты ещё внутри. Если уходишь — нажми кнопку ниже.`,
+                    text: `Готово, отметил тебя как «${present.displayLabel}». Каждые 3 часа буду спрашивать, ты ещё внутри. Если уходишь — нажми кнопку ниже.${macHintFor(storage, user.id)}`,
                     replyMarkup: checkedInKeyboard(),
                 })
             } catch {
