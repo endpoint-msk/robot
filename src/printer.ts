@@ -42,16 +42,33 @@ export const normalizePrinterUrl = (raw: string | undefined): string | null => {
     return url.replace(/\/+$/, '')
 }
 
-const fetchJson = async (url: string): Promise<unknown> => {
-    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+/**
+ * Парсит `PRINTER_AUTH` (формат `user:pass`) в готовый заголовок `Basic <base64>`.
+ * Возвращает null, если переменная пуста или без двоеточия.
+ */
+export const parsePrinterAuth = (raw: string | undefined): string | null => {
+    if (!raw) return null
+    const value = raw.trim()
+    if (!value || !value.includes(':')) return null
+    return `Basic ${Buffer.from(value).toString('base64')}`
+}
+
+const authHeaders = (auth: string | null): Record<string, string> =>
+    auth ? { Authorization: auth } : {}
+
+const fetchJson = async (url: string, auth: string | null): Promise<unknown> => {
+    const res = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: authHeaders(auth),
+    })
     if (!res.ok) throw new Error(`HTTP ${res.status} при запросе ${url}`)
     return res.json()
 }
 
 /** Запрашивает у Moonraker состояние печати, имя файла и прогресс. */
-export const fetchPrinterStatus = async (baseUrl: string): Promise<PrinterStatus> => {
+export const fetchPrinterStatus = async (baseUrl: string, auth: string | null): Promise<PrinterStatus> => {
     const url = `${baseUrl}/printer/objects/query?print_stats&virtual_sdcard&display_status`
-    const data = (await fetchJson(url)) as {
+    const data = (await fetchJson(url, auth)) as {
         result?: {
             status?: {
                 print_stats?: { state?: string; filename?: string }
@@ -76,10 +93,11 @@ export const fetchPrinterStatus = async (baseUrl: string): Promise<PrinterStatus
 export const fetchPrinterThumbnail = async (
     baseUrl: string,
     filename: string,
+    auth: string | null,
 ): Promise<Uint8Array | null> => {
     if (!filename) return null
     const metaUrl = `${baseUrl}/server/files/metadata?filename=${encodeURIComponent(filename)}`
-    const meta = (await fetchJson(metaUrl)) as {
+    const meta = (await fetchJson(metaUrl, auth)) as {
         result?: { thumbnails?: { width?: number; relative_path?: string }[] }
     }
     const thumbs = meta.result?.thumbnails ?? []
@@ -94,15 +112,15 @@ export const fetchPrinterThumbnail = async (
     const encoded = thumbPath.split('/').map(encodeURIComponent).join('/')
     const fileUrl = `${baseUrl}/server/files/gcodes/${encoded}`
 
-    const res = await fetch(fileUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    const res = await fetch(fileUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: authHeaders(auth) })
     if (!res.ok) return null
     return new Uint8Array(await res.arrayBuffer())
 }
 
 /** Достаёт относительный snapshot_url первой вебки из Moonraker. Возвращает дефолт, если список пуст. */
-const resolveSnapshotPath = async (baseUrl: string): Promise<string> => {
+const resolveSnapshotPath = async (baseUrl: string, auth: string | null): Promise<string> => {
     try {
-        const data = (await fetchJson(`${baseUrl}/server/webcams/list`)) as {
+        const data = (await fetchJson(`${baseUrl}/server/webcams/list`, auth)) as {
             result?: { webcams?: { snapshot_url?: string }[] }
         }
         const url = data.result?.webcams?.[0]?.snapshot_url
@@ -117,13 +135,13 @@ const resolveSnapshotPath = async (baseUrl: string): Promise<string> => {
  * Возвращает байты снимка с вебки принтера, или null, если кадр получить не удалось.
  * snapshot_url из Moonraker может быть как абсолютным, так и относительным к адресу принтера.
  */
-export const fetchWebcamSnapshot = async (baseUrl: string): Promise<Uint8Array | null> => {
-    const snapshotPath = await resolveSnapshotPath(baseUrl)
+export const fetchWebcamSnapshot = async (baseUrl: string, auth: string | null): Promise<Uint8Array | null> => {
+    const snapshotPath = await resolveSnapshotPath(baseUrl, auth)
     const url = /^https?:\/\//i.test(snapshotPath)
         ? snapshotPath
         : `${baseUrl}/${snapshotPath.replace(/^\/+/, '')}`
     try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+        const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: authHeaders(auth) })
         if (!res.ok) return null
         return new Uint8Array(await res.arrayBuffer())
     } catch {
@@ -188,16 +206,17 @@ export const registerPrinterHandlers = (
         storage: Storage
         allowedChats: AllowedChats
         printerUrl: string
+        printerAuth: string | null
     },
 ): void => {
-    const { client, storage, allowedChats, printerUrl } = deps
+    const { client, storage, allowedChats, printerUrl, printerAuth } = deps
 
     dp.onNewMessage(filters.command('printer'), async (msg) => {
         if (!(await canUsePrinter(msg, allowedChats))) return
 
         let status: PrinterStatus
         try {
-            status = await fetchPrinterStatus(printerUrl)
+            status = await fetchPrinterStatus(printerUrl, printerAuth)
         } catch (err) {
             console.error('[printer] не удалось получить статус:', err)
             await msg.answerText('Не удалось связаться с принтером. Он включён и доступен в сети?')
@@ -214,7 +233,7 @@ export const registerPrinterHandlers = (
 
         let thumb: Uint8Array | null = null
         try {
-            thumb = await fetchPrinterThumbnail(printerUrl, status.filename)
+            thumb = await fetchPrinterThumbnail(printerUrl, status.filename, printerAuth)
         } catch (err) {
             console.warn('[printer] не удалось получить превью:', err)
         }
@@ -232,15 +251,15 @@ export const registerPrinterHandlers = (
 
             let status: PrinterStatus
             try {
-                status = await fetchPrinterStatus(printerUrl)
+                status = await fetchPrinterStatus(printerUrl, printerAuth)
             } catch {
                 await ctx.answer({ text: 'Принтер сейчас недоступен, попробуй позже.', alert: true })
                 return
             }
 
             const image = wantCamera
-                ? await fetchWebcamSnapshot(printerUrl)
-                : await fetchPrinterThumbnail(printerUrl, status.filename).catch(() => null)
+                ? await fetchWebcamSnapshot(printerUrl, printerAuth)
+                : await fetchPrinterThumbnail(printerUrl, status.filename, printerAuth).catch(() => null)
 
             if (!image) {
                 await ctx.answer({
@@ -294,7 +313,7 @@ export const registerPrinterHandlers = (
 
         let status: PrinterStatus
         try {
-            status = await fetchPrinterStatus(printerUrl)
+            status = await fetchPrinterStatus(printerUrl, printerAuth)
         } catch {
             await ctx.answer({ text: 'Принтер сейчас недоступен, попробуй позже.', alert: true })
             return
@@ -341,13 +360,14 @@ export const startPrinterCompletionWatcher = (
     client: TelegramClient,
     storage: Storage,
     printerUrl: string,
+    printerAuth: string | null,
 ): { stop: () => void } => {
     let wasPrinting = false
 
     const tick = async () => {
         let status: PrinterStatus
         try {
-            status = await fetchPrinterStatus(printerUrl)
+            status = await fetchPrinterStatus(printerUrl, printerAuth)
         } catch {
             // Принтер недоступен — не трогаем состояние, попробуем на следующем тике.
             return

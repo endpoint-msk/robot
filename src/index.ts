@@ -4,7 +4,7 @@ import { Dispatcher } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
-import { normalizePrinterUrl, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
+import { normalizePrinterUrl, parsePrinterAuth, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
 import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
@@ -33,6 +33,7 @@ const main = async () => {
     const forwardTo = parseChatId(process.env.FORWARD_TO_CHAT)
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
+    const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -65,7 +66,7 @@ const main = async () => {
     registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
     registerHandlers(dp, { client: tg, storage, allowedChats })
     if (printerUrl !== null) {
-        registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl })
+        registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)
     } else {
         console.warn('[warn] PRINTER_URL не задан — команда /printer отключена.')
@@ -116,7 +117,7 @@ const main = async () => {
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     const presence = startPresenceScheduler(tg, storage, allowedChats)
-    const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl) : null
+    const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
 
     const shutdown = async () => {
         scheduler.stop()
