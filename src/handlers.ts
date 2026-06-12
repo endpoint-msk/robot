@@ -209,6 +209,25 @@ export const registerHandlers = (
         await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')
     })
 
+    dp.onNewMessage(filters.command('komanda'), async (msg) => {
+        let set
+        try {
+            set = await client.getStickerSet('komoji23')
+        } catch (err) {
+            console.warn('[warn] не удалось получить набор эмодзи komoji23:', err)
+            await msg.answerText('Не удалось получить набор эмодзи.')
+            return
+        }
+        const first = set.stickers[0]
+        if (!first) {
+            await msg.answerText('В наборе нет эмодзи.')
+            return
+        }
+        const id = first.sticker.customEmojiId.toString()
+        const alt = html.escape(first.alt || '🙂')
+        await msg.replyText(html(`<emoji id="${id}">${alt}</emoji>`))
+    })
+
     dp.onNewMessage(filters.command('goals'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
         const f = ensureCurrentFundraiser(storage)

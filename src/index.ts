@@ -93,6 +93,7 @@ const main = async () => {
     // Большинство админских команд показываем только админам группы; /inside — всем участникам.
     const adminCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
+        BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
         BotCommands.cmd('donate', 'Добавить донат: /donate <сумма> <ник>'),
@@ -103,6 +104,7 @@ const main = async () => {
     ]
     const memberCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
+        BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
     ]
     try {
