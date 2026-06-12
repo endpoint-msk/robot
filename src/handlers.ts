@@ -10,7 +10,7 @@ import {
     totalPages,
     clampPage,
 } from './fundraiser.js'
-import { upsertPresenceListInChat } from './presence.js'
+import { renderPresenceText, upsertPresenceListInChat } from './presence.js'
 import type { Storage } from './storage.js'
 import type { Fundraiser } from './types.js'
 
@@ -204,6 +204,11 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('inside'), async (msg) => {
+        // В личке /inside просто отдаёт текущий список текстом — без привязки к сообщению чата.
+        if (msg.chat.type === 'user') {
+            await msg.answerText(html(renderPresenceText(storage)), { disableWebPreview: true })
+            return
+        }
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         // Всегда новое сообщение — это и есть «принудительный вызов».
         await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')

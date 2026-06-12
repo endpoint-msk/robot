@@ -87,6 +87,12 @@ const buildPresenceMessage = (presents: ResidentPresence[]): string => {
     return lines.join('<br>')
 }
 
+/** Текущий список присутствующих в виде HTML-строки (для прямой отправки, без привязки к сообщению чата). */
+export const renderPresenceText = (storage: Storage): string => {
+    const presents = Object.values(storage.get().presence)
+    return presents.length > 0 ? buildPresenceMessage(presents) : 'Внутри [0], отметились [0]:'
+}
+
 /**
  * Постит список присутствующих в чат.
  *
