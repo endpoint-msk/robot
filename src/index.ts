@@ -4,6 +4,7 @@ import { Dispatcher, filters } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
+import { registerMenuHandlers } from './menu.js'
 import { normalizePrinterUrl, parsePrinterAuth, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
 import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
 import {
@@ -77,6 +78,7 @@ const main = async () => {
     registerPresenceHandlers(dp, { client: tg, storage, allowedChats })
     registerChatActivityTracker(dp, storage, allowedChats)
     registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
+    registerMenuHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
     registerHandlers(dp, { client: tg, storage, allowedChats })
     if (printerUrl !== null) {
         registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
@@ -118,7 +120,8 @@ const main = async () => {
         // В личке — /start (меню резидента), /printer (статус принтера), /bindmac (привязка MAC)
         await tg.setMyCommands({
             commands: [
-                BotCommands.cmd('start', 'Отметиться в спейсе'),
+                BotCommands.cmd('start', 'Открыть меню бота'),
+                BotCommands.cmd('menu', 'Открыть меню бота'),
                 BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
                 BotCommands.cmd('printer', 'Статус 3D-принтера'),
                 BotCommands.cmd('bindmac', 'Привязать MAC для авто-отметок'),

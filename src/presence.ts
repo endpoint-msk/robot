@@ -18,20 +18,12 @@ export const PRESENCE_LIST_REPOST_AFTER_MS = 4 * 60 * 60 * 1000
 /** Как часто крутим планировщик. */
 const TICK_INTERVAL_MS = 60 * 1000
 
-const CB_CHECKIN_NICK = 'presence:checkin:nick'
-const CB_CHECKIN_ANON = 'presence:checkin:anon'
 const CB_CHECKOUT = 'presence:checkout'
 const CB_CONFIRM = 'presence:confirm'
 const CB_SETTINGS_NICK = 'presence:settings:nick'
 const CB_SETTINGS_ANON = 'presence:settings:anon'
 
-const ANON_LABEL = 'Без ника'
-
-const startMenuKeyboard = () =>
-    BotKeyboard.inline([
-        [BotKeyboard.callback('Отметиться с ником', CB_CHECKIN_NICK)],
-        [BotKeyboard.callback('Отметиться без ника', CB_CHECKIN_ANON)],
-    ])
+export const ANON_LABEL = 'Без ника'
 
 /** Клавиатура настроек авто-отметки по MAC. У текущего выбора — галочка. */
 const settingsKeyboard = (anon: boolean) =>
@@ -52,14 +44,14 @@ const pingKeyboard = () =>
     ])
 
 /** Подсказка про авто-отметку для тех, у кого ещё не привязан MAC. Пустая строка, если MAC уже есть. */
-const macHintFor = (storage: Storage, userId: number): string => {
+export const macHintFor = (storage: Storage, userId: number): string => {
     const cur = storage.get().macBindings[String(userId)]
     if (cur && cur.macs.length > 0) return ''
     return '\n\n💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса.'
 }
 
 /** Возвращает список chatId из allowedChats, в которых данный пользователь — админ. */
-const findChatsWhereUserIsAdmin = async (
+export const findChatsWhereUserIsAdmin = async (
     client: TelegramClient,
     allowed: ReadonlySet<number>,
     userId: number,
@@ -187,7 +179,7 @@ export const upsertPresenceListInChat = async (
  * Снимает отметку с резидента и постит обновлённый список во все чаты,
  * где он был админом.
  */
-const removePresence = async (
+export const removePresence = async (
     client: TelegramClient,
     storage: Storage,
     allowed: ReadonlySet<number>,
@@ -214,7 +206,7 @@ const removePresence = async (
     }
 }
 
-const checkInResident = async (
+export const checkInResident = async (
     client: TelegramClient,
     storage: Storage,
     allowed: ReadonlySet<number>,
@@ -257,32 +249,6 @@ export const registerPresenceHandlers = (
     },
 ): void => {
     const { client, storage, allowedChats } = deps
-
-    // /start в личке — открываем меню. В групповом чате /start уже перехватывается /help.
-    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('start')), async (msg) => {
-        if (!msg.sender || msg.sender.type !== 'user') return
-        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, msg.sender.id)
-        if (adminChats.length === 0) {
-            await msg.answerText('Этот бот доступен только резидентам (админам подключённого чата).')
-            return
-        }
-        const present = storage.get().presence[String(msg.sender.id)]
-        if (present) {
-            await msg.answerText(
-                `Ты уже отмечен как «${present.displayLabel}». Если уходишь — нажми кнопку ниже.${macHintFor(storage, msg.sender.id)}`,
-                { replyMarkup: checkedInKeyboard() },
-            )
-            return
-        }
-        await msg.answerText(
-            `Привет! Отметься, чтобы остальные видели, что ты в спейсе.${macHintFor(storage, msg.sender.id)}`,
-            { replyMarkup: startMenuKeyboard() },
-        )
-    })
-
-    // Любое входящее сообщение в личке от резидента, у которого открыт ping —
-    // не считается подтверждением (по решению пользователя ответом считается только кнопка).
-    // Но мы всё же отслеживаем активность групповых чатов отдельно (см. trackChatActivity).
 
     // /bindmac <MAC> в личке — добавить MAC-адрес устройства для авто-отметок (можно несколько).
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('bindmac')), async (msg) => {
@@ -445,8 +411,6 @@ export const registerPresenceHandlers = (
         const data = ctx.dataStr
         if (data === null) return
         const isOurs =
-            data === CB_CHECKIN_NICK ||
-            data === CB_CHECKIN_ANON ||
             data === CB_CHECKOUT ||
             data === CB_CONFIRM ||
             data === CB_SETTINGS_NICK ||
@@ -488,37 +452,6 @@ export const registerPresenceHandlers = (
                 })
             } catch {}
             await ctx.answer({ text: 'Сохранил' })
-            return
-        }
-
-        if (data === CB_CHECKIN_NICK || data === CB_CHECKIN_ANON) {
-            const user = ctx.user
-            if (user.username == null && data === CB_CHECKIN_NICK) {
-                await ctx.answer({
-                    text: 'У тебя нет username — отметься «без ника».',
-                    alert: true,
-                })
-                return
-            }
-            const res = await checkInResident(
-                client, storage, allowedChats,
-                { id: user.id, username: user.username, displayName: user.displayName },
-                data === CB_CHECKIN_NICK ? 'nick' : 'anon',
-            )
-            if (res.chats.length === 0) {
-                await ctx.answer({ text: 'Ты не админ ни в одном из подключённых чатов.', alert: true })
-                return
-            }
-            const present = storage.get().presence[String(user.id)]!
-            try {
-                await ctx.editMessage({
-                    text: `Готово, отметил тебя как «${present.displayLabel}». Каждые 3 часа буду спрашивать, ты ещё внутри. Если уходишь — нажми кнопку ниже.${macHintFor(storage, user.id)}`,
-                    replyMarkup: checkedInKeyboard(),
-                })
-            } catch {
-                // если редактировать нечего (например, прислал /start заново) — игнор
-            }
-            await ctx.answer({ text: res.alreadyChecked ? 'Обновил отметку' : 'Отметил' })
             return
         }
 

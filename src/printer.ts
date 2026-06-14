@@ -14,6 +14,8 @@ type PrinterStatus = {
     progress: number | null
 }
 
+export type { PrinterStatus }
+
 const HUMAN_STATE: Record<string, string> = {
     standby: 'Простаивает',
     printing: 'Печатает',
@@ -31,7 +33,7 @@ const CB_VIEW_PREVIEW = 'printer:view:preview'
 const CB_VIEW_CAMERA = 'printer:view:camera'
 
 /** Состояния, которые считаем «активной печатью» (есть смысл уведомлять об окончании). */
-const ACTIVE_STATES = new Set(['printing', 'paused'])
+export const ACTIVE_STATES = new Set(['printing', 'paused'])
 
 /** Нормализует базовый URL принтера: гарантирует схему и убирает хвостовой слэш. */
 export const normalizePrinterUrl = (raw: string | undefined): string | null => {
@@ -170,7 +172,7 @@ export const fetchWebcamSnapshot = async (baseUrl: string, auth: string | null):
 }
 
 /** Собирает текст ответа по статусу принтера. Строки склеиваются через `<br>`, т.к. `html()` схлопывает `\n` в пробел. */
-const renderStatus = (status: PrinterStatus): string => {
+export const renderStatus = (status: PrinterStatus): string => {
     const human = HUMAN_STATE[status.state] ?? status.state
     const lines = [`🖨 <b>Статус принтера:</b> ${human}`]
     if (status.state === 'printing' || status.state === 'paused') {
