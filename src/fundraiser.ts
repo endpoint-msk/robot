@@ -25,7 +25,7 @@ export const monthNameRuGenitive = (month: number): string => MONTH_NAMES_RU_GEN
 export const createFundraiser = (
     year: number,
     month: number,
-    opts: { goal?: number; currency?: string; title?: string } = {},
+    opts: { goal?: number; currency?: string; title?: string; description?: string } = {},
 ): Fundraiser => ({
     periodKey: periodKey(year, month),
     year,
@@ -33,6 +33,7 @@ export const createFundraiser = (
     goal: opts.goal ?? 0,
     currency: opts.currency ?? 'RUB',
     title: opts.title ?? 'аренду',
+    description: opts.description ?? '',
     donations: [],
 })
 
@@ -158,6 +159,13 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
     }
     if (closed) {
         lines.push('', '✅ Сбор закрыт — цель достигнута!')
+    }
+    const description = (f.description ?? '').trim()
+    if (description) {
+        // Многострочное описание (реквизиты/ссылки): каждая строка экранируется,
+        // переносы — через <br>. URL Telegram подсветит сам, даже без web-превью.
+        const descLines = description.split('\n').map((l) => escapeHtml(l))
+        lines.push('', ...descLines)
     }
     return { text: lines.join('<br>'), page, pages, closed }
 }

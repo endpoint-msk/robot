@@ -105,6 +105,7 @@ const main = async () => {
         BotCommands.cmd('remove', 'Удалить донат: /remove <номер|ник> [сумма]'),
         BotCommands.cmd('setgoal', 'Задать цель текущего сбора (0 — снять)'),
         BotCommands.cmd('settitle', 'Изменить тему сбора'),
+        BotCommands.cmd('setdesc', 'Изменить описание сбора (реквизиты/ссылки)'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]
     const memberCommands = [

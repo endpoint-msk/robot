@@ -20,6 +20,8 @@ export type Fundraiser = {
     currency: string
     /** Тема сбора, например «аренду». */
     title: string
+    /** Произвольное описание под сбором (реквизиты/ссылки). Многострочное; пусто — не выводится. */
+    description: string
     donations: Donation[]
 }
 

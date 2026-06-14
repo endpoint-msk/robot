@@ -202,6 +202,7 @@ export const registerHandlers = (
                 '/remove <ник> [сумма] — удалить один донат по нику (и опционально сумме)',
                 '/setgoal <сумма> — задать цель текущего сбора (0 — снять цель)',
                 '/settitle <тема> — изменить тему сбора, например: /settitle аренду',
+                '/setdesc <текст> — задать описание под сбором (реквизиты/ссылки, можно в несколько строк; без текста — убрать)',
                 'С новым месяцем сбор обновляется автоматически; каждый день в 00:00 и 12:00 по МСК бот постит свежее сообщение со сбором.',
                 '',
                 '/help — это сообщение',
@@ -302,6 +303,24 @@ export const registerHandlers = (
             f.title = title
         })
         await msg.answerText(`Тема сбора: «${title}».`)
+        await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
+    })
+
+    dp.onNewMessage(filters.command('setdesc'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        // Берём сырой текст (msg.command схлопывает переносы) и срезаем саму команду,
+        // чтобы сохранить многострочное описание с реквизитами как есть.
+        const raw = (msg.text ?? '').replace(/^\/setdesc(@\S+)?\s*/i, '')
+        const description = raw.trim()
+        const f = ensureCurrentFundraiser(storage)
+        await storage.update(() => {
+            f.description = description
+        })
+        await msg.answerText(
+            description
+                ? 'Описание сбора обновлено.'
+                : 'Описание сбора убрано.',
+        )
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 
