@@ -54,8 +54,17 @@ export class KeeneticClient {
         return `${this.cfg.baseUrl}/${path.replace(/^\/+/, '')}`
     }
 
-    private cookieHeader(): Record<string, string> {
-        return this.cookie ? { Cookie: this.cookie } : {}
+    /**
+     * Базовые заголовки для всех запросов. `Origin`/`Referer` обязательны: прошивка
+     * Keenetic режет запросы без них (CSRF-защита) и отдаёт 403, в отличие от браузера,
+     * который шлёт их сам. Без этого даже challenge-response не стартует.
+     */
+    private baseHeaders(): Record<string, string> {
+        return {
+            Origin: this.cfg.baseUrl,
+            Referer: `${this.cfg.baseUrl}/`,
+            ...(this.cookie ? { Cookie: this.cookie } : {}),
+        }
     }
 
     /** Запоминает session-cookie из ответа (если сервер прислал Set-Cookie). */
@@ -73,7 +82,7 @@ export class KeeneticClient {
         const probe = await fetch(authUrl, {
             method: 'GET',
             signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-            headers: this.cookieHeader(),
+            headers: this.baseHeaders(),
         })
         this.rememberCookie(probe)
         // Уже авторизованы (cookie ещё жива) — 200 на GET /auth.
@@ -91,7 +100,7 @@ export class KeeneticClient {
         const res = await fetch(authUrl, {
             method: 'POST',
             signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-            headers: { 'Content-Type': 'application/json', ...this.cookieHeader() },
+            headers: { 'Content-Type': 'application/json', ...this.baseHeaders() },
             body: JSON.stringify({ login: this.cfg.login, password }),
         })
         this.rememberCookie(res)
@@ -106,7 +115,7 @@ export class KeeneticClient {
         let res = await fetch(this.url(`rci/${path}`), {
             method: 'GET',
             signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-            headers: this.cookieHeader(),
+            headers: this.baseHeaders(),
         })
         if (res.status === 401) {
             // cookie протухла — переавторизуемся и повторяем один раз.
@@ -115,7 +124,7 @@ export class KeeneticClient {
             res = await fetch(this.url(`rci/${path}`), {
                 method: 'GET',
                 signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-                headers: this.cookieHeader(),
+                headers: this.baseHeaders(),
             })
         }
         if (!res.ok) throw new Error(`Keenetic RCI ${path}: статус ${res.status}`)
