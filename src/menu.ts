@@ -30,14 +30,15 @@ const CB_PRINTER_CAMERA = 'menu:printer:camera'
 
 const BACK_ROW = [BotKeyboard.callback('⬅️ Назад', CB_ROOT)]
 
-/** Корневое меню. Принтер-кнопку показываем только если принтер подключён. */
-const rootKeyboard = (hasPrinter: boolean) => {
+/** Корневое меню. Галочка у «Отметиться» отражает, отмечен ли резидент. Принтер — только если подключён. */
+const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean) => {
+    const present = storage.get().presence[String(userId)] !== undefined
     const rows = [
-        [BotKeyboard.callback('👥 Кто в спейсе', CB_INSIDE)],
-        [BotKeyboard.callback('✅ Отметиться / уйти', CB_PRESENCE)],
-        [BotKeyboard.callback('📡 Авто-отметка по MAC', CB_MAC)],
+        [BotKeyboard.callback('Кто в спейсе', CB_INSIDE)],
+        [BotKeyboard.callback(`${present ? '✅' : '☐'} Отметиться`, CB_PRESENCE)],
+        [BotKeyboard.callback('Авто-отметка по MAC', CB_MAC)],
     ]
-    if (hasPrinter) rows.push([BotKeyboard.callback('🖨 3D-принтер', CB_PRINTER)])
+    if (hasPrinter) rows.push([BotKeyboard.callback('3D-принтер', CB_PRINTER)])
     return BotKeyboard.inline(rows)
 }
 
@@ -50,7 +51,7 @@ const presenceSection = (storage: Storage, userId: number): { text: string; keyb
         return {
             text: `Ты отмечен как «${present.displayLabel}».${macHintFor(storage, userId)}`,
             keyboard: BotKeyboard.inline([
-                [BotKeyboard.callback('🚪 Уйти / снять отметку', CB_CHECKOUT)],
+                [BotKeyboard.callback('Уйти / снять отметку', CB_CHECKOUT)],
                 BACK_ROW,
             ]),
         }
@@ -187,7 +188,7 @@ export const registerMenuHandlers = (
             await msg.answerText('Этот бот доступен только резидентам (админам подключённого чата).')
             return
         }
-        await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(hasPrinter) })
+        await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter) })
     }
 
     // /start и /menu в личке открывают один и тот же хаб. В группах /start — алиас /help.
@@ -213,7 +214,7 @@ export const registerMenuHandlers = (
 
         switch (data) {
             case CB_ROOT: {
-                await replaceScreen(ctx, { kind: 'text', text: ROOT_TEXT, keyboard: rootKeyboard(hasPrinter) })
+                await replaceScreen(ctx, { kind: 'text', text: ROOT_TEXT, keyboard: rootKeyboard(storage, userId, hasPrinter) })
                 await ctx.answer({})
                 return
             }
