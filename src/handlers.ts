@@ -53,11 +53,10 @@ const buildKeyboard = (page: number, pages: number) => {
         const next = page < pages ? page + 1 : 1
         rows.push([
             BotKeyboard.callback('◀️', `${PAGE_CALLBACK_PREFIX}${prev}`),
-            BotKeyboard.callback(`${page}/${pages}`, REFRESH_CALLBACK),
+            BotKeyboard.callback(`${page}/${pages}`, `${PAGE_CALLBACK_PREFIX}${page}`),
             BotKeyboard.callback('▶️', `${PAGE_CALLBACK_PREFIX}${next}`),
         ])
     }
-    rows.push([BotKeyboard.callback('Обновить', REFRESH_CALLBACK)])
     return BotKeyboard.inline(rows)
 }
 
@@ -196,7 +195,7 @@ export const registerHandlers = (
                 '/printer — статус принтера, превью печати и подписка на уведомление об окончании',
                 '',
                 'Сборы донатов (только админы):',
-                '/goals — показать текущий сбор (с кнопкой «Обновить»)',
+                '/goals — показать текущий сбор',
                 '/donate <сумма> <ник> — добавить донат',
                 '/remove <номер> — удалить все донаты участника №<номер> в лидерборде',
                 '/remove <ник> [сумма] — удалить один донат по нику (и опционально сумме)',
@@ -380,7 +379,8 @@ export const registerHandlers = (
             await ctx.answer({ text: 'Бот в этой группе не работает.', alert: true })
             return
         }
-        if (!(await isChatAdmin(client, chatId, ctx.user.id))) {
+        // Листать страницы может любой участник; «Обновить» — только админы.
+        if (isRefresh && !(await isChatAdmin(client, chatId, ctx.user.id))) {
             await ctx.answer({ text: 'Кнопка доступна только админам этой группы.', alert: true })
             return
         }
