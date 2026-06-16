@@ -86,6 +86,8 @@ const macSection = (storage: Storage, userId: number): string => {
         lines.push('')
         lines.push('Привязать: /bindmac AA:BB:CC:DD:EE:FF [имя]')
         lines.push('MAC можно посмотреть в настройках Wi-Fi телефона/ноутбука.')
+        lines.push('')
+        lines.push('⚠️ Сначала выключи ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.')
     }
     return lines.join('<br>')
 }
