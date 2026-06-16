@@ -79,6 +79,12 @@ const nickLink = (rawNick: string): string => {
 /** Размер одной страницы лидерборда. */
 export const PAGE_SIZE = 10
 
+/** Подпись для донатов без ника. Все они группируются в одну запись лидерборда. */
+export const ANON_LABEL = 'Анонимно'
+
+/** Донат без ника — анонимный (ник пустой/пробелы). */
+export const isAnonNick = (nick: string): boolean => nick.trim() === ''
+
 /** Эмодзи для топ-3 мест. Индексы: 0 → 🥇, 1 → 🥈, 2 → 🥉. */
 const MEDAL_EMOJI = ['🥇', '🥈', '🥉'] as const
 
@@ -89,11 +95,14 @@ export type LeaderboardEntry = {
     donations: Donation[]
 }
 
-/** Группирует донаты по нику и сортирует по убыванию суммы. */
+/** Ключ группировки: анонимы — все в одно ведро, остальные — по нику в lower-case. */
+const leaderboardKey = (nick: string): string => (isAnonNick(nick) ? '\x00anon' : nick.toLowerCase())
+
+/** Группирует донаты по нику (анонимы — в одну запись) и сортирует по убыванию суммы. */
 export const buildLeaderboard = (f: Fundraiser): LeaderboardEntry[] => {
     const acc = new Map<string, LeaderboardEntry>()
     for (const d of f.donations) {
-        const key = d.nick.toLowerCase()
+        const key = leaderboardKey(d.nick)
         const existing = acc.get(key)
         if (existing) {
             existing.total += d.amount
@@ -148,7 +157,8 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
             const entry = board[i]!
             const place = i + 1
             const medal = i < MEDAL_EMOJI.length ? `${MEDAL_EMOJI[i]} ` : ''
-            lines.push(`${medal}${place}. ${nickLink(entry.nick)} — ${formatAmount(entry.total)}${f.currency}`)
+            const who = isAnonNick(entry.nick) ? ANON_LABEL : nickLink(entry.nick)
+            lines.push(`${medal}${place}. ${who} — ${formatAmount(entry.total)}${f.currency}`)
         }
         lines.push('')
         const goalSuffix = f.goal > 0 ? ` из ${formatAmount(f.goal)}${f.currency}` : ''
@@ -174,11 +184,12 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
  * Парсит аргументы /donate.
  * Принимает: `/donate 10000 @otomir23` или `/donate 10000 otomir23` или
  *            `/donate @otomir23 10000` (порядок терпимый).
+ * Ник можно опустить — `/donate 10000` добавит анонимный донат (nick === '').
  * Возвращает {amount, nick} или строку с ошибкой.
  */
 export const parseDonateArgs = (args: string[]): { amount: number; nick: string } | string => {
-    if (args.length < 2) {
-        return 'Использование: /donate <сумма> <ник>'
+    if (args.length < 1) {
+        return 'Использование: /donate <сумма> [ник] (без ника — анонимно)'
     }
     let amountStr: string | undefined
     let nick: string | undefined
@@ -190,14 +201,14 @@ export const parseDonateArgs = (args: string[]): { amount: number; nick: string 
             nick = a
         }
     }
-    if (amountStr === undefined || nick === undefined) {
-        return 'Не удалось распознать сумму и ник. Пример: /donate 10000 @otomir23'
+    if (amountStr === undefined) {
+        return 'Не удалось распознать сумму. Пример: /donate 10000 @otomir23 или /donate 10000'
     }
     const amount = Number(amountStr)
     if (!Number.isFinite(amount) || amount <= 0) {
         return 'Сумма должна быть положительным числом.'
     }
-    return { amount, nick: nick.replace(/^@+/, '') }
+    return { amount, nick: (nick ?? '').replace(/^@+/, '') }
 }
 
 /**

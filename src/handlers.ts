@@ -3,6 +3,8 @@ import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher,
 import {
     buildLeaderboard,
     createFundraiser,
+    isAnonNick,
+    ANON_LABEL,
     parseDonateArgs,
     parseRemoveArgs,
     periodKeyOf,
@@ -197,7 +199,8 @@ export const registerHandlers = (
                 'Сборы донатов (только админы):',
                 '/goals — показать текущий сбор',
                 '/donate <сумма> <ник> — добавить донат',
-                '/remove <номер> — удалить все донаты участника №<номер> в лидерборде',
+                '/donate <сумма> — добавить анонимный донат (без ника, в списке «Анонимно»)',
+                '/remove <номер> — удалить все донаты участника №<номер> в лидерборде (работает и для «Анонимно»)',
                 '/remove <ник> [сумма] — удалить один донат по нику (и опционально сумме)',
                 '/setgoal <сумма> — задать цель текущего сбора (0 — снять цель)',
                 '/settitle <тема> — изменить тему сбора, например: /settitle аренду',
@@ -266,7 +269,8 @@ export const registerHandlers = (
                 addedAt: new Date().toISOString(),
             })
         })
-        await msg.answerText(`Добавил: @${parsed.nick} — ${parsed.amount}${f.currency}.`)
+        const who = parsed.nick === '' ? ANON_LABEL : `@${parsed.nick}`
+        await msg.answerText(`Добавил: ${who} — ${parsed.amount}${f.currency}.`)
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 
@@ -341,12 +345,16 @@ export const registerHandlers = (
                 return
             }
             const entry = board[i]!
+            const isAnon = isAnonNick(entry.nick)
             const wantedNick = entry.nick.toLowerCase()
             const total = entry.total
             await storage.update(() => {
-                f.donations = f.donations.filter((d) => d.nick.toLowerCase() !== wantedNick)
+                f.donations = f.donations.filter((d) =>
+                    isAnon ? !isAnonNick(d.nick) : d.nick.toLowerCase() !== wantedNick,
+                )
             })
-            await msg.answerText(`Удалил все донаты @${entry.nick} (всего ${total}${f.currency}).`)
+            const who = isAnon ? ANON_LABEL : `@${entry.nick}`
+            await msg.answerText(`Удалил все донаты ${who} (всего ${total}${f.currency}).`)
         } else {
             const wantedNick = spec.nick.toLowerCase()
             const idx = f.donations.findIndex((d) => {
