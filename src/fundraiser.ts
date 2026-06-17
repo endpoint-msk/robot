@@ -19,6 +19,10 @@ export const periodKeyOf = (date: Date): string => {
 export const periodKey = (year: number, month: number): string =>
     `${year}-${String(month).padStart(2, '0')}`
 
+/** Ключ предыдущего календарного месяца относительно (year, month). Январь → декабрь прошлого года. */
+export const previousPeriodKey = (year: number, month: number): string =>
+    month > 1 ? periodKey(year, month - 1) : periodKey(year - 1, 12)
+
 export const monthNameRu = (month: number): string => MONTH_NAMES_RU[month - 1] ?? '?'
 export const monthNameRuGenitive = (month: number): string => MONTH_NAMES_RU_GENITIVE[month - 1] ?? '?'
 
@@ -136,7 +140,22 @@ export type RenderResult = {
     closed: boolean
 }
 
-export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult => {
+/** Топ-3 донатера прошлого месяца одной строкой (без сумм). Пустая строка — если сбора не было или он пуст. */
+const renderPreviousTop = (prev: Fundraiser): string => {
+    const board = buildLeaderboard(prev).slice(0, MEDAL_EMOJI.length)
+    if (board.length === 0) return ''
+    const parts = board.map((entry, i) => {
+        const who = isAnonNick(entry.nick) ? ANON_LABEL : nickLink(entry.nick)
+        return `${MEDAL_EMOJI[i]} ${who}`
+    })
+    return `Топ за ${monthNameRu(prev.month)}: ${parts.join(' · ')}`
+}
+
+export const renderFundraiser = (
+    f: Fundraiser,
+    requestedPage = 1,
+    previous?: Fundraiser,
+): RenderResult => {
     const total = totalAmount(f)
     const board = buildLeaderboard(f)
     const pages = totalPages(board)
@@ -169,6 +188,12 @@ export const renderFundraiser = (f: Fundraiser, requestedPage = 1): RenderResult
     }
     if (closed) {
         lines.push('', '✅ Сбор закрыт — цель достигнута!')
+    }
+    if (previous) {
+        const prevTop = renderPreviousTop(previous)
+        if (prevTop) {
+            lines.push('', prevTop)
+        }
     }
     const description = (f.description ?? '').trim()
     if (description) {

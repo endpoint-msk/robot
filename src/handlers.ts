@@ -8,6 +8,7 @@ import {
     parseDonateArgs,
     parseRemoveArgs,
     periodKeyOf,
+    previousPeriodKey,
     renderFundraiser,
     totalPages,
     clampPage,
@@ -74,6 +75,10 @@ const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fund
     return f
 }
 
+/** Сбор за предыдущий календарный месяц относительно текущего, если он есть. */
+const previousFundraiser = (storage: Storage, current: Fundraiser): Fundraiser | undefined =>
+    storage.get().fundraisers[previousPeriodKey(current.year, current.month)]
+
 const rememberLastMessage = async (
     storage: Storage,
     chatId: number,
@@ -93,7 +98,7 @@ export const postFundraiserToChat = async (
     now: Date = new Date(),
 ): Promise<void> => {
     const f = ensureCurrentFundraiser(storage, now)
-    const rendered = renderFundraiser(f, 1)
+    const rendered = renderFundraiser(f, 1, previousFundraiser(storage, f))
     const sent = await client.sendText(chatId, html(rendered.text), {
         replyMarkup: buildKeyboard(rendered.page, rendered.pages),
         disableWebPreview: true,
@@ -111,7 +116,7 @@ export const refreshLastMessageInChat = async (
     const last = storage.get().lastMessages[String(chatId)]
     if (!last) return
     const f = ensureCurrentFundraiser(storage, now)
-    const rendered = renderFundraiser(f, 1)
+    const rendered = renderFundraiser(f, 1, previousFundraiser(storage, f))
     try {
         await client.editMessage({
             chatId: last.chatId,
@@ -245,7 +250,7 @@ export const registerHandlers = (
     dp.onNewMessage(filters.command('goals'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
         const f = ensureCurrentFundraiser(storage)
-        const rendered = renderFundraiser(f, 1)
+        const rendered = renderFundraiser(f, 1, previousFundraiser(storage, f))
         const sent = await msg.answerText(html(rendered.text), {
             replyMarkup: buildKeyboard(rendered.page, rendered.pages),
             disableWebPreview: true,
@@ -401,7 +406,7 @@ export const registerHandlers = (
             const pages = totalPages(buildLeaderboard(f))
             requestedPage = clampPage(Number.isFinite(n) ? n : 1, pages)
         }
-        const rendered = renderFundraiser(f, requestedPage)
+        const rendered = renderFundraiser(f, requestedPage, previousFundraiser(storage, f))
 
         const messageId = ctx.messageId
         try {
