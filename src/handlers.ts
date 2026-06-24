@@ -7,11 +7,15 @@ import {
     ANON_LABEL,
     parseDonateArgs,
     parseRemoveArgs,
-    periodKeyOf,
+    periodAnchorOf,
+    periodKey,
     previousPeriodKey,
     renderFundraiser,
     totalPages,
     clampPage,
+    clampResetDay,
+    MIN_RESET_DAY,
+    MAX_RESET_DAY,
 } from './fundraiser.js'
 import { renderPresenceText, upsertPresenceListInChat } from './presence.js'
 import type { Storage } from './storage.js'
@@ -63,13 +67,14 @@ const buildKeyboard = (page: number, pages: number) => {
     return BotKeyboard.inline(rows)
 }
 
-/** Возвращает текущий сбор (по UTC-месяцу), создавая, если его ещё нет. */
+/** Возвращает текущий сбор (по периоду с учётом дня сброса), создавая, если его ещё нет. */
 const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fundraiser => {
-    const key = periodKeyOf(now)
     const state = storage.get()
+    const { year, month } = periodAnchorOf(now, state.resetDay)
+    const key = periodKey(year, month)
     let f = state.fundraisers[key]
     if (!f) {
-        f = createFundraiser(now.getUTCFullYear(), now.getUTCMonth() + 1)
+        f = createFundraiser(year, month)
         state.fundraisers[key] = f
     }
     return f
@@ -210,7 +215,8 @@ export const registerHandlers = (
                 '/setgoal <сумма> — задать цель текущего сбора (0 — снять цель)',
                 '/settitle <тема> — изменить тему сбора, например: /settitle аренду',
                 '/setdesc <текст> — задать описание под сбором (реквизиты/ссылки, можно в несколько строк; без текста — убрать)',
-                'С новым месяцем сбор обновляется автоматически; каждый день в 00:00 и 12:00 по МСК бот постит свежее сообщение со сбором.',
+                '/setresetday <число 1–29> — день месяца, в который сбор сбрасывается (по умолчанию 1)',
+                'С новым периодом сбор обновляется автоматически; каждый день в 00:00 и 12:00 по МСК бот постит свежее сообщение со сбором.',
                 '',
                 '/help — это сообщение',
             ].join('\n'),
@@ -329,6 +335,27 @@ export const registerHandlers = (
                 ? 'Описание сбора обновлено.'
                 : 'Описание сбора убрано.',
         )
+        await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
+    })
+
+    dp.onNewMessage(filters.command('setresetday'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        const arg = msg.command[1]
+        if (arg === undefined || !/^\d+$/.test(arg)) {
+            await msg.answerText(`Использование: /setresetday <число ${MIN_RESET_DAY}–${MAX_RESET_DAY}> — день месяца, когда сбор сбрасывается.`)
+            return
+        }
+        const value = Number(arg)
+        if (value < MIN_RESET_DAY || value > MAX_RESET_DAY) {
+            await msg.answerText(`День сброса должен быть от ${MIN_RESET_DAY} до ${MAX_RESET_DAY} (ограничение для совместимости со всеми месяцами).`)
+            return
+        }
+        const resetDay = clampResetDay(value)
+        await storage.update((s) => {
+            s.resetDay = resetDay
+        })
+        await msg.answerText(`Сбор теперь сбрасывается ${resetDay} числа каждого месяца.`)
+        // День сброса мог сменить «текущий» период — перерисуем запомненное сообщение.
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 

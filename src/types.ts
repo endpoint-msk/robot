@@ -51,6 +51,8 @@ export type State = {
     printerSubscribers: Record<string, true>
     /** MAC-адреса резидентов для авто-отметок. Ключ — userId. */
     macBindings: Record<string, ResidentMacs>
+    /** День месяца (1..29), в который сбрасывается сбор. По умолчанию 1 = календарный месяц UTC. */
+    resetDay: number
 }
 
 /** MAC-адреса устройств резидента для авто-отметок присутствия. */
@@ -102,4 +104,5 @@ export const emptyState = (): State => ({
     presenceListPostedAt: {},
     printerSubscribers: {},
     macBindings: {},
+    resetDay: 1,
 })

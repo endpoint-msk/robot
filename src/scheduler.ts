@@ -13,11 +13,11 @@ export const startMonthlyScheduler = (
     client: TelegramClient,
     storage: Storage,
 ): { stop: () => void } => {
-    let lastSeenKey = periodKeyOf(new Date())
+    let lastSeenKey = periodKeyOf(new Date(), storage.get().resetDay)
 
     const tick = async () => {
         const now = new Date()
-        const nowKey = periodKeyOf(now)
+        const nowKey = periodKeyOf(now, storage.get().resetDay)
         if (nowKey === lastSeenKey) return
         lastSeenKey = nowKey
 

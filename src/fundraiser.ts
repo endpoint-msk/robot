@@ -10,14 +10,33 @@ const MONTH_NAMES_RU_GENITIVE = [
     'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря',
 ] as const
 
-export const periodKeyOf = (date: Date): string => {
-    const y = date.getUTCFullYear()
-    const m = date.getUTCMonth() + 1
-    return `${y}-${String(m).padStart(2, '0')}`
-}
-
 export const periodKey = (year: number, month: number): string =>
     `${year}-${String(month).padStart(2, '0')}`
+
+/** Допустимый диапазон дня сброса. Верх — 29, чтобы день существовал в любом месяце (включая февраль). */
+export const MIN_RESET_DAY = 1
+export const MAX_RESET_DAY = 29
+export const DEFAULT_RESET_DAY = 1
+
+/** Зажимает день сброса в [1..29] и округляет вниз. */
+export const clampResetDay = (day: number): number =>
+    Math.min(MAX_RESET_DAY, Math.max(MIN_RESET_DAY, Math.floor(day)))
+
+/**
+ * Год и месяц «периода», которому принадлежит дата, с учётом дня сброса.
+ * Период стартует в `resetDay` числа: дата помечается месяцем, в котором период начался.
+ * Сдвигаем дату назад на (resetDay-1) суток и берём её UTC-месяц — при resetDay=1 сдвига нет
+ * (поведение по умолчанию = календарный месяц UTC).
+ */
+export const periodAnchorOf = (date: Date, resetDay = DEFAULT_RESET_DAY): { year: number; month: number } => {
+    const shifted = new Date(date.getTime() - (clampResetDay(resetDay) - 1) * 86_400_000)
+    return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1 }
+}
+
+export const periodKeyOf = (date: Date, resetDay = DEFAULT_RESET_DAY): string => {
+    const { year, month } = periodAnchorOf(date, resetDay)
+    return periodKey(year, month)
+}
 
 /** Ключ предыдущего календарного месяца относительно (year, month). Январь → декабрь прошлого года. */
 export const previousPeriodKey = (year: number, month: number): string =>

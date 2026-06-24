@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { clampResetDay } from './fundraiser.js'
 import { emptyState, type ResidentMacs, type State } from './types.js'
 
 /**
@@ -54,6 +55,7 @@ export class Storage {
                 presenceListPostedAt: parsed.presenceListPostedAt ?? {},
                 printerSubscribers: parsed.printerSubscribers ?? {},
                 macBindings: normalizeMacBindings(parsed.macBindings),
+                resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
