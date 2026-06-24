@@ -189,7 +189,7 @@ export const registerHandlers = (
     const { client, storage, allowedChats } = deps
 
     dp.onNewMessage(filters.command('help'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         await msg.answerText(
             [
                 'Бот хакерспейса. Часть команд доступна любому участнику, часть — только админам группы.',

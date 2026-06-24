@@ -112,6 +112,7 @@ const main = async () => {
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
         BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
+        BotCommands.cmd('help', 'Справка по командам'),
     ]
     try {
         // Всем участникам групп — только /inside в меню.
