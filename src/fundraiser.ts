@@ -33,14 +33,28 @@ export const periodAnchorOf = (date: Date, resetDay = DEFAULT_RESET_DAY): { year
     return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1 }
 }
 
+/**
+ * Ключ периода. При resetDay=1 — `YYYY-MM` (как календарный месяц, обратная совместимость).
+ * При resetDay≠1 — `YYYY-MM-DD` от даты старта, чтобы НЕ пересекаться с легаси-ключами
+ * календарных месяцев: иначе период «25 июня → 24 июля» получил бы ключ `2026-06` и наложился
+ * на ранее созданный календарный сбор за июнь.
+ */
+const keyForPeriod = (year: number, month: number, resetDay: number): string =>
+    resetDay === DEFAULT_RESET_DAY
+        ? periodKey(year, month)
+        : `${periodKey(year, month)}-${String(resetDay).padStart(2, '0')}`
+
 export const periodKeyOf = (date: Date, resetDay = DEFAULT_RESET_DAY): string => {
-    const { year, month } = periodAnchorOf(date, resetDay)
-    return periodKey(year, month)
+    const rd = clampResetDay(resetDay)
+    const { year, month } = periodAnchorOf(date, rd)
+    return keyForPeriod(year, month, rd)
 }
 
-/** Ключ предыдущего календарного месяца относительно (year, month). Январь → декабрь прошлого года. */
-export const previousPeriodKey = (year: number, month: number): string =>
-    month > 1 ? periodKey(year, month - 1) : periodKey(year - 1, 12)
+/** Ключ предыдущего периода (на один цикл назад от старта (year, month)). Январь → декабрь прошлого года. */
+export const previousPeriodKey = (year: number, month: number, resetDay = DEFAULT_RESET_DAY): string => {
+    const rd = clampResetDay(resetDay)
+    return month > 1 ? keyForPeriod(year, month - 1, rd) : keyForPeriod(year - 1, 12, rd)
+}
 
 export const monthNameRu = (month: number): string => MONTH_NAMES_RU[month - 1] ?? '?'
 export const monthNameRuGenitive = (month: number): string => MONTH_NAMES_RU_GENITIVE[month - 1] ?? '?'
@@ -49,8 +63,9 @@ export const createFundraiser = (
     year: number,
     month: number,
     opts: { goal?: number; currency?: string; title?: string; description?: string } = {},
+    resetDay = DEFAULT_RESET_DAY,
 ): Fundraiser => ({
-    periodKey: periodKey(year, month),
+    periodKey: keyForPeriod(year, month, clampResetDay(resetDay)),
     year,
     month,
     goal: opts.goal ?? 0,

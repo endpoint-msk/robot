@@ -8,7 +8,7 @@ import {
     parseDonateArgs,
     parseRemoveArgs,
     periodAnchorOf,
-    periodKey,
+    periodKeyOf,
     previousPeriodKey,
     renderFundraiser,
     totalPages,
@@ -71,18 +71,18 @@ const buildKeyboard = (page: number, pages: number) => {
 const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fundraiser => {
     const state = storage.get()
     const { year, month } = periodAnchorOf(now, state.resetDay)
-    const key = periodKey(year, month)
+    const key = periodKeyOf(now, state.resetDay)
     let f = state.fundraisers[key]
     if (!f) {
-        f = createFundraiser(year, month)
+        f = createFundraiser(year, month, {}, state.resetDay)
         state.fundraisers[key] = f
     }
     return f
 }
 
-/** Сбор за предыдущий календарный месяц относительно текущего, если он есть. */
+/** Сбор за предыдущий период относительно текущего, если он есть. */
 const previousFundraiser = (storage: Storage, current: Fundraiser): Fundraiser | undefined =>
-    storage.get().fundraisers[previousPeriodKey(current.year, current.month)]
+    storage.get().fundraisers[previousPeriodKey(current.year, current.month, storage.get().resetDay)]
 
 const rememberLastMessage = async (
     storage: Storage,
