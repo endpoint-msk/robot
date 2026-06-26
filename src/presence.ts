@@ -4,8 +4,8 @@ import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
 import type { Storage } from './storage.js'
 import type { ResidentPresence } from './types.js'
 
-/** Длительность тишины в чате, после которой постим список присутствующих (5 часов). */
-export const CHAT_SILENCE_MS = 5 * 60 * 60 * 1000
+/** Интервал автоматического перепоста списка присутствующих, пока внутри кто-то есть (5 часов). */
+export const PRESENCE_LIST_INTERVAL_MS = 5 * 60 * 60 * 1000
 /** Период напоминаний резиденту в личку (3 часа). */
 export const PRESENCE_PING_INTERVAL_MS = 3 * 60 * 60 * 1000
 /** Сколько ждём ответа на ping, прежде чем снять отметку (15 минут). */
@@ -503,9 +503,9 @@ export const registerPresenceHandlers = (
 }
 
 /**
- * Регистрирует подписку на сообщения в групповых чатах для отслеживания «тишины».
- * В режим тишины уходим, если в чате никто не пишет CHAT_SILENCE_MS подряд,
- * а в чате есть хотя бы один отмеченный резидент.
+ * Регистрирует подписку на сообщения в групповых чатах для отслеживания последней активности.
+ * Авто-постинг списка идёт по интервалу (PRESENCE_LIST_INTERVAL_MS), а не по тишине, так что
+ * chatLastActivity сейчас служит лишь информационным сигналом и на отправку не влияет.
  */
 export const registerChatActivityTracker = (
     dp: Dispatcher,
@@ -640,30 +640,34 @@ export const startPresenceScheduler = (
             }
         }
 
-        // 2) Тишина в чатах: если есть отмеченные и в чате нет сообщений >= 5 часов — постим список
+        // 2) Периодический постинг: пока внутри есть хоть один отмеченный, раз в
+        //    PRESENCE_LIST_INTERVAL_MS постим в каждый незаглушённый чат свежий список —
+        //    независимо от активности чата. Якорь интервала — когда список в этот чат
+        //    в последний раз ОТПРАВЛЯЛИ (presenceListPostedAt), а не редактировали, так что
+        //    чек-ин с собственным репостом сдвигает следующий авто-пост на полный интервал.
         if (Object.keys(storage.get().presence).length > 0) {
-            const lastActivity = storage.get().chatLastActivity
+            const postedAt = storage.get().presenceListPostedAt
             const muted = storage.get().presenceAutoMuted
             for (const chatId of allowedChats) {
                 if (muted[String(chatId)]) continue
-                const ts = lastActivity[String(chatId)]
+                const ts = postedAt[String(chatId)]
                 const last = ts ? Date.parse(ts) : 0
-                if (now - last < CHAT_SILENCE_MS) continue
+                if (now - last < PRESENCE_LIST_INTERVAL_MS) continue
                 // Каждый чат — в своём try/catch: сбой в одном (например, бот не добавлен
                 // во второй чат или неверный id в ALLOWED_CHATS) не должен мешать остальным.
                 try {
                     await upsertPresenceListInChat(client, storage, chatId, 'new')
                 } catch (err) {
-                    console.error(`[presence] silence post failed in chat ${chatId}:`, err)
+                    console.error(`[presence] interval post failed in chat ${chatId}:`, err)
                 }
-                // upsertPresenceListInChat пишет chatLastActivity ТОЛЬКО при успешной отправке.
-                // Если отправка упала, таймстамп останется пустым, условие «тишина ≥ 5ч»
-                // будет вечно истинным, и бот начнёт долбить недоступный чат каждую минуту —
+                // upsertPresenceListInChat пишет presenceListPostedAt ТОЛЬКО при успешной отправке.
+                // Если отправка упала, таймстамп останется пустым, условие интервала будет
+                // вечно истинным, и бот начнёт долбить недоступный чат каждую минуту —
                 // вплоть до FLOOD_WAIT на весь аккаунт, из-за которого встают и рабочие чаты.
-                // Поэтому фиксируем попытку сами, чтобы недоступный чат ретраился не чаще раза в 5ч.
-                if (!storage.get().chatLastActivity[String(chatId)]) {
+                // Поэтому фиксируем попытку сами, чтобы недоступный чат ретраился не чаще раза в интервал.
+                if (!storage.get().presenceListPostedAt[String(chatId)]) {
                     await storage.update((s) => {
-                        s.chatLastActivity[String(chatId)] = new Date(now).toISOString()
+                        s.presenceListPostedAt[String(chatId)] = new Date(now).toISOString()
                     })
                 }
             }
