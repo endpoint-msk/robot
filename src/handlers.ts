@@ -217,6 +217,7 @@ export const registerHandlers = (
                 '',
                 'Присутствие в спейсе:',
                 '/inside — показать (или обновить) список тех, кто сейчас в спейсе',
+                '/autoinside — вкл/выкл авто-сообщения со списком в этом чате (только админы)',
                 'Отметиться, уйти и привязать MAC для авто-отметок — в личке с ботом (/start).',
                 '',
                 '3D-принтер:',
@@ -248,6 +249,24 @@ export const registerHandlers = (
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         // Всегда новое сообщение — это и есть «принудительный вызов».
         await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')
+    })
+
+    // /autoinside — включить/выключить АВТОМАТИЧЕСКИЕ сообщения со списком в этом чате
+    // (пуш по тишине ≥ 5ч и авто-восстановление удалённого списка). Ручной /inside работает всегда.
+    // Только для админов: это настройка чата.
+    dp.onNewMessage(filters.command('autoinside'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        const chatId = Number(msg.chat.id)
+        const wasMuted = storage.get().presenceAutoMuted[String(chatId)] === true
+        await storage.update((s) => {
+            if (wasMuted) delete s.presenceAutoMuted[String(chatId)]
+            else s.presenceAutoMuted[String(chatId)] = true
+        })
+        await msg.answerText(
+            wasMuted
+                ? 'Авто-сообщения со списком присутствующих в этом чате включены. Выключить — /autoinside.'
+                : 'Авто-сообщения со списком присутствующих в этом чате выключены. Ручной /inside по-прежнему работает. Включить обратно — /autoinside.',
+        )
     })
 
     dp.onNewMessage(filters.command('komanda'), async (msg) => {

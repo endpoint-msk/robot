@@ -53,6 +53,7 @@ export class Storage {
                 chatLastActivity: parsed.chatLastActivity ?? {},
                 presenceListMessages: parsed.presenceListMessages ?? {},
                 presenceListPostedAt: parsed.presenceListPostedAt ?? {},
+                presenceAutoMuted: parsed.presenceAutoMuted ?? {},
                 printerSubscribers: parsed.printerSubscribers ?? {},
                 macBindings: normalizeMacBindings(parsed.macBindings),
                 resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,

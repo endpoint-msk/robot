@@ -564,6 +564,8 @@ export const registerPresenceDeleteWatcher = (
                 delete s.presenceListMessages[String(chatId)]
                 delete s.presenceListPostedAt[String(chatId)]
             })
+            // В чатах с выключенными авто-сообщениями список сам не восстанавливаем.
+            if (storage.get().presenceAutoMuted[String(chatId)]) continue
             if (Object.keys(storage.get().presence).length > 0) {
                 await upsertPresenceListInChat(client, storage, chatId, 'new')
             }
@@ -586,9 +588,11 @@ export const startPresenceScheduler = (
         //    при следующей же отметке либо при тишине отправилось новое.
         if (Object.keys(storage.get().presence).length > 0) {
             const ids = storage.get().presenceListMessages
+            const muted = storage.get().presenceAutoMuted
             for (const [chatIdStr, messageId] of Object.entries(ids)) {
                 const chatId = Number(chatIdStr)
                 if (!allowedChats.has(chatId)) continue
+                if (muted[chatIdStr]) continue
                 try {
                     const [m] = await client.getMessages(chatId, messageId)
                     if (m == null) {
@@ -639,11 +643,28 @@ export const startPresenceScheduler = (
         // 2) Тишина в чатах: если есть отмеченные и в чате нет сообщений >= 5 часов — постим список
         if (Object.keys(storage.get().presence).length > 0) {
             const lastActivity = storage.get().chatLastActivity
+            const muted = storage.get().presenceAutoMuted
             for (const chatId of allowedChats) {
+                if (muted[String(chatId)]) continue
                 const ts = lastActivity[String(chatId)]
                 const last = ts ? Date.parse(ts) : 0
-                if (now - last >= CHAT_SILENCE_MS) {
+                if (now - last < CHAT_SILENCE_MS) continue
+                // Каждый чат — в своём try/catch: сбой в одном (например, бот не добавлен
+                // во второй чат или неверный id в ALLOWED_CHATS) не должен мешать остальным.
+                try {
                     await upsertPresenceListInChat(client, storage, chatId, 'new')
+                } catch (err) {
+                    console.error(`[presence] silence post failed in chat ${chatId}:`, err)
+                }
+                // upsertPresenceListInChat пишет chatLastActivity ТОЛЬКО при успешной отправке.
+                // Если отправка упала, таймстамп останется пустым, условие «тишина ≥ 5ч»
+                // будет вечно истинным, и бот начнёт долбить недоступный чат каждую минуту —
+                // вплоть до FLOOD_WAIT на весь аккаунт, из-за которого встают и рабочие чаты.
+                // Поэтому фиксируем попытку сами, чтобы недоступный чат ретраился не чаще раза в 5ч.
+                if (!storage.get().chatLastActivity[String(chatId)]) {
+                    await storage.update((s) => {
+                        s.chatLastActivity[String(chatId)] = new Date(now).toISOString()
+                    })
                 }
             }
         }
