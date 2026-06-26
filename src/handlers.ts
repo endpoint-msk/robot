@@ -19,7 +19,7 @@ import {
 } from './fundraiser.js'
 import { renderPresenceText, upsertPresenceListInChat } from './presence.js'
 import type { Storage } from './storage.js'
-import type { Fundraiser } from './types.js'
+import type { Fundraiser, State } from './types.js'
 
 const REFRESH_CALLBACK = 'fundraiser:refresh'
 const PAGE_CALLBACK_PREFIX = 'fundraiser:page:'
@@ -70,6 +70,15 @@ const buildKeyboard = (page: number, pages: number) => {
     return BotKeyboard.inline(rows)
 }
 
+/** Самый поздний из уже существующих сборов (по periodKey). undefined — если сборов ещё нет. */
+const latestFundraiser = (state: State): Fundraiser | undefined => {
+    let latest: Fundraiser | undefined
+    for (const f of Object.values(state.fundraisers)) {
+        if (!latest || f.periodKey > latest.periodKey) latest = f
+    }
+    return latest
+}
+
 /** Возвращает текущий сбор (по периоду с учётом дня сброса), создавая, если его ещё нет. */
 const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fundraiser => {
     const state = storage.get()
@@ -77,7 +86,11 @@ const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fund
     const key = periodKeyOf(now, state.resetDay)
     let f = state.fundraisers[key]
     if (!f) {
-        f = createFundraiser(year, month, {}, state.resetDay)
+        // Тема и описание (реквизиты/ссылки) — «липкие» настройки: переносим их
+        // с прошлого сбора, чтобы на новом периоде не сбрасывались к дефолту.
+        // Цель (goal) намеренно НЕ переносим — она своя на каждый период.
+        const prev = latestFundraiser(state)
+        f = createFundraiser(year, month, { title: prev?.title, description: prev?.description }, state.resetDay)
         state.fundraisers[key] = f
     }
     return f
