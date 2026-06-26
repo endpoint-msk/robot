@@ -217,7 +217,7 @@ export const registerHandlers = (
                 '',
                 'Присутствие в спейсе:',
                 '/inside — показать (или обновить) список тех, кто сейчас в спейсе',
-                '/autoinside — вкл/выкл авто-сообщения со списком в этом чате (только админы)',
+                '/insidemute — вкл/выкл автоматическую рассылку списка в этот чат (только админы)',
                 'Отметиться, уйти и привязать MAC для авто-отметок — в личке с ботом (/start).',
                 '',
                 '3D-принтер:',
@@ -251,10 +251,10 @@ export const registerHandlers = (
         await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')
     })
 
-    // /autoinside — включить/выключить АВТОМАТИЧЕСКИЕ сообщения со списком в этом чате
+    // /insidemute — включить/выключить АВТОМАТИЧЕСКУЮ рассылку списка присутствующих в этот чат
     // (пуш по тишине ≥ 5ч и авто-восстановление удалённого списка). Ручной /inside работает всегда.
-    // Только для админов: это настройка чата.
-    dp.onNewMessage(filters.command('autoinside'), async (msg) => {
+    // Касается только сообщений в чат, не авто-отметок по MAC. Только для админов: это настройка чата.
+    dp.onNewMessage(filters.command('insidemute'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
         const wasMuted = storage.get().presenceAutoMuted[String(chatId)] === true
@@ -264,8 +264,8 @@ export const registerHandlers = (
         })
         await msg.answerText(
             wasMuted
-                ? 'Авто-сообщения со списком присутствующих в этом чате включены. Выключить — /autoinside.'
-                : 'Авто-сообщения со списком присутствующих в этом чате выключены. Ручной /inside по-прежнему работает. Включить обратно — /autoinside.',
+                ? 'Снова буду сам присылать список присутствующих в этот чат (при долгой тишине). Выключить — /insidemute.'
+                : 'Больше не буду сам присылать список присутствующих в этот чат. Ручной /inside по-прежнему работает. Включить обратно — /insidemute.',
         )
     })
 
