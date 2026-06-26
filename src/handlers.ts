@@ -64,6 +64,9 @@ const buildKeyboard = (page: number, pages: number) => {
             BotKeyboard.callback('▶️', `${PAGE_CALLBACK_PREFIX}${next}`),
         ])
     }
+    // Пустая inline-клавиатура (одна страница, нет стрелок) — это REPLY_MARKUP_INVALID.
+    // Возвращаем undefined, чтобы сообщение ушло вообще без разметки.
+    if (rows.length === 0) return undefined
     return BotKeyboard.inline(rows)
 }
 

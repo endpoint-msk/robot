@@ -16,6 +16,7 @@ import {
 } from './presence.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
+import { installErrorReporting } from './errors.js'
 
 const required = (name: string): string => {
     const v = process.env[name]
@@ -67,6 +68,12 @@ const main = async () => {
     })
 
     const dp = Dispatcher.for(tg)
+    // Единый обработчик ошибок: логируем (а console.error форвардит в личку dev'ам)
+    // и гасим, чтобы упавший хендлер не ронял обработку остальных апдейтов.
+    dp.onError((err, update) => {
+        console.error(`[dispatcher] ошибка в обработчике ${update.name}:`, err)
+        return true
+    })
     // livechat guard регистрируем ПЕРВЫМ — чтобы служебные сообщения о входе/выходе
     // были перехвачены и удалены до того, как доберутся до других хендлеров.
     if (liveChatId !== null) {
@@ -93,6 +100,12 @@ const main = async () => {
 
     const self = await tg.start({ botToken })
     console.log(`Logged in as @${self.username ?? self.id} (${self.displayName})`)
+
+    // После логина: форвардить все ошибки (console.error + process-level) в личку dev'ам.
+    installErrorReporting(tg, devUserIds)
+    if (devUserIds.size > 0) {
+        console.log(`[errors] отчёты об ошибках идут в личку: ${[...devUserIds].join(', ')}`)
+    }
 
     // Список команд, который Telegram показывает по / в меню.
     // Большинство админских команд показываем только админам группы; /inside — всем участникам.
