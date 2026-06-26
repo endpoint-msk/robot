@@ -59,6 +59,25 @@ export const previousPeriodKey = (year: number, month: number, resetDay = DEFAUL
 export const monthNameRu = (month: number): string => MONTH_NAMES_RU[month - 1] ?? '?'
 export const monthNameRuGenitive = (month: number): string => MONTH_NAMES_RU_GENITIVE[month - 1] ?? '?'
 
+/** День сброса, закодированный в periodKey 3-м сегментом (`YYYY-MM-DD`). Для календарного ключа `YYYY-MM` — DEFAULT_RESET_DAY. */
+const resetDayFromKey = (key: string): number => {
+    const parts = key.split('-')
+    if (parts.length < 3) return DEFAULT_RESET_DAY
+    const day = Number(parts[2])
+    return Number.isFinite(day) ? clampResetDay(day) : DEFAULT_RESET_DAY
+}
+
+/**
+ * Месяц/год для ОТОБРАЖЕНИЯ. При нестандартном дне сброса период стартует в середине месяца
+ * (например 25 июня) и охватывает в основном следующий месяц, поэтому показываем его на один
+ * вперёд: старт 25 июня → «Июль». При resetDay=1 (календарный месяц) — без сдвига.
+ * Декабрь→Январь с инкрементом года, чтобы не выйти за 1..12.
+ */
+export const displayPeriodOf = (year: number, month: number, resetDay: number): { year: number; month: number } => {
+    if (clampResetDay(resetDay) === DEFAULT_RESET_DAY) return { year, month }
+    return month >= 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }
+}
+
 export const createFundraiser = (
     year: number,
     month: number,
@@ -182,7 +201,8 @@ const renderPreviousTop = (prev: Fundraiser): string => {
         const who = isAnonNick(entry.nick) ? ANON_LABEL : nickLink(entry.nick)
         return `${MEDAL_EMOJI[i]} ${who}`
     })
-    return `Топ за ${monthNameRu(prev.month)}: ${parts.join(' · ')}`
+    const disp = displayPeriodOf(prev.year, prev.month, resetDayFromKey(prev.periodKey))
+    return `Топ за ${monthNameRu(disp.month)}: ${parts.join(' · ')}`
 }
 
 export const renderFundraiser = (
@@ -196,7 +216,8 @@ export const renderFundraiser = (
     const page = clampPage(requestedPage, pages)
     const closed = f.goal > 0 && total >= f.goal
 
-    const header = `Сбор на ${escapeHtml(f.title)} за ${monthNameRu(f.month)} ${f.year}.`
+    const disp = displayPeriodOf(f.year, f.month, resetDayFromKey(f.periodKey))
+    const header = `Сбор на ${escapeHtml(f.title)} за ${monthNameRu(disp.month)} ${disp.year}.`
     const bar = renderProgressBar(total, f.goal)
 
     const lines: string[] = [header, bar]
