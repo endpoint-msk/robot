@@ -111,6 +111,7 @@ const main = async () => {
     // Большинство админских команд показываем только админам группы; /inside — всем участникам.
     const adminCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
+        BotCommands.cmd('insidemute', 'Вкл/выкл авто-рассылку списка присутствующих в чат'),
         BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),

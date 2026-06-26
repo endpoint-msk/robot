@@ -217,6 +217,7 @@ export const registerHandlers = (
                 '',
                 'Присутствие в спейсе:',
                 '/inside — показать (или обновить) список тех, кто сейчас в спейсе',
+                '/insidemute — вкл/выкл автоматическую рассылку списка в этот чат (только админы)',
                 'Отметиться, уйти и привязать MAC для авто-отметок — в личке с ботом (/start).',
                 '',
                 '3D-принтер:',
@@ -248,6 +249,24 @@ export const registerHandlers = (
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         // Всегда новое сообщение — это и есть «принудительный вызов».
         await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')
+    })
+
+    // /insidemute — включить/выключить АВТОМАТИЧЕСКУЮ рассылку списка присутствующих в этот чат
+    // (пуш по тишине ≥ 5ч и авто-восстановление удалённого списка). Ручной /inside работает всегда.
+    // Касается только сообщений в чат, не авто-отметок по MAC. Только для админов: это настройка чата.
+    dp.onNewMessage(filters.command('insidemute'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        const chatId = Number(msg.chat.id)
+        const wasMuted = storage.get().presenceAutoMuted[String(chatId)] === true
+        await storage.update((s) => {
+            if (wasMuted) delete s.presenceAutoMuted[String(chatId)]
+            else s.presenceAutoMuted[String(chatId)] = true
+        })
+        await msg.answerText(
+            wasMuted
+                ? 'Снова буду сам присылать список присутствующих в этот чат (при долгой тишине). Выключить — /insidemute.'
+                : 'Больше не буду сам присылать список присутствующих в этот чат. Ручной /inside по-прежнему работает. Включить обратно — /insidemute.',
+        )
     })
 
     dp.onNewMessage(filters.command('komanda'), async (msg) => {
