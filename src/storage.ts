@@ -57,6 +57,7 @@ export class Storage {
                 printerSubscribers: parsed.printerSubscribers ?? {},
                 macBindings: normalizeMacBindings(parsed.macBindings),
                 resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,
+                goalsMuted: parsed.goalsMuted ?? {},
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

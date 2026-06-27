@@ -57,6 +57,8 @@ export type State = {
     macBindings: Record<string, ResidentMacs>
     /** День месяца (1..29), в который сбрасывается сбор. По умолчанию 1 = календарный месяц UTC. */
     resetDay: number
+    /** Чаты, где отключена автоотправка сбора дважды в день (ключ — chatId как строка). Ручные /goals продолжают работать. */
+    goalsMuted: Record<string, true>
 }
 
 /** MAC-адреса устройств резидента для авто-отметок присутствия. */
@@ -110,4 +112,5 @@ export const emptyState = (): State => ({
     printerSubscribers: {},
     macBindings: {},
     resetDay: 1,
+    goalsMuted: {},
 })

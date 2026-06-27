@@ -76,6 +76,8 @@ export const startDailyFundraiserPoster = (
         lastFiredKey = key
 
         for (const chatId of allowedChats) {
+            // Чаты, где админ отключил автоотправку через /goalsmute, пропускаем.
+            if (storage.get().goalsMuted[String(chatId)] === true) continue
             try {
                 await postFundraiserToChat(client, storage, chatId, now)
             } catch (err) {

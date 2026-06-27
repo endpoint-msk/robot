@@ -223,8 +223,11 @@ export const registerHandlers = (
                 '3D-принтер:',
                 '/printer — статус принтера, превью печати и подписка на уведомление об окончании',
                 '',
-                'Сборы донатов (только админы):',
-                '/goals — показать текущий сбор',
+                'Сборы донатов:',
+                '/goals — показать текущий сбор (доступно всем участникам)',
+                '',
+                'Управление сбором (только админы):',
+                '/goalsmute — вкл/выкл автоотправку сбора в этот чат (00:00 и 12:00 по МСК)',
                 '/donate <сумма> <ник> — добавить донат',
                 '/donate <сумма> — добавить анонимный донат (без ника, в списке «Анонимно»)',
                 '/remove <номер> — удалить все донаты участника №<номер> в лидерборде (работает и для «Анонимно»)',
@@ -289,7 +292,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('goals'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         const f = ensureCurrentFundraiser(storage)
         const rendered = renderFundraiser(f, 1, previousFundraiser(storage, f))
         const sent = await msg.answerText(html(rendered.text), {
@@ -297,6 +300,22 @@ export const registerHandlers = (
             disableWebPreview: true,
         })
         await rememberLastMessage(storage, Number(msg.chat.id), sent.id, f.periodKey)
+    })
+
+    dp.onNewMessage(filters.command('goalsmute'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        const chatId = Number(msg.chat.id)
+        const key = String(chatId)
+        const muted = storage.get().goalsMuted[key] === true
+        await storage.update((s) => {
+            if (muted) delete s.goalsMuted[key]
+            else s.goalsMuted[key] = true
+        })
+        await msg.answerText(
+            muted
+                ? 'Автоотправка сбора в этот чат снова включена (00:00 и 12:00 по МСК).'
+                : 'Автоотправка сбора в этот чат отключена. Ручной /goals по-прежнему работает. Повторный /goalsmute включит её обратно.',
+        )
     })
 
     dp.onNewMessage(filters.command('donate'), async (msg) => {
