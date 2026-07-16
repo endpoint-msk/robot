@@ -558,6 +558,30 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
     }
 }
 
+/** Сколько держим фото профиля в памяти: аватарки меняются редко, а рендер списка просит их пачками. */
+const AVATAR_TTL_MS = 6 * 60 * 60 * 1000
+
+const avatarCache = new Map<number, { photo: Uint8Array | null; at: number }>()
+
+/**
+ * Фото профиля (160x160) или null, если его нет, оно скрыто приватностью либо
+ * юзер боту незнаком. Отрицательный ответ кэшируем тоже — иначе каждый рендер
+ * списка бьёт в Telegram за теми же «пустыми» аватарками.
+ */
+const fetchAvatar = async (client: TelegramClient, userId: number): Promise<Uint8Array | null> => {
+    const cached = avatarCache.get(userId)
+    if (cached && Date.now() - cached.at < AVATAR_TTL_MS) return cached.photo
+    let photo: Uint8Array | null = null
+    try {
+        const [user] = await client.getUsers(userId)
+        if (user?.photo) photo = await client.downloadAsBuffer(user.photo.small)
+    } catch (err) {
+        console.warn(`[webapp] не удалось получить аватарку ${userId}:`, err)
+    }
+    avatarCache.set(userId, { photo, at: Date.now() })
+    return photo
+}
+
 const serveStatic = async (pathname: string, res: ServerResponse): Promise<void> => {
     const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
     const target = path.normalize(path.join(STATIC_DIR, rel))
@@ -617,6 +641,35 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     'Content-Disposition': 'attachment; filename="visit.ics"',
                     'Cache-Control': 'no-store',
                 }).end(buildVisitIcs(request, deps.tzOffsetMinutes))
+                return
+            }
+
+            // Аватарки — тоже GET вне /api/: их грузит <img>, тело не отправить,
+            // поэтому initData едет в query (как в /visit.ics). Нет фото — 404,
+            // фронт остаётся на градиентной заглушке с буквой.
+            if (pathname === '/avatar.jpg') {
+                if (req.method !== 'GET' && req.method !== 'HEAD') {
+                    res.writeHead(405).end()
+                    return
+                }
+                if (!validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)) {
+                    res.writeHead(401).end()
+                    return
+                }
+                const id = Number(url.searchParams.get('id'))
+                if (!Number.isSafeInteger(id) || id <= 0) {
+                    res.writeHead(400).end()
+                    return
+                }
+                const photo = await fetchAvatar(deps.client, id)
+                if (!photo) {
+                    res.writeHead(404).end()
+                    return
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'image/jpeg',
+                    'Cache-Control': 'private, max-age=3600',
+                }).end(photo)
                 return
             }
 

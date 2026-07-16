@@ -153,6 +153,17 @@ function avatar(user, extraClass) {
     const node = h('div', { class: 'avatar' + (extraClass ? ' ' + extraClass : '') })
     node.style.background = `linear-gradient(135deg, ${c1}, ${c2})`
     node.textContent = ((user.name || user.username || '?').trim().charAt(0) || '?').toUpperCase()
+    // Настоящее фото кладём поверх буквы (см. /avatar.jpg): нет фото или не
+    // загрузилось — картинка убирается, остаётся градиент с буквой.
+    const img = h('img', {
+        class: 'avatar-photo',
+        alt: '',
+        loading: 'lazy',
+        src: `${location.origin}/avatar.jpg?id=${encodeURIComponent(user.userId)}`
+            + `&initData=${encodeURIComponent(tg ? tg.initData : '')}`,
+    })
+    img.addEventListener('error', () => img.remove())
+    node.append(img)
     return node
 }
 
