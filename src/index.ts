@@ -31,7 +31,27 @@ const required = (name: string): string => {
     return v
 }
 
+/**
+ * Гасит TimeoutNegativeWarning, оставляя остальные warning'и как есть.
+ *
+ * Ловится после сна машины: таймер во сне не тикает, на пробуждении дедлайн уже
+ * в прошлом, и `deadline - now` уходит в минус (приходит из сетевого слоя mtcute —
+ * у нас все задержки константные). Node зажимает такую задержку до 1 мс, так что
+ * это косметика: на всегда включённом сервере не встречается.
+ *
+ * Штатный вывод варнингов — это листенер Node по умолчанию, поэтому его снимаем
+ * и печатаем сами, пропуская только этот тип.
+ */
+const silenceNegativeTimeoutWarnings = (): void => {
+    process.removeAllListeners('warning')
+    process.on('warning', (w) => {
+        if (w.name === 'TimeoutNegativeWarning') return
+        console.warn(w.stack ?? `${w.name}: ${w.message}`)
+    })
+}
+
 const main = async () => {
+    silenceNegativeTimeoutWarnings()
     const apiId = Number(required('API_ID'))
     const apiHash = required('API_HASH')
     const botToken = required('BOT_TOKEN')
