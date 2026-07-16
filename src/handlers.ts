@@ -18,6 +18,7 @@ import {
     MAX_RESET_DAY,
 } from './fundraiser.js'
 import { renderPresenceText, upsertPresenceListInChat } from './presence.js'
+import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { Fundraiser, State } from './types.js'
 
@@ -37,21 +38,6 @@ export const parseAllowedChats = (raw: string | undefined): AllowedChats => {
 
 const isAllowedChat = (allowed: AllowedChats, chatId: number): boolean =>
     allowed.has(chatId)
-
-/** Является ли пользователь админом или владельцем в указанном чате. */
-const isChatAdmin = async (
-    client: TelegramClient,
-    chatId: number,
-    userId: number,
-): Promise<boolean> => {
-    try {
-        const member = await client.getChatMember({ chatId, userId })
-        if (!member) return false
-        return member.status === 'admin' || member.status === 'creator'
-    } catch {
-        return false
-    }
-}
 
 const buildKeyboard = (page: number, pages: number) => {
     const rows: ReturnType<typeof BotKeyboard.callback>[][] = []
@@ -186,13 +172,13 @@ const requireUserInAllowedChat = async (
 
 /** Прошёл ли пользователь все проверки (чат в allowlist + админ). Если нет — отвечает и возвращает false. */
 const requireChatAdminInAllowedChat = async (
-    client: TelegramClient,
+    residents: ResidentDirectory,
     msg: MessageContext,
     allowed: AllowedChats,
 ): Promise<boolean> => {
     if (!(await requireUserInAllowedChat(msg, allowed))) return false
     const chatId = Number(msg.chat.id)
-    if (!(await isChatAdmin(client, chatId, msg.sender!.id))) {
+    if (!(await residents.isChatAdmin(chatId, msg.sender!.id))) {
         await msg.answerText('Эта команда доступна только админам этой группы.')
         return false
     }
@@ -205,9 +191,10 @@ export const registerHandlers = (
         client: TelegramClient
         storage: Storage
         allowedChats: AllowedChats
+        residents: ResidentDirectory
     },
 ): void => {
-    const { client, storage, allowedChats } = deps
+    const { client, storage, allowedChats, residents } = deps
 
     dp.onNewMessage(filters.command('help'), async (msg) => {
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
@@ -258,7 +245,7 @@ export const registerHandlers = (
     // (пуш по тишине ≥ 5ч и авто-восстановление удалённого списка). Ручной /inside работает всегда.
     // Касается только сообщений в чат, не авто-отметок по MAC. Только для админов: это настройка чата.
     dp.onNewMessage(filters.command('insidemute'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
         const wasMuted = storage.get().presenceAutoMuted[String(chatId)] === true
         await storage.update((s) => {
@@ -303,7 +290,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('goalsmute'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
         const key = String(chatId)
         const muted = storage.get().goalsMuted[key] === true
@@ -319,7 +306,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('donate'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const args = msg.command.slice(1)
         const parsed = parseDonateArgs(args)
         if (typeof parsed === 'string') {
@@ -340,7 +327,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('setgoal'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const arg = msg.command[1]
         if (arg === undefined) {
             await msg.answerText('Использование: /setgoal <сумма> (0 — снять цель)')
@@ -360,7 +347,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('settitle'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const title = msg.command.slice(1).join(' ').trim()
         if (!title) {
             await msg.answerText('Использование: /settitle <тема>, например: /settitle аренду')
@@ -375,7 +362,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('setdesc'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         // Берём сырой текст (msg.command схлопывает переносы) и срезаем саму команду,
         // чтобы сохранить многострочное описание с реквизитами как есть.
         const raw = (msg.text ?? '').replace(/^\/setdesc(@\S+)?\s*/i, '')
@@ -393,7 +380,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('setresetday'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const arg = msg.command[1]
         if (arg === undefined || !/^\d+$/.test(arg)) {
             await msg.answerText(`Использование: /setresetday <число ${MIN_RESET_DAY}–${MAX_RESET_DAY}> — день месяца, когда сбор сбрасывается.`)
@@ -414,7 +401,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('remove'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(client, msg, allowedChats))) return
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const args = msg.command.slice(1)
         const spec = parseRemoveArgs(args)
         if (typeof spec === 'string') {
@@ -474,7 +461,7 @@ export const registerHandlers = (
             return
         }
         // Листать страницы может любой участник; «Обновить» — только админы.
-        if (isRefresh && !(await isChatAdmin(client, chatId, ctx.user.id))) {
+        if (isRefresh && !(await residents.isChatAdmin(chatId, ctx.user.id))) {
             await ctx.answer({ text: 'Кнопка доступна только админам этой группы.', alert: true })
             return
         }

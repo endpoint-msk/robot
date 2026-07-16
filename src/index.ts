@@ -7,6 +7,7 @@ import { registerLiveChatGuard } from './livechat.js'
 import { registerMenuHandlers } from './menu.js'
 import { normalizePrinterUrl, parsePrinterAuth, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
 import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
+import { createTelegramResidentDirectory } from './residents.js'
 import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
@@ -67,6 +68,10 @@ const main = async () => {
         updates: { messageGroupingInterval: 250 },
     })
 
+    // Единый источник правды «кто резидент/админ». Сейчас поверх Telegram
+    // (админ allowlist-чата); при переходе на Authentik меняется только эта реализация.
+    const residents = createTelegramResidentDirectory(tg, allowedChats)
+
     const dp = Dispatcher.for(tg)
     // Единый обработчик ошибок: логируем (а console.error форвардит в личку dev'ам)
     // и гасим, чтобы упавший хендлер не ронял обработку остальных апдейтов.
@@ -82,11 +87,11 @@ const main = async () => {
     }
     // presence-хендлеры регистрируем РАНЬШЕ — чтобы /start в личке ловил presence,
     // а групповой /start (алиас /help) — общий обработчик ниже
-    registerPresenceHandlers(dp, { client: tg, storage, allowedChats })
+    registerPresenceHandlers(dp, { client: tg, storage, residents })
     registerChatActivityTracker(dp, storage, allowedChats)
     registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
-    registerMenuHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
-    registerHandlers(dp, { client: tg, storage, allowedChats })
+    registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth })
+    registerHandlers(dp, { client: tg, storage, allowedChats, residents })
     if (printerUrl !== null) {
         registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)
@@ -158,11 +163,11 @@ const main = async () => {
 
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
-    const presence = startPresenceScheduler(tg, storage, allowedChats)
+    const presence = startPresenceScheduler(tg, storage, allowedChats, residents)
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
-        macPoller = startMacPresencePoller(tg, storage, allowedChats, new KeeneticClient(keeneticConfig))
+        macPoller = startMacPresencePoller(tg, storage, residents, new KeeneticClient(keeneticConfig))
         console.log(`[keenetic] MAC presence poller active for ${keeneticConfig.baseUrl}`)
     } else {
         console.warn('[warn] KEENETIC_URL/LOGIN/PASSWORD не заданы — авто-отметки по MAC отключены.')

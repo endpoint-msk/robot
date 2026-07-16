@@ -1,6 +1,7 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
 import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
+import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { ResidentPresence } from './types.js'
 
@@ -48,26 +49,6 @@ export const macHintFor = (storage: Storage, userId: number): string => {
     const cur = storage.get().macBindings[String(userId)]
     if (cur && cur.macs.length > 0) return ''
     return '\n\n💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса. Только сначала выключи на устройстве ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.'
-}
-
-/** Возвращает список chatId из allowedChats, в которых данный пользователь — админ. */
-export const findChatsWhereUserIsAdmin = async (
-    client: TelegramClient,
-    allowed: ReadonlySet<number>,
-    userId: number,
-): Promise<number[]> => {
-    const result: number[] = []
-    for (const chatId of allowed) {
-        try {
-            const member = await client.getChatMember({ chatId, userId })
-            if (member && (member.status === 'admin' || member.status === 'creator')) {
-                result.push(chatId)
-            }
-        } catch {
-            // нет доступа / нет такого пользователя в чате — пропускаем
-        }
-    }
-    return result
 }
 
 /**
@@ -182,7 +163,7 @@ export const upsertPresenceListInChat = async (
 export const removePresence = async (
     client: TelegramClient,
     storage: Storage,
-    allowed: ReadonlySet<number>,
+    residents: ResidentDirectory,
     userId: number,
     reason: 'manual' | 'timeout',
 ): Promise<void> => {
@@ -192,7 +173,7 @@ export const removePresence = async (
         delete s.presence[String(userId)]
     })
 
-    const chats = await findChatsWhereUserIsAdmin(client, allowed, userId)
+    const chats = await residents.presenceChats(userId)
     for (const chatId of chats) {
         await upsertPresenceListInChat(client, storage, chatId)
     }
@@ -209,11 +190,11 @@ export const removePresence = async (
 export const checkInResident = async (
     client: TelegramClient,
     storage: Storage,
-    allowed: ReadonlySet<number>,
+    residents: ResidentDirectory,
     user: { id: number; username: string | null; displayName: string },
     mode: 'nick' | 'anon',
 ): Promise<{ chats: number[]; alreadyChecked: boolean }> => {
-    const chats = await findChatsWhereUserIsAdmin(client, allowed, user.id)
+    const chats = await residents.presenceChats(user.id)
     if (chats.length === 0) return { chats: [], alreadyChecked: false }
 
     const now = new Date().toISOString()
@@ -245,16 +226,16 @@ export const registerPresenceHandlers = (
     deps: {
         client: TelegramClient
         storage: Storage
-        allowedChats: ReadonlySet<number>
+        residents: ResidentDirectory
     },
 ): void => {
-    const { client, storage, allowedChats } = deps
+    const { client, storage, residents } = deps
 
     // /bindmac <MAC> в личке — добавить MAC-адрес устройства для авто-отметок (можно несколько).
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('bindmac')), async (msg) => {
         if (!msg.sender || msg.sender.type !== 'user') return
         const userId = msg.sender.id
-        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, userId)
+        const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
             await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
             return
@@ -331,7 +312,7 @@ export const registerPresenceHandlers = (
             })
             const present = storage.get().presence[String(userId)]
             if (present?.source === 'mac') {
-                await removePresence(client, storage, allowedChats, userId, 'manual')
+                await removePresence(client, storage, residents, userId, 'manual')
             }
             await msg.answerText('Убрал все привязки MAC. Авто-отметки больше не будут ставиться.')
             return
@@ -360,7 +341,7 @@ export const registerPresenceHandlers = (
         if (leftEmpty) {
             const present = storage.get().presence[String(userId)]
             if (present?.source === 'mac') {
-                await removePresence(client, storage, allowedChats, userId, 'manual')
+                await removePresence(client, storage, residents, userId, 'manual')
             }
         }
         await msg.answerText(`Убрал MAC ${mac}.`)
@@ -370,7 +351,7 @@ export const registerPresenceHandlers = (
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('maclist')), async (msg) => {
         if (!msg.sender || msg.sender.type !== 'user') return
         const userId = msg.sender.id
-        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, userId)
+        const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
             await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
             return
@@ -393,7 +374,7 @@ export const registerPresenceHandlers = (
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('settings')), async (msg) => {
         if (!msg.sender || msg.sender.type !== 'user') return
         const userId = msg.sender.id
-        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, userId)
+        const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
             await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
             return
@@ -441,7 +422,7 @@ export const registerPresenceHandlers = (
                         p.username = anon ? null : (storage.get().macBindings[String(userId)]?.username ?? null)
                     }
                 })
-                for (const chatId of await findChatsWhereUserIsAdmin(client, allowedChats, userId)) {
+                for (const chatId of await residents.presenceChats(userId)) {
                     await upsertPresenceListInChat(client, storage, chatId)
                 }
             }
@@ -466,7 +447,7 @@ export const registerPresenceHandlers = (
                 } catch {}
                 return
             }
-            await removePresence(client, storage, allowedChats, ctx.user.id, 'manual')
+            await removePresence(client, storage, residents, ctx.user.id, 'manual')
             await ctx.answer({ text: 'Снял отметку' })
             try {
                 await ctx.editMessage({
@@ -579,6 +560,7 @@ export const startPresenceScheduler = (
     client: TelegramClient,
     storage: Storage,
     allowedChats: ReadonlySet<number>,
+    residents: ResidentDirectory,
 ): { stop: () => void } => {
     const tick = async () => {
         const now = Date.now()
@@ -620,7 +602,7 @@ export const startPresenceScheduler = (
             if (p.pendingPingAt) {
                 const pingedAt = Date.parse(p.pendingPingAt)
                 if (now - pingedAt >= PRESENCE_PING_TIMEOUT_MS) {
-                    await removePresence(client, storage, allowedChats, p.userId, 'timeout')
+                    await removePresence(client, storage, residents, p.userId, 'timeout')
                 }
             } else if (now - lastConfirmed >= PRESENCE_PING_INTERVAL_MS) {
                 // отправляем ping в личку
@@ -635,7 +617,7 @@ export const startPresenceScheduler = (
                 } catch (err) {
                     // Не смогли написать в личку — снимаем отметку, чтобы не висел вечно.
                     console.warn(`[presence] cannot DM user ${p.userId}, removing presence:`, err)
-                    await removePresence(client, storage, allowedChats, p.userId, 'timeout')
+                    await removePresence(client, storage, residents, p.userId, 'timeout')
                 }
             }
         }
@@ -689,7 +671,7 @@ export const startPresenceScheduler = (
 const macCheckIn = async (
     client: TelegramClient,
     storage: Storage,
-    allowed: ReadonlySet<number>,
+    residents: ResidentDirectory,
     binding: { userId: number; username: string | null; anon: boolean },
     nowIso: string,
 ): Promise<boolean> => {
@@ -707,7 +689,7 @@ const macCheckIn = async (
         return false
     }
     // Новой отметки нет — проверяем, что юзер всё ещё резидент (админ чата), и ставим.
-    const chats = await findChatsWhereUserIsAdmin(client, allowed, binding.userId)
+    const chats = await residents.presenceChats(binding.userId)
     if (chats.length === 0) return false
     const useNick = !binding.anon && !!binding.username
     const presence: ResidentPresence = {
@@ -744,7 +726,7 @@ const macCheckIn = async (
 export const startMacPresencePoller = (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    residents: ResidentDirectory,
     keenetic: KeeneticClient,
     intervalMs: number = TICK_INTERVAL_MS,
 ): { stop: () => void; triggerNow: () => Promise<void> } => {
@@ -768,7 +750,7 @@ export const startMacPresencePoller = (
             const present = storage.get().presence[String(binding.userId)]
 
             if (online) {
-                await macCheckIn(client, storage, allowedChats, binding, nowIso)
+                await macCheckIn(client, storage, residents, binding, nowIso)
                 continue
             }
 
@@ -776,7 +758,7 @@ export const startMacPresencePoller = (
             if (present?.source === 'mac') {
                 const lastSeen = present.lastSeenOnlineAt ? Date.parse(present.lastSeenOnlineAt) : 0
                 if (!Number.isFinite(lastSeen) || now - lastSeen >= MAC_ABSENCE_GRACE_MS) {
-                    await removePresence(client, storage, allowedChats, binding.userId, 'manual')
+                    await removePresence(client, storage, residents, binding.userId, 'manual')
                 }
             }
         }

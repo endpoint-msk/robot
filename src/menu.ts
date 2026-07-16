@@ -2,11 +2,11 @@ import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
 import {
     checkInResident,
-    findChatsWhereUserIsAdmin,
     macHintFor,
     removePresence,
     renderPresenceText,
 } from './presence.js'
+import type { ResidentDirectory } from './residents.js'
 import {
     ACTIVE_STATES,
     fetchPrinterStatus,
@@ -175,17 +175,17 @@ export const registerMenuHandlers = (
     deps: {
         client: TelegramClient
         storage: Storage
-        allowedChats: ReadonlySet<number>
+        residents: ResidentDirectory
         printerUrl: string | null
         printerAuth: string | null
     },
 ): void => {
-    const { client, storage, allowedChats, printerUrl, printerAuth } = deps
+    const { client, storage, residents, printerUrl, printerAuth } = deps
     const hasPrinter = printerUrl !== null
 
     const openMenu = async (msg: Parameters<Parameters<Dispatcher['onNewMessage']>[1]>[0]) => {
         if (!msg.sender || msg.sender.type !== 'user') return
-        const adminChats = await findChatsWhereUserIsAdmin(client, allowedChats, msg.sender.id)
+        const adminChats = await residents.presenceChats(msg.sender.id)
         if (adminChats.length === 0) {
             await msg.answerText('Этот бот доступен только резидентам (админам подключённого чата).')
             return
@@ -208,7 +208,7 @@ export const registerMenuHandlers = (
         }
 
         const userId = ctx.user.id
-        const isResident = (await findChatsWhereUserIsAdmin(client, allowedChats, userId)).length > 0
+        const isResident = await residents.isResident(userId)
         if (!isResident) {
             await ctx.answer({ text: 'Бот доступен только резидентам.', alert: true })
             return
@@ -242,7 +242,7 @@ export const registerMenuHandlers = (
                     return
                 }
                 const res = await checkInResident(
-                    client, storage, allowedChats,
+                    client, storage, residents,
                     { id: userId, username: ctx.user.username, displayName: ctx.user.displayName },
                     data === CB_CHECKIN_NICK ? 'nick' : 'anon',
                 )
@@ -257,7 +257,7 @@ export const registerMenuHandlers = (
             }
             case CB_CHECKOUT: {
                 const present = storage.get().presence[String(userId)]
-                if (present) await removePresence(client, storage, allowedChats, userId, 'manual')
+                if (present) await removePresence(client, storage, residents, userId, 'manual')
                 const section = presenceSection(storage, userId)
                 await replaceScreen(ctx, { kind: 'text', text: section.text, keyboard: section.keyboard })
                 await ctx.answer({ text: present ? 'Снял отметку' : 'Ты и так не отмечен' })
