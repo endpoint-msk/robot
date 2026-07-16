@@ -12,12 +12,15 @@ import {
     registerChatActivityTracker,
     registerPresenceDeleteWatcher,
     registerPresenceHandlers,
+    setHostingMiniappLink,
     startMacPresencePoller,
     startPresenceScheduler,
 } from './presence.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
+import { parseHostingTzOffset } from './hosting.js'
+import { parseWebappConfig, startWebappServer } from './webapp.js'
 
 const required = (name: string): string => {
     const v = process.env[name]
@@ -28,7 +31,27 @@ const required = (name: string): string => {
     return v
 }
 
+/**
+ * Гасит TimeoutNegativeWarning, оставляя остальные warning'и как есть.
+ *
+ * Ловится после сна машины: таймер во сне не тикает, на пробуждении дедлайн уже
+ * в прошлом, и `deadline - now` уходит в минус (приходит из сетевого слоя mtcute —
+ * у нас все задержки константные). Node зажимает такую задержку до 1 мс, так что
+ * это косметика: на всегда включённом сервере не встречается.
+ *
+ * Штатный вывод варнингов — это листенер Node по умолчанию, поэтому его снимаем
+ * и печатаем сами, пропуская только этот тип.
+ */
+const silenceNegativeTimeoutWarnings = (): void => {
+    process.removeAllListeners('warning')
+    process.on('warning', (w) => {
+        if (w.name === 'TimeoutNegativeWarning') return
+        console.warn(w.stack ?? `${w.name}: ${w.message}`)
+    })
+}
+
 const main = async () => {
+    silenceNegativeTimeoutWarnings()
     const apiId = Number(required('API_ID'))
     const apiHash = required('API_HASH')
     const botToken = required('BOT_TOKEN')
@@ -45,8 +68,16 @@ const main = async () => {
         password: process.env.KEENETIC_PASSWORD,
         rciPath: process.env.KEENETIC_RCI_PATH,
     })
-    // userId дев-аккаунтов, которым доступны отладочные команды (через запятую).
+    // userId дев-аккаунтов (через запятую): отладочные команды, отчёты об ошибках
+    // в личку и дев-меню миниаппа (переключатель перспективы + сид фейковых заявок).
     const devUserIds = parseAllowedChats(process.env.DEV_USER_IDS)
+    // Миниапп хостинга: без WEBAPP_URL вся подсистема выключена.
+    const webappConfig = parseWebappConfig({
+        url: process.env.WEBAPP_URL,
+        port: process.env.WEBAPP_PORT,
+        host: process.env.WEBAPP_HOST,
+    })
+    const hostingTzOffset = parseHostingTzOffset(process.env.HOSTING_TZ_OFFSET_MINUTES)
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -90,8 +121,8 @@ const main = async () => {
     registerPresenceHandlers(dp, { client: tg, storage, residents })
     registerChatActivityTracker(dp, storage, allowedChats)
     registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
-    registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth })
-    registerHandlers(dp, { client: tg, storage, allowedChats, residents })
+    registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl: webappConfig?.publicUrl ?? null })
+    registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl: webappConfig?.publicUrl ?? null })
     if (printerUrl !== null) {
         registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)
@@ -105,6 +136,38 @@ const main = async () => {
 
     const self = await tg.start({ botToken })
     console.log(`Logged in as @${self.username ?? self.id} (${self.displayName})`)
+
+    // Миниапп хостинга: HTTP-сервер, deep link для кнопок в группах и кнопка меню
+    // рядом с полем ввода (web_app; ставится API-вызовом, BotFather не нужен).
+    let webappServer: { stop: () => void } | null = null
+    if (webappConfig !== null) {
+        webappServer = startWebappServer({
+            client: tg,
+            storage,
+            allowedChats,
+            residents,
+            botToken,
+            config: webappConfig,
+            devUserIds,
+            tzOffsetMinutes: hostingTzOffset,
+        })
+        if (self.username) {
+            // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
+            // (его нужно один раз включить в BotFather, указав тот же WEBAPP_URL).
+            setHostingMiniappLink(`https://t.me/${self.username}?startapp=hosting`)
+        }
+        try {
+            await tg.call({
+                _: 'bots.setBotMenuButton',
+                userId: { _: 'inputUserEmpty' },
+                button: { _: 'botMenuButton', text: 'Хост', url: webappConfig.publicUrl },
+            })
+        } catch (err) {
+            console.error('[webapp] не удалось установить кнопку меню:', err)
+        }
+    } else {
+        console.warn('[warn] WEBAPP_URL не задан — миниапп хостинга отключён.')
+    }
 
     // После логина: форвардить все ошибки (console.error + process-level) в личку dev'ам.
     installErrorReporting(tg, devUserIds)
@@ -199,6 +262,7 @@ const main = async () => {
         presence.stop()
         printerWatcher?.stop()
         macPoller?.stop()
+        webappServer?.stop()
         await tg.destroy()
         process.exit(0)
     }

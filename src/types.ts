@@ -59,6 +59,45 @@ export type State = {
     resetDay: number
     /** Чаты, где отключена автоотправка сбора дважды в день (ключ — chatId как строка). Ручные /goals продолжают работать. */
     goalsMuted: Record<string, true>
+    /** Заявки гостей на визит (хостинг). Ключ — id заявки. */
+    hostingRequests: Record<string, HostingRequest>
+    /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
+     *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
+    hostingNotify: Record<string, HostingNotifyPrefs>
+}
+
+/** Краткая карточка участника для заявок хостинга (гость/одобривший резидент). */
+export type HostingUser = {
+    userId: number
+    /** Username (без @) на момент действия. null, если username нет. */
+    username: string | null
+    /** Отображаемое имя (first + last из Telegram). */
+    name: string
+}
+
+/** Заявка гостя на визит в спейс. */
+export type HostingRequest = {
+    id: string
+    /** День визита: 'YYYY-MM-DD' в поясе спейса (HOSTING_TZ_OFFSET_MINUTES). */
+    dateKey: string
+    /** Время прихода 'HH:MM' (по поясу спейса). */
+    time: string
+    /** Цель визита. Пустая строка — не указана. */
+    purpose: string
+    guest: HostingUser
+    createdAt: string
+    status: 'pending' | 'approved'
+    /** Резидент, который взялся захостить. null — пока никто. */
+    approvedBy: HostingUser | null
+    approvedAt: string | null
+}
+
+/** Настройки уведомлений резидента о новых заявках. */
+export type HostingNotifyPrefs = {
+    /** Слать ли уведомления о новых заявках в личку. */
+    enabled: boolean
+    /** 'today' — только заявки на текущий день; 'all' — все новые заявки. */
+    mode: 'today' | 'all'
 }
 
 /** MAC-адреса устройств резидента для авто-отметок присутствия. */
@@ -113,4 +152,6 @@ export const emptyState = (): State => ({
     macBindings: {},
     resetDay: 1,
     goalsMuted: {},
+    hostingRequests: {},
+    hostingNotify: {},
 })

@@ -58,6 +58,8 @@ export class Storage {
                 macBindings: normalizeMacBindings(parsed.macBindings),
                 resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,
                 goalsMuted: parsed.goalsMuted ?? {},
+                hostingRequests: parsed.hostingRequests ?? {},
+                hostingNotify: parsed.hostingNotify ?? {},
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

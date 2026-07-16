@@ -31,14 +31,16 @@ const CB_PRINTER_CAMERA = 'menu:printer:camera'
 const BACK_ROW = [BotKeyboard.callback('⬅️ Назад', CB_ROOT)]
 
 /** Корневое меню. Галочка у «Отметиться» отражает, отмечен ли резидент. Принтер — только если подключён. */
-const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean) => {
+const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean, webappUrl: string | null) => {
     const present = storage.get().presence[String(userId)] !== undefined
-    const rows = [
+    const rows: Parameters<typeof BotKeyboard.inline>[0] = [
         [BotKeyboard.callback('Кто в спейсе', CB_INSIDE)],
         [BotKeyboard.callback(`${present ? '✅' : '☐'} Отметиться`, CB_PRESENCE)],
         [BotKeyboard.callback('Авто-отметка по MAC', CB_MAC)],
     ]
     if (hasPrinter) rows.push([BotKeyboard.callback('3D-принтер', CB_PRINTER)])
+    // web_app-кнопка (в личке разрешена): миниапп с заявками гостей на визит.
+    if (webappUrl) rows.push([BotKeyboard.webView('🚪 Хостинг гостей', webappUrl)])
     return BotKeyboard.inline(rows)
 }
 
@@ -178,19 +180,29 @@ export const registerMenuHandlers = (
         residents: ResidentDirectory
         printerUrl: string | null
         printerAuth: string | null
+        /** Публичный URL миниаппа хостинга. null — миниапп не настроен. */
+        webappUrl: string | null
     },
 ): void => {
-    const { client, storage, residents, printerUrl, printerAuth } = deps
+    const { client, storage, residents, printerUrl, printerAuth, webappUrl } = deps
     const hasPrinter = printerUrl !== null
 
     const openMenu = async (msg: Parameters<Parameters<Dispatcher['onNewMessage']>[1]>[0]) => {
         if (!msg.sender || msg.sender.type !== 'user') return
         const adminChats = await residents.presenceChats(msg.sender.id)
         if (adminChats.length === 0) {
+            // Гостям меню резидента не показываем, но даём оставить заявку на визит через миниапп.
+            if (webappUrl) {
+                await msg.answerText(
+                    'Привет! Это бот хакспейса. Хочешь зайти в гости — оставь заявку на визит, резиденты увидят её и откликнутся.',
+                    { replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]]) },
+                )
+                return
+            }
             await msg.answerText('Этот бот доступен только резидентам (админам подключённого чата).')
             return
         }
-        await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter) })
+        await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter, webappUrl) })
     }
 
     // /start и /menu в личке открывают один и тот же хаб. В группах /start — алиас /help.
@@ -216,7 +228,7 @@ export const registerMenuHandlers = (
 
         switch (data) {
             case CB_ROOT: {
-                await replaceScreen(ctx, { kind: 'text', text: ROOT_TEXT, keyboard: rootKeyboard(storage, userId, hasPrinter) })
+                await replaceScreen(ctx, { kind: 'text', text: ROOT_TEXT, keyboard: rootKeyboard(storage, userId, hasPrinter, webappUrl) })
                 await ctx.answer({})
                 return
             }
