@@ -26,6 +26,24 @@ const CB_SETTINGS_ANON = 'presence:settings:anon'
 
 export const ANON_LABEL = 'Без ника'
 
+/**
+ * Deep link на миниапп хостинга (t.me/<bot>?startapp=…) для кнопки «Хочу прийти»
+ * под списками присутствующих. null — миниапп не настроен, кнопки нет.
+ * URL-кнопка вместо webview-кнопки: в группах Telegram запрещает web_app-кнопки.
+ * Ставится один раз на старте (setHostingMiniappLink), когда известен username бота.
+ */
+let hostingMiniappLink: string | null = null
+
+export const setHostingMiniappLink = (link: string | null): void => {
+    hostingMiniappLink = link
+}
+
+/** Клавиатура под списком присутствующих: кнопка заявки на визит для гостей, читающих чат. */
+const presenceListMarkup = () =>
+    hostingMiniappLink
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти — оставить заявку', hostingMiniappLink)]])
+        : undefined
+
 /** Клавиатура настроек авто-отметки по MAC. У текущего выбора — галочка. */
 const settingsKeyboard = (anon: boolean) =>
     BotKeyboard.inline([
@@ -126,7 +144,7 @@ export const upsertPresenceListInChat = async (
 
     if (effectiveMode === 'edit' && existingId) {
         try {
-            await client.editMessage({ chatId, message: existingId, text: html(text), disableWebPreview: true })
+            await client.editMessage({ chatId, message: existingId, text: html(text), disableWebPreview: true, replyMarkup: presenceListMarkup() })
             return
         } catch (err) {
             const msg = (err as Error)?.message ?? ''
@@ -144,7 +162,7 @@ export const upsertPresenceListInChat = async (
     }
 
     try {
-        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true })
+        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: presenceListMarkup() })
         const nowIso = new Date().toISOString()
         await storage.update((s) => {
             s.presenceListMessages[String(chatId)] = sent.id

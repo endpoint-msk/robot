@@ -192,9 +192,11 @@ export const registerHandlers = (
         storage: Storage
         allowedChats: AllowedChats
         residents: ResidentDirectory
+        /** Публичный URL миниаппа хостинга. null — миниапп не настроен. */
+        webappUrl: string | null
     },
 ): void => {
-    const { client, storage, allowedChats, residents } = deps
+    const { client, storage, allowedChats, residents, webappUrl } = deps
 
     dp.onNewMessage(filters.command('help'), async (msg) => {
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
@@ -232,8 +234,14 @@ export const registerHandlers = (
 
     dp.onNewMessage(filters.command('inside'), async (msg) => {
         // В личке /inside просто отдаёт текущий список текстом — без привязки к сообщению чата.
+        // В личке web_app-кнопки разрешены, поэтому открываем миниапп хостинга напрямую.
         if (msg.chat.type === 'user') {
-            await msg.answerText(html(renderPresenceText(storage)), { disableWebPreview: true })
+            await msg.answerText(html(renderPresenceText(storage)), {
+                disableWebPreview: true,
+                replyMarkup: webappUrl
+                    ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Хочу прийти — оставить заявку', webappUrl)]])
+                    : undefined,
+            })
             return
         }
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
