@@ -6,6 +6,56 @@
 const tg = window.Telegram ? window.Telegram.WebApp : null
 
 // ---------------------------------------------------------------------------
+// Тема. Выбор пользователя ('system' | 'light' | 'dark') живёт в localStorage —
+// это клиентская настройка, гостям она нужна не меньше, чем резидентам, а на
+// сервере хранить нечего. В CSS уходит уже разрешённая тема: data-theme на <html>.
+// ---------------------------------------------------------------------------
+
+const THEME_KEY = 'endpoint-hosting-theme'
+const THEMES = ['system', 'light', 'dark']
+const THEME_BG = { light: '#f2f2f7', dark: '#000000' }
+
+function loadTheme() {
+    try {
+        const v = localStorage.getItem(THEME_KEY)
+        return THEMES.includes(v) ? v : 'system'
+    } catch {
+        return 'system' // хранилище недоступно (приватный режим) — не падаем
+    }
+}
+
+/** Системная тема: внутри Telegram — тема клиента, вне — системная настройка ОС. */
+function systemTheme() {
+    if (tg && tg.colorScheme) return tg.colorScheme === 'dark' ? 'dark' : 'light'
+    try {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    } catch {
+        return 'light'
+    }
+}
+
+const resolvedTheme = () => (store.theme === 'system' ? systemTheme() : store.theme)
+
+/** Вторичный цвет текущей темы с заданной альфой. Нужен для inline-SVG: в атрибут
+    `stroke` CSS-переменную не подставить, поэтому цвет считаем в JS. */
+const sec = (a) => `rgba(${resolvedTheme() === 'dark' ? '235, 235, 245' : '60, 60, 67'}, ${a})`
+
+function applyTheme() {
+    const t = resolvedTheme()
+    document.documentElement.dataset.theme = t
+    try { tg.setHeaderColor(THEME_BG[t]) } catch { /* старый клиент */ }
+    try { tg.setBackgroundColor(THEME_BG[t]) } catch { /* старый клиент */ }
+}
+
+function setTheme(next) {
+    store.theme = next
+    try { localStorage.setItem(THEME_KEY, next) } catch { /* не сохранится — не критично */ }
+    applyTheme()
+    // Иконки рисуются цветом темы прямо в разметке SVG — нужна перерисовка.
+    if (stack.length > 0) rerender()
+}
+
+// ---------------------------------------------------------------------------
 // DOM-хелперы
 // ---------------------------------------------------------------------------
 
@@ -35,20 +85,21 @@ function svg(markup) {
 }
 
 const icons = {
-    chevron: (color) => svg(`<svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" fill="none" stroke="${color || 'rgba(60,60,67,0.3)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
+    chevron: (color) => svg(`<svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" fill="none" stroke="${color || sec(0.3)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
     back: () => svg('<svg width="11" height="18" viewBox="0 0 11 18"><path d="M9.5 1.5L2 9l7.5 7.5" fill="none" stroke="#007aff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),
     check: (size, color, width) => svg(`<svg width="${size}" height="${size}" viewBox="0 0 14 14"><path d="M2.5 7.5l3 3L11.5 4" fill="none" stroke="${color}" stroke-width="${width || 2}" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
     clock: (size, color) => svg(`<svg width="${size}" height="${size}" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="${color}" stroke-width="1.6"/><path d="M9 5v4.2l2.6 1.6" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
     plus: () => svg('<svg width="18" height="18" viewBox="0 0 18 18"><path d="M9 3v12M3 9h12" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>'),
     plusSmall: () => svg('<svg width="14" height="14" viewBox="0 0 18 18"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>'),
-    lock: () => svg('<svg width="13" height="13" viewBox="0 0 18 18"><path d="M4 8V6.5a5 5 0 0 1 10 0V8" fill="none" stroke="rgba(60,60,67,0.55)" stroke-width="1.6"/><rect x="3.5" y="8" width="11" height="7.5" rx="2" fill="none" stroke="rgba(60,60,67,0.55)" stroke-width="1.6"/></svg>'),
-    info: () => svg('<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="rgba(60,60,67,0.35)" stroke-width="1.4"/><path d="M8 7v4M8 5h.01" stroke="rgba(60,60,67,0.45)" stroke-width="1.6" stroke-linecap="round"/></svg>'),
+    lock: () => svg(`<svg width="13" height="13" viewBox="0 0 18 18"><path d="M4 8V6.5a5 5 0 0 1 10 0V8" fill="none" stroke="${sec(0.55)}" stroke-width="1.6"/><rect x="3.5" y="8" width="11" height="7.5" rx="2" fill="none" stroke="${sec(0.55)}" stroke-width="1.6"/></svg>`),
+    info: () => svg(`<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="${sec(0.35)}" stroke-width="1.4"/><path d="M8 7v4M8 5h.01" stroke="${sec(0.45)}" stroke-width="1.6" stroke-linecap="round"/></svg>`),
     archiveBox: () => svg('<svg width="16" height="16" viewBox="0 0 18 18"><rect x="2.5" y="3" width="13" height="4" rx="1.2" fill="none" stroke="#fff" stroke-width="1.7"/><path d="M4 7v6.2A1.8 1.8 0 0 0 5.8 15h6.4a1.8 1.8 0 0 0 1.8-1.8V7M7.3 10h3.4" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>'),
     gear: () => svg('<svg width="17" height="17" viewBox="0 0 20 20"><path d="M4 6h5M13 6h3M4 14h3M11 14h5" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><circle cx="11" cy="6" r="2" fill="none" stroke="#fff" stroke-width="1.7"/><circle cx="9" cy="14" r="2" fill="none" stroke="#fff" stroke-width="1.7"/></svg>'),
     bell: () => svg('<svg width="16" height="16" viewBox="0 0 18 18"><path d="M9 2.2a4.6 4.6 0 0 0-4.6 4.6c0 3.4-1.4 4.6-1.4 4.6h12s-1.4-1.2-1.4-4.6A4.6 4.6 0 0 0 9 2.2zM7.4 14.2a1.7 1.7 0 0 0 3.2 0" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'),
     wifi: () => svg('<svg width="17" height="17" viewBox="0 0 20 20"><path d="M3 8.2a10 10 0 0 1 14 0M5.6 11a6.4 6.4 0 0 1 8.8 0M8.2 13.7a2.8 2.8 0 0 1 3.6 0" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><circle cx="10" cy="16" r="1.2" fill="#fff"/></svg>'),
     eye: () => svg('<svg width="14" height="14" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>'),
     minusCircle: () => svg('<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9.5" fill="#ff3b30"/><path d="M6.8 11h8.4" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>'),
+    calendarPlus: () => svg('<svg width="19" height="19" viewBox="0 0 26 26"><rect x="3.5" y="5" width="19" height="17.5" rx="5" fill="none" stroke="#007aff" stroke-width="1.9"/><path d="M8.5 2.8v4M17.5 2.8v4M3.5 10h19" stroke="#007aff" stroke-width="1.9" stroke-linecap="round"/><path d="M9.5 16.5h7M13 13v7" stroke="#007aff" stroke-width="1.9" stroke-linecap="round"/></svg>'),
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +162,7 @@ const userLabel = (u) => (u.username ? '@' + u.username : u.name)
 // API и стор
 // ---------------------------------------------------------------------------
 
-const store = { data: null, perspective: 'guest' }
+const store = { data: null, perspective: 'guest', theme: loadTheme() }
 
 async function api(method, params) {
     const res = await fetch('/api/' + method, {
@@ -131,19 +182,49 @@ async function api(method, params) {
 
 const setBusy = (on) => document.body.classList.toggle('busy', on)
 
-function showAlert(message) {
-    try { tg.showAlert(message) } catch { window.alert(message) }
-}
-
-function confirmDialog(message) {
+/**
+ * Модалка в дизайн-системе миниаппа. Своя, а не `tg.showAlert`/`window.alert`:
+ * нативные попапы выпадают из оформления, а в браузере (вне Telegram) это и вовсе
+ * системная всплывашка. Возвращает Promise<boolean> — true, если нажали основную кнопку.
+ */
+function modal({ text, confirmLabel = 'OK', cancelLabel = null, destructive = false }) {
     return new Promise((resolve) => {
-        try {
-            tg.showConfirm(message, (ok) => resolve(!!ok))
-        } catch {
-            resolve(window.confirm(message))
+        let done = false
+        const close = (value) => {
+            if (done) return
+            done = true
+            overlay.classList.remove('shown')
+            // Даём доиграть fade-out, только потом убираем узел.
+            setTimeout(() => overlay.remove(), 180)
+            resolve(value)
         }
+
+        const buttons = []
+        if (cancelLabel) buttons.push(h('button', { class: 'modal-btn', onclick: () => close(false) }, cancelLabel))
+        buttons.push(h('button', {
+            class: 'modal-btn primary' + (destructive ? ' destructive' : ''),
+            onclick: () => close(true),
+        }, confirmLabel))
+
+        const overlay = h('div', {
+            class: 'modal-overlay',
+            // Тап по затемнению = отмена, но только если есть что отменять.
+            onclick: (e) => { if (e.target === overlay && cancelLabel) close(false) },
+        }, h('div', { class: 'modal-card' },
+            h('div', { class: 'modal-text' }, text),
+            h('div', { class: 'modal-actions' }, buttons),
+        ))
+
+        document.body.append(overlay)
+        // Класс — следующим кадром, иначе transition не запустится.
+        requestAnimationFrame(() => overlay.classList.add('shown'))
     })
 }
+
+const showAlert = (message) => { void modal({ text: message }) }
+
+const confirmDialog = (message, opts) =>
+    modal(Object.assign({ text: message, confirmLabel: 'Да', cancelLabel: 'Отмена' }, opts))
 
 function haptic(kind) {
     try { tg.HapticFeedback.notificationOccurred(kind) } catch { /* старый клиент */ }
@@ -178,11 +259,26 @@ async function action(method, params) {
 
 const stack = []
 
-function render(keepScroll) {
+/**
+ * @param keepScroll  сохранить позицию скролла (перерисовка данных, не переход)
+ * @param anim        класс анимации входа: 'in-forward' | 'in-back' | 'in-fade' | null
+ */
+function render(keepScroll, anim) {
     const y = keepScroll ? window.scrollY : 0
     const app = document.getElementById('app')
     const top = stack[stack.length - 1]
-    app.replaceChildren(SCREENS[top.name](top.params || {}))
+    const node = SCREENS[top.name](top.params || {})
+    if (anim) node.classList.add(anim)
+
+    // Нижнюю панель вынимаем из .screen и кладём рядом: анимация перехода — это
+    // transform, а он сделал бы .screen containing block'ом для position:fixed,
+    // и панель поехала бы вместе с экраном, а в конце анимации прыгнула на место.
+    // Снаружи (в #app, без transform) она якорится к вьюпорту, как и задумано.
+    const bar = node.querySelector(':scope > .bottom-bar')
+    if (bar) bar.remove()
+    app.replaceChildren(node)
+    if (bar) app.append(bar)
+
     window.scrollTo(0, y)
     if (tg) {
         try {
@@ -192,18 +288,19 @@ function render(keepScroll) {
     }
 }
 
-const rerender = () => render(true)
-const push = (name, params) => { stack.push({ name, params }); render(false) }
+// Перерисовка данных — без анимации: иначе экран моргал бы на каждом действии.
+const rerender = () => render(true, null)
+const push = (name, params) => { stack.push({ name, params }); render(false, 'in-forward') }
 function pop() {
     if (stack.length > 1) {
         stack.pop()
-        render(false)
+        render(false, 'in-back')
     }
 }
 function resetRoot() {
     stack.length = 0
     stack.push({ name: store.perspective === 'resident' ? 'overview' : 'myVisits', params: {} })
-    render(false)
+    render(false, 'in-fade')
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +317,7 @@ function header(title, subtitle, chip) {
     )
 }
 
-/** Дев-переключатель перспективы «резидент ↔ гость» (только для DEV_USERNAMES из .env). */
+/** Дев-переключатель перспективы «резидент ↔ гость» (только для DEV_USER_IDS из .env). */
 function devChip() {
     if (!store.data.me.isDev) return null
     const other = store.perspective === 'resident' ? 'guest' : 'resident'
@@ -231,6 +328,18 @@ function devChip() {
             resetRoot()
         },
     }, icons.eye(), other === 'guest' ? 'Как гость' : 'Как резидент')
+}
+
+/** Вход в dev-меню (сид фейковых заявок). */
+function devMenuChip() {
+    if (!store.data.me.isDev) return null
+    return h('div', { class: 'dev-chip', onclick: () => push('dev', {}) }, '🛠', 'Dev')
+}
+
+/** Дев-панель в шапке: обе кнопки видны только аккаунтам из DEV_USER_IDS. */
+function devChips() {
+    if (!store.data.me.isDev) return null
+    return h('div', { class: 'dev-chips' }, devChip(), devMenuChip())
 }
 
 const sectionTitle = (text) => h('div', { class: 'section-title' }, text)
@@ -329,7 +438,7 @@ function dayRow(day, opts) {
     if (day.approved > 0 || opts.alwaysApproved) {
         right.append(h('div', { class: 'approved-count' }, icons.check(14, '#34c759'), String(day.approved)))
     }
-    if (opts.tappable) right.append(icons.chevron(isToday ? 'rgba(60,60,67,0.4)' : undefined))
+    if (opts.tappable) right.append(icons.chevron(isToday ? sec(0.4) : undefined))
     row.append(right)
     if (opts.tappable) row.addEventListener('click', opts.onopen)
     return row
@@ -365,7 +474,7 @@ function screenOverview() {
     )
 
     return h('div', { class: 'screen' },
-        header('Ближайшие дни', `${fmtRange(first, last)} · ${requestsWord(total)}`, devChip()),
+        header('Ближайшие дни', `${fmtRange(first, last)} · ${requestsWord(total)}`, devChips()),
         daysCard,
         h('div', { style: 'height:22px' }),
         navCard,
@@ -539,8 +648,37 @@ function switchEl(on, onToggle) {
 }
 
 function screenSettings() {
-    const s = store.data.settings
-    if (!s) return h('div', { class: 'screen' }, backRow('Обзор'), header('Настройки'), h('div', { class: 'card' }, emptyState('Только для резидентов', 'Настройки доступны админам подключённых чатов.')))
+    // s === null у гостя: уведомления и MAC — только резидентам, а тема нужна всем.
+    // Сервер присылает settings по реальному резидентству и про перспективу не знает,
+    // поэтому дев-вид «как гость» гасим здесь — иначе он бы не был честным.
+    const s = store.perspective === 'guest' ? null : store.data.settings
+
+    const themeRow = (label, sublabel, value) => h('div', {
+        class: 'row tappable',
+        onclick: () => { if (store.theme !== value) setTheme(value) },
+    },
+        h('span', { class: 'row-label' }, label, sublabel ? h('span', { class: 'row-sublabel' }, sublabel) : null),
+        h('div', { class: 'radio-check' }, store.theme === value ? icons.check(16, '#007aff', 2.2) : null),
+    )
+
+    const themeSection = [
+        sectionTitle('Оформление'),
+        h('div', { class: 'card' },
+            themeRow('Системная', 'Как в Telegram', 'system'),
+            sep(14),
+            themeRow('Светлая', null, 'light'),
+            sep(14),
+            themeRow('Тёмная', null, 'dark'),
+        ),
+    ]
+
+    if (!s) {
+        return h('div', { class: 'screen' },
+            backRow('Назад'),
+            header('Настройки'),
+            themeSection,
+        )
+    }
 
     const radioRow = (label, sublabel, mode) => h('div', {
         class: 'row tappable',
@@ -577,7 +715,10 @@ function screenSettings() {
                 class: 'remove-btn',
                 'aria-label': 'Убрать MAC',
                 onclick: async () => {
-                    const ok = await confirmDialog(`Убрать ${m.label ? '«' + m.label + '» ' : ''}${m.mac}? Авто-отметка по этому устройству перестанет работать.`)
+                    const ok = await confirmDialog(
+                        `Убрать ${m.label ? '«' + m.label + '» ' : ''}${m.mac}? Авто-отметка по этому устройству перестанет работать.`,
+                        { confirmLabel: 'Убрать', destructive: true },
+                    )
                     if (ok) void action('mac.remove', { mac: m.mac })
                 },
             }, icons.minusCircle()),
@@ -626,7 +767,8 @@ function screenSettings() {
 
     return h('div', { class: 'screen' },
         backRow('Обзор'),
-        header('Настройки', 'Уведомления и авто-отметка'),
+        header('Настройки'),
+        themeSection,
         sectionTitle('Уведомления о заявках'),
         notifyCard,
         h('div', { class: 'footnote' }, icons.info(), 'Придут в личку от бота, когда гость оставит заявку. По умолчанию — только заявки на сегодня.'),
@@ -651,7 +793,7 @@ function visitRow(r) {
     const approved = r.status === 'approved'
     const iconSquare = approved
         ? h('div', { class: 'status-square ok' }, icons.check(20, '#34c759'))
-        : h('div', { class: 'status-square' }, icons.clock(18, 'rgba(60,60,67,0.5)'))
+        : h('div', { class: 'status-square' }, icons.clock(18, sec(0.5)))
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, fmtWeekdayDate(r.dateKey)),
         h('div', { class: 'req-sub' }, `к ${r.time} · ${approved ? 'подтверждён' : 'ждём резидента'}`),
@@ -673,7 +815,7 @@ function screenMyVisits() {
     const approved = my.filter((r) => r.status === 'approved')
     const pending = my.filter((r) => r.status !== 'approved')
 
-    const parts = [header('Мои визиты', 'Ваши заявки в хакспейс', devChip())]
+    const parts = [header('Мои визиты', 'Ваши заявки в хакспейс', devChips())]
     if (my.length === 0) {
         parts.push(h('div', { class: 'card' }, emptyState(
             'Пока нет заявок',
@@ -690,6 +832,14 @@ function screenMyVisits() {
         pending.forEach((r, i) => { if (i > 0) card.append(sep(66)); card.append(visitRow(r)) })
         parts.push(sectionTitle('Ждут ответа'), card)
     }
+    // Гостю настройки тоже нужны — там выбор темы (уведомления/MAC туда не попадут).
+    parts.push(h('div', { class: 'card', style: 'margin-top:22px' },
+        h('div', { class: 'row tappable', onclick: () => push('settings') },
+            h('div', { class: 'row-icon', style: 'background:#8e8e93' }, icons.gear()),
+            h('span', { class: 'row-label' }, 'Настройки'),
+            h('div', { class: 'row-right' }, icons.chevron()),
+        ),
+    ))
     parts.push(h('div', { class: 'bottom-bar' },
         h('button', { class: 'primary-btn', onclick: () => push('newRequest') }, icons.plus(), 'Новая заявка'),
     ))
@@ -713,7 +863,8 @@ function screenVisit(params) {
     if (approved) {
         statusCard = h('div', { class: 'status-card approved' },
             h('div', { class: 'status-card-head' },
-                h('div', { class: 'status-card-icon' }, icons.check(14, '#fff')),
+                // Галочка тёмно-зелёная: фон кружка светлый (#defbe6), белая была бы не видна.
+                h('div', { class: 'status-card-icon' }, icons.check(14, '#28a24a', 2.4)),
                 h('span', { class: 'status-card-title' }, 'Ваш визит подтверждён'),
             ),
             h('div', { class: 'status-card-body' },
@@ -728,7 +879,7 @@ function screenVisit(params) {
     } else {
         statusCard = h('div', { class: 'status-card pending' },
             h('div', { class: 'status-card-head' },
-                h('div', { class: 'status-card-icon' }, icons.clock(15, 'rgba(60,60,67,0.55)')),
+                h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
                 h('span', { class: 'status-card-title' }, 'Заявка ждёт ответа'),
             ),
             h('div', { class: 'status-card-note' }, 'Резиденты видят вашу заявку. Как только кто-то возьмётся захостить — бот напишет вам в личку.'),
@@ -753,12 +904,22 @@ function screenVisit(params) {
                 )
                 : null,
         ),
+        h('button', {
+            class: 'secondary-btn',
+            onclick: () => {
+                // .ics отдаёт сервер (см. /visit.ics): подписанная ссылка, которую
+                // открывает системный браузер — оттуда файл уходит в календарь.
+                const url = `${location.origin}/visit.ics?id=${encodeURIComponent(r.id)}`
+                    + `&initData=${encodeURIComponent(tg ? tg.initData : '')}`
+                try { tg.openLink(url) } catch { window.open(url, '_blank') }
+            },
+        }, icons.calendarPlus(), 'Добавить в календарь'),
         h('div', { class: 'footnote' }, icons.info(), 'Другие гости и их заявки вам не видны — только ваш визит.'),
         h('div', { style: 'height:22px' }),
         h('button', {
             class: 'destructive-btn',
             onclick: async () => {
-                const ok = await confirmDialog('Отменить заявку на визит?')
+                const ok = await confirmDialog('Отменить заявку на визит?', { confirmLabel: 'Отменить', destructive: true })
                 if (!ok) return
                 setBusy(true)
                 try {
@@ -839,7 +1000,6 @@ function screenNewRequest() {
                 store.data = await api('create', { dateKey: selected, time: timeInput.value, purpose: purpose.value })
                 haptic('success')
                 resetRoot()
-                showAlert('Заявка отправлена! Бот напишет, когда её одобрят.')
             } catch (err) {
                 showAlert(err.message)
                 submit.disabled = false
@@ -872,6 +1032,167 @@ function screenNewRequest() {
 }
 
 // ---------------------------------------------------------------------------
+// Экран: dev-меню (сид фейковых заявок). Доступен только DEV_USER_IDS —
+// сервер всё равно проверяет это сам, чип тут лишь прячет вход.
+// ---------------------------------------------------------------------------
+
+function screenDev(params) {
+    const days = store.data.days
+    // Выбор держим в params: объект живёт в стеке экранов, поэтому переживает
+    // rerender после создания заявки — иначе день сбрасывался бы на первый.
+    if (!params.selected) params.selected = days[0].dateKey
+    if (!params.time) params.time = defaultTimeFor(params.selected)
+
+    const timeInput = h('input', { class: 'time-input', type: 'time', value: params.time })
+    timeInput.addEventListener('change', () => { params.time = timeInput.value })
+
+    const chips = h('div', { class: 'day-chips' })
+    const renderChips = () => {
+        chips.replaceChildren(...days.map((d) => h('button', {
+            class: 'day-chip' + (d.dateKey === params.selected ? ' selected' : ''),
+            onclick: () => {
+                params.selected = d.dateKey
+                renderChips()
+            },
+        },
+            h('span', { class: 'dc-dow' }, WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]),
+            h('span', { class: 'dc-num' }, String(dayNum(d.dateKey))),
+            d.total > 0
+                ? h('div', { class: 'dc-counts' },
+                    h('span', null, String(d.total)),
+                    icons.check(10, d.dateKey === params.selected ? '#fff' : '#34c759', 2.2),
+                    h('span', { class: 'dc-approved' }, String(d.approved)),
+                )
+                : h('span', { class: 'dc-dash' }, '—'),
+        )))
+    }
+    renderChips()
+
+    const purpose = h('textarea', { class: 'purpose-input', placeholder: 'Цель визита (по умолчанию — «Фейковая заявка (dev)»)', rows: '2', maxlength: '300' })
+
+    const submit = h('button', {
+        class: 'primary-btn',
+        onclick: async () => {
+            if (!timeInput.value) {
+                showAlert('Укажи время прихода.')
+                return
+            }
+            const data = await action('dev.seed', {
+                dateKey: params.selected,
+                time: timeInput.value,
+                purpose: purpose.value,
+            })
+            if (data) haptic('success')
+        },
+    }, 'Создать фейковую заявку')
+
+    // Все заявки ближайших 7 дней: правка и удаление (сервер приносит days[].requests
+    // dev-аккаунтам так же, как резидентам).
+    const all = days.flatMap((d) => d.requests || [])
+    const listCard = h('div', { class: 'card' })
+    if (all.length === 0) {
+        listCard.append(emptyState('Заявок нет', 'Создай фейковую — появится здесь.'))
+    } else {
+        all.forEach((r, i) => {
+            if (i > 0) listCard.append(sep(14))
+            listCard.append(h('div', { class: 'row tappable', onclick: () => push('devEdit', { id: r.id }) },
+                h('span', { class: 'row-label' },
+                    r.guest.name,
+                    h('span', { class: 'row-sublabel' }, `${fmtShortDate(r.dateKey)} · ${r.time}${r.status === 'approved' ? ' · одобрена' : ''}`),
+                ),
+                h('button', {
+                    class: 'remove-btn',
+                    'aria-label': 'Удалить заявку',
+                    onclick: async (e) => {
+                        e.stopPropagation() // иначе откроется правка
+                        const ok = await confirmDialog(`Удалить заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)}?`,
+                            { confirmLabel: 'Удалить', destructive: true })
+                        if (ok) void action('dev.delete', { id: r.id })
+                    },
+                }, icons.minusCircle()),
+            ))
+        })
+    }
+
+    return h('div', { class: 'screen has-bottom-bar' },
+        backRow('Назад'),
+        header('Dev', 'Тестовые данные — резидентам не уведомляем'),
+        sectionTitle('День'),
+        chips,
+        sectionTitle('Детали'),
+        h('div', { class: 'card' },
+            h('div', { class: 'row', style: 'padding:6px 14px' },
+                h('span', { style: 'font-size:16px' }, 'Придёт к'),
+                timeInput,
+            ),
+            sep(14),
+            h('div', { class: 'kv-block' }, purpose),
+        ),
+        sectionTitle('Все заявки'),
+        listCard,
+        h('div', { class: 'bottom-bar' },
+            submit,
+            h('div', { class: 'bar-hint' }, 'Заявка от случайного фейкового гостя'),
+        ),
+    )
+}
+
+// Экран: дев-правка чужой заявки (день/время/цель).
+function screenDevEdit(params) {
+    const days = store.data.days
+    const r = days.flatMap((d) => d.requests || []).find((x) => x.id === params.id)
+    if (!r) {
+        setTimeout(() => pop(), 0)
+        return h('div', { class: 'screen' })
+    }
+    if (!params.selected) params.selected = r.dateKey
+
+    const timeInput = h('input', { class: 'time-input', type: 'time', value: r.time })
+    const purpose = h('textarea', { class: 'purpose-input', rows: '2', maxlength: '300' })
+    purpose.value = r.purpose || ''
+
+    const chips = h('div', { class: 'day-chips' })
+    const renderChips = () => {
+        chips.replaceChildren(...days.map((d) => h('button', {
+            class: 'day-chip' + (d.dateKey === params.selected ? ' selected' : ''),
+            onclick: () => { params.selected = d.dateKey; renderChips() },
+        },
+            h('span', { class: 'dc-dow' }, WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]),
+            h('span', { class: 'dc-num' }, String(dayNum(d.dateKey))),
+        )))
+    }
+    renderChips()
+
+    const submit = h('button', {
+        class: 'primary-btn',
+        onclick: async () => {
+            if (!timeInput.value) { showAlert('Укажи время прихода.'); return }
+            const data = await action('dev.update', {
+                id: r.id, dateKey: params.selected, time: timeInput.value, purpose: purpose.value,
+            })
+            if (data) { haptic('success'); pop() }
+        },
+    }, 'Сохранить')
+
+    return h('div', { class: 'screen has-bottom-bar' },
+        backRow('Dev'),
+        header(r.guest.name, 'Правка заявки'),
+        sectionTitle('День'),
+        chips,
+        sectionTitle('Детали'),
+        h('div', { class: 'card' },
+            h('div', { class: 'row', style: 'padding:6px 14px' },
+                h('span', { style: 'font-size:16px' }, 'Придёт к'),
+                timeInput,
+            ),
+            sep(14),
+            h('div', { class: 'kv-block' }, purpose),
+        ),
+        h('div', { class: 'bottom-bar' }, submit),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Загрузка
 // ---------------------------------------------------------------------------
 
@@ -884,10 +1205,14 @@ const SCREENS = {
     myVisits: screenMyVisits,
     visit: screenVisit,
     newRequest: screenNewRequest,
+    dev: screenDev,
+    devEdit: screenDevEdit,
 }
 
 function boot() {
     const app = document.getElementById('app')
+    // Тему ставим до первой отрисовки — иначе моргнёт светлым на тёмной теме.
+    applyTheme()
     document.body.append(h('div', { id: 'busy-overlay' }, h('div', { class: 'spinner' })))
 
     if (!tg || !tg.initData) {
@@ -900,10 +1225,19 @@ function boot() {
 
     try { tg.ready() } catch { /* noop */ }
     try { tg.expand() } catch { /* noop */ }
-    try { tg.setHeaderColor('#f2f2f7') } catch { /* старый клиент */ }
-    try { tg.setBackgroundColor('#f2f2f7') } catch { /* старый клиент */ }
     try { tg.disableVerticalSwipes() } catch { /* старый клиент */ }
     try { tg.BackButton.onClick(pop) } catch { /* старый клиент */ }
+
+    // Тема клиента сменилась — при выборе «Системная» едем следом.
+    const onSystemThemeChange = () => {
+        if (store.theme !== 'system') return
+        applyTheme()
+        if (stack.length > 0) rerender()
+    }
+    try { tg.onEvent('themeChanged', onSystemThemeChange) } catch { /* старый клиент */ }
+    try {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onSystemThemeChange)
+    } catch { /* старый браузер без addEventListener у MediaQueryList */ }
 
     app.replaceChildren(h('div', { class: 'center-screen' }, h('div', { class: 'spinner' })))
     api('bootstrap').then((data) => {

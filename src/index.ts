@@ -20,7 +20,7 @@ import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.j
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
 import { parseHostingTzOffset } from './hosting.js'
-import { parseDevUsernames, parseWebappConfig, startWebappServer } from './webapp.js'
+import { parseWebappConfig, startWebappServer } from './webapp.js'
 
 const required = (name: string): string => {
     const v = process.env[name]
@@ -48,7 +48,8 @@ const main = async () => {
         password: process.env.KEENETIC_PASSWORD,
         rciPath: process.env.KEENETIC_RCI_PATH,
     })
-    // userId дев-аккаунтов, которым доступны отладочные команды (через запятую).
+    // userId дев-аккаунтов (через запятую): отладочные команды, отчёты об ошибках
+    // в личку и дев-меню миниаппа (переключатель перспективы + сид фейковых заявок).
     const devUserIds = parseAllowedChats(process.env.DEV_USER_IDS)
     // Миниапп хостинга: без WEBAPP_URL вся подсистема выключена.
     const webappConfig = parseWebappConfig({
@@ -56,7 +57,6 @@ const main = async () => {
         port: process.env.WEBAPP_PORT,
         host: process.env.WEBAPP_HOST,
     })
-    const devUsernames = parseDevUsernames(process.env.DEV_USERNAMES)
     const hostingTzOffset = parseHostingTzOffset(process.env.HOSTING_TZ_OFFSET_MINUTES)
 
     if (allowedChats.size === 0) {
@@ -128,7 +128,7 @@ const main = async () => {
             residents,
             botToken,
             config: webappConfig,
-            devUsernames,
+            devUserIds,
             tzOffsetMinutes: hostingTzOffset,
         })
         if (self.username) {
@@ -140,7 +140,7 @@ const main = async () => {
             await tg.call({
                 _: 'bots.setBotMenuButton',
                 userId: { _: 'inputUserEmpty' },
-                button: { _: 'botMenuButton', text: 'Хостинг', url: webappConfig.publicUrl },
+                button: { _: 'botMenuButton', text: 'Хост', url: webappConfig.publicUrl },
             })
         } catch (err) {
             console.error('[webapp] не удалось установить кнопку меню:', err)

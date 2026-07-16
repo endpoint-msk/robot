@@ -41,7 +41,7 @@ export const setHostingMiniappLink = (link: string | null): void => {
 /** Клавиатура под списком присутствующих: кнопка заявки на визит для гостей, читающих чат. */
 const presenceListMarkup = () =>
     hostingMiniappLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти — оставить заявку', hostingMiniappLink)]])
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', hostingMiniappLink)]])
         : undefined
 
 /** Клавиатура настроек авто-отметки по MAC. У текущего выбора — галочка. */

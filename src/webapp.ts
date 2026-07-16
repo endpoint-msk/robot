@@ -7,7 +7,9 @@ import type { TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
     archiveWeeks,
+    buildVisitIcs,
     createHostingRequest,
+    deleteHostingRequest,
     HOSTING_DAYS_AHEAD,
     isValidDayKey,
     notifyApproverCancelled,
@@ -17,6 +19,7 @@ import {
     notifyResidentsAboutRequest,
     requestsForDay,
     todayKey,
+    updateHostingRequest,
     weekStartOf,
 } from './hosting.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
@@ -47,16 +50,6 @@ export const parseWebappConfig = (env: {
     const port = Number(env.port ?? '') || 8080
     const host = env.host?.trim() || '0.0.0.0'
     return { publicUrl, port, host }
-}
-
-/** Usernames (lower-case, без @) с доступом к дев-переключателю перспективы в миниаппе. */
-export const parseDevUsernames = (raw: string | undefined): Set<string> => {
-    const out = new Set<string>()
-    if (!raw) return out
-    for (const part of raw.split(',').map((s) => s.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)) {
-        out.add(part)
-    }
-    return out
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +150,8 @@ export type WebappDeps = {
     residents: ResidentDirectory
     botToken: string
     config: WebappConfig
-    devUsernames: ReadonlySet<string>
+    /** userId дев-аккаунтов (DEV_USER_IDS): дев-меню и переключатель перспективы. */
+    devUserIds: ReadonlySet<number>
     tzOffsetMinutes: number
 }
 
@@ -180,6 +174,24 @@ const requestsView = (list: HostingRequest[]) =>
         approvedBy: r.approvedBy,
     }))
 
+/** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
+const isDevUser = (ctx: ApiContext): boolean => ctx.devUserIds.has(ctx.user.userId)
+
+/**
+ * Фейковый гость для дев-заявок. userId отрицательный — так он гарантированно не
+ * столкнётся с реальным Telegram-id (те всегда положительные), а рассылка/уведомления
+ * такому «гостю» просто молча не доедут (sendText обёрнут в try/catch).
+ */
+const makeFakeGuest = (): HostingUser => {
+    const names = ['Тестовый Гость', 'Гриша Тестов', 'Аня Пробная', 'Пётр Фейков', 'Лена Черновик']
+    const n = Math.floor(Math.random() * names.length)
+    return {
+        userId: -(1_000_000 + Math.floor(Math.random() * 1_000_000)),
+        username: null,
+        name: names[n] ?? 'Тестовый Гость',
+    }
+}
+
 /** Общий снапшот для фронта: 7 дней обзора, свои заявки, настройки (резиденту). */
 const buildBootstrap = (ctx: ApiContext) => {
     const { storage, tzOffsetMinutes, user, resident } = ctx
@@ -192,8 +204,9 @@ const buildBootstrap = (ctx: ApiContext) => {
             dateKey,
             total: requests.length,
             approved: requests.filter((r) => r.status === 'approved').length,
-            // Детали заявок видят только резиденты; гостям — лишь счётчики.
-            ...(resident ? { requests: requestsView(requests) } : {}),
+            // Детали заявок видят резиденты и dev-аккаунты (последним они нужны для
+            // дев-меню — правка и удаление). Гостям — только счётчики.
+            ...(resident || isDevUser(ctx) ? { requests: requestsView(requests) } : {}),
         })
     }
     const myRequests = Object.values(storage.get().hostingRequests)
@@ -216,7 +229,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             username: user.username,
             name: user.name,
             isResident: resident,
-            isDev: user.username !== null && ctx.devUsernames.has(user.username.toLowerCase()),
+            isDev: isDevUser(ctx),
         },
         todayKey: today,
         days,
@@ -231,6 +244,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
     const requireResident = (): boolean => {
         if (!resident) sendError(res, 403, 'not_resident', 'Доступно только резидентам.')
         return resident
+    }
+    const requireDev = (): boolean => {
+        const dev = isDevUser(ctx)
+        if (!dev) sendError(res, 403, 'not_dev', 'Доступно только dev-аккаунтам из DEV_USER_IDS.')
+        return dev
     }
     const findRequest = (): HostingRequest | null => {
         const id = typeof body.id === 'string' ? body.id : ''
@@ -263,6 +281,67 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             void notifyResidentsAboutRequest(client, storage, allowedChats, tzOffsetMinutes, config.publicUrl, created.request)
                 .catch((err) => console.error('[hosting] не удалось разослать уведомления о заявке:', err))
             sendJson(res, 200, { request: requestsView([created.request])[0], ...buildBootstrap(ctx) })
+            return
+        }
+
+        // Дев-сид: заявка от фейкового гостя на произвольный день/время из ближайших 7.
+        // Резидентов не уведомляем — это тестовые данные, а не реальный визит.
+        case 'dev.seed': {
+            if (!requireDev()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const time = typeof body.time === 'string' ? body.time : ''
+            const purpose = typeof body.purpose === 'string' && body.purpose.trim()
+                ? body.purpose
+                : 'Фейковая заявка (dev)'
+            const created = await createHostingRequest(storage, tzOffsetMinutes, {
+                guest: makeFakeGuest(),
+                dateKey,
+                time,
+                purpose,
+            })
+            if (!created.ok) {
+                const messages = {
+                    bad_date: 'Выбери день в пределах ближайшей недели.',
+                    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    duplicate: 'У этого фейкового гостя уже есть заявка на день.',
+                } as const
+                sendError(res, 400, created.error, messages[created.error])
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Дев-правка чужой заявки: день/время/цель. Гостя не трогаем и не уведомляем —
+        // инструмент для отладки, а не пользовательский поток.
+        case 'dev.update': {
+            if (!requireDev()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const time = typeof body.time === 'string' ? body.time : ''
+            const purpose = typeof body.purpose === 'string' ? body.purpose : ''
+            const updated = await updateHostingRequest(storage, tzOffsetMinutes, id, { dateKey, time, purpose })
+            if (!updated.ok) {
+                const messages = {
+                    bad_date: 'Выбери день в пределах ближайшей недели.',
+                    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    not_found: 'Заявка не найдена — возможно, её уже удалили.',
+                } as const
+                sendError(res, updated.error === 'not_found' ? 404 : 400, updated.error, messages[updated.error])
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'dev.delete': {
+            if (!requireDev()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            if (!(await deleteHostingRequest(storage, id))) {
+                sendError(res, 404, 'not_found', 'Заявка не найдена — возможно, её уже удалили.')
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
             return
         }
 
@@ -513,6 +592,34 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
+            // Файл календаря отдаём отдельным GET-путём (не под /api/, там только POST):
+            // ссылку открывает системный браузер, поэтому initData едет в query, а не в
+            // теле. Подпись и срок жизни проверяем ровно так же, как в API.
+            if (pathname === '/visit.ics') {
+                if (req.method !== 'GET') {
+                    res.writeHead(405).end()
+                    return
+                }
+                const user = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
+                if (!user) {
+                    res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
+                        .end('Ссылка устарела — открой миниапп заново.')
+                    return
+                }
+                const request = deps.storage.get().hostingRequests[url.searchParams.get('id') ?? '']
+                // Только свой визит: в файле цель визита и кто хостит.
+                if (!request || request.guest.userId !== user.userId) {
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Заявка не найдена.')
+                    return
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Content-Disposition': 'attachment; filename="visit.ics"',
+                    'Cache-Control': 'no-store',
+                }).end(buildVisitIcs(request, deps.tzOffsetMinutes))
+                return
+            }
+
             if (pathname.startsWith('/api/')) {
                 if (req.method !== 'POST') {
                     sendError(res, 405, 'method_not_allowed', 'Только POST.')
@@ -551,6 +658,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
     })
     server.listen(deps.config.port, deps.config.host, () => {
         console.log(`[webapp] miniapp server on http://${deps.config.host}:${deps.config.port} (public: ${deps.config.publicUrl})`)
+        console.log(`[webapp] dev-аккаунты (DEV_USER_IDS): ${deps.devUserIds.size > 0 ? [...deps.devUserIds].join(', ') : '— пусто, дев-меню и переключателя перспективы не будет'}`)
     })
     return { server, stop: () => server.close() }
 }

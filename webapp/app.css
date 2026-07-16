@@ -1,21 +1,50 @@
-/* Дизайн-система миниаппа: светлый iOS (см. «Раскадровка хостинга v2»).
-   Токены и компоненты один в один с макетом: фон #f2f2f7, карточки r22,
-   крупный заголовок 34/800, акцент #007aff, одобрение #34c759. */
+/* Дизайн-система миниаппа: iOS, светлая и тёмная темы (см. «Раскадровка хостинга v2»).
+   Токены и компоненты один в один с макетом: карточки r22, крупный заголовок 34/800,
+   акцент #007aff, одобрение #34c759. Акценты в обеих темах одинаковые — меняются
+   только фон/подложки/вторичный цвет. */
 
+/* Тему ставит JS: data-theme на <html> — всегда 'light' | 'dark' (уже разрешённая,
+   'system' резолвится в скрипте). Значения токенов — из макета «Раскадровка v2». */
 :root {
     --bg: #f2f2f7;
+    /* Тот же цвет, что --bg, но с нулевой альфой: для градиента нижней панели.
+       `transparent` тут нельзя — часть браузеров интерполирует через чёрный. */
+    --bg-0: rgba(242, 242, 247, 0);
     --card: #ffffff;
     --text: #1c1c1e;
-    --text-2: rgba(60, 60, 67, 0.6);
-    --text-3: rgba(60, 60, 67, 0.45);
-    --text-4: rgba(60, 60, 67, 0.4);
-    --sep: rgba(60, 60, 67, 0.12);
+    /* rgb-тройка вторичного цвета: из неё собираются все полупрозрачные оттенки. */
+    --sec: 60, 60, 67;
+    --chip: #f2f2f7;
+    --today: rgba(0, 122, 255, 0.06);
+    --overlay: rgba(0, 0, 0, 0.35);
+    --busy: rgba(242, 242, 247, 0.45);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+
     --blue: #007aff;
     --green: #34c759;
     --red: #ff3b30;
-    --chip: #f2f2f7;
     --radius-card: 22px;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme="dark"] {
+    --bg: #000000;
+    --bg-0: rgba(0, 0, 0, 0);
+    --card: #1c1c1e;
+    --text: #ffffff;
+    --sec: 235, 235, 245;
+    --chip: #2c2c2e;
+    --today: rgba(0, 122, 255, 0.22);
+    --overlay: rgba(0, 0, 0, 0.5);
+    --busy: rgba(0, 0, 0, 0.45);
+    /* На чёрном фоне тень не читается — карточки разделяет сам цвет. */
+    --shadow-card: none;
+}
+
+:root {
+    --text-2: rgba(var(--sec), 0.6);
+    --text-3: rgba(var(--sec), 0.45);
+    --text-4: rgba(var(--sec), 0.4);
+    --sep: rgba(var(--sec), 0.12);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -42,15 +71,33 @@ body {
 .screen {
     padding: calc(12px + var(--tg-content-safe-area-inset-top, 0px)) 16px
              calc(34px + var(--tg-safe-area-inset-bottom, 0px));
-    animation: screen-in 0.18s ease;
 }
 .screen.has-bottom-bar { padding-bottom: calc(110px + var(--tg-safe-area-inset-bottom, 0px)); }
 
-/* Только fade: transform создал бы containing block для position:fixed
-   нижней кнопки, и она «прыгала» бы после конца анимации. */
+/* Переходы между экранами. transform здесь безопасен: render() выносит
+   .bottom-bar из .screen, поэтому containing block для position:fixed
+   не создаётся и панель не едет вместе с экраном.
+   Кривая — iOS-подобная (быстрый старт, мягкая остановка). */
+.screen.in-forward { animation: slide-from-right 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+.screen.in-back { animation: slide-from-left 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+.screen.in-fade { animation: screen-in 0.18s ease; }
+
+@keyframes slide-from-right {
+    from { opacity: 0; transform: translateX(32px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slide-from-left {
+    from { opacity: 0; transform: translateX(-32px); }
+    to { opacity: 1; transform: translateX(0); }
+}
 @keyframes screen-in {
     from { opacity: 0.35; }
     to { opacity: 1; }
+}
+
+/* Уважаем системную настройку «уменьшить движение». */
+@media (prefers-reduced-motion: reduce) {
+    .screen.in-forward, .screen.in-back, .screen.in-fade { animation: screen-in 0.12s ease; }
 }
 
 /* --- Шапка экрана --- */
@@ -80,7 +127,8 @@ body {
 }
 .subtitle { font-size: 15px; color: var(--text-2); margin-top: 4px; }
 
-/* Дев-переключатель перспективы (только для DEV_USERNAMES) */
+/* Дев-переключатель перспективы (только для DEV_USER_IDS) */
+.dev-chips { display: flex; gap: 6px; }
 .dev-chip {
     flex-shrink: 0;
     display: inline-flex;
@@ -95,6 +143,83 @@ body {
     cursor: pointer;
     user-select: none;
 }
+
+/* --- Модалки (вместо нативных window.alert/confirm) --- */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--overlay);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+.modal-overlay.shown { opacity: 1; }
+
+.modal-card {
+    width: 100%;
+    max-width: 300px;
+    background: var(--card);
+    border-radius: 20px;
+    overflow: hidden;
+    text-align: center;
+    transform: scale(0.92);
+    transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.modal-overlay.shown .modal-card { transform: scale(1); }
+
+.modal-text {
+    padding: 20px 20px 18px;
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--text);
+}
+.modal-actions { display: flex; border-top: 0.5px solid var(--sep); }
+.modal-btn {
+    flex: 1;
+    min-height: 46px;
+    padding: 0 8px;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 17px;
+    color: var(--blue);
+    cursor: pointer;
+}
+.modal-btn:active { background: rgba(var(--sec), 0.06); }
+.modal-btn + .modal-btn { border-left: 0.5px solid var(--sep); }
+.modal-btn.primary { font-weight: 600; }
+.modal-btn.destructive { color: var(--red); }
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-card { transition: none; transform: none; }
+}
+
+/* Вторичная кнопка (например, «Добавить в календарь»): подложка карточки, синий текст. */
+.secondary-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 50px;
+    margin-top: 18px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 16px;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--blue);
+    cursor: pointer;
+}
+.secondary-btn:active { opacity: 0.6; }
 
 /* --- Карточки и списки --- */
 
@@ -125,7 +250,7 @@ body {
     position: relative;
 }
 .row.tappable { cursor: pointer; }
-.row.tappable:active { background: rgba(60, 60, 67, 0.06); }
+.row.tappable:active { background: rgba(var(--sec), 0.06); }
 
 .sep { height: 0.5px; background: var(--sep); }
 
@@ -134,7 +259,7 @@ body {
 .day-col { width: 58px; flex-shrink: 0; }
 .day-col .dow { font-size: 17px; font-weight: 700; line-height: 1.25; }
 .day-col .date { font-size: 12px; color: var(--text-2); }
-.row.today { background: rgba(0, 122, 255, 0.06); }
+.row.today { background: var(--today); }
 .row.today .dow, .row.today .date { color: var(--blue); }
 .row.today .date { font-weight: 600; }
 .row.day-empty .dow { color: var(--text-3); }
@@ -152,7 +277,7 @@ body {
     justify-content: center;
     flex-shrink: 0;
 }
-.avatar-stack .avatar { width: 26px; height: 26px; font-size: 12px; box-shadow: 0 0 0 2px #fff; }
+.avatar-stack .avatar { width: 26px; height: 26px; font-size: 12px; box-shadow: 0 0 0 2px var(--card); }
 .avatar-stack .avatar + .avatar { margin-left: -8px; }
 
 .row-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -209,7 +334,7 @@ body {
     cursor: pointer;
 }
 .host-btn:active { opacity: 0.6; }
-.waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(60, 60, 67, 0.5); flex-shrink: 0; }
+.waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.5); flex-shrink: 0; }
 
 /* --- Мои визиты (гость) --- */
 
@@ -234,7 +359,6 @@ body {
 }
 .status-card.approved {
     background: linear-gradient(135deg, #34c759, #28a24a);
-    box-shadow: 0 8px 20px rgba(40, 162, 74, 0.28);
     color: #fff;
 }
 .status-card.pending {
@@ -249,9 +373,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.25);
     flex-shrink: 0;
 }
+.status-card.approved .status-card-icon { background: #defbe6; }
 .status-card.pending .status-card-icon { background: var(--chip); }
 .status-card-title { font-size: 17px; font-weight: 700; }
 .status-card-body { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
@@ -266,7 +390,7 @@ body {
 .kv-key { font-size: 16px; color: var(--text-2); }
 .kv-val { margin-left: auto; font-size: 16px; font-weight: 600; text-align: right; }
 .kv-block { padding: 11px 14px; }
-.kv-block .kv-cap { font-size: 13px; color: rgba(60, 60, 67, 0.5); margin-bottom: 3px; }
+.kv-block .kv-cap { font-size: 13px; color: rgba(var(--sec), 0.5); margin-bottom: 3px; }
 .kv-block .kv-text { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
 
 .footnote {
@@ -276,7 +400,7 @@ body {
     margin: 16px 6px 0;
     font-size: 13px;
     line-height: 1.45;
-    color: rgba(60, 60, 67, 0.55);
+    color: rgba(var(--sec), 0.55);
 }
 .footnote svg { flex-shrink: 0; margin-top: 1px; }
 
@@ -304,15 +428,15 @@ body {
 .day-chip .dc-num { font-size: 16px; font-weight: 700; color: var(--text); }
 .day-chip .dc-counts { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--text-2); }
 .day-chip .dc-approved { font-weight: 700; color: var(--green); }
-.day-chip .dc-dash { font-size: 11px; color: rgba(60, 60, 67, 0.3); }
-.day-chip.selected { background: var(--blue); box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35); }
+.day-chip .dc-dash { font-size: 11px; color: rgba(var(--sec), 0.3); }
+.day-chip.selected { background: var(--blue); }
 .day-chip.selected .dc-dow { color: rgba(255, 255, 255, 0.75); }
 .day-chip.selected .dc-num { color: #fff; }
 .day-chip.selected .dc-counts { color: rgba(255, 255, 255, 0.85); }
 .day-chip.selected .dc-approved { color: #fff; }
 .day-chip.selected .dc-dash { color: rgba(255, 255, 255, 0.6); }
 
-.chips-legend { display: flex; align-items: center; gap: 6px; margin: 0 6px 22px; font-size: 12px; color: rgba(60, 60, 67, 0.5); }
+.chips-legend { display: flex; align-items: center; gap: 6px; margin: 0 6px 22px; font-size: 12px; color: rgba(var(--sec), 0.5); }
 
 /* --- Поля формы --- */
 
@@ -343,7 +467,7 @@ body {
     padding: 0;
     min-height: 44px;
 }
-.purpose-input::placeholder { color: rgba(60, 60, 67, 0.4); }
+.purpose-input::placeholder { color: rgba(var(--sec), 0.4); }
 
 .text-input {
     flex: 1;
@@ -356,7 +480,7 @@ body {
     color: var(--text);
     padding: 0;
 }
-.text-input::placeholder { color: rgba(60, 60, 67, 0.4); }
+.text-input::placeholder { color: rgba(var(--sec), 0.4); }
 .text-input.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 15px; }
 
 /* --- Кнопки --- */
@@ -367,7 +491,7 @@ body {
     right: 0;
     bottom: 0;
     padding: 12px 16px calc(16px + var(--tg-safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, var(--bg) 65%, rgba(242, 242, 247, 0));
+    background: linear-gradient(to top, var(--bg) 65%, var(--bg-0));
     max-width: 520px;
     margin: 0 auto;
 }
@@ -376,7 +500,6 @@ body {
     min-height: 50px;
     border-radius: 16px;
     background: var(--blue);
-    box-shadow: 0 6px 16px rgba(0, 122, 255, 0.3);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -405,7 +528,7 @@ body {
     color: var(--red);
     cursor: pointer;
 }
-.destructive-btn:active { background: rgba(60, 60, 67, 0.06); }
+.destructive-btn:active { background: rgba(var(--sec), 0.06); }
 
 /* --- Архив --- */
 
@@ -413,7 +536,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(60, 60, 67, 0.08);
+    background: rgba(var(--sec), 0.08);
     border-radius: 999px;
     padding: 5px 12px;
     margin: 0 4px 16px;
@@ -434,7 +557,7 @@ body {
     justify-content: center;
 }
 .week-square .ws-from { font-size: 15px; font-weight: 700; line-height: 1; }
-.week-square .ws-to { font-size: 9px; color: rgba(60, 60, 67, 0.5); }
+.week-square .ws-to { font-size: 9px; color: rgba(var(--sec), 0.5); }
 .week-title { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .week-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 
@@ -544,7 +667,7 @@ body {
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    border: 3px solid rgba(60, 60, 67, 0.15);
+    border: 3px solid rgba(var(--sec), 0.15);
     border-top-color: var(--blue);
     animation: spin 0.8s linear infinite;
 }
@@ -557,7 +680,7 @@ body.busy #app { pointer-events: none; }
     display: none;
     align-items: center;
     justify-content: center;
-    background: rgba(242, 242, 247, 0.45);
+    background: var(--busy);
     z-index: 50;
 }
 body.busy #busy-overlay { display: flex; }

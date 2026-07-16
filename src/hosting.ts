@@ -255,3 +255,118 @@ export const notifyApproverCancelled = async (
         // личка закрыта — не критично
     }
 }
+
+// ---------------------------------------------------------------------------
+// Дев-операции над заявками (гейт — requireDev в webapp.ts)
+// ---------------------------------------------------------------------------
+
+export type UpdateRequestError = 'bad_date' | 'bad_time' | 'not_found'
+
+/**
+ * Меняет день/время/цель существующей заявки. Ограничения на день — как при
+ * создании (окно обзора), но проверку на дубль не делаем: это дев-инструмент,
+ * а не пользовательский поток.
+ */
+export const updateHostingRequest = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    id: string,
+    patch: { dateKey: string; time: string; purpose: string },
+): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: UpdateRequestError }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(patch.dateKey) || patch.dateKey < today || patch.dateKey > maxDay) {
+        return { ok: false, error: 'bad_date' }
+    }
+    if (!isValidTime(patch.time)) return { ok: false, error: 'bad_time' }
+
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (!r) return
+        r.dateKey = patch.dateKey
+        r.time = patch.time
+        r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]! }
+}
+
+/** Удаляет заявку. true — если она была. */
+export const deleteHostingRequest = async (storage: Storage, id: string): Promise<boolean> => {
+    if (!storage.get().hostingRequests[id]) return false
+    await storage.update((s) => {
+        delete s.hostingRequests[id]
+    })
+    return true
+}
+
+// ---------------------------------------------------------------------------
+// Экспорт визита в календарь (.ics, RFC 5545)
+// ---------------------------------------------------------------------------
+
+/** Заявка задаёт только начало визита — длительность в календаре берём фиксированную. */
+const ICS_EVENT_HOURS = 2
+
+const icsEscape = (s: string): string =>
+    s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+
+/** '2026-07-17T12:00:00.000Z' -> '20260717T120000Z'. */
+const icsStamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+
+/**
+ * Складывание строк по RFC 5545: строка длиннее 75 октетов продолжается на
+ * следующей, начинающейся с пробела. Режем по символам, а не по байтам, —
+ * иначе многобайтная кириллица развалится пополам.
+ */
+const icsFold = (line: string): string => {
+    const out: string[] = []
+    let rest = line
+    while (Buffer.byteLength(rest, 'utf8') > 75) {
+        let cut = rest.length
+        while (cut > 1 && Buffer.byteLength(rest.slice(0, cut), 'utf8') > 75) cut--
+        out.push(rest.slice(0, cut))
+        rest = ' ' + rest.slice(cut)
+    }
+    out.push(rest)
+    return out.join('\r\n')
+}
+
+/** Событие визита для календаря гостя. */
+export const buildVisitIcs = (
+    request: HostingRequest,
+    tzOffsetMinutes: number,
+    now: Date = new Date(),
+): string => {
+    // dateKey/time — в поясе спейса; в DTSTART кладём UTC, чтобы не зависеть от
+    // пояса устройства (см. инвариант про пояс в CLAUDE.md).
+    const startUtc = new Date(Date.parse(`${request.dateKey}T${request.time}:00Z`) - tzOffsetMinutes * 60_000)
+    const endUtc = new Date(startUtc.getTime() + ICS_EVENT_HOURS * 3600_000)
+
+    const description: string[] = []
+    if (request.purpose) description.push(request.purpose)
+    if (request.approvedBy) {
+        const a = request.approvedBy
+        description.push(`Хостит: ${a.name}${a.username ? ` (@${a.username})` : ''}`)
+    }
+
+    const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//endpoint//hosting//RU',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'BEGIN:VEVENT',
+        `UID:${request.id}@endpoint-hosting`,
+        `DTSTAMP:${icsStamp(now)}`,
+        `DTSTART:${icsStamp(startUtc)}`,
+        `DTEND:${icsStamp(endUtc)}`,
+        `SUMMARY:${icsEscape('Визит в хакспейс')}`,
+        ...(description.length > 0 ? [`DESCRIPTION:${icsEscape(description.join('\n'))}`] : []),
+        `STATUS:${request.status === 'approved' ? 'CONFIRMED' : 'TENTATIVE'}`,
+        'END:VEVENT',
+        'END:VCALENDAR',
+    ]
+    return lines.map(icsFold).join('\r\n') + '\r\n'
+}

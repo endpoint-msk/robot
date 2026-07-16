@@ -239,7 +239,7 @@ export const registerHandlers = (
             await msg.answerText(html(renderPresenceText(storage)), {
                 disableWebPreview: true,
                 replyMarkup: webappUrl
-                    ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Хочу прийти — оставить заявку', webappUrl)]])
+                    ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Хочу прийти', webappUrl)]])
                     : undefined,
             })
             return
