@@ -579,7 +579,7 @@ function screenArchive() {
 
     return h('div', { class: 'screen' },
         backRow('Обзор'),
-        header('Архив', 'Прошедшие недели'),
+        header('Архив'),
         holder,
     )
 }
@@ -771,7 +771,7 @@ function screenSettings() {
         themeSection,
         sectionTitle('Уведомления о заявках'),
         notifyCard,
-        h('div', { class: 'footnote' }, icons.info(), 'Придут в личку от бота, когда гость оставит заявку. По умолчанию — только заявки на сегодня.'),
+        h('div', { class: 'footnote' }, icons.info(), 'Придут в личку бота. По умолчанию - только заявки на сегодня.'),
         sectionTitle('Авто-отметка по MAC'),
         h('div', { class: 'card', style: 'margin-bottom:8px' },
             h('div', { class: 'row' },
@@ -815,7 +815,7 @@ function screenMyVisits() {
     const approved = my.filter((r) => r.status === 'approved')
     const pending = my.filter((r) => r.status !== 'approved')
 
-    const parts = [header('Мои визиты', 'Ваши заявки в хакспейс', devChips())]
+    const parts = [header('Мои визиты', null, devChips())]
     if (my.length === 0) {
         parts.push(h('div', { class: 'card' }, emptyState(
             'Пока нет заявок',
@@ -863,8 +863,7 @@ function screenVisit(params) {
     if (approved) {
         statusCard = h('div', { class: 'status-card approved' },
             h('div', { class: 'status-card-head' },
-                // Галочка тёмно-зелёная: фон кружка светлый (#defbe6), белая была бы не видна.
-                h('div', { class: 'status-card-icon' }, icons.check(14, '#28a24a', 2.4)),
+                h('div', { class: 'status-card-icon' }, icons.check(14, 'currentColor', 2)),
                 h('span', { class: 'status-card-title' }, 'Ваш визит подтверждён'),
             ),
             h('div', { class: 'status-card-body' },
@@ -914,7 +913,6 @@ function screenVisit(params) {
                 try { tg.openLink(url) } catch { window.open(url, '_blank') }
             },
         }, icons.calendarPlus(), 'Добавить в календарь'),
-        h('div', { class: 'footnote' }, icons.info(), 'Другие гости и их заявки вам не видны — только ваш визит.'),
         h('div', { style: 'height:22px' }),
         h('button', {
             class: 'destructive-btn',
@@ -1011,7 +1009,7 @@ function screenNewRequest() {
 
     return h('div', { class: 'screen has-bottom-bar' },
         backRow('Назад'),
-        header('Хочу прийти', 'Заявка на визит в хакспейс'),
+        header('Хочу прийти'),
         sectionTitle('День'),
         chips,
         h('div', { class: 'chips-legend' }, icons.check(12, '#34c759', 2.2), 'число заявок и уже одобренных в этот день'),
@@ -1116,7 +1114,7 @@ function screenDev(params) {
 
     return h('div', { class: 'screen has-bottom-bar' },
         backRow('Назад'),
-        header('Dev', 'Тестовые данные — резидентам не уведомляем'),
+        header('Dev', 'Тестовые данные - резиденты не будут уведомлены'),
         sectionTitle('День'),
         chips,
         sectionTitle('Детали'),

@@ -20,6 +20,16 @@
     --busy: rgba(242, 242, 247, 0.45);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
 
+    /* Карточка «визит подтверждён»: своя зелёная палитра, не завязана на акценты.
+       В светлой теме — светлая плашка с тёмно-зелёным текстом (как в макете),
+       в тёмной — инвертировано: тёмная плашка со светло-зелёным. */
+    --ok-bg: #e5ffe6;
+    --ok-fg: #0d7a2f;
+    --ok-check: #ffffff;
+    --ok-name: #123a1f;
+    --ok-sec: 13, 90, 40;
+    --ok-shadow: 0 1px 2px rgba(0, 60, 20, 0.06);
+
     --blue: #007aff;
     --green: #34c759;
     --red: #ff3b30;
@@ -38,6 +48,14 @@
     --busy: rgba(0, 0, 0, 0.45);
     /* На чёрном фоне тень не читается — карточки разделяет сам цвет. */
     --shadow-card: none;
+
+    --ok-bg: #102c19;
+    --ok-fg: #34c759;
+    /* Кружок в тёмной теме яркий, поэтому галочка на нём — тёмная. */
+    --ok-check: #06240f;
+    --ok-name: #e8f8ec;
+    --ok-sec: 190, 240, 200;
+    --ok-shadow: none;
 }
 
 :root {
@@ -358,8 +376,9 @@ body {
     margin-bottom: 18px;
 }
 .status-card.approved {
-    background: linear-gradient(135deg, #34c759, #28a24a);
-    color: #fff;
+    background: var(--ok-bg);
+    box-shadow: var(--ok-shadow);
+    color: var(--ok-name);
 }
 .status-card.pending {
     background: var(--card);
@@ -375,14 +394,16 @@ body {
     justify-content: center;
     flex-shrink: 0;
 }
-.status-card.approved .status-card-icon { background: #defbe6; }
+/* Галочка внутри кружка рисуется currentColor — так её цвет живёт в теме, а не в JS. */
+.status-card.approved .status-card-icon { background: var(--ok-fg); color: var(--ok-check); }
 .status-card.pending .status-card-icon { background: var(--chip); }
 .status-card-title { font-size: 17px; font-weight: 700; }
+.status-card.approved .status-card-title { color: var(--ok-fg); }
 .status-card-body { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.host-avatar { width: 46px; height: 46px; font-size: 18px; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5); }
-.host-kicker { font-size: 12px; color: rgba(255, 255, 255, 0.8); }
-.host-name { font-size: 17px; font-weight: 700; line-height: 1.2; }
-.host-sub { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.host-avatar { width: 46px; height: 46px; font-size: 18px; box-shadow: 0 0 0 2px var(--ok-bg); }
+.host-kicker { font-size: 12px; color: rgba(var(--ok-sec), 0.7); }
+.host-name { font-size: 17px; font-weight: 700; line-height: 1.2; color: var(--ok-name); }
+.host-sub { font-size: 13px; color: rgba(var(--ok-sec), 0.75); }
 .status-card.pending .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 
 /* --- Детальные строки «ключ — значение» --- */
