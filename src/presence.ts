@@ -1,5 +1,6 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
+import { remindAboutTodayRequests } from './hosting.js'
 import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -36,6 +37,26 @@ let hostingMiniappLink: string | null = null
 
 export const setHostingMiniappLink = (link: string | null): void => {
     hostingMiniappLink = link
+}
+
+/**
+ * Конфиг напоминания о заявках при появлении в спейсе. null — миниапп не настроен,
+ * напоминаний нет. Ставится на старте, как и hostingMiniappLink.
+ */
+let hostingReminder: { webappUrl: string; tzOffsetMinutes: number } | null = null
+
+export const setHostingReminder = (config: { webappUrl: string; tzOffsetMinutes: number } | null): void => {
+    hostingReminder = config
+}
+
+/**
+ * Резидент только что появился в спейсе — напоминаем ему про сегодняшние заявки.
+ * Fire-and-forget: чек-ин не должен ждать отправки DM.
+ */
+const remindOnArrival = (client: TelegramClient, storage: Storage, userId: number): void => {
+    if (!hostingReminder) return
+    void remindAboutTodayRequests(client, storage, hostingReminder.tzOffsetMinutes, hostingReminder.webappUrl, userId)
+        .catch((err) => console.error('[presence] не удалось напомнить о заявках:', err))
 }
 
 /** Клавиатура под списком присутствующих: кнопка заявки на визит для гостей, читающих чат. */
@@ -236,6 +257,8 @@ export const checkInResident = async (
     for (const chatId of chats) {
         await upsertPresenceListInChat(client, storage, chatId)
     }
+    // Только на появление в спейсе: existing — это смена ника/повторный тап, юзер уже внутри.
+    if (!existing) remindOnArrival(client, storage, user.id)
     return { chats, alreadyChecked: !!existing }
 }
 
@@ -726,6 +749,7 @@ const macCheckIn = async (
     for (const chatId of chats) {
         await upsertPresenceListInChat(client, storage, chatId)
     }
+    remindOnArrival(client, storage, binding.userId)
     return true
 }
 

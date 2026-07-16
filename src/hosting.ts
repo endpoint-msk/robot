@@ -204,6 +204,39 @@ export const notifyResidentsAboutRequest = async (
     }
 }
 
+/**
+ * Напоминает резиденту про сегодняшние заявки без хоста, когда он появился в
+ * спейсе: он уже на месте, а гостей взять некому. Молчим, если брать нечего или
+ * резидент выключил уведомления хостинга (`hostingNotify.enabled`); режим
+ * 'today' здесь не смотрим — напоминание и так только про сегодня.
+ */
+export const remindAboutTodayRequests = async (
+    client: TelegramClient,
+    storage: Storage,
+    tzOffsetMinutes: number,
+    webappUrl: string,
+    userId: number,
+): Promise<void> => {
+    if (!notifyPrefsFor(storage, userId).enabled) return
+    const pending = requestsForDay(storage, todayKey(tzOffsetMinutes))
+        .filter((r) => r.status === 'pending' && r.guest.userId !== userId)
+    if (pending.length === 0) return
+    const lines = [
+        pending.length === 1
+            ? '👋 Ты в спейсе — на сегодня есть заявка без хоста:'
+            : '👋 Ты в спейсе — на сегодня есть заявки без хоста:',
+        ...pending.map((r) => `• ${r.time} — ${guestLabel(r.guest)}`),
+    ]
+    try {
+        await client.sendText(userId, html(lines.join('<br>')), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // резидент не открывал личку с ботом
+    }
+}
+
 /** Сообщает гостю в личку, что его заявку одобрили. */
 export const notifyGuestApproved = async (
     client: TelegramClient,

@@ -13,6 +13,7 @@ import {
     registerPresenceDeleteWatcher,
     registerPresenceHandlers,
     setHostingMiniappLink,
+    setHostingReminder,
     startMacPresencePoller,
     startPresenceScheduler,
 } from './presence.js'
@@ -156,6 +157,8 @@ const main = async () => {
             // (его нужно один раз включить в BotFather, указав тот же WEBAPP_URL).
             setHostingMiniappLink(`https://t.me/${self.username}?startapp=hosting`)
         }
+        // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
+        setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
         try {
             await tg.call({
                 _: 'bots.setBotMenuButton',
