@@ -892,7 +892,7 @@ function screenVisit(params) {
                 h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
                 h('span', { class: 'status-card-title' }, 'Заявка ждёт ответа'),
             ),
-            h('div', { class: 'status-card-note' }, 'Резиденты видят вашу заявку. Как только кто-то возьмётся захостить — бот напишет вам в личку.'),
+            h('div', { class: 'status-card-note' }, 'Резиденты видят вашу заявку. Как только кто-то возьмётся захостить - бот напишет вам в личку.'),
         )
     }
 
