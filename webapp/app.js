@@ -241,15 +241,24 @@ function haptic(kind) {
     try { tg.HapticFeedback.notificationOccurred(kind) } catch { /* старый клиент */ }
 }
 
-/** Может ли бот уже писать гостю в личку (он нажимал /start или раньше дал доступ). */
-const botCanWrite = () => !!(tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.allows_write_to_pm)
+// initData не обновляется в рамках сессии, поэтому выданный доступ помним сами.
+let writeAccessGranted = false
 
-/** Нативная плашка Telegram «разрешить боту писать в личку». Promise<boolean> —
-    true, если доступ дали. На старых клиентах без метода — молча false. */
+/** Может ли бот уже писать гостю в личку (он нажимал /start или дал доступ). */
+const botCanWrite = () => writeAccessGranted
+    || !!(tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.allows_write_to_pm)
+
+/** Нативная плашка Telegram «разрешить боту писать в личку». Promise<boolean> -
+    true, если доступ дали. На старых клиентах без метода - молча false. */
 function requestWriteAccess() {
     return new Promise((resolve) => {
         if (!tg || typeof tg.requestWriteAccess !== 'function') { resolve(false); return }
-        try { tg.requestWriteAccess((granted) => resolve(!!granted)) } catch { resolve(false) }
+        try {
+            tg.requestWriteAccess((granted) => {
+                if (granted) writeAccessGranted = true
+                resolve(!!granted)
+            })
+        } catch { resolve(false) }
     })
 }
 
@@ -851,12 +860,34 @@ function visitRow(r) {
     return h('div', { class: 'row tappable', onclick: () => push('visit', { id: r.id }) }, iconSquare, main, right)
 }
 
+/** Плашка «бот не может писать вам»: видна, пока доступа нет; тап зовёт нативный
+    запрос Telegram, после выдачи доступа плашка пропадает. */
+function writeAccessBanner() {
+    if (botCanWrite()) return null
+    return h('div', {
+        class: 'write-banner',
+        onclick: async () => {
+            const ok = await requestWriteAccess()
+            if (ok) { haptic('success'); rerender() }
+        },
+    },
+        h('div', { class: 'wb-icon' }, icons.bell()),
+        h('div', { class: 'wb-text' },
+            h('div', { class: 'wb-title' }, 'Бот не может писать вам'),
+            h('div', { class: 'wb-sub' }, 'Разрешите, чтобы получать ответы на заявки'),
+        ),
+        icons.chevron(),
+    )
+}
+
 function screenMyVisits() {
     const my = store.data.myRequests
     const approved = my.filter((r) => r.status === 'approved')
     const pending = my.filter((r) => r.status !== 'approved')
 
     const parts = [header('Мои визиты', null, devChips())]
+    const banner = writeAccessBanner()
+    if (banner) parts.push(banner)
     if (my.length === 0) {
         parts.push(h('div', { class: 'card' }, emptyState(
             'Пока нет заявок',
