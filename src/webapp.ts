@@ -12,8 +12,10 @@ import {
     clearTimeProposal,
     createHostingRequest,
     deleteHostingRequest,
+    editHostingRequest,
     HOSTING_DAYS_AHEAD,
     isValidDayKey,
+    nowTimeKey,
     notifyApproverCancelled,
     notifyGuestApproved,
     notifyGuestUnapproved,
@@ -25,6 +27,8 @@ import {
     notifyResidentTimeCountered,
     proposeTime,
     requestsForDay,
+    residentsAttendingDay,
+    setResidentAttendance,
     todayKey,
     updateHostingRequest,
     weekStartOf,
@@ -180,7 +184,33 @@ const requestsView = (list: HostingRequest[]) =>
         guest: r.guest,
         approvedBy: r.approvedBy,
         timeProposal: r.timeProposal ?? null,
+        anon: r.anon === true,
     }))
+
+/**
+ * Публичный список «кто придёт» на день (виден всем, включая гостей): резиденты,
+ * отметившиеся «я приду» (в приоритете, с пометкой), затем подтверждённые гости
+ * без анонимных. Цель визита сюда НЕ попадает.
+ */
+const attendeesView = (storage: Storage, dateKey: string) => {
+    const residents = residentsAttendingDay(storage, dateKey).map((a) => ({
+        userId: a.user.userId,
+        name: a.user.name,
+        username: a.user.username,
+        resident: true as const,
+        time: null as string | null,
+    }))
+    const guests = requestsForDay(storage, dateKey)
+        .filter((r) => r.status === 'approved' && !r.anon)
+        .map((r) => ({
+            userId: r.guest.userId,
+            name: r.guest.name,
+            username: r.guest.username,
+            resident: false as const,
+            time: r.time as string | null,
+        }))
+    return [...residents, ...guests]
+}
 
 /** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
 const isDevUser = (ctx: ApiContext): boolean => ctx.devUserIds.has(ctx.user.userId)
@@ -215,6 +245,8 @@ const buildBootstrap = (ctx: ApiContext) => {
             // Детали заявок видят резиденты и dev-аккаунты (последним они нужны для
             // дев-меню — правка и удаление). Гостям — только счётчики.
             ...(resident || isDevUser(ctx) ? { requests: requestsView(requests) } : {}),
+            // Публичный список «кто придёт» — виден всем.
+            attendees: attendeesView(storage, dateKey),
         })
     }
     const myRequests = Object.values(storage.get().hostingRequests)
@@ -240,6 +272,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             isDev: isDevUser(ctx),
         },
         todayKey: today,
+        nowTime: nowTimeKey(tzOffsetMinutes),
         days,
         myRequests: requestsView(myRequests),
         settings,
@@ -275,11 +308,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const time = typeof body.time === 'string' ? body.time : ''
             const purpose = typeof body.purpose === 'string' ? body.purpose : ''
-            const created = await createHostingRequest(storage, tzOffsetMinutes, { guest: user, dateKey, time, purpose })
+            const anon = body.anon === true
+            const created = await createHostingRequest(storage, tzOffsetMinutes, { guest: user, dateKey, time, purpose, anon })
             if (!created.ok) {
                 const messages = {
                     bad_date: 'Выбери день в пределах ближайшей недели.',
                     bad_time: 'Укажи время прихода в формате ЧЧ:ММ.',
+                    past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У тебя уже есть заявка на этот день.',
                 } as const
                 sendError(res, 400, created.error, messages[created.error])
@@ -289,6 +324,50 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             void notifyResidentsAboutRequest(client, storage, allowedChats, tzOffsetMinutes, config.publicUrl, created.request)
                 .catch((err) => console.error('[hosting] не удалось разослать уведомления о заявке:', err))
             sendJson(res, 200, { request: requestsView([created.request])[0], ...buildBootstrap(ctx) })
+            return
+        }
+
+        // Гость правит свою заявку: день/время/цель/анонимность (пока она без хоста).
+        case 'edit': {
+            const request = findRequest()
+            if (!request) return
+            if (request.guest.userId !== user.userId) {
+                sendError(res, 403, 'not_yours', 'Редактировать можно только свою заявку.')
+                return
+            }
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const time = typeof body.time === 'string' ? body.time : ''
+            const purpose = typeof body.purpose === 'string' ? body.purpose : ''
+            const anon = body.anon === true
+            const edited = await editHostingRequest(storage, tzOffsetMinutes, request.id, user.userId, { dateKey, time, purpose, anon })
+            if (!edited.ok) {
+                const messages = {
+                    not_found: 'Заявка не найдена — возможно, её уже отменили.',
+                    not_pending: 'Заявку уже одобрили — измени её через отмену и новую заявку.',
+                    bad_date: 'Выбери день в пределах ближайшей недели.',
+                    bad_time: 'Укажи время прихода в формате ЧЧ:ММ.',
+                    past_time: 'Это время уже прошло — выбери время позже текущего.',
+                    duplicate: 'У тебя уже есть заявка на этот день.',
+                } as const
+                const status = edited.error === 'not_found' ? 404 : edited.error === 'not_pending' ? 409 : 400
+                sendError(res, status, edited.error, messages[edited.error])
+                return
+            }
+            sendJson(res, 200, { request: requestsView([edited.request])[0], ...buildBootstrap(ctx) })
+            return
+        }
+
+        // Резидент отмечает «я приду» / снимает отметку на день (без заявки).
+        case 'attend': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const coming = body.coming === true
+            const result = await setResidentAttendance(storage, tzOffsetMinutes, dateKey, user, coming)
+            if (!result.ok) {
+                sendError(res, 400, result.error, 'Выбери день в пределах ближайшей недели.')
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
             return
         }
 
@@ -311,6 +390,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 const messages = {
                     bad_date: 'Выбери день в пределах ближайшей недели.',
                     bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    past_time: 'Это время уже прошло.',
                     duplicate: 'У этого фейкового гостя уже есть заявка на день.',
                 } as const
                 sendError(res, 400, created.error, messages[created.error])

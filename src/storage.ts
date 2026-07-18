@@ -42,7 +42,7 @@ const normalizeHostingRequests = (raw: unknown): Record<string, HostingRequest> 
     const out: Record<string, HostingRequest> = {}
     for (const [key, value] of Object.entries(raw as Record<string, HostingRequest>)) {
         if (!value || typeof value !== 'object') continue
-        out[key] = { ...value, timeProposal: value.timeProposal ?? null }
+        out[key] = { ...value, anon: value.anon === true, timeProposal: value.timeProposal ?? null }
     }
     return out
 }
@@ -70,6 +70,7 @@ export class Storage {
                 resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,
                 goalsMuted: parsed.goalsMuted ?? {},
                 hostingRequests: normalizeHostingRequests(parsed.hostingRequests),
+                hostingAttendance: parsed.hostingAttendance ?? {},
                 hostingNotify: parsed.hostingNotify ?? {},
             }
         } catch (err) {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { Storage } from './storage.js'
-import type { HostingNotifyPrefs, HostingRequest, HostingUser, TimeProposal } from './types.js'
+import type { HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, TimeProposal } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -28,6 +28,10 @@ export const dayKeyOf = (date: Date, offsetMinutes: number): string =>
     new Date(date.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10)
 
 export const todayKey = (offsetMinutes: number): string => dayKeyOf(new Date(), offsetMinutes)
+
+/** Текущее время 'HH:MM' в поясе спейса — для отсечения уже прошедших слотов «на сегодня». */
+export const nowTimeKey = (offsetMinutes: number, now: Date = new Date()): string =>
+    new Date(now.getTime() + offsetMinutes * 60_000).toISOString().slice(11, 16)
 
 export const isValidDayKey = (key: string): boolean => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return false
@@ -56,16 +60,21 @@ export const isValidTime = (raw: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/
 
 export const MAX_PURPOSE_LENGTH = 300
 
-export type CreateRequestError = 'bad_date' | 'bad_time' | 'duplicate'
+export type CreateRequestError = 'bad_date' | 'bad_time' | 'past_time' | 'duplicate'
+
+/** Слот дня/времени уже в прошлом относительно «сейчас» в поясе спейса (проверяем только текущий день). */
+export const isPastSlot = (dateKey: string, time: string, offsetMinutes: number): boolean =>
+    dateKey === todayKey(offsetMinutes) && time < nowTimeKey(offsetMinutes)
 
 /**
  * Создаёт заявку на визит. День должен попадать в окно обзора (сегодня..+6),
- * у одного гостя — не больше одной активной заявки на день.
+ * время «на сегодня» — не в прошлом, у одного гостя — не больше одной активной
+ * заявки на день.
  */
 export const createHostingRequest = async (
     storage: Storage,
     tzOffsetMinutes: number,
-    input: { guest: HostingUser; dateKey: string; time: string; purpose: string },
+    input: { guest: HostingUser; dateKey: string; time: string; purpose: string; anon?: boolean },
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: CreateRequestError }> => {
     const today = todayKey(tzOffsetMinutes)
     const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
@@ -73,6 +82,7 @@ export const createHostingRequest = async (
         return { ok: false, error: 'bad_date' }
     }
     if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
+    if (isPastSlot(input.dateKey, input.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
     const duplicate = Object.values(storage.get().hostingRequests).some(
         (r) => r.guest.userId === input.guest.userId && r.dateKey === input.dateKey,
     )
@@ -83,6 +93,7 @@ export const createHostingRequest = async (
         dateKey: input.dateKey,
         time: input.time,
         purpose: input.purpose.trim().slice(0, MAX_PURPOSE_LENGTH),
+        anon: input.anon === true,
         guest: input.guest,
         createdAt: new Date().toISOString(),
         status: 'pending',
@@ -95,6 +106,80 @@ export const createHostingRequest = async (
     })
     return { ok: true, request }
 }
+
+export type EditRequestError = 'not_found' | 'not_pending' | 'bad_date' | 'bad_time' | 'past_time' | 'duplicate'
+
+/**
+ * Правка гостем своей заявки: день/время/цель/анонимность. Только пока заявка без
+ * хоста (`pending`); окно дня и «не в прошлом» — как при создании; дубль на день
+ * не считаем сам с собой. Любое незакрытое предложение переноса времени снимаем —
+ * гость сам сменил слот.
+ */
+export const editHostingRequest = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    id: string,
+    guestUserId: number,
+    patch: { dateKey: string; time: string; purpose: string; anon: boolean },
+): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: EditRequestError }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing || existing.guest.userId !== guestUserId) return { ok: false, error: 'not_found' }
+    if (existing.status !== 'pending') return { ok: false, error: 'not_pending' }
+
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(patch.dateKey) || patch.dateKey < today || patch.dateKey > maxDay) {
+        return { ok: false, error: 'bad_date' }
+    }
+    if (!isValidTime(patch.time)) return { ok: false, error: 'bad_time' }
+    if (isPastSlot(patch.dateKey, patch.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
+    const duplicate = Object.values(storage.get().hostingRequests).some(
+        (r) => r.id !== id && r.guest.userId === guestUserId && r.dateKey === patch.dateKey,
+    )
+    if (duplicate) return { ok: false, error: 'duplicate' }
+
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (!r) return
+        r.dateKey = patch.dateKey
+        r.time = patch.time
+        r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
+        r.anon = patch.anon
+        r.timeProposal = null
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]! }
+}
+
+// ---------------------------------------------------------------------------
+// Отметки резидентов «я приду» на день
+// ---------------------------------------------------------------------------
+
+const attendanceKey = (dateKey: string, userId: number): string => `${dateKey}#${userId}`
+
+/** Ставит/снимает отметку резидента «я приду» на день. День — в окне обзора (сегодня..+6). */
+export const setResidentAttendance = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    user: HostingUser,
+    coming: boolean,
+): Promise<{ ok: true } | { ok: false; error: 'bad_date' }> => {
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    await storage.update((s) => {
+        const key = attendanceKey(dateKey, user.userId)
+        if (coming) s.hostingAttendance[key] = { dateKey, user, at: new Date().toISOString() }
+        else delete s.hostingAttendance[key]
+    })
+    return { ok: true }
+}
+
+/** Резиденты, отметившиеся «я приду» на день, в порядке отметки. */
+export const residentsAttendingDay = (storage: Storage, dateKey: string): HostingAttendance[] =>
+    Object.values(storage.get().hostingAttendance)
+        .filter((a) => a.dateKey === dateKey)
+        .sort((a, b) => a.at.localeCompare(b.at))
 
 /** Заявки на конкретный день, отсортированные по времени прихода. */
 export const requestsForDay = (storage: Storage, dateKey: string): HostingRequest[] =>

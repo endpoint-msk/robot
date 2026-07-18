@@ -61,6 +61,8 @@ export type State = {
     goalsMuted: Record<string, true>
     /** Заявки гостей на визит (хостинг). Ключ — id заявки. */
     hostingRequests: Record<string, HostingRequest>
+    /** Отметки резидентов «я приду» на день. Ключ — `${dateKey}#${userId}`. */
+    hostingAttendance: Record<string, HostingAttendance>
     /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
      *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
     hostingNotify: Record<string, HostingNotifyPrefs>
@@ -100,6 +102,8 @@ export type HostingRequest = {
     time: string
     /** Цель визита. Пустая строка — не указана. */
     purpose: string
+    /** Гость пришёл анонимно: другие гости не видят его в публичном списке дня; резиденты видят всё. */
+    anon: boolean
     guest: HostingUser
     createdAt: string
     status: 'pending' | 'approved'
@@ -108,6 +112,16 @@ export type HostingRequest = {
     approvedAt: string | null
     /** Активное предложение переноса времени. null/отсутствует — действует `time`. */
     timeProposal: TimeProposal | null
+}
+
+/** Отметка резидента «я приду» на конкретный день (без заявки, просто присутствие в списке). */
+export type HostingAttendance = {
+    /** День визита: 'YYYY-MM-DD' в поясе спейса. */
+    dateKey: string
+    /** Карточка резидента для отображения в списке. */
+    user: HostingUser
+    /** Когда отметился (ISO). */
+    at: string
 }
 
 /** Настройки уведомлений резидента о новых заявках. */
@@ -171,5 +185,6 @@ export const emptyState = (): State => ({
     resetDay: 1,
     goalsMuted: {},
     hostingRequests: {},
+    hostingAttendance: {},
     hostingNotify: {},
 })

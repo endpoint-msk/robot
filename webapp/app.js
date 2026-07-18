@@ -100,6 +100,8 @@ const icons = {
     eye: () => svg('<svg width="14" height="14" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>'),
     minusCircle: () => svg('<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9.5" fill="#ff3b30"/><path d="M6.8 11h8.4" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>'),
     calendarPlus: () => svg('<svg width="19" height="19" viewBox="0 0 26 26"><rect x="3.5" y="5" width="19" height="17.5" rx="5" fill="none" stroke="#007aff" stroke-width="1.9"/><path d="M8.5 2.8v4M17.5 2.8v4M3.5 10h19" stroke="#007aff" stroke-width="1.9" stroke-linecap="round"/><path d="M9.5 16.5h7M13 13v7" stroke="#007aff" stroke-width="1.9" stroke-linecap="round"/></svg>'),
+    people: () => svg('<svg width="18" height="18" viewBox="0 0 20 20"><circle cx="7" cy="6.5" r="2.6" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M2.5 15.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M13 5.2a2.4 2.4 0 0 1 0 4.6M14.5 15.5c0-2.2-1.2-3.6-3-4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>'),
+    pencil: () => svg('<svg width="17" height="17" viewBox="0 0 20 20"><path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" fill="none" stroke="#007aff" stroke-width="1.7" stroke-linejoin="round"/></svg>'),
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +458,7 @@ async function proposeTimeFor(r) {
 /** Строка заявки в деталях дня: гость, время, цель; справа — одобривший или «Захостить». */
 function requestRow(r, opts) {
     const me = store.data.me
-    const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time
+    const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')
     const p = r.timeProposal
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, r.guest.name),
@@ -530,6 +532,33 @@ function requestsCard(list, opts) {
     list.forEach((r, i) => {
         if (i > 0) card.append(sep(66))
         card.append(requestRow(r, opts))
+    })
+    return card
+}
+
+const peopleWord = (n) => `${n} ${plural(n, 'человек', 'человека', 'человек')}`
+
+/** Строка участника в списке «кто придёт»: имя, время (для гостя), пометка «резидент». */
+function attendeeRow(a) {
+    const subEl = a.time
+        ? h('div', { class: 'req-sub' }, 'к ' + a.time)
+        : (a.username ? h('div', { class: 'req-sub' }, '@' + a.username) : null)
+    return h('div', { class: 'row' },
+        avatar(a, 'req-avatar'),
+        h('div', { class: 'req-main' },
+            h('div', { class: 'req-name' }, a.name),
+            subEl,
+        ),
+        a.resident ? h('span', { class: 'resident-badge' }, 'резидент') : null,
+    )
+}
+
+/** Карточка списка участников (residents-first порядок задаёт сервер). */
+function attendeesCard(list) {
+    const card = h('div', { class: 'card' })
+    list.forEach((a, i) => {
+        if (i > 0) card.append(sep(66))
+        card.append(attendeeRow(a))
     })
     return card
 }
@@ -627,10 +656,29 @@ function screenDay(params) {
     if (archive) {
         parts.push(h('div', { class: 'readonly-badge' }, icons.lock(), 'Архив · только просмотр'))
     }
-    if (requests.length === 0) {
+
+    // Резиденты «я приду» + переключатель для себя (только в живом дне).
+    let residentsComing = []
+    if (!archive) {
+        const day = store.data.days.find((d) => d.dateKey === params.dateKey)
+        residentsComing = ((day && day.attendees) || []).filter((a) => a.resident)
+        const iAmComing = residentsComing.some((a) => a.userId === store.data.me.id)
+        parts.push(h('button', {
+            class: 'attend-btn' + (iAmComing ? ' on' : ''),
+            onclick: async () => {
+                const done = await action('attend', { dateKey: params.dateKey, coming: !iAmComing })
+                if (done) haptic(iAmComing ? 'warning' : 'success')
+            },
+        }, iAmComing ? icons.check(15, '#fff', 2.6) : null, iAmComing ? 'Вы придёте в этот день' : 'Я приду'))
+        if (residentsComing.length > 0) {
+            parts.push(sectionTitle(`Придут резиденты · ${residentsComing.length}`), attendeesCard(residentsComing))
+        }
+    }
+
+    if (requests.length === 0 && (archive || residentsComing.length === 0)) {
         parts.push(h('div', { class: 'card' }, emptyState(
-            archive ? 'Заявок не было' : 'Нет заявок',
-            archive ? 'В этот день никто не собирался прийти.' : 'На этот день пока никто не собирается прийти.',
+            archive ? 'Заявок не было' : 'Нет заявок гостей',
+            archive ? 'В этот день никто не собирался прийти.' : 'На этот день пока никто не оставил заявку.',
         )))
     }
     if (approved.length > 0) {
@@ -981,8 +1029,14 @@ function screenMyVisits() {
         pending.forEach((r, i) => { if (i > 0) card.append(sep(66)); card.append(visitRow(r)) })
         parts.push(sectionTitle('Ждут ответа'), card)
     }
-    // Гостю настройки тоже нужны — там выбор темы (уведомления/MAC туда не попадут).
+    // «Кто придёт» + настройки (в настройках гостю доступна тема).
     parts.push(h('div', { class: 'card', style: 'margin-top:22px' },
+        h('div', { class: 'row tappable', onclick: () => push('peek') },
+            h('div', { class: 'row-icon', style: 'background:#34c759' }, icons.people()),
+            h('span', { class: 'row-label' }, 'Кто придёт'),
+            h('div', { class: 'row-right' }, icons.chevron()),
+        ),
+        sep(54),
         h('div', { class: 'row tappable', onclick: () => push('settings') },
             h('div', { class: 'row-icon', style: 'background:#8e8e93' }, icons.gear()),
             h('span', { class: 'row-label' }, 'Настройки'),
@@ -993,6 +1047,64 @@ function screenMyVisits() {
         h('button', { class: 'primary-btn', onclick: () => push('newRequest') }, icons.plus(), 'Новая заявка'),
     ))
     return h('div', { class: 'screen has-bottom-bar' }, parts)
+}
+
+// ---------------------------------------------------------------------------
+// Экран: кто придёт (гость) — обзор недели по подтверждённым участникам
+// ---------------------------------------------------------------------------
+
+function peekDayRow(day) {
+    const isToday = day.dateKey === store.data.todayKey
+    const att = day.attendees || []
+    const empty = att.length === 0
+    const row = h('div', {
+        class: 'row' + (!empty ? ' tappable' : '') + (isToday ? ' today' : '') + (empty ? ' day-empty' : ''),
+        onclick: empty ? null : () => push('peekDay', { dateKey: day.dateKey }),
+    })
+    row.append(h('div', { class: 'day-col' },
+        h('div', { class: 'dow' }, WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]),
+        h('div', { class: 'date' }, isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)),
+    ))
+    if (empty) {
+        row.append(h('span', { class: 'day-none' }, 'Пока никого'))
+        return row
+    }
+    row.append(avatarStack(att.map((a) => ({ userId: a.userId, name: a.name, username: a.username }))))
+    row.append(h('span', { class: 'day-count' }, peopleWord(att.length)))
+    row.append(h('div', { class: 'row-right' }, icons.chevron(isToday ? sec(0.4) : undefined)))
+    return row
+}
+
+function screenPeek() {
+    const { days } = store.data
+    const card = h('div', { class: 'card' })
+    days.forEach((day, i) => {
+        if (i > 0) card.append(sep(86))
+        card.append(peekDayRow(day))
+    })
+    return h('div', { class: 'screen' },
+        backRow('Мои визиты'),
+        header('Кто придёт', 'Подтверждённые гости и резиденты'),
+        card,
+        h('div', { class: 'footnote' }, icons.info(), 'Показаны те, кого уже подтвердили, и резиденты, отметившие «я приду». Гости, пришедшие анонимно, в списке не видны. Цель визита не показывается.'),
+    )
+}
+
+function screenPeekDay(params) {
+    const day = store.data.days.find((d) => d.dateKey === params.dateKey)
+    const att = (day && day.attendees) || []
+    const isToday = params.dateKey === store.data.todayKey
+    const parts = [
+        backRow('Кто придёт'),
+        header(WEEKDAYS_FULL[weekdayIdx(params.dateKey)],
+            `${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)} · ${peopleWord(att.length)}`),
+    ]
+    if (att.length === 0) {
+        parts.push(h('div', { class: 'card' }, emptyState('Пока никого', 'На этот день ещё нет подтверждённых визитов.')))
+    } else {
+        parts.push(attendeesCard(att))
+    }
+    return h('div', { class: 'screen' }, parts)
 }
 
 // ---------------------------------------------------------------------------
@@ -1104,11 +1216,21 @@ function screenVisit(params) {
         backRow('Мои визиты'),
         header(WEEKDAYS_FULL[weekdayIdx(r.dateKey)], `${fmtDayMonth(r.dateKey)} · к ${r.time}`),
         statusCard,
+        // Правка доступна, пока визит не одобрен: сервер тоже это проверяет.
+        !approved
+            ? h('button', { class: 'secondary-btn', style: 'margin-top:12px', onclick: () => push('editRequest', { id: r.id }) },
+                icons.pencil(), 'Изменить день или время')
+            : null,
         sectionTitle('Детали'),
         h('div', { class: 'card' },
             h('div', { class: 'row' },
                 h('span', { class: 'kv-key' }, 'Когда'),
                 h('span', { class: 'kv-val' }, `${fmtShortDate(r.dateKey)} · ${r.time}`),
+            ),
+            sep(14),
+            h('div', { class: 'row' },
+                h('span', { class: 'kv-key' }, 'Видимость'),
+                h('span', { class: 'kv-val' }, r.anon ? 'Анонимно' : 'Обычная'),
             ),
             r.purpose ? sep(14) : null,
             r.purpose
@@ -1155,17 +1277,52 @@ function screenVisit(params) {
 
 function defaultTimeFor(dateKey) {
     if (dateKey !== store.data.todayKey) return '15:00'
-    // Для «сегодня» — ближайший целый час, но не позже 23:00.
-    const next = Math.min(new Date().getHours() + 1, 23)
+    // Для «сегодня» — ближайший целый час в поясе спейса (nowTime с сервера), но не позже 23:00.
+    const nowH = Number((store.data.nowTime || '00:00').slice(0, 2))
+    const next = Math.min(nowH + 1, 23)
     return String(next).padStart(2, '0') + ':00'
 }
 
-function screenNewRequest() {
-    const days = store.data.days
-    let selected = days[0].dateKey
-    let timeTouched = false
+/** Слот «на сегодня» уже прошёл (сравнение в поясе спейса — nowTime с сервера). */
+const isPastForToday = (dateKey, time) => dateKey === store.data.todayKey && time < (store.data.nowTime || '00:00')
 
-    const timeInput = h('input', { class: 'time-input', type: 'time', value: defaultTimeFor(selected) })
+/** Свитч с локальным состоянием (для форм, где значение не в сторе). */
+function localSwitch(initial, onChange) {
+    const btn = h('button', { class: 'switch' + (initial ? ' on' : ''), role: 'switch', 'aria-checked': String(initial) })
+    let on = initial
+    btn.addEventListener('click', () => {
+        on = !on
+        btn.classList.toggle('on', on)
+        btn.setAttribute('aria-checked', String(on))
+        onChange(on)
+    })
+    return btn
+}
+
+/** Ряд «Прийти анонимно» — общий для новой заявки и правки. */
+function anonRow(initial, onChange) {
+    return h('div', { class: 'card' },
+        h('div', { class: 'row' },
+            h('span', { class: 'row-label' }, 'Прийти анонимно', h('span', { class: 'row-sublabel' }, 'Другие гости не увидят вас в списке')),
+            localSwitch(initial, onChange),
+        ),
+    )
+}
+
+/**
+ * Поле выбора дня + времени, общее для новой заявки и правки. Возвращает узлы и
+ * геттеры. `timeTouched` — чтобы не перетирать вручную выставленное время при
+ * смене дня; `min` на инпуте для «сегодня» подсказывает прошедшие часы.
+ */
+function daytimeField(days, initialDay, initialTime) {
+    let selected = initialDay
+    let timeTouched = !!initialTime
+    const timeInput = h('input', { class: 'time-input', type: 'time', value: initialTime || defaultTimeFor(selected) })
+    const applyMin = () => {
+        if (selected === store.data.todayKey) timeInput.min = store.data.nowTime || '00:00'
+        else timeInput.removeAttribute('min')
+    }
+    applyMin()
     timeInput.addEventListener('change', () => { timeTouched = true })
 
     const chips = h('div', { class: 'day-chips' })
@@ -1183,6 +1340,7 @@ function screenNewRequest() {
                 onclick: () => {
                     selected = d.dateKey
                     if (!timeTouched) timeInput.value = defaultTimeFor(selected)
+                    applyMin()
                     renderChips()
                 },
             },
@@ -1194,19 +1352,32 @@ function screenNewRequest() {
     }
     renderChips()
 
+    return { chips, timeInput, getDay: () => selected, getTime: () => timeInput.value }
+}
+
+function purposeInput(value) {
     const purpose = h('textarea', { class: 'purpose-input', placeholder: 'Цель визита (опционально)', rows: '2', maxlength: '300' })
+    if (value) purpose.value = value
     purpose.addEventListener('input', () => {
         purpose.style.height = 'auto'
         purpose.style.height = purpose.scrollHeight + 'px'
     })
+    return purpose
+}
+
+function screenNewRequest() {
+    const days = store.data.days
+    const field = daytimeField(days, days[0].dateKey, null)
+    const purpose = purposeInput(null)
+    let anon = false
 
     const submit = h('button', {
         class: 'primary-btn',
         onclick: async () => {
-            if (!timeInput.value) {
-                showAlert('Укажи время прихода.')
-                return
-            }
+            const time = field.getTime()
+            const day = field.getDay()
+            if (!time) { showAlert('Укажи время прихода.'); return }
+            if (isPastForToday(day, time)) { showAlert('Это время уже прошло — выбери время позже текущего.'); return }
             submit.disabled = true
             setBusy(true)
             try {
@@ -1214,7 +1385,7 @@ function screenNewRequest() {
                 // ему ответ резидента в личку — до создания заявки просим доступ
                 // нативной плашкой Telegram (её показывает сам requestWriteAccess).
                 if (!botCanWrite()) await requestWriteAccess()
-                store.data = await api('create', { dateKey: selected, time: timeInput.value, purpose: purpose.value })
+                store.data = await api('create', { dateKey: day, time, purpose: purpose.value, anon })
                 haptic('success')
                 resetRoot()
             } catch (err) {
@@ -1230,21 +1401,71 @@ function screenNewRequest() {
         backRow('Назад'),
         header('Хочу прийти'),
         sectionTitle('День'),
-        chips,
+        field.chips,
         h('div', { class: 'chips-legend' }, icons.check(12, '#34c759', 2.2), 'число заявок и уже одобренных в этот день'),
         sectionTitle('Детали'),
         h('div', { class: 'card' },
             h('div', { class: 'row', style: 'padding:6px 14px' },
                 h('span', { style: 'font-size:16px' }, 'Приду к'),
-                timeInput,
+                field.timeInput,
             ),
             sep(14),
             h('div', { class: 'kv-block' }, purpose),
         ),
+        h('div', { style: 'height:8px' }),
+        anonRow(anon, (v) => { anon = v }),
         h('div', { class: 'bottom-bar' },
             submit,
             h('div', { class: 'bar-hint' }, 'Ваша заявка будет отправлена резидентам'),
         ),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Экран: правка своей заявки гостем (день/время/цель/анонимность)
+// ---------------------------------------------------------------------------
+
+function screenEditRequest(params) {
+    const r = store.data.myRequests.find((x) => x.id === params.id)
+    if (!r) {
+        setTimeout(() => pop(), 0)
+        return h('div', { class: 'screen' })
+    }
+    const days = store.data.days
+    const field = daytimeField(days, r.dateKey, r.time)
+    const purpose = purposeInput(r.purpose)
+    let anon = !!r.anon
+
+    const submit = h('button', {
+        class: 'primary-btn',
+        onclick: async () => {
+            const time = field.getTime()
+            const day = field.getDay()
+            if (!time) { showAlert('Укажи время прихода.'); return }
+            if (isPastForToday(day, time)) { showAlert('Это время уже прошло — выбери время позже текущего.'); return }
+            const done = await action('edit', { id: r.id, dateKey: day, time, purpose: purpose.value, anon })
+            if (done) { haptic('success'); pop() }
+        },
+    }, 'Сохранить')
+
+    return h('div', { class: 'screen has-bottom-bar' },
+        backRow('Визит'),
+        header('Изменить заявку'),
+        sectionTitle('День'),
+        field.chips,
+        h('div', { class: 'chips-legend' }, icons.check(12, '#34c759', 2.2), 'число заявок и уже одобренных в этот день'),
+        sectionTitle('Детали'),
+        h('div', { class: 'card' },
+            h('div', { class: 'row', style: 'padding:6px 14px' },
+                h('span', { style: 'font-size:16px' }, 'Приду к'),
+                field.timeInput,
+            ),
+            sep(14),
+            h('div', { class: 'kv-block' }, purpose),
+        ),
+        h('div', { style: 'height:8px' }),
+        anonRow(anon, (v) => { anon = v }),
+        h('div', { class: 'bottom-bar' }, submit),
     )
 }
 
@@ -1420,8 +1641,11 @@ const SCREENS = {
     archiveWeek: screenArchiveWeek,
     settings: screenSettings,
     myVisits: screenMyVisits,
+    peek: screenPeek,
+    peekDay: screenPeekDay,
     visit: screenVisit,
     newRequest: screenNewRequest,
+    editRequest: screenEditRequest,
     dev: screenDev,
     devEdit: screenDevEdit,
 }
