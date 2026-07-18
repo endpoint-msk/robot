@@ -179,6 +179,83 @@ function avatar(user, extraClass) {
 
 const userLabel = (u) => (u.username ? '@' + u.username : u.name)
 
+/** Ссылку наружу открывает клиент Telegram: t.me — внутри приложения
+    (`openTelegramLink`), остальное — во внешнем браузере. Вне Telegram — вкладка. */
+function openUrl(url) {
+    try {
+        if (/^https:\/\/t\.me\//i.test(url)) tg.openTelegramLink(url)
+        else tg.openLink(url)
+        return
+    } catch { /* не в Telegram или старый клиент */ }
+    window.open(url, '_blank', 'noopener')
+}
+
+// Профиль открывается только по юзернейму: у tg://user?id= нет гарантий (работает
+// лишь для «известных» клиенту юзеров), поэтому без юзернейма строка не тапается.
+const hasProfile = (u) => Boolean(u && u.username)
+const openProfile = (u) => { if (hasProfile(u)) openUrl('https://t.me/' + u.username) }
+
+/** Навесить открытие профиля на аватар/имя. Возвращает тот же узел — удобно
+    оборачивать прямо в разметке. */
+function bindProfile(node, user) {
+    if (!hasProfile(user)) return node
+    node.classList.add('person-tap')
+    node.addEventListener('click', (e) => {
+        e.stopPropagation() // строка дня/карточка вокруг обычно тапабельна сама
+        openProfile(user)
+    })
+    return node
+}
+
+// ---------------------------------------------------------------------------
+// Линкификация пользовательского текста (цель визита)
+// ---------------------------------------------------------------------------
+
+const LINK_RE = /(https?:\/\/[^\s]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?|@[a-z][a-z0-9_]{3,31})/gi
+// Хвостовая пунктуация в ссылку не входит: «см. example.com/x.» → ссылка без точки.
+const LINK_TRAIL_RE = /[.,;:!?)\]}»"'…]+$/
+
+function linkNode(token) {
+    const url = token.startsWith('@')
+        ? 'https://t.me/' + token.slice(1)
+        : (/^https?:/i.test(token) ? token : 'https://' + token)
+    return h('a', {
+        class: 'linkified',
+        href: url,
+        onclick: (e) => {
+            e.preventDefault()
+            e.stopPropagation() // строка/карточка вокруг может быть тапабельной
+            openUrl(url)
+        },
+    }, token)
+}
+
+/** Текст с кликабельными ссылками и @юзернеймами. Возвращает массив узлов —
+    пользовательские строки по-прежнему идут только через textContent. */
+function linkedText(text) {
+    const out = []
+    let last = 0
+    let m
+    LINK_RE.lastIndex = 0
+    while ((m = LINK_RE.exec(text)) !== null) {
+        let token = m[0]
+        const trail = token.match(LINK_TRAIL_RE)
+        if (trail) token = token.slice(0, -trail[0].length)
+        if (!token) continue
+        // Кусок слова — не ссылка: '@foo' после букв и домен после '@' — это почта.
+        if (!/^https?:/i.test(token) && /[a-z0-9_@]/i.test(text.charAt(m.index - 1))) {
+            LINK_RE.lastIndex = m.index + token.length
+            continue
+        }
+        if (m.index > last) out.push(text.slice(last, m.index))
+        out.push(linkNode(token))
+        last = m.index + token.length
+        LINK_RE.lastIndex = last
+    }
+    if (last < text.length) out.push(text.slice(last))
+    return out
+}
+
 // ---------------------------------------------------------------------------
 // API и стор
 // ---------------------------------------------------------------------------
@@ -438,7 +515,7 @@ const avatarStack = (users, max) =>
     кнопка «ещё», раскрывающая его целиком. Обрезан ли текст, видно только после
     layout, когда узел уже в DOM — отсюда requestAnimationFrame. */
 function purposeBlock(text) {
-    const textEl = h('div', { class: 'req-purpose' }, text)
+    const textEl = h('div', { class: 'req-purpose' }, linkedText(text))
     const toggle = h('button', { class: 'purpose-toggle', hidden: true }, 'ещё')
     const wrap = h('div', { class: 'req-purpose-wrap' }, textEl, toggle)
     toggle.addEventListener('click', (e) => {
@@ -470,7 +547,7 @@ function requestRow(r, opts) {
     const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')
     const p = r.timeProposal
     const main = h('div', { class: 'req-main' },
-        h('div', { class: 'req-name' }, r.guest.name),
+        bindProfile(h('div', { class: 'req-name' }, r.guest.name), r.guest),
         h('div', { class: 'req-sub' }, sub),
         r.purpose ? purposeBlock(r.purpose) : null,
         // Плашка активного предложения переноса под целью визита.
@@ -497,6 +574,9 @@ function requestRow(r, opts) {
                 const done = await action('unapprove', { id: r.id })
                 if (done) haptic('warning')
             })
+        } else {
+            // Свой пилл занят отменой хостинга — в профиль ведут только чужие.
+            bindProfile(pill, r.approvedBy)
         }
         right = h('div', { class: 'approver' },
             h('span', { class: 'approver-label' }, 'одобрил'),
@@ -550,7 +630,7 @@ function requestRow(r, opts) {
         }, p ? 'Другое время' : 'Перенести'))
         right = h('div', { class: 'req-actions' }, actions)
     }
-    return h('div', { class: 'row' }, avatar(r.guest, 'req-avatar'), main, right)
+    return h('div', { class: 'row' }, bindProfile(avatar(r.guest, 'req-avatar'), r.guest), main, right)
 }
 
 /** Карточка со строками заявок и разделителями. */
@@ -571,9 +651,9 @@ function attendeeRow(a) {
         ? h('div', { class: 'req-sub' }, 'к ' + a.time)
         : (a.username ? h('div', { class: 'req-sub' }, '@' + a.username) : null)
     return h('div', { class: 'row' },
-        avatar(a, 'req-avatar'),
+        bindProfile(avatar(a, 'req-avatar'), a),
         h('div', { class: 'req-main' },
-            h('div', { class: 'req-name' }, a.name),
+            bindProfile(h('div', { class: 'req-name' }, a.name), a),
             subEl,
         ),
         a.resident ? h('span', { class: 'resident-badge' }, 'резидент') : null,
@@ -1161,10 +1241,10 @@ function screenVisit(params) {
                 h('span', { class: 'status-card-title' }, 'Ваш визит подтверждён'),
             ),
             h('div', { class: 'status-card-body' },
-                avatar(r.approvedBy, 'host-avatar'),
+                bindProfile(avatar(r.approvedBy, 'host-avatar'), r.approvedBy),
                 h('div', { style: 'min-width:0' },
                     h('div', { class: 'host-kicker' }, 'Вас хостит'),
-                    h('div', { class: 'host-name' }, r.approvedBy.name),
+                    bindProfile(h('div', { class: 'host-name' }, r.approvedBy.name), r.approvedBy),
                     h('div', { class: 'host-sub' }, (r.approvedBy.username ? '@' + r.approvedBy.username + ' · ' : '') + 'резидент'),
                 ),
             ),
@@ -1295,7 +1375,7 @@ function screenVisit(params) {
             r.purpose
                 ? h('div', { class: 'kv-block' },
                     h('div', { class: 'kv-cap' }, 'Цель визита'),
-                    h('div', { class: 'kv-text' }, r.purpose),
+                    h('div', { class: 'kv-text' }, linkedText(r.purpose)),
                 )
                 : null,
         ),

@@ -354,6 +354,14 @@ body {
 }
 .purpose-toggle:active { opacity: 0.6; }
 
+/* Ссылки и @юзернеймы внутри пользовательского текста */
+.linkified { color: var(--blue); text-decoration: none; }
+.linkified:active { opacity: 0.6; }
+
+/* Аватар/имя человека ведут в его профиль в Telegram */
+.person-tap { cursor: pointer; }
+.person-tap:active { opacity: 0.55; }
+
 .approver { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
 .approver-label {
     font-size: 10px;
