@@ -249,7 +249,7 @@ body {
     color: var(--text-2);
     margin: 0 18px 7px;
 }
-.card + .section-title, .footnote + .section-title { margin-top: 22px; }
+.card + .section-title, .footnote + .section-title, button + .section-title { margin-top: 22px; }
 
 .card {
     background: var(--card);
