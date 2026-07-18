@@ -5,9 +5,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { TelegramClient } from '@mtcute/node'
 import {
+    acceptTimeProposal,
     addDaysToKey,
     archiveWeeks,
     buildVisitIcs,
+    clearTimeProposal,
     createHostingRequest,
     deleteHostingRequest,
     HOSTING_DAYS_AHEAD,
@@ -15,8 +17,13 @@ import {
     notifyApproverCancelled,
     notifyGuestApproved,
     notifyGuestUnapproved,
+    notifyGuestTimeProposed,
     notifyPrefsFor,
+    notifyProposalAccepted,
+    notifyProposalCancelled,
     notifyResidentsAboutRequest,
+    notifyResidentTimeCountered,
+    proposeTime,
     requestsForDay,
     todayKey,
     updateHostingRequest,
@@ -172,6 +179,7 @@ const requestsView = (list: HostingRequest[]) =>
         createdAt: r.createdAt,
         guest: r.guest,
         approvedBy: r.approvedBy,
+        timeProposal: r.timeProposal ?? null,
     }))
 
 /** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
@@ -360,6 +368,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     r.status = 'approved'
                     r.approvedBy = user
                     r.approvedAt = new Date().toISOString()
+                    // Захостил при текущем времени — незакрытое предложение переноса больше не актуально.
+                    r.timeProposal = null
                 }
             })
             const updated = storage.get().hostingRequests[request.id]
@@ -413,6 +423,110 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (request.status === 'approved') {
                 void notifyApproverCancelled(client, request)
                     .catch((err) => console.error('[hosting] не удалось уведомить резидента об отмене визита:', err))
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Предложить перенос времени. Резидент — на любой pending-заявке; гость —
+        // только в ответ на предложение резидента (встречное время).
+        case 'propose': {
+            const request = findRequest()
+            if (!request) return
+            const isGuest = request.guest.userId === user.userId
+            const by: 'resident' | 'guest' | null = isGuest ? 'guest' : resident ? 'resident' : null
+            if (!by) {
+                sendError(res, 403, 'not_allowed', 'Предлагать время может гость заявки или резидент.')
+                return
+            }
+            if (by === 'guest' && request.timeProposal?.by !== 'resident') {
+                sendError(res, 409, 'no_proposal', 'Отвечать своим временем можно только на предложение резидента.')
+                return
+            }
+            const time = typeof body.time === 'string' ? body.time : ''
+            const result = await proposeTime(storage, request.id, { time, by, user })
+            if (!result.ok) {
+                const messages = {
+                    not_found: 'Заявка не найдена — возможно, её уже отменили.',
+                    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    bad_status: 'Время можно предложить только у заявки без хоста.',
+                } as const
+                sendError(res, result.error === 'not_found' ? 404 : result.error === 'bad_status' ? 409 : 400, result.error, messages[result.error])
+                return
+            }
+            if (by === 'resident') {
+                void notifyGuestTimeProposed(client, config.publicUrl, result.request)
+                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о предложении времени:', err))
+            } else if (result.recipientId != null) {
+                void notifyResidentTimeCountered(client, result.recipientId, config.publicUrl, result.request)
+                    .catch((err) => console.error('[hosting] не удалось уведомить резидента о встречном времени:', err))
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Принять активное предложение: принять может только сторона-адресат.
+        case 'proposal.accept': {
+            const request = findRequest()
+            if (!request) return
+            const proposal = request.timeProposal
+            if (!proposal) {
+                sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
+                return
+            }
+            const isGuest = request.guest.userId === user.userId
+            const canAccept = proposal.by === 'resident' ? isGuest : !isGuest && resident
+            if (!canAccept) {
+                sendError(res, 403, 'not_allowed', 'Это предложение адресовано другой стороне.')
+                return
+            }
+            const result = await acceptTimeProposal(storage, request.id)
+            if (!result.ok) {
+                sendError(res, result.error === 'not_found' ? 404 : 409, result.error,
+                    result.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
+                return
+            }
+            if (proposal.by === 'resident') {
+                void notifyProposalAccepted(client, proposal.user.userId, config.publicUrl, result.request, false)
+                    .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии времени:', err))
+            } else {
+                void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true)
+                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии времени:', err))
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Снять предложение: отклонить (сторона-адресат) или отозвать (автор). Время не меняется.
+        case 'proposal.decline': {
+            const request = findRequest()
+            if (!request) return
+            const proposal = request.timeProposal
+            if (!proposal) {
+                sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
+                return
+            }
+            const isGuest = request.guest.userId === user.userId
+            if (!isGuest && !resident) {
+                sendError(res, 403, 'not_allowed', 'Недоступно.')
+                return
+            }
+            const result = await clearTimeProposal(storage, request.id)
+            if (!result.ok) {
+                sendError(res, result.error === 'not_found' ? 404 : 409, result.error,
+                    result.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
+                return
+            }
+            // Уведомляем противоположную сторону. Для встречного времени гостя адрес
+            // резидента мы не храним — если гость сам отзывает, DM просто не шлём.
+            if (proposal.by === 'resident') {
+                const targetIsGuest = !isGuest
+                const targetId = targetIsGuest ? result.request.guest.userId : proposal.user.userId
+                void notifyProposalCancelled(client, targetId, config.publicUrl, result.request, proposal.time, targetIsGuest)
+                    .catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
+            } else if (!isGuest) {
+                void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposal.time, true)
+                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о снятии предложения:', err))
             }
             sendJson(res, 200, buildBootstrap(ctx))
             return

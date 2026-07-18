@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { clampResetDay } from './fundraiser.js'
-import { emptyState, type ResidentMacs, type State } from './types.js'
+import { emptyState, type HostingRequest, type ResidentMacs, type State } from './types.js'
 
 /**
  * Приводит macBindings к актуальной схеме (`macs: MacEntry[]`, `anon`).
@@ -36,6 +36,17 @@ const normalizeMacBindings = (raw: unknown): Record<string, ResidentMacs> => {
     return out
 }
 
+/** Заявки на диске от прежних версий не знали про `timeProposal` — проставляем null, чтобы код не спотыкался. */
+const normalizeHostingRequests = (raw: unknown): Record<string, HostingRequest> => {
+    if (!raw || typeof raw !== 'object') return {}
+    const out: Record<string, HostingRequest> = {}
+    for (const [key, value] of Object.entries(raw as Record<string, HostingRequest>)) {
+        if (!value || typeof value !== 'object') continue
+        out[key] = { ...value, timeProposal: value.timeProposal ?? null }
+    }
+    return out
+}
+
 export class Storage {
     private state: State = emptyState()
     private writeChain: Promise<void> = Promise.resolve()
@@ -58,7 +69,7 @@ export class Storage {
                 macBindings: normalizeMacBindings(parsed.macBindings),
                 resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,
                 goalsMuted: parsed.goalsMuted ?? {},
-                hostingRequests: parsed.hostingRequests ?? {},
+                hostingRequests: normalizeHostingRequests(parsed.hostingRequests),
                 hostingNotify: parsed.hostingNotify ?? {},
             }
         } catch (err) {

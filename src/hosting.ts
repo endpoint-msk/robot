@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { Storage } from './storage.js'
-import type { HostingNotifyPrefs, HostingRequest, HostingUser } from './types.js'
+import type { HostingNotifyPrefs, HostingRequest, HostingUser, TimeProposal } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -88,6 +88,7 @@ export const createHostingRequest = async (
         status: 'pending',
         approvedBy: null,
         approvedAt: null,
+        timeProposal: null,
     }
     await storage.update((s) => {
         s.hostingRequests[request.id] = request
@@ -290,6 +291,93 @@ export const notifyApproverCancelled = async (
 }
 
 // ---------------------------------------------------------------------------
+// Уведомления о переносе времени
+// ---------------------------------------------------------------------------
+
+/** Гостю в личку: резидент предлагает перенести визит. `request.timeProposal.by` === 'resident'. */
+export const notifyGuestTimeProposed = async (
+    client: TelegramClient,
+    webappUrl: string,
+    request: HostingRequest,
+): Promise<void> => {
+    const p = request.timeProposal
+    if (!p) return
+    const who = p.user.username ? `${p.user.name} (@${p.user.username})` : p.user.name
+    const text = `🕘 Резидент ${who} предлагает перенести визит <b>${formatDayKey(request.dateKey)}</b> на <b>${p.time}</b> (сейчас ${request.time}).<br>Открой «Мои визиты», чтобы принять или предложить своё время.`
+    try {
+        await client.sendText(request.guest.userId, html(text), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // гость не открывал личку с ботом
+    }
+}
+
+/** Резиденту-адресату в личку: гость ответил своим временем. `request.timeProposal.by` === 'guest'. */
+export const notifyResidentTimeCountered = async (
+    client: TelegramClient,
+    recipientId: number,
+    webappUrl: string,
+    request: HostingRequest,
+): Promise<void> => {
+    const p = request.timeProposal
+    if (!p) return
+    const text = `🕘 Гость ${guestLabel(request.guest)} предлагает время <b>${p.time}</b> для визита <b>${formatDayKey(request.dateKey)}</b> (было ${request.time}).<br>Открой заявки, чтобы принять или предложить другое.`
+    try {
+        await client.sendText(recipientId, html(text), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // резидент не открывал личку с ботом
+    }
+}
+
+/** Предложившей стороне в личку: предложение приняли, действует новое время `request.time`. */
+export const notifyProposalAccepted = async (
+    client: TelegramClient,
+    targetId: number,
+    webappUrl: string,
+    request: HostingRequest,
+    targetIsGuest: boolean,
+): Promise<void> => {
+    const text = targetIsGuest
+        ? `✅ Резидент принял время <b>${request.time}</b> для визита <b>${formatDayKey(request.dateKey)}</b>.`
+        : `✅ Гость ${guestLabel(request.guest)} принял новое время <b>${request.time}</b> — визит <b>${formatDayKey(request.dateKey)}</b>.`
+    const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
+    try {
+        await client.sendText(targetId, html(text), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // личка закрыта — не критично
+    }
+}
+
+/** Второй стороне в личку: предложение о переносе сняли, остаётся прежнее время `request.time`. */
+export const notifyProposalCancelled = async (
+    client: TelegramClient,
+    targetId: number,
+    webappUrl: string,
+    request: HostingRequest,
+    proposedTime: string,
+    targetIsGuest: boolean,
+): Promise<void> => {
+    const text = `↩️ Предложение перенести визит <b>${formatDayKey(request.dateKey)}</b> на ${proposedTime} снято — остаётся ${request.time}.`
+    const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
+    try {
+        await client.sendText(targetId, html(text), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // личка закрыта — не критично
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Дев-операции над заявками (гейт — requireDev в webapp.ts)
 // ---------------------------------------------------------------------------
 
@@ -333,6 +421,74 @@ export const deleteHostingRequest = async (storage: Storage, id: string): Promis
         delete s.hostingRequests[id]
     })
     return true
+}
+
+// ---------------------------------------------------------------------------
+// Предложения переноса времени (резидент ↔ гость)
+// ---------------------------------------------------------------------------
+
+export type ProposeTimeError = 'not_found' | 'bad_time' | 'bad_status'
+
+/**
+ * Ставит предложение перенести визит на другое время. Гейт статуса ('pending')
+ * тут же: у уже одобренной заявки время не двигаем. `recipientId` — кому уходит
+ * уведомление: резидент предлагает гостю; гость отвечает резиденту, предложившему
+ * ранее (адрес известен из прошлого предложения, иначе null).
+ */
+export const proposeTime = async (
+    storage: Storage,
+    id: string,
+    input: { time: string; by: 'resident' | 'guest'; user: HostingUser },
+): Promise<{ ok: true; request: HostingRequest; recipientId: number | null } | { ok: false; error: ProposeTimeError }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+    if (existing.status !== 'pending') return { ok: false, error: 'bad_status' }
+    if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
+    const recipientId = input.by === 'resident'
+        ? existing.guest.userId
+        : existing.timeProposal?.by === 'resident'
+            ? existing.timeProposal.user.userId
+            : null
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (r) r.timeProposal = { time: input.time, by: input.by, user: input.user, at: new Date().toISOString() }
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]!, recipientId }
+}
+
+/** Принимает активное предложение: согласованным временем заявки становится предложенное. */
+export const acceptTimeProposal = async (
+    storage: Storage,
+    id: string,
+): Promise<{ ok: true; request: HostingRequest; proposal: TimeProposal } | { ok: false; error: 'not_found' | 'no_proposal' }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+    if (!existing.timeProposal) return { ok: false, error: 'no_proposal' }
+    const proposal = existing.timeProposal
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (r?.timeProposal) {
+            r.time = r.timeProposal.time
+            r.timeProposal = null
+        }
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
+}
+
+/** Снимает активное предложение без смены времени (отклонили или отозвали). */
+export const clearTimeProposal = async (
+    storage: Storage,
+    id: string,
+): Promise<{ ok: true; request: HostingRequest; proposal: TimeProposal } | { ok: false; error: 'not_found' | 'no_proposal' }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+    if (!existing.timeProposal) return { ok: false, error: 'no_proposal' }
+    const proposal = existing.timeProposal
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (r) r.timeProposal = null
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
 }
 
 // ---------------------------------------------------------------------------

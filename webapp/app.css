@@ -385,6 +385,78 @@ body {
 .host-btn:active { opacity: 0.6; }
 .waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.5); flex-shrink: 0; }
 
+/* --- Перенос времени (резидент ↔ гость) --- */
+
+/* Правый столбец действий в строке заявки (резидент): «Захостить» + «Перенести». */
+.req-actions { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.req-actions .host-btn, .req-actions .link-btn { margin-left: 0; }
+.link-btn {
+    border: none;
+    background: none;
+    padding: 2px 4px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--blue);
+    cursor: pointer;
+}
+.link-btn:active { opacity: 0.5; }
+
+/* Строка-плашка под заявкой с активным предложением времени. */
+.proposal-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-2);
+}
+.proposal-note .pn-time { font-weight: 700; color: var(--text); }
+.proposal-note.mine .pn-time { color: var(--blue); }
+
+/* Кнопка «Принять {время}» (адресат предложения). */
+.accept-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(52, 199, 89, 0.14);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--green);
+    cursor: pointer;
+}
+.accept-btn:active { opacity: 0.6; }
+
+/* Карточка предложения на экране визита (гость). */
+.status-card.proposal { background: var(--card); box-shadow: var(--shadow-card); }
+.status-card.proposal .status-card-title { color: var(--text); }
+.propose-time-big { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; }
+.propose-time-big .ptb-new { font-size: 30px; font-weight: 800; letter-spacing: -0.4px; color: var(--blue); }
+.propose-time-big .ptb-old { font-size: 14px; color: var(--text-3); text-decoration: line-through; }
+.propose-actions { display: flex; gap: 8px; margin-top: 16px; }
+.propose-actions .primary-btn, .propose-actions .chip-btn { min-height: 44px; margin: 0; }
+.chip-btn {
+    flex-shrink: 0;
+    padding: 0 16px;
+    border-radius: 16px;
+    border: none;
+    background: var(--chip);
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+}
+.chip-btn:active { opacity: 0.6; }
+
+/* Модалка выбора времени. */
+.modal-time-wrap { display: flex; justify-content: center; padding: 4px 20px 18px; }
+.time-input.modal-time { margin-left: 0; font-size: 22px; padding: 10px 18px; }
+
 /* --- Мои визиты (гость) --- */
 
 .status-square {

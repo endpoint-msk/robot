@@ -237,6 +237,40 @@ const showAlert = (message) => { void modal({ text: message }) }
 const confirmDialog = (message, opts) =>
     modal(Object.assign({ text: message, confirmLabel: 'Да', cancelLabel: 'Отмена' }, opts))
 
+/**
+ * Модалка выбора времени (в дизайн-системе миниаппа). Возвращает Promise<string|null>:
+ * 'HH:MM', если подтвердили, иначе null. Используется для предложения переноса визита.
+ */
+function timePrompt({ text, initial, confirmLabel = 'Предложить' }) {
+    return new Promise((resolve) => {
+        let done = false
+        const input = h('input', { class: 'time-input modal-time', type: 'time', value: initial || '15:00' })
+        const close = (value) => {
+            if (done) return
+            done = true
+            overlay.classList.remove('shown')
+            setTimeout(() => overlay.remove(), 180)
+            resolve(value)
+        }
+        const overlay = h('div', {
+            class: 'modal-overlay',
+            onclick: (e) => { if (e.target === overlay) close(null) },
+        }, h('div', { class: 'modal-card' },
+            text ? h('div', { class: 'modal-text' }, text) : null,
+            h('div', { class: 'modal-time-wrap' }, input),
+            h('div', { class: 'modal-actions' },
+                h('button', { class: 'modal-btn', onclick: () => close(null) }, 'Отмена'),
+                h('button', {
+                    class: 'modal-btn primary',
+                    onclick: () => close(input.value || null),
+                }, confirmLabel),
+            ),
+        ))
+        document.body.append(overlay)
+        requestAnimationFrame(() => overlay.classList.add('shown'))
+    })
+}
+
 function haptic(kind) {
     try { tg.HapticFeedback.notificationOccurred(kind) } catch { /* старый клиент */ }
 }
@@ -272,7 +306,7 @@ async function action(method, params) {
         return data
     } catch (err) {
         showAlert(err.message)
-        if (err.code === 'already_approved' || err.code === 'not_found' || err.code === 'not_approved') {
+        if (['already_approved', 'not_found', 'not_approved', 'no_proposal', 'bad_status'].includes(err.code)) {
             // Данные разошлись с сервером — подтягиваем актуальные.
             try {
                 store.data = await api('bootstrap')
@@ -408,14 +442,34 @@ function purposeBlock(text) {
     return wrap
 }
 
+/** Предложить гостю перенос времени (резидент): модалка с вводом → API `propose`. */
+async function proposeTimeFor(r) {
+    const time = await timePrompt({
+        text: `Предложить ${r.guest.name} другое время визита ${fmtShortDate(r.dateKey)}?`,
+        initial: (r.timeProposal && r.timeProposal.time) || r.time,
+    })
+    if (!time) return
+    const done = await action('propose', { id: r.id, time })
+    if (done) haptic('success')
+}
+
 /** Строка заявки в деталях дня: гость, время, цель; справа — одобривший или «Захостить». */
 function requestRow(r, opts) {
     const me = store.data.me
     const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time
+    const p = r.timeProposal
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, r.guest.name),
         h('div', { class: 'req-sub' }, sub),
         r.purpose ? purposeBlock(r.purpose) : null,
+        // Плашка активного предложения переноса под целью визита.
+        !opts.archive && p
+            ? h('div', { class: 'proposal-note' + (p.by === 'resident' ? ' mine' : '') },
+                icons.clock(14, sec(0.5)),
+                p.by === 'guest'
+                    ? h('span', null, 'гость предлагает ', h('span', { class: 'pn-time' }, p.time))
+                    : h('span', null, 'вы предложили ', h('span', { class: 'pn-time' }, p.time), ' · ждём гостя'))
+            : null,
     )
     let right
     if (r.status === 'approved' && r.approvedBy) {
@@ -440,7 +494,7 @@ function requestRow(r, opts) {
     } else if (opts.archive) {
         right = h('span', { class: 'waiting-label' }, 'Без ответа')
     } else {
-        right = h('button', {
+        const hostBtn = h('button', {
             class: 'host-btn',
             onclick: async () => {
                 const ok = await confirmDialog(`Захостить: ${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}, ${fmtShortDate(r.dateKey)} к ${r.time}?`)
@@ -449,6 +503,23 @@ function requestRow(r, opts) {
                 if (done) haptic('success')
             },
         }, 'Захостить')
+        const actions = [hostBtn]
+        // Гость ответил своим временем — резидент может принять его в один тап.
+        if (p && p.by === 'guest') {
+            actions.unshift(h('button', {
+                class: 'accept-btn',
+                onclick: async () => {
+                    const done = await action('proposal.accept', { id: r.id })
+                    if (done) haptic('success')
+                },
+            }, icons.check(14, '#34c759', 2.4), 'Принять ' + p.time))
+        }
+        // Предложить перенос: подпись зависит от того, идёт ли уже переписка.
+        actions.push(h('button', {
+            class: 'link-btn',
+            onclick: () => void proposeTimeFor(r),
+        }, p ? 'Другое время' : 'Перенести'))
+        right = h('div', { class: 'req-actions' }, actions)
     }
     return h('div', { class: 'row' }, avatar(r.guest, 'req-avatar'), main, right)
 }
@@ -841,12 +912,18 @@ function screenSettings() {
 
 function visitRow(r) {
     const approved = r.status === 'approved'
+    const p = r.timeProposal
     const iconSquare = approved
         ? h('div', { class: 'status-square ok' }, icons.check(20, '#34c759'))
         : h('div', { class: 'status-square' }, icons.clock(18, sec(0.5)))
+    let subText
+    if (approved) subText = `к ${r.time} · подтверждён`
+    else if (p && p.by === 'resident') subText = `к ${r.time} · предложено ${p.time} — нужен ответ`
+    else if (p && p.by === 'guest') subText = `вы предложили ${p.time} · ждём`
+    else subText = `к ${r.time} · ждём резидента`
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, fmtWeekdayDate(r.dateKey)),
-        h('div', { class: 'req-sub' }, `к ${r.time} · ${approved ? 'подтверждён' : 'ждём резидента'}`),
+        h('div', { class: 'req-sub' }, subText),
     )
     let right
     if (approved && r.approvedBy) {
@@ -930,6 +1007,7 @@ function screenVisit(params) {
         return h('div', { class: 'screen' })
     }
     const approved = r.status === 'approved' && r.approvedBy
+    const p = r.timeProposal
 
     let statusCard
     if (approved) {
@@ -945,6 +1023,71 @@ function screenVisit(params) {
                     h('div', { class: 'host-name' }, r.approvedBy.name),
                     h('div', { class: 'host-sub' }, (r.approvedBy.username ? '@' + r.approvedBy.username + ' · ' : '') + 'резидент'),
                 ),
+            ),
+        )
+    } else if (p && p.by === 'resident') {
+        // Резидент предложил другое время — гость принимает или отвечает своим.
+        statusCard = h('div', { class: 'status-card proposal' },
+            h('div', { class: 'status-card-head' },
+                h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
+                h('span', { class: 'status-card-title' }, 'Резидент предлагает другое время'),
+            ),
+            h('div', { class: 'propose-time-big' },
+                h('span', { class: 'ptb-new' }, p.time),
+                h('span', { class: 'ptb-old' }, r.time),
+            ),
+            h('div', { class: 'propose-actions' },
+                h('button', {
+                    class: 'primary-btn',
+                    onclick: async () => {
+                        const done = await action('proposal.accept', { id: r.id })
+                        if (done) haptic('success')
+                    },
+                }, 'Принять ' + p.time),
+                h('button', {
+                    class: 'chip-btn',
+                    onclick: async () => {
+                        const time = await timePrompt({ text: 'Предложить своё время визита?', initial: p.time, confirmLabel: 'Предложить' })
+                        if (!time) return
+                        const done = await action('propose', { id: r.id, time })
+                        if (done) haptic('success')
+                    },
+                }, 'Своё'),
+            ),
+            h('button', {
+                class: 'link-btn',
+                style: 'margin-top:12px',
+                onclick: async () => {
+                    const done = await action('proposal.decline', { id: r.id })
+                    if (done) haptic('warning')
+                },
+            }, `Оставить как есть (${r.time})`),
+        )
+    } else if (p && p.by === 'guest') {
+        // Гость предложил своё время — ждём резидента; можно изменить или отозвать.
+        statusCard = h('div', { class: 'status-card pending' },
+            h('div', { class: 'status-card-head' },
+                h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
+                h('span', { class: 'status-card-title' }, `Вы предложили ${p.time}`),
+            ),
+            h('div', { class: 'status-card-note' }, 'Ждём ответа резидента — он примет это время или предложит другое.'),
+            h('div', { class: 'propose-actions' },
+                h('button', {
+                    class: 'chip-btn',
+                    onclick: async () => {
+                        const time = await timePrompt({ text: 'Изменить предложенное время?', initial: p.time, confirmLabel: 'Обновить' })
+                        if (!time) return
+                        const done = await action('propose', { id: r.id, time })
+                        if (done) haptic('success')
+                    },
+                }, 'Изменить'),
+                h('button', {
+                    class: 'chip-btn',
+                    onclick: async () => {
+                        const done = await action('proposal.decline', { id: r.id })
+                        if (done) haptic('warning')
+                    },
+                }, 'Отозвать'),
             ),
         )
     } else {
