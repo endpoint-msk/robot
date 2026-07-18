@@ -241,6 +241,18 @@ function haptic(kind) {
     try { tg.HapticFeedback.notificationOccurred(kind) } catch { /* старый клиент */ }
 }
 
+/** Может ли бот уже писать гостю в личку (он нажимал /start или раньше дал доступ). */
+const botCanWrite = () => !!(tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.allows_write_to_pm)
+
+/** Нативная плашка Telegram «разрешить боту писать в личку». Promise<boolean> —
+    true, если доступ дали. На старых клиентах без метода — молча false. */
+function requestWriteAccess() {
+    return new Promise((resolve) => {
+        if (!tg || typeof tg.requestWriteAccess !== 'function') { resolve(false); return }
+        try { tg.requestWriteAccess((granted) => resolve(!!granted)) } catch { resolve(false) }
+    })
+}
+
 /** Мутация, возвращающая свежий bootstrap: обновляет стор и перерисовывает экран. */
 async function action(method, params) {
     setBusy(true)
@@ -1024,6 +1036,10 @@ function screenNewRequest() {
             submit.disabled = true
             setBusy(true)
             try {
+                // Если гость открыл миниапп из чата без /start, бот не сможет прислать
+                // ему ответ резидента в личку — до создания заявки просим доступ
+                // нативной плашкой Telegram (её показывает сам requestWriteAccess).
+                if (!botCanWrite()) await requestWriteAccess()
                 store.data = await api('create', { dateKey: selected, time: timeInput.value, purpose: purpose.value })
                 haptic('success')
                 resetRoot()
