@@ -241,6 +241,27 @@ function haptic(kind) {
     try { tg.HapticFeedback.notificationOccurred(kind) } catch { /* старый клиент */ }
 }
 
+// initData не обновляется в рамках сессии, поэтому выданный доступ помним сами.
+let writeAccessGranted = false
+
+/** Может ли бот уже писать гостю в личку (он нажимал /start или дал доступ). */
+const botCanWrite = () => writeAccessGranted
+    || !!(tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.allows_write_to_pm)
+
+/** Нативная плашка Telegram «разрешить боту писать в личку». Promise<boolean> -
+    true, если доступ дали. На старых клиентах без метода - молча false. */
+function requestWriteAccess() {
+    return new Promise((resolve) => {
+        if (!tg || typeof tg.requestWriteAccess !== 'function') { resolve(false); return }
+        try {
+            tg.requestWriteAccess((granted) => {
+                if (granted) writeAccessGranted = true
+                resolve(!!granted)
+            })
+        } catch { resolve(false) }
+    })
+}
+
 /** Мутация, возвращающая свежий bootstrap: обновляет стор и перерисовывает экран. */
 async function action(method, params) {
     setBusy(true)
@@ -369,6 +390,24 @@ function emptyState(title, text, icon) {
 const avatarStack = (users, max) =>
     h('div', { class: 'avatar-stack' }, users.slice(0, max || 3).map((u) => avatar(u)))
 
+/** Цель визита в строке заявки: одна строка с многоточием; если текст не влез —
+    кнопка «ещё», раскрывающая его целиком. Обрезан ли текст, видно только после
+    layout, когда узел уже в DOM — отсюда requestAnimationFrame. */
+function purposeBlock(text) {
+    const textEl = h('div', { class: 'req-purpose' }, text)
+    const toggle = h('button', { class: 'purpose-toggle', hidden: true }, 'ещё')
+    const wrap = h('div', { class: 'req-purpose-wrap' }, textEl, toggle)
+    toggle.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const expanded = wrap.classList.toggle('expanded')
+        toggle.textContent = expanded ? 'свернуть' : 'ещё'
+    })
+    requestAnimationFrame(() => {
+        if (textEl.scrollWidth > textEl.clientWidth) toggle.hidden = false
+    })
+    return wrap
+}
+
 /** Строка заявки в деталях дня: гость, время, цель; справа — одобривший или «Захостить». */
 function requestRow(r, opts) {
     const me = store.data.me
@@ -376,7 +415,7 @@ function requestRow(r, opts) {
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, r.guest.name),
         h('div', { class: 'req-sub' }, sub),
-        r.purpose ? h('div', { class: 'req-purpose' }, r.purpose) : null,
+        r.purpose ? purposeBlock(r.purpose) : null,
     )
     let right
     if (r.status === 'approved' && r.approvedBy) {
@@ -821,12 +860,34 @@ function visitRow(r) {
     return h('div', { class: 'row tappable', onclick: () => push('visit', { id: r.id }) }, iconSquare, main, right)
 }
 
+/** Плашка «бот не может писать вам»: видна, пока доступа нет; тап зовёт нативный
+    запрос Telegram, после выдачи доступа плашка пропадает. */
+function writeAccessBanner() {
+    if (botCanWrite()) return null
+    return h('div', {
+        class: 'write-banner',
+        onclick: async () => {
+            const ok = await requestWriteAccess()
+            if (ok) { haptic('success'); rerender() }
+        },
+    },
+        h('div', { class: 'wb-icon' }, icons.bell()),
+        h('div', { class: 'wb-text' },
+            h('div', { class: 'wb-title' }, 'Бот не может писать вам'),
+            h('div', { class: 'wb-sub' }, 'Разрешите, чтобы получать ответы на заявки'),
+        ),
+        icons.chevron(),
+    )
+}
+
 function screenMyVisits() {
     const my = store.data.myRequests
     const approved = my.filter((r) => r.status === 'approved')
     const pending = my.filter((r) => r.status !== 'approved')
 
     const parts = [header('Мои визиты', null, devChips())]
+    const banner = writeAccessBanner()
+    if (banner) parts.push(banner)
     if (my.length === 0) {
         parts.push(h('div', { class: 'card' }, emptyState(
             'Пока нет заявок',
@@ -1006,6 +1067,10 @@ function screenNewRequest() {
             submit.disabled = true
             setBusy(true)
             try {
+                // Если гость открыл миниапп из чата без /start, бот не сможет прислать
+                // ему ответ резидента в личку — до создания заявки просим доступ
+                // нативной плашкой Telegram (её показывает сам requestWriteAccess).
+                if (!botCanWrite()) await requestWriteAccess()
                 store.data = await api('create', { dateKey: selected, time: timeInput.value, purpose: purpose.value })
                 haptic('success')
                 resetRoot()
