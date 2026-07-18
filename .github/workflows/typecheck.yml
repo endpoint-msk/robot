@@ -1,6 +1,10 @@
 name: Typecheck
 
-on: [push, pull_request]
+# Пуши в main проверяет deploy.yml — иначе tsc гонялся бы дважды на коммит.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
 
 jobs:
   typecheck:
