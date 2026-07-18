@@ -160,6 +160,7 @@ function avatar(user, extraClass) {
     const src = `${location.origin}/avatar.jpg?id=${encodeURIComponent(user.userId)}`
         + `&initData=${encodeURIComponent(tg ? tg.initData : '')}`
     const img = h('img', { class: 'avatar-photo', alt: '', loading: 'lazy', src })
+    img.addEventListener('load', () => img.classList.add('loaded'))
     // Первый запрос по холодному юзеру сервер отбивает 404-кой и уходит качать фото
     // фоном (чтобы не занимать mtcute-клиент под HTTP). Так что один раз перепросим —
     // к этому моменту оно обычно уже в серверном кэше.

@@ -303,7 +303,13 @@ body {
     height: 100%;
     border-radius: 50%;
     object-fit: cover;
+    /* Пока фото не приехало, браузер рисует на его месте иконку «битой картинки»
+       поверх градиента с буквой — а холодный промах сервер намеренно отбивает 404-кой
+       (см. /avatar.jpg). Показываем картинку только после успешного load. */
+    opacity: 0;
+    transition: opacity 0.15s ease;
 }
+.avatar-photo.loaded { opacity: 1; }
 .avatar-stack .avatar { width: 26px; height: 26px; font-size: 12px; box-shadow: 0 0 0 2px var(--card); }
 .avatar-stack .avatar + .avatar { margin-left: -8px; }
 
