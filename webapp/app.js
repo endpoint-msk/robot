@@ -546,19 +546,27 @@ function requestRow(r, opts) {
     const me = store.data.me
     const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')
     const p = r.timeProposal
-    const main = h('div', { class: 'req-main' },
-        bindProfile(h('div', { class: 'req-name' }, r.guest.name), r.guest),
-        h('div', { class: 'req-sub' }, sub),
-        r.purpose ? purposeBlock(r.purpose) : null,
-        // Плашка активного предложения переноса под целью визита.
-        !opts.archive && p
-            ? h('div', { class: 'proposal-note' + (p.by === 'resident' ? ' mine' : '') },
-                icons.clock(14, sec(0.5)),
-                p.by === 'guest'
-                    ? h('span', null, 'гость предлагает ', h('span', { class: 'pn-time' }, p.time))
-                    : h('span', null, 'вы предложили ', h('span', { class: 'pn-time' }, p.time), ' · ждём гостя'))
-            : null,
-    )
+    // Действия переноса (принять/предложить) идут отдельной строкой под текстом,
+    // а не в тесном правом столбце — иначе кнопки + пилл распирают строку за край.
+    const proposalActions = () => {
+        const acts = []
+        if (p && p.by === 'guest') {
+            acts.push(h('button', {
+                class: 'accept-btn',
+                onclick: async () => {
+                    const done = await action('proposal.accept', { id: r.id })
+                    if (done) haptic('success')
+                },
+            }, icons.check(14, '#34c759', 2.4), 'Принять ' + p.time))
+        }
+        acts.push(h('button', {
+            class: 'link-btn',
+            onclick: () => void proposeTimeFor(r),
+        }, p ? 'Другое время' : 'Перенести'))
+        return h('div', { class: 'req-proposal-actions' }, acts)
+    }
+
+    let proposalRow = null
     let right
     if (r.status === 'approved' && r.approvedBy) {
         const mine = !opts.archive && r.approvedBy.userId === me.id
@@ -583,27 +591,11 @@ function requestRow(r, opts) {
             pill,
         )
         // Подтверждённый визит тоже можно подвинуть по времени — но только своему хосту.
-        if (mine) {
-            const actions = []
-            if (p && p.by === 'guest') {
-                actions.push(h('button', {
-                    class: 'accept-btn',
-                    onclick: async () => {
-                        const done = await action('proposal.accept', { id: r.id })
-                        if (done) haptic('success')
-                    },
-                }, icons.check(14, '#34c759', 2.4), 'Принять ' + p.time))
-            }
-            actions.push(h('button', {
-                class: 'link-btn',
-                onclick: () => void proposeTimeFor(r),
-            }, p ? 'Другое время' : 'Перенести'))
-            right = h('div', { class: 'req-actions' }, right, ...actions)
-        }
+        if (mine) proposalRow = proposalActions()
     } else if (opts.archive) {
         right = h('span', { class: 'waiting-label' }, 'Без ответа')
     } else {
-        const hostBtn = h('button', {
+        right = h('button', {
             class: 'host-btn',
             onclick: async () => {
                 const ok = await confirmDialog(`Захостить: ${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}, ${fmtShortDate(r.dateKey)} к ${r.time}?`)
@@ -612,24 +604,22 @@ function requestRow(r, opts) {
                 if (done) haptic('success')
             },
         }, 'Захостить')
-        const actions = [hostBtn]
-        // Гость ответил своим временем — резидент может принять его в один тап.
-        if (p && p.by === 'guest') {
-            actions.unshift(h('button', {
-                class: 'accept-btn',
-                onclick: async () => {
-                    const done = await action('proposal.accept', { id: r.id })
-                    if (done) haptic('success')
-                },
-            }, icons.check(14, '#34c759', 2.4), 'Принять ' + p.time))
-        }
-        // Предложить перенос: подпись зависит от того, идёт ли уже переписка.
-        actions.push(h('button', {
-            class: 'link-btn',
-            onclick: () => void proposeTimeFor(r),
-        }, p ? 'Другое время' : 'Перенести'))
-        right = h('div', { class: 'req-actions' }, actions)
+        proposalRow = proposalActions()
     }
+    const main = h('div', { class: 'req-main' },
+        bindProfile(h('div', { class: 'req-name' }, r.guest.name), r.guest),
+        h('div', { class: 'req-sub' }, sub),
+        r.purpose ? purposeBlock(r.purpose) : null,
+        // Плашка активного предложения переноса под целью визита.
+        !opts.archive && p
+            ? h('div', { class: 'proposal-note' + (p.by === 'resident' ? ' mine' : '') },
+                icons.clock(14, sec(0.5)),
+                p.by === 'guest'
+                    ? h('span', null, 'гость предлагает ', h('span', { class: 'pn-time' }, p.time))
+                    : h('span', null, 'вы предложили ', h('span', { class: 'pn-time' }, p.time), ' · ждём гостя'))
+            : null,
+        proposalRow,
+    )
     return h('div', { class: 'row' }, bindProfile(avatar(r.guest, 'req-avatar'), r.guest), main, right)
 }
 
