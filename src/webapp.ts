@@ -200,6 +200,7 @@ const attendeesView = (storage: Storage, dateKey: string) => {
         resident: true as const,
         time: null as string | null,
     }))
+    const seen = new Set(residents.map((a) => a.userId))
     const guests = requestsForDay(storage, dateKey)
         .filter((r) => r.status === 'approved' && !r.anon)
         .map((r) => ({
@@ -209,6 +210,9 @@ const attendeesView = (storage: Storage, dateKey: string) => {
             resident: false as const,
             time: r.time as string | null,
         }))
+        // Один и тот же человек мог и отметиться «я приду», и завести заявку как гость —
+        // в списке он должен быть один раз, резидентской строкой (она приоритетнее).
+        .filter((a) => !seen.has(a.userId))
     return [...residents, ...guests]
 }
 
@@ -508,8 +512,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
-        // Предложить перенос времени. Резидент — на любой pending-заявке; гость —
-        // только в ответ на предложение резидента (встречное время).
+        // Предложить перенос времени. На pending-заявке: резидент — любой, гость — только
+        // в ответ на предложение резидента. На одобренной: обе стороны могут начать сами,
+        // но со стороны резидентов — только тот, кто хостит (чужой визит не двигаем).
         case 'propose': {
             const request = findRequest()
             if (!request) return
@@ -519,7 +524,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_allowed', 'Предлагать время может гость заявки или резидент.')
                 return
             }
-            if (by === 'guest' && request.timeProposal?.by !== 'resident') {
+            if (by === 'resident' && request.approvedBy && request.approvedBy.userId !== user.userId) {
+                sendError(res, 403, 'not_allowed', 'Перенести подтверждённый визит может только тот, кто его хостит.')
+                return
+            }
+            if (by === 'guest' && request.status !== 'approved' && request.timeProposal?.by !== 'resident') {
                 sendError(res, 409, 'no_proposal', 'Отвечать своим временем можно только на предложение резидента.')
                 return
             }
@@ -529,9 +538,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 const messages = {
                     not_found: 'Заявка не найдена — возможно, её уже отменили.',
                     bad_time: 'Укажи время в формате ЧЧ:ММ.',
-                    bad_status: 'Время можно предложить только у заявки без хоста.',
                 } as const
-                sendError(res, result.error === 'not_found' ? 404 : result.error === 'bad_status' ? 409 : 400, result.error, messages[result.error])
+                sendError(res, result.error === 'not_found' ? 404 : 400, result.error, messages[result.error])
                 return
             }
             if (by === 'resident') {
@@ -555,7 +563,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             const isGuest = request.guest.userId === user.userId
-            const canAccept = proposal.by === 'resident' ? isGuest : !isGuest && resident
+            // У одобренной заявки адресат со стороны резидентов — конкретно хост, а не
+            // любой резидент: иначе чужой визит подвинет посторонний.
+            const canAccept = proposal.by === 'resident'
+                ? isGuest
+                : !isGuest && resident && (!request.approvedBy || request.approvedBy.userId === user.userId)
             if (!canAccept) {
                 sendError(res, 403, 'not_allowed', 'Это предложение адресовано другой стороне.')
                 return
@@ -589,6 +601,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const isGuest = request.guest.userId === user.userId
             if (!isGuest && !resident) {
                 sendError(res, 403, 'not_allowed', 'Недоступно.')
+                return
+            }
+            if (!isGuest && request.approvedBy && request.approvedBy.userId !== user.userId) {
+                sendError(res, 403, 'not_allowed', 'Подтверждённый визит ведёт тот, кто его хостит.')
                 return
             }
             const result = await clearTimeProposal(storage, request.id)

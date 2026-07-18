@@ -512,13 +512,16 @@ export const deleteHostingRequest = async (storage: Storage, id: string): Promis
 // Предложения переноса времени (резидент ↔ гость)
 // ---------------------------------------------------------------------------
 
-export type ProposeTimeError = 'not_found' | 'bad_time' | 'bad_status'
+export type ProposeTimeError = 'not_found' | 'bad_time'
 
 /**
- * Ставит предложение перенести визит на другое время. Гейт статуса ('pending')
- * тут же: у уже одобренной заявки время не двигаем. `recipientId` — кому уходит
- * уведомление: резидент предлагает гостю; гость отвечает резиденту, предложившему
- * ранее (адрес известен из прошлого предложения, иначе null).
+ * Ставит предложение перенести визит на другое время — и у pending-заявки, и у уже
+ * одобренной (подтверждённый визит тоже иногда надо сдвинуть; сам факт хостинга при
+ * этом не отменяется, меняется только `time` после согласия второй стороны).
+ *
+ * `recipientId` — кому уходит уведомление: резидент всегда пишет гостю; гость пишет
+ * либо своему хосту (заявка одобрена), либо резиденту, предложившему время ранее.
+ * Для встречного предложения на pending-заявке без прошлого предложения адреса нет.
  */
 export const proposeTime = async (
     storage: Storage,
@@ -527,13 +530,14 @@ export const proposeTime = async (
 ): Promise<{ ok: true; request: HostingRequest; recipientId: number | null } | { ok: false; error: ProposeTimeError }> => {
     const existing = storage.get().hostingRequests[id]
     if (!existing) return { ok: false, error: 'not_found' }
-    if (existing.status !== 'pending') return { ok: false, error: 'bad_status' }
     if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
     const recipientId = input.by === 'resident'
         ? existing.guest.userId
-        : existing.timeProposal?.by === 'resident'
-            ? existing.timeProposal.user.userId
-            : null
+        : existing.approvedBy
+            ? existing.approvedBy.userId
+            : existing.timeProposal?.by === 'resident'
+                ? existing.timeProposal.user.userId
+                : null
     await storage.update((s) => {
         const r = s.hostingRequests[id]
         if (r) r.timeProposal = { time: input.time, by: input.by, user: input.user, at: new Date().toISOString() }

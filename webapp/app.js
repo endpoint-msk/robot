@@ -500,6 +500,24 @@ function requestRow(r, opts) {
             h('span', { class: 'approver-label' }, 'одобрил'),
             pill,
         )
+        // Подтверждённый визит тоже можно подвинуть по времени — но только своему хосту.
+        if (mine) {
+            const actions = []
+            if (p && p.by === 'guest') {
+                actions.push(h('button', {
+                    class: 'accept-btn',
+                    onclick: async () => {
+                        const done = await action('proposal.accept', { id: r.id })
+                        if (done) haptic('success')
+                    },
+                }, icons.check(14, '#34c759', 2.4), 'Принять ' + p.time))
+            }
+            actions.push(h('button', {
+                class: 'link-btn',
+                onclick: () => void proposeTimeFor(r),
+            }, p ? 'Другое время' : 'Перенести'))
+            right = h('div', { class: 'req-actions' }, right, ...actions)
+        }
     } else if (opts.archive) {
         right = h('span', { class: 'waiting-label' }, 'Без ответа')
     } else {
@@ -972,9 +990,11 @@ function visitRow(r) {
         ? h('div', { class: 'status-square ok' }, icons.check(20, '#34c759'))
         : h('div', { class: 'status-square' }, icons.clock(18, sec(0.5)))
     let subText
-    if (approved) subText = `к ${r.time} · подтверждён`
-    else if (p && p.by === 'resident') subText = `к ${r.time} · предложено ${p.time} — нужен ответ`
-    else if (p && p.by === 'guest') subText = `вы предложили ${p.time} · ждём`
+    // Перенос показываем и поверх подтверждённого визита — иначе строка врёт «подтверждён»,
+    // пока висит несогласованное время.
+    if (p && p.by === 'resident') subText = `к ${r.time} · предложено ${p.time} — нужен ответ`
+    else if (p && p.by === 'guest') subText = `вы предложили ${p.time} · ждём${approved ? ' хоста' : ''}`
+    else if (approved) subText = `к ${r.time} · подтверждён`
     else subText = `к ${r.time} · ждём резидента`
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, fmtWeekdayDate(r.dateKey)),
@@ -1128,7 +1148,10 @@ function screenVisit(params) {
     const approved = r.status === 'approved' && r.approvedBy
     const p = r.timeProposal
 
-    let statusCard
+    // Карточка статуса и карточка предложения независимы: у подтверждённого визита
+    // тоже может висеть перенос, и тогда показываем обе — «визит ваш» и «время двигаем».
+    let statusCard = null
+    let proposalCard = null
     if (approved) {
         statusCard = h('div', { class: 'status-card approved' },
             h('div', { class: 'status-card-head' },
@@ -1144,9 +1167,10 @@ function screenVisit(params) {
                 ),
             ),
         )
-    } else if (p && p.by === 'resident') {
+    }
+    if (p && p.by === 'resident') {
         // Резидент предложил другое время — гость принимает или отвечает своим.
-        statusCard = h('div', { class: 'status-card proposal' },
+        proposalCard = h('div', { class: 'status-card proposal' },
             h('div', { class: 'status-card-head' },
                 h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
                 h('span', { class: 'status-card-title' }, 'Резидент предлагает другое время'),
@@ -1184,7 +1208,7 @@ function screenVisit(params) {
         )
     } else if (p && p.by === 'guest') {
         // Гость предложил своё время — ждём резидента; можно изменить или отозвать.
-        statusCard = h('div', { class: 'status-card proposal' },
+        proposalCard = h('div', { class: 'status-card proposal' },
             h('div', { class: 'status-card-head' },
                 h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
                 h('span', { class: 'status-card-title' }, 'Ждём ответа резидента'),
@@ -1215,7 +1239,7 @@ function screenVisit(params) {
                 }, 'Отозвать'),
             ),
         )
-    } else {
+    } else if (!approved) {
         statusCard = h('div', { class: 'status-card pending' },
             h('div', { class: 'status-card-head' },
                 h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
@@ -1229,10 +1253,29 @@ function screenVisit(params) {
         backRow('Мои визиты'),
         header(WEEKDAYS_FULL[weekdayIdx(r.dateKey)], `${fmtDayMonth(r.dateKey)} · к ${r.time}`),
         statusCard,
+        proposalCard,
         // Правка доступна, пока визит не одобрен: сервер тоже это проверяет.
         !approved
             ? h('button', { class: 'secondary-btn', style: 'margin-top:12px', onclick: () => push('editRequest', { id: r.id }) },
                 icons.pencil(), 'Изменить день или время')
+            : null,
+        // У подтверждённого визита день уже не двигаем (хост согласился именно на него),
+        // а время можно попросить перенести — хост примет или предложит своё.
+        approved && !p
+            ? h('button', {
+                class: 'secondary-btn',
+                style: 'margin-top:12px',
+                onclick: async () => {
+                    const time = await timePrompt({
+                        text: 'Попросить перенести визит на другое время?',
+                        initial: r.time,
+                        confirmLabel: 'Попросить',
+                    })
+                    if (!time) return
+                    const done = await action('propose', { id: r.id, time })
+                    if (done) haptic('success')
+                },
+            }, icons.clock(17, '#007aff'), 'Попросить перенести')
             : null,
         sectionTitle('Детали'),
         h('div', { class: 'card' },
