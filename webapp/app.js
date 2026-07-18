@@ -1184,12 +1184,18 @@ function screenVisit(params) {
         )
     } else if (p && p.by === 'guest') {
         // Гость предложил своё время — ждём резидента; можно изменить или отозвать.
-        statusCard = h('div', { class: 'status-card pending' },
+        statusCard = h('div', { class: 'status-card proposal' },
             h('div', { class: 'status-card-head' },
                 h('div', { class: 'status-card-icon' }, icons.clock(15, sec(0.55))),
-                h('span', { class: 'status-card-title' }, `Вы предложили ${p.time}`),
+                h('span', { class: 'status-card-title' }, 'Ждём ответа резидента'),
             ),
-            h('div', { class: 'status-card-note' }, 'Ждём ответа резидента — он примет это время или предложит другое.'),
+            // Время — крупным блоком, как во встречной карточке от резидента: в заголовке
+            // оно раздувало строку и первым вылезало за край на узких экранах.
+            h('div', { class: 'propose-time-big' },
+                h('span', { class: 'ptb-new' }, p.time),
+                h('span', { class: 'ptb-old' }, r.time),
+            ),
+            h('div', { class: 'status-card-note' }, 'Вы предложили это время. Резидент примет его или предложит другое.'),
             h('div', { class: 'propose-actions' },
                 h('button', {
                     class: 'chip-btn',

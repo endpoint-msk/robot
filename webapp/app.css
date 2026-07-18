@@ -434,11 +434,23 @@ body {
 /* Карточка предложения на экране визита (гость). */
 .status-card.proposal { background: var(--card); box-shadow: var(--shadow-card); }
 .status-card.proposal .status-card-title { color: var(--text); }
-.propose-time-big { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; }
+.propose-time-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-top: 14px; }
 .propose-time-big .ptb-new { font-size: 30px; font-weight: 800; letter-spacing: -0.4px; color: var(--blue); }
 .propose-time-big .ptb-old { font-size: 14px; color: var(--text-3); text-decoration: line-through; }
-.propose-actions { display: flex; gap: 8px; margin-top: 16px; }
-.propose-actions .primary-btn, .propose-actions .chip-btn { min-height: 44px; margin: 0; }
+.propose-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+/*
+ * Кнопки делят ряд поровну и переносятся на свою строку, если не влезли. Ширина тут
+ * непредсказуема: в подписи сидит время («Принять 12:30»), а у флекс-элементов
+ * min-width по умолчанию auto — без сброса они отказываются ужиматься и карточку
+ * распирает за край экрана.
+ */
+.propose-actions .primary-btn, .propose-actions .chip-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    min-height: 44px;
+    margin: 0;
+}
 .chip-btn {
     flex-shrink: 0;
     padding: 0 16px;
@@ -523,7 +535,9 @@ body {
     background: var(--card);
     box-shadow: var(--shadow-card);
 }
-.status-card-head { display: flex; align-items: center; gap: 8px; }
+/* flex-start, а не center: заголовок может уехать на две строки, и тогда кружок
+   с иконкой должен остаться у первой, а не повиснуть посередине. */
+.status-card-head { display: flex; align-items: flex-start; gap: 8px; }
 .status-card-icon {
     width: 26px;
     height: 26px;
@@ -536,14 +550,18 @@ body {
 /* Галочка внутри кружка рисуется currentColor — так её цвет живёт в теме, а не в JS. */
 .status-card.approved .status-card-icon { background: var(--ok-fg); color: var(--ok-check); }
 .status-card.pending .status-card-icon { background: var(--chip); }
-.status-card-title { font-size: 17px; font-weight: 700; }
+/* line-height под высоту кружка-иконки — так однострочный заголовок с ней вровень,
+   а min-width снимает флексовый min-width:auto, из-за которого длинный заголовок
+   не переносился, а вылезал за карточку. */
+.status-card-title { font-size: 17px; font-weight: 700; line-height: 26px; min-width: 0; overflow-wrap: anywhere; }
 .status-card.approved .status-card-title { color: var(--ok-fg); }
 .status-card-body { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 .host-avatar { width: 46px; height: 46px; font-size: 18px; box-shadow: 0 0 0 2px var(--ok-bg); }
 .host-kicker { font-size: 12px; color: rgba(var(--ok-sec), 0.7); }
 .host-name { font-size: 17px; font-weight: 700; line-height: 1.2; color: var(--ok-name); }
 .host-sub { font-size: 13px; color: rgba(var(--ok-sec), 0.75); }
-.status-card.pending .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.status-card.pending .status-card-note,
+.status-card.proposal .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 
 /* --- Детальные строки «ключ — значение» --- */
 
