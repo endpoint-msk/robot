@@ -458,7 +458,8 @@ async function proposeTimeFor(r) {
         text: `Предложить ${r.guest.name} другое время визита ${fmtShortDate(r.dateKey)}?`,
         initial: (r.timeProposal && r.timeProposal.time) || r.time,
     })
-    if (!time) return
+    // Согласованное время не изменилось — предлагать нечего (сервер тоже это гасит).
+    if (!time || time === r.time) return
     const done = await action('propose', { id: r.id, time })
     if (done) haptic('success')
 }
@@ -1272,7 +1273,8 @@ function screenVisit(params) {
                         initial: r.time,
                         confirmLabel: 'Попросить',
                     })
-                    if (!time) return
+                    // Оставили время как есть — переносить нечего (сервер тоже это гасит).
+                    if (!time || time === r.time) return
                     const done = await action('propose', { id: r.id, time })
                     if (done) haptic('success')
                 },

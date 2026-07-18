@@ -553,6 +553,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendJson(res, 200, buildBootstrap(ctx))
                 return
             }
+            // Предложить ровно то время, которое и так согласовано, — не событие. Молча
+            // отдаём текущее состояние: иначе заводится пустое предложение «перенести
+            // на 15:00» при времени 15:00 и второй стороне летит бессмысленный DM.
+            // Проверка после встречного согласия: там то же равенство значит другое.
+            if (time === request.time) {
+                sendJson(res, 200, buildBootstrap(ctx))
+                return
+            }
             const result = await proposeTime(storage, request.id, { time, by, user })
             if (!result.ok) {
                 const messages = {
