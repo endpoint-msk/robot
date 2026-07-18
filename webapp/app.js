@@ -369,6 +369,24 @@ function emptyState(title, text, icon) {
 const avatarStack = (users, max) =>
     h('div', { class: 'avatar-stack' }, users.slice(0, max || 3).map((u) => avatar(u)))
 
+/** Цель визита в строке заявки: одна строка с многоточием; если текст не влез —
+    кнопка «ещё», раскрывающая его целиком. Обрезан ли текст, видно только после
+    layout, когда узел уже в DOM — отсюда requestAnimationFrame. */
+function purposeBlock(text) {
+    const textEl = h('div', { class: 'req-purpose' }, text)
+    const toggle = h('button', { class: 'purpose-toggle', hidden: true }, 'ещё')
+    const wrap = h('div', { class: 'req-purpose-wrap' }, textEl, toggle)
+    toggle.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const expanded = wrap.classList.toggle('expanded')
+        toggle.textContent = expanded ? 'свернуть' : 'ещё'
+    })
+    requestAnimationFrame(() => {
+        if (textEl.scrollWidth > textEl.clientWidth) toggle.hidden = false
+    })
+    return wrap
+}
+
 /** Строка заявки в деталях дня: гость, время, цель; справа — одобривший или «Захостить». */
 function requestRow(r, opts) {
     const me = store.data.me
@@ -376,7 +394,7 @@ function requestRow(r, opts) {
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, r.guest.name),
         h('div', { class: 'req-sub' }, sub),
-        r.purpose ? h('div', { class: 'req-purpose' }, r.purpose) : null,
+        r.purpose ? purposeBlock(r.purpose) : null,
     )
     let right
     if (r.status === 'approved' && r.approvedBy) {

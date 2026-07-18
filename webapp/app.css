@@ -317,14 +317,36 @@ body {
 .req-main { min-width: 0; flex: 1; }
 .req-name { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .req-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+.req-purpose-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
+    min-width: 0;
+}
 .req-purpose {
+    flex: 1;
+    min-width: 0;
     font-size: 13px;
     color: var(--text-2);
-    margin-top: 2px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.req-purpose-wrap.expanded { display: block; }
+.req-purpose-wrap.expanded .req-purpose { white-space: normal; overflow-wrap: anywhere; }
+.purpose-toggle {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--blue);
+    cursor: pointer;
+}
+.purpose-toggle:active { opacity: 0.6; }
 
 .approver { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
 .approver-label {
