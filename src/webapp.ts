@@ -533,6 +533,26 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             const time = typeof body.time === 'string' ? body.time : ''
+            // Встречное предложение ровно того же времени — это согласие, а не новый раунд:
+            // иначе стороны пингуют друг друга одинаковым временем и никто не «принял».
+            const counter = request.timeProposal
+            if (counter && counter.by !== by && counter.time === time) {
+                const accepted = await acceptTimeProposal(storage, request.id)
+                if (!accepted.ok) {
+                    sendError(res, accepted.error === 'not_found' ? 404 : 409, accepted.error,
+                        accepted.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
+                    return
+                }
+                if (counter.by === 'resident') {
+                    void notifyProposalAccepted(client, counter.user.userId, config.publicUrl, accepted.request, false)
+                        .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии времени:', err))
+                } else {
+                    void notifyProposalAccepted(client, accepted.request.guest.userId, config.publicUrl, accepted.request, true)
+                        .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии времени:', err))
+                }
+                sendJson(res, 200, buildBootstrap(ctx))
+                return
+            }
             const result = await proposeTime(storage, request.id, { time, by, user })
             if (!result.ok) {
                 const messages = {
