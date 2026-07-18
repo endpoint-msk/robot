@@ -44,20 +44,18 @@ export const createTelegramResidentDirectory = (
         }
     }
 
-    const presenceChats = async (userId: number): Promise<number[]> => {
-        const result: number[] = []
-        for (const chatId of allowedChats) {
-            if (await isChatAdmin(chatId, userId)) result.push(chatId)
-        }
-        return result
+    // Чаты опрашиваем параллельно: кэша нет, каждый ответ — round-trip в Telegram, а
+    // isResident висит на каждом запросе миниаппа. Последовательный цикл складывал
+    // задержки чатов в одну и заметно тормозил API.
+    const adminChats = async (userId: number): Promise<number[]> => {
+        const chats = [...allowedChats]
+        const flags = await Promise.all(chats.map((chatId) => isChatAdmin(chatId, userId)))
+        return chats.filter((_, i) => flags[i])
     }
 
-    const isResident = async (userId: number): Promise<boolean> => {
-        for (const chatId of allowedChats) {
-            if (await isChatAdmin(chatId, userId)) return true
-        }
-        return false
-    }
+    const presenceChats = adminChats
+
+    const isResident = async (userId: number): Promise<boolean> => (await adminChats(userId)).length > 0
 
     return { isResident, presenceChats, isChatAdmin }
 }

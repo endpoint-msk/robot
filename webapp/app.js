@@ -157,14 +157,21 @@ function avatar(user, extraClass) {
     node.textContent = ((user.name || user.username || '?').trim().charAt(0) || '?').toUpperCase()
     // Настоящее фото кладём поверх буквы (см. /avatar.jpg): нет фото или не
     // загрузилось — картинка убирается, остаётся градиент с буквой.
-    const img = h('img', {
-        class: 'avatar-photo',
-        alt: '',
-        loading: 'lazy',
-        src: `${location.origin}/avatar.jpg?id=${encodeURIComponent(user.userId)}`
-            + `&initData=${encodeURIComponent(tg ? tg.initData : '')}`,
+    const src = `${location.origin}/avatar.jpg?id=${encodeURIComponent(user.userId)}`
+        + `&initData=${encodeURIComponent(tg ? tg.initData : '')}`
+    const img = h('img', { class: 'avatar-photo', alt: '', loading: 'lazy', src })
+    // Первый запрос по холодному юзеру сервер отбивает 404-кой и уходит качать фото
+    // фоном (чтобы не занимать mtcute-клиент под HTTP). Так что один раз перепросим —
+    // к этому моменту оно обычно уже в серверном кэше.
+    let retried = false
+    img.addEventListener('error', () => {
+        if (retried) {
+            img.remove()
+            return
+        }
+        retried = true
+        setTimeout(() => { img.src = src + '&r=1' }, 1200)
     })
-    img.addEventListener('error', () => img.remove())
     node.append(img)
     return node
 }

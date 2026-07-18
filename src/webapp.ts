@@ -757,23 +757,38 @@ const AVATAR_TTL_MS = 6 * 60 * 60 * 1000
 
 const avatarCache = new Map<number, { photo: Uint8Array | null; at: number }>()
 
+/** Скачивания в полёте: без этого пачка <img> на один рендер качает одно фото N раз. */
+const avatarInflight = new Set<number>()
+
+const cachedAvatar = (userId: number): { photo: Uint8Array | null } | null => {
+    const hit = avatarCache.get(userId)
+    return hit && Date.now() - hit.at < AVATAR_TTL_MS ? hit : null
+}
+
 /**
- * Фото профиля (160x160) или null, если его нет, оно скрыто приватностью либо
- * юзер боту незнаком. Отрицательный ответ кэшируем тоже — иначе каждый рендер
- * списка бьёт в Telegram за теми же «пустыми» аватарками.
+ * Скачивает фото профиля в кэш. Отрицательный ответ (нет фото, скрыто приватностью,
+ * юзер боту незнаком) кэшируем тоже — иначе каждый рендер списка бьёт в Telegram за
+ * теми же «пустыми» аватарками.
+ *
+ * Запускается только фоном: клиент mtcute один на весь бот, и `downloadAsBuffer` с
+ * файлового DC — это секунды. Если ждать его в HTTP-хендлере, следующий запрос к API
+ * встаёт в очередь за пачкой аватарок (там `isResident` → `getChatMember` идёт через
+ * тот же клиент) и миниапп ловит таймаут.
  */
-const fetchAvatar = async (client: TelegramClient, userId: number): Promise<Uint8Array | null> => {
-    const cached = avatarCache.get(userId)
-    if (cached && Date.now() - cached.at < AVATAR_TTL_MS) return cached.photo
+const warmAvatar = async (client: TelegramClient, userId: number): Promise<void> => {
+    if (avatarInflight.has(userId)) return
+    avatarInflight.add(userId)
     let photo: Uint8Array | null = null
     try {
         const [user] = await client.getUsers(userId)
         if (user?.photo) photo = await client.downloadAsBuffer(user.photo.small)
     } catch (err) {
         console.warn(`[webapp] не удалось получить аватарку ${userId}:`, err)
+    } finally {
+        // Ошибку кэшируем как «фото нет»: иначе битый юзер перезапрашивается на каждый рендер.
+        avatarCache.set(userId, { photo, at: Date.now() })
+        avatarInflight.delete(userId)
     }
-    avatarCache.set(userId, { photo, at: Date.now() })
-    return photo
 }
 
 const serveStatic = async (pathname: string, res: ServerResponse): Promise<void> => {
@@ -855,15 +870,24 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     res.writeHead(400).end()
                     return
                 }
-                const photo = await fetchAvatar(deps.client, id)
-                if (!photo) {
-                    res.writeHead(404).end()
+                const hit = cachedAvatar(id)
+                if (!hit) {
+                    // Холодный промах: греем фоном и отвечаем сразу, чтобы не занимать
+                    // mtcute-клиент под HTTP-запросом. no-store — чтобы браузер спросил
+                    // снова на следующем рендере, когда фото уже будет в кэше.
+                    void warmAvatar(deps.client, id)
+                    res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
+                    return
+                }
+                if (!hit.photo) {
+                    // Знаем наверняка, что фото нет — пусть браузер не спрашивает час.
+                    res.writeHead(404, { 'Cache-Control': 'private, max-age=3600' }).end()
                     return
                 }
                 res.writeHead(200, {
                     'Content-Type': 'image/jpeg',
                     'Cache-Control': 'private, max-age=3600',
-                }).end(photo)
+                }).end(hit.photo)
                 return
             }
 
