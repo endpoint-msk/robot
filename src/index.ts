@@ -17,6 +17,7 @@ import {
     startMacPresencePoller,
     startPresenceScheduler,
 } from './presence.js'
+import { setHostingBoardLink, startHostingBoardScheduler } from './hosting-board.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
@@ -155,7 +156,9 @@ const main = async () => {
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
             // (его нужно один раз включить в BotFather, указав тот же WEBAPP_URL).
-            setHostingMiniappLink(`https://t.me/${self.username}?startapp=hosting`)
+            const deepLink = `https://t.me/${self.username}?startapp=hosting`
+            setHostingMiniappLink(deepLink)
+            setHostingBoardLink(deepLink)
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
@@ -230,6 +233,10 @@ const main = async () => {
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     const presence = startPresenceScheduler(tg, storage, allowedChats, residents)
+    // Доска «кто сегодня в спейсе» — часть подсистемы хостинга: только при включённом миниаппе.
+    const hostingBoard = webappConfig !== null
+        ? startHostingBoardScheduler(tg, storage, allowedChats, hostingTzOffset)
+        : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
@@ -263,6 +270,7 @@ const main = async () => {
         scheduler.stop()
         dailyPoster.stop()
         presence.stop()
+        hostingBoard?.stop()
         printerWatcher?.stop()
         macPoller?.stop()
         webappServer?.stop()

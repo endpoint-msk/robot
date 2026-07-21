@@ -181,6 +181,46 @@ export const residentsAttendingDay = (storage: Storage, dateKey: string): Hostin
         .filter((a) => a.dateKey === dateKey)
         .sort((a, b) => a.at.localeCompare(b.at))
 
+/** Одна строка публичного списка «кто придёт»: резидент «я приду» или подтверждённый неанонимный гость. */
+export type DayAttendee = {
+    userId: number
+    name: string
+    username: string | null
+    /** Резидент, отметившийся «я приду» (в приоритете над гостевой строкой того же человека). */
+    resident: boolean
+    /** Время прихода гостя 'HH:MM'; у резидентов null. */
+    time: string | null
+}
+
+/**
+ * Публичный список «кто придёт» на день (виден всем, включая гостей): резиденты,
+ * отметившиеся «я приду» (в приоритете, с пометкой), затем подтверждённые гости
+ * без анонимных. Цель визита сюда НЕ попадает.
+ */
+export const attendeesForDay = (storage: Storage, dateKey: string): DayAttendee[] => {
+    const residents: DayAttendee[] = residentsAttendingDay(storage, dateKey).map((a) => ({
+        userId: a.user.userId,
+        name: a.user.name,
+        username: a.user.username,
+        resident: true,
+        time: null,
+    }))
+    const seen = new Set(residents.map((a) => a.userId))
+    const guests: DayAttendee[] = requestsForDay(storage, dateKey)
+        .filter((r) => r.status === 'approved' && !r.anon)
+        .map((r) => ({
+            userId: r.guest.userId,
+            name: r.guest.name,
+            username: r.guest.username,
+            resident: false,
+            time: r.time,
+        }))
+        // Один и тот же человек мог и отметиться «я приду», и завести заявку как гость —
+        // в списке он должен быть один раз, резидентской строкой (она приоритетнее).
+        .filter((a) => !seen.has(a.userId))
+    return [...residents, ...guests]
+}
+
 /** Заявки на конкретный день, отсортированные по времени прихода. */
 export const requestsForDay = (storage: Storage, dateKey: string): HostingRequest[] =>
     Object.values(storage.get().hostingRequests)

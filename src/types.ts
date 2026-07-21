@@ -66,6 +66,18 @@ export type State = {
     /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
      *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
     hostingNotify: Record<string, HostingNotifyPrefs>
+    /** Закреплённая доска «кто сегодня в спейсе» по чатам (ключ — chatId как строка). */
+    hostingBoard: Record<string, HostingBoardMessage>
+}
+
+/** Закреплённое сообщение-доска хостинга в чате: одно на календарный день (пояс спейса). */
+export type HostingBoardMessage = {
+    chatId: number
+    messageId: number
+    /** dateKey (пояс спейса), в который сообщение отправили — гейт «одно в день» и открепление на следующий день. */
+    postedDay: string
+    /** Какой день сейчас показан в сообщении (ближайший активный). */
+    shownDay: string
 }
 
 /** Краткая карточка участника для заявок хостинга (гость/одобривший резидент). */
@@ -187,4 +199,5 @@ export const emptyState = (): State => ({
     hostingRequests: {},
     hostingAttendance: {},
     hostingNotify: {},
+    hostingBoard: {},
 })

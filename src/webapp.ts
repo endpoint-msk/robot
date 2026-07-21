@@ -8,6 +8,7 @@ import {
     acceptTimeProposal,
     addDaysToKey,
     archiveWeeks,
+    attendeesForDay,
     buildVisitIcs,
     clearTimeProposal,
     createHostingRequest,
@@ -27,12 +28,12 @@ import {
     notifyResidentTimeCountered,
     proposeTime,
     requestsForDay,
-    residentsAttendingDay,
     setResidentAttendance,
     todayKey,
     updateHostingRequest,
     weekStartOf,
 } from './hosting.js'
+import { syncHostingBoard } from './hosting-board.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { ANON_LABEL, removePresence, upsertPresenceListInChat } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -187,35 +188,6 @@ const requestsView = (list: HostingRequest[]) =>
         anon: r.anon === true,
     }))
 
-/**
- * Публичный список «кто придёт» на день (виден всем, включая гостей): резиденты,
- * отметившиеся «я приду» (в приоритете, с пометкой), затем подтверждённые гости
- * без анонимных. Цель визита сюда НЕ попадает.
- */
-const attendeesView = (storage: Storage, dateKey: string) => {
-    const residents = residentsAttendingDay(storage, dateKey).map((a) => ({
-        userId: a.user.userId,
-        name: a.user.name,
-        username: a.user.username,
-        resident: true as const,
-        time: null as string | null,
-    }))
-    const seen = new Set(residents.map((a) => a.userId))
-    const guests = requestsForDay(storage, dateKey)
-        .filter((r) => r.status === 'approved' && !r.anon)
-        .map((r) => ({
-            userId: r.guest.userId,
-            name: r.guest.name,
-            username: r.guest.username,
-            resident: false as const,
-            time: r.time as string | null,
-        }))
-        // Один и тот же человек мог и отметиться «я приду», и завести заявку как гость —
-        // в списке он должен быть один раз, резидентской строкой (она приоритетнее).
-        .filter((a) => !seen.has(a.userId))
-    return [...residents, ...guests]
-}
-
 /** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
 const isDevUser = (ctx: ApiContext): boolean => ctx.devUserIds.has(ctx.user.userId)
 
@@ -250,7 +222,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             // дев-меню — правка и удаление). Гостям — только счётчики.
             ...(resident || isDevUser(ctx) ? { requests: requestsView(requests) } : {}),
             // Публичный список «кто придёт» — виден всем.
-            attendees: attendeesView(storage, dateKey),
+            attendees: attendeesForDay(storage, dateKey),
         })
     }
     const myRequests = Object.values(storage.get().hostingRequests)
@@ -301,6 +273,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         if (!request) sendError(res, 404, 'not_found', 'Заявка не найдена — возможно, её уже отменили.')
         return request ?? null
     }
+    // Любая мутация заявок/отметок могла изменить доску «кто сегодня в спейсе» — сверяем её
+    // в фоне (fire-and-forget), чтобы не задерживать ответ миниаппу.
+    const syncBoard = (): void => {
+        void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes).catch((err) =>
+            console.error('[hosting-board] не удалось обновить доску:', err),
+        )
+    }
 
     switch (method) {
         case 'bootstrap': {
@@ -327,6 +306,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Рассылка резидентам — в фоне, чтобы не держать ответ гостю.
             void notifyResidentsAboutRequest(client, storage, allowedChats, tzOffsetMinutes, config.publicUrl, created.request)
                 .catch((err) => console.error('[hosting] не удалось разослать уведомления о заявке:', err))
+            syncBoard()
             sendJson(res, 200, { request: requestsView([created.request])[0], ...buildBootstrap(ctx) })
             return
         }
@@ -357,6 +337,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, status, edited.error, messages[edited.error])
                 return
             }
+            syncBoard()
             sendJson(res, 200, { request: requestsView([edited.request])[0], ...buildBootstrap(ctx) })
             return
         }
@@ -371,6 +352,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, result.error, 'Выбери день в пределах ближайшей недели.')
                 return
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -400,6 +382,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, created.error, messages[created.error])
                 return
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -422,6 +405,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, updated.error === 'not_found' ? 404 : 400, updated.error, messages[updated.error])
                 return
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -433,6 +417,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 404, 'not_found', 'Заявка не найдена — возможно, её уже удалили.')
                 return
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -461,6 +446,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 void notifyGuestApproved(client, config.publicUrl, updated)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя об одобрении:', err))
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -490,6 +476,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 void notifyGuestUnapproved(client, config.publicUrl, updated)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя об отмене хостинга:', err))
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -508,6 +495,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 void notifyApproverCancelled(client, request)
                     .catch((err) => console.error('[hosting] не удалось уведомить резидента об отмене визита:', err))
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -550,6 +538,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     void notifyProposalAccepted(client, accepted.request.guest.userId, config.publicUrl, accepted.request, true)
                         .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии времени:', err))
                 }
+                syncBoard()
                 sendJson(res, 200, buildBootstrap(ctx))
                 return
             }
@@ -558,6 +547,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // на 15:00» при времени 15:00 и второй стороне летит бессмысленный DM.
             // Проверка после встречного согласия: там то же равенство значит другое.
             if (time === request.time) {
+                sendJson(res, 200, buildBootstrap(ctx))
+                return
+            }
+            // Повторно предложить своё же уже висящее время — не событие: предложение не
+            // меняется, а второй стороне иначе улетает дубль-DM. (Встречное согласие тем же
+            // временем поймано выше — там `counter.by !== by`.)
+            if (counter && counter.by === by && counter.time === time) {
                 sendJson(res, 200, buildBootstrap(ctx))
                 return
             }
@@ -613,6 +609,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии времени:', err))
             }
+            syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
