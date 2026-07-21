@@ -319,6 +319,13 @@ body {
 
 /* --- Строки заявок (детали дня) --- */
 
+/* Заявка — колонка: верхняя полоса (аватар · текст · акцессуар) + плашки переноса под ней. */
+.row.req-row { flex-direction: column; align-items: stretch; gap: 0; }
+.req-top { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+/* Плашка предложения переноса + кнопки — во всю ширину, с отступом под имя (аватар 40 + gap 10). */
+.req-extra { margin-left: 50px; margin-top: 7px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.req-extra .proposal-note, .req-extra .req-proposal-actions { margin-top: 0; }
+
 .req-avatar { width: 40px; height: 40px; font-size: 16px; }
 .req-main { min-width: 0; flex: 1; }
 .req-name { font-size: 16px; font-weight: 600; line-height: 1.25; }
@@ -532,6 +539,10 @@ body {
     background: var(--chip);
 }
 .status-square.ok { background: rgba(52, 199, 89, 0.14); }
+/* Визит ждёт ответа гостя на предложенное резидентом время — акцентная подсветка строки. */
+.status-square.attn { background: rgba(0, 122, 255, 0.16); }
+.row.needs-action { background: rgba(0, 122, 255, 0.06); }
+.req-sub.attn { color: var(--text); font-weight: 600; }
 
 /* --- Зелёная карточка статуса (визит подтверждён) --- */
 

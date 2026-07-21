@@ -610,17 +610,22 @@ function requestRow(r, opts) {
         bindProfile(h('div', { class: 'req-name' }, r.guest.name), r.guest),
         h('div', { class: 'req-sub' }, sub),
         r.purpose ? purposeBlock(r.purpose) : null,
-        // Плашка активного предложения переноса под целью визита.
-        !opts.archive && p
-            ? h('div', { class: 'proposal-note' + (p.by === 'resident' ? ' mine' : '') },
-                icons.clock(14, sec(0.5)),
-                p.by === 'guest'
-                    ? h('span', null, 'гость предлагает ', h('span', { class: 'pn-time' }, p.time))
-                    : h('span', null, 'вы предложили ', h('span', { class: 'pn-time' }, p.time), ' · ждём гостя'))
-            : null,
-        proposalRow,
     )
-    return h('div', { class: 'row' }, bindProfile(avatar(r.guest, 'req-avatar'), r.guest), main, right)
+    // Верхняя полоса: аватар · имя/цель · правый акцессуар (пилл «одобрил» / кнопка).
+    // Выровнены по верху, чтобы правый столбец не «плавал» по центру высокой карточки.
+    const top = h('div', { class: 'req-top' }, bindProfile(avatar(r.guest, 'req-avatar'), r.guest), main, right)
+    // Плашка активного предложения переноса — во всю ширину под полосой, с отступом под имя.
+    const note = !opts.archive && p
+        ? h('div', { class: 'proposal-note' + (p.by === 'resident' ? ' mine' : '') },
+            icons.clock(14, sec(0.5)),
+            p.by === 'guest'
+                ? h('span', null, 'гость предлагает ', h('span', { class: 'pn-time' }, p.time))
+                : h('span', null, 'вы предложили ', h('span', { class: 'pn-time' }, p.time), ' · ждём гостя'))
+        : null
+    const extras = [note, proposalRow].filter(Boolean)
+    return extras.length
+        ? h('div', { class: 'row req-row' }, top, h('div', { class: 'req-extra' }, ...extras))
+        : h('div', { class: 'row req-row' }, top)
 }
 
 /** Карточка со строками заявок и разделителями. */
@@ -1058,20 +1063,26 @@ function screenSettings() {
 function visitRow(r) {
     const approved = r.status === 'approved'
     const p = r.timeProposal
-    const iconSquare = approved
-        ? h('div', { class: 'status-square ok' }, icons.check(20, '#34c759'))
-        : h('div', { class: 'status-square' }, icons.clock(18, sec(0.5)))
+    // Резидент предложил новое время — ход за гостем: строка должна явно звать к действию.
+    const needsAnswer = !!(p && p.by === 'resident')
+    const iconSquare = needsAnswer
+        ? h('div', { class: 'status-square attn' }, icons.clock(18, '#007aff'))
+        : approved
+            ? h('div', { class: 'status-square ok' }, icons.check(20, '#34c759'))
+            : h('div', { class: 'status-square' }, icons.clock(18, sec(0.5)))
     let subText
     // Перенос показываем и поверх подтверждённого визита — иначе строка врёт «подтверждён»,
     // пока висит несогласованное время.
-    if (p && p.by === 'resident') subText = `к ${r.time} · предложено ${p.time} — нужен ответ`
+    if (needsAnswer) subText = `Резидент предлагает ${p.time} — нужен ответ`
     else if (p && p.by === 'guest') subText = `вы предложили ${p.time} · ждём${approved ? ' хоста' : ''}`
     else if (approved) subText = `к ${r.time} · подтверждён`
     else subText = `к ${r.time} · ждём резидента`
     const main = h('div', { class: 'req-main' },
         h('div', { class: 'req-name' }, fmtWeekdayDate(r.dateKey)),
-        h('div', { class: 'req-sub' }, subText),
+        h('div', { class: 'req-sub' + (needsAnswer ? ' attn' : '') }, subText),
     )
+    // Акцент (подсветка строки + синий квадрат + жирный подзаголовок) сам сигналит, что нужен
+    // ответ; тап по строке ведёт на экран визита, где можно принять время или предложить своё.
     let right
     if (approved && r.approvedBy) {
         right = h('div', { class: 'approver' },
@@ -1081,7 +1092,7 @@ function visitRow(r) {
     } else {
         right = h('span', { class: 'waiting-label' }, 'В ожидании')
     }
-    return h('div', { class: 'row tappable', onclick: () => push('visit', { id: r.id }) }, iconSquare, main, right)
+    return h('div', { class: 'row tappable' + (needsAnswer ? ' needs-action' : ''), onclick: () => push('visit', { id: r.id }) }, iconSquare, main, right)
 }
 
 /** Плашка «бот не может писать вам»: видна, пока доступа нет; тап зовёт нативный
