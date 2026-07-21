@@ -141,7 +141,8 @@ export const refreshLastMessageInChat = async (
             })
         }
     } catch (err) {
-        const msg = (err as Error)?.message ?? ''
+        // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` — описание без кода.
+        const msg = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
         if (/MESSAGE_NOT_MODIFIED/i.test(msg)) return
         if (/MESSAGE_ID_INVALID|MESSAGE_DELETE/i.test(msg)) {
             await storage.update((s) => {
@@ -494,7 +495,7 @@ export const registerHandlers = (
             await rememberLastMessage(storage, chatId, messageId, f.periodKey)
             await ctx.answer({ text: isRefresh ? 'Обновлено' : `Страница ${rendered.page}` })
         } catch (err) {
-            const text = (err as Error)?.message ?? ''
+            const text = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
             if (/MESSAGE_NOT_MODIFIED/i.test(text)) {
                 await ctx.answer({ text: 'Уже актуально' })
                 return

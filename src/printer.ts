@@ -299,7 +299,8 @@ export const registerPrinterHandlers = (
                 })
                 await ctx.answer({ text: wantCamera ? '📷 Камера' : '🖼 Превью' })
             } catch (err) {
-                const text = (err as Error)?.message ?? ''
+                // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` — описание без кода.
+                const text = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
                 // Повторный тап по активной кнопке (статичное превью) — картинка та же, Telegram ругается.
                 if (/MESSAGE_NOT_MODIFIED/i.test(text)) {
                     await ctx.answer({ text: 'Уже показано' })

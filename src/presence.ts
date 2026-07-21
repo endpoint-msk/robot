@@ -168,7 +168,8 @@ export const upsertPresenceListInChat = async (
             await client.editMessage({ chatId, message: existingId, text: html(text), disableWebPreview: true, replyMarkup: presenceListMarkup() })
             return
         } catch (err) {
-            const msg = (err as Error)?.message ?? ''
+            // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` — описание без кода.
+            const msg = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
             if (/MESSAGE_NOT_MODIFIED/i.test(msg)) return
             if (!/MESSAGE_ID_INVALID|MESSAGE_DELETE|MESSAGE_AUTHOR_REQUIRED|MESSAGE_EDIT_TIME_EXPIRED/i.test(msg)) {
                 console.error(`[presence] edit failed in chat ${chatId}:`, err)
