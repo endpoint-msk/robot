@@ -176,7 +176,7 @@ export const renderStatus = (status: PrinterStatus): string => {
     const human = HUMAN_STATE[status.state] ?? status.state
     const lines = [`🖨 <b>Статус принтера:</b> ${human}`]
     if (status.state === 'printing' || status.state === 'paused') {
-        if (status.filename) lines.push(`Файл: <code>${status.filename}</code>`)
+        if (status.filename) lines.push(`Файл: <code>${html.escape(status.filename)}</code>`)
         if (status.progress !== null) {
             lines.push(`Прогресс: ${Math.round(status.progress * 100)}%`)
         }

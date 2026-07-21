@@ -145,8 +145,10 @@ const readBody = (req: IncomingMessage): Promise<string> =>
         req.on('data', (chunk: Buffer) => {
             size += chunk.length
             if (size > MAX_BODY_BYTES) {
-                reject(new Error('body too large'))
-                req.destroy()
+                // Не рвём сокет: он общий с ответом, иначе 413 не дойдёт до клиента.
+                // Останавливаем чтение и отдаём тегированную ошибку — 413 шлёт вызывающий.
+                req.pause()
+                reject(Object.assign(new Error('body too large'), { code: 'body_too_large' }))
                 return
             }
             chunks.push(chunk)
@@ -651,6 +653,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             } else if (!isGuest) {
                 void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposal.time, true)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о снятии предложения:', err))
+            } else if (result.request.approvedBy) {
+                // Гость отзывает своё предложение на подтверждённом визите — адрес хоста
+                // известен (approvedBy), уведомляем его. Для pending адреса нет — молчим.
+                void notifyProposalCancelled(client, result.request.approvedBy.userId, config.publicUrl, result.request, proposal.time, false)
+                    .catch((err) => console.error('[hosting] не удалось уведомить хоста о снятии предложения:', err))
             }
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -984,8 +991,12 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 try {
                     const raw = await readBody(req)
                     body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
-                } catch {
-                    sendError(res, 400, 'bad_json', 'Некорректное тело запроса.')
+                } catch (err) {
+                    if ((err as { code?: string }).code === 'body_too_large') {
+                        sendError(res, 413, 'too_large', 'Тело запроса слишком большое.')
+                    } else {
+                        sendError(res, 400, 'bad_json', 'Некорректное тело запроса.')
+                    }
                     return
                 }
                 const initData = typeof body.initData === 'string' ? body.initData : ''

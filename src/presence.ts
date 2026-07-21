@@ -87,7 +87,7 @@ const pingKeyboard = () =>
 export const macHintFor = (storage: Storage, userId: number): string => {
     const cur = storage.get().macBindings[String(userId)]
     if (cur && cur.macs.length > 0) return ''
-    return '\n\n💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса. Только сначала выключи на устройстве ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.'
+    return '<br><br>💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса. Только сначала выключи на устройстве ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.'
 }
 
 /**
@@ -460,8 +460,9 @@ export const registerPresenceHandlers = (
                 await storage.update((s) => {
                     const p = s.presence[String(userId)]
                     if (p) {
-                        p.displayLabel = anon ? ANON_LABEL : (p.username ? `@${p.username}` : ANON_LABEL)
-                        p.username = anon ? null : (storage.get().macBindings[String(userId)]?.username ?? null)
+                        const uname = storage.get().macBindings[String(userId)]?.username ?? null
+                        p.username = anon ? null : uname
+                        p.displayLabel = anon ? ANON_LABEL : (uname ? `@${uname}` : ANON_LABEL)
                     }
                 })
                 for (const chatId of await residents.presenceChats(userId)) {
@@ -744,9 +745,15 @@ const macCheckIn = async (
         source: 'mac',
         lastSeenOnlineAt: nowIso,
     }
+    let created = false
     await storage.update((s) => {
+        // За время await выше могла появиться отметка (ручная — приоритетна, или mac
+        // от соседнего тика). Не затираем её и не перепощиваем список.
+        if (s.presence[String(binding.userId)]) return
         s.presence[String(binding.userId)] = presence
+        created = true
     })
+    if (!created) return false
     for (const chatId of chats) {
         await upsertPresenceListInChat(client, storage, chatId)
     }
