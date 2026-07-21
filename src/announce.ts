@@ -67,9 +67,13 @@ const changelogLines = (body: string): string[] => {
     for (const raw of body.split(/\r?\n/)) {
         const line = raw.trim()
         if (!line) continue
+        // Хвост авто-нотсов («New Contributors», «Full Changelog») в анонс не тащим.
+        if (/^#{1,6}\s*new contributors/i.test(line)) break
         if (/^#{1,6}\s/.test(line)) continue
         if (/^\*\*full changelog\*\*/i.test(line)) continue
-        out.push(`• ${line.replace(/^[*-]\s+/, '')}`)
+        // '* Заголовок PR by @user in https://…/pull/42' → '• Заголовок PR'.
+        const item = line.replace(/^[*-]\s+/, '').replace(/\s+by @\S+ in https?:\/\/\S+$/i, '')
+        out.push(`• ${item}`)
     }
     return out
 }
@@ -77,7 +81,7 @@ const changelogLines = (body: string): string[] => {
 /** Дефолтный текст анонса версии — его дев видит в textarea и может править. */
 export const buildDefaultAnnouncement = (release: ReleaseInfo): string => {
     const changelog = changelogLines(release.body)
-    const lines = [`🤖 Бот обновлён до версии ${release.version}, ченджлоги:`, '']
+    const lines = [`✨ Бот обновлён до версии ${release.version}, ченджлоги:`, '']
     lines.push(...(changelog.length ? changelog : ['• Мелкие улучшения и исправления.']))
     return lines.join('\n')
 }
