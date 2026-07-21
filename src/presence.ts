@@ -6,19 +6,27 @@ import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { ResidentPresence } from './types.js'
 
-/** Интервал автоматического перепоста списка присутствующих, пока внутри кто-то есть (5 часов). */
-export const PRESENCE_LIST_INTERVAL_MS = 5 * 60 * 60 * 1000
 /** Период напоминаний резиденту в личку (3 часа). */
 export const PRESENCE_PING_INTERVAL_MS = 3 * 60 * 60 * 1000
 /** Сколько ждём ответа на ping, прежде чем снять отметку (15 минут). */
 export const PRESENCE_PING_TIMEOUT_MS = 15 * 60 * 1000
 /** Через сколько отсутствия MAC в сети снимаем авто-отметку (10 минут — телефоны «засыпают» в WiFi). */
 export const MAC_ABSENCE_GRACE_MS = 10 * 60 * 1000
-/** Если предыдущее сообщение со списком в чате было отправлено больше этого срока назад,
- *  при checkin/checkout публикуем новое сообщение, а не редактируем старое (его в истории уже не видно). */
-export const PRESENCE_LIST_REPOST_AFTER_MS = 4 * 60 * 60 * 1000
 /** Как часто крутим планировщик. */
 const TICK_INTERVAL_MS = 60 * 1000
+
+/**
+ * Хук «присутствие изменилось»: чек-ин/чек-аут/MAC дёргают его, чтобы пересобрать
+ * доску «кто сегодня в спейсе» (src/hosting-board.ts). null — доска выключена
+ * (миниапп хостинга не настроен), тогда авто-поверхности присутствия в чате нет,
+ * остаётся только ручной /inside. Ставится на старте (setPresenceChangeHook).
+ * Так presence не зависит от hosting-board напрямую (без циклического импорта).
+ */
+let onPresenceChanged: (() => void) | null = null
+
+export const setPresenceChangeHook = (fn: (() => void) | null): void => {
+    onPresenceChanged = fn
+}
 
 const CB_CHECKOUT = 'presence:checkout'
 const CB_CONFIRM = 'presence:confirm'
@@ -113,83 +121,31 @@ export const renderPresenceText = (storage: Storage): string => {
 }
 
 /**
- * Постит список присутствующих в чат.
- *
- * - `mode: 'edit'` (по умолчанию) — если есть сохранённое сообщение, редактирует его,
- *   иначе отправляет новое и запоминает id.
- * - `mode: 'new'` — всегда отправляет новое сообщение и обновляет id (используется
- *   при долгой тишине в чате, чтобы напоминание реально всплыло наверх).
+ * Блок «кто сейчас в спейсе» для доски (src/hosting-board.ts): заголовок со счётчиком
+ * и ники-ссылки отметившихся. [] — если внутри никого (блок на доску не выводится).
+ * Отметившиеся без ника в список не попадают, но учитываются в счётчике [N].
  */
-export const upsertPresenceListInChat = async (
+export const insideBoardLines = (storage: Storage): string[] => {
+    const presents = Object.values(storage.get().presence)
+    if (presents.length === 0) return []
+    const lines = [`<b>Сейчас в спейсе [${presents.length}]:</b>`]
+    for (const p of presents) {
+        if (!p.username) continue
+        lines.push(`• <a href="https://t.me/${encodeURIComponent(p.username)}">@${p.username}</a>`)
+    }
+    return lines
+}
+
+/** Постит новое сообщение со списком присутствующих в чат (ручной /inside). */
+export const postPresenceList = async (
     client: TelegramClient,
     storage: Storage,
     chatId: number,
-    mode: 'edit' | 'new' = 'edit',
 ): Promise<void> => {
-    const presents = Object.values(storage.get().presence)
-    const text = presents.length > 0
-        ? buildPresenceMessage(presents)
-        : 'Внутри [0], отметились [0]:'
-
-    const existingId = storage.get().presenceListMessages[String(chatId)]
-
-    // Если редактирование запросили, но прошлое сообщение со списком было отправлено
-    // давно, оно похоронено в истории — апгрейдим до отправки нового, иначе апдейт
-    // никто из чата не увидит.
-    let effectiveMode = mode
-    if (effectiveMode === 'edit' && existingId) {
-        const postedAtIso = storage.get().presenceListPostedAt[String(chatId)]
-        const postedAt = postedAtIso ? Date.parse(postedAtIso) : 0
-        if (!Number.isFinite(postedAt) || Date.now() - postedAt >= PRESENCE_LIST_REPOST_AFTER_MS) {
-            effectiveMode = 'new'
-        }
-    }
-
-    if (effectiveMode === 'edit' && existingId) {
-        // onDeleteMessage у бота приходит ненадёжно — перед редактированием пробиваем,
-        // что сообщение ещё живо. Иначе восстановление откладывалось бы до тика
-        // шедулера (до ~60с).
-        try {
-            const [probe] = await client.getMessages(chatId, existingId)
-            if (probe == null) {
-                await storage.update((s) => {
-                    delete s.presenceListMessages[String(chatId)]
-                    delete s.presenceListPostedAt[String(chatId)]
-                })
-                effectiveMode = 'new'
-            }
-        } catch (err) {
-            console.warn(`[presence] getMessages probe failed in chat ${chatId}:`, err)
-        }
-    }
-
-    if (effectiveMode === 'edit' && existingId) {
-        try {
-            await client.editMessage({ chatId, message: existingId, text: html(text), disableWebPreview: true, replyMarkup: presenceListMarkup() })
-            return
-        } catch (err) {
-            // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` — описание без кода.
-            const msg = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
-            if (/MESSAGE_NOT_MODIFIED/i.test(msg)) return
-            if (!/MESSAGE_ID_INVALID|MESSAGE_DELETE|MESSAGE_AUTHOR_REQUIRED|MESSAGE_EDIT_TIME_EXPIRED/i.test(msg)) {
-                console.error(`[presence] edit failed in chat ${chatId}:`, err)
-                return
-            }
-            // редактировать нечего — забываем id и отправим новое сообщение
-            await storage.update((s) => {
-                delete s.presenceListMessages[String(chatId)]
-                delete s.presenceListPostedAt[String(chatId)]
-            })
-        }
-    }
-
     try {
-        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: presenceListMarkup() })
-        const nowIso = new Date().toISOString()
-        await storage.update((s) => {
-            s.presenceListMessages[String(chatId)] = sent.id
-            s.presenceListPostedAt[String(chatId)] = nowIso
-            s.chatLastActivity[String(chatId)] = nowIso
+        await client.sendText(chatId, html(renderPresenceText(storage)), {
+            disableWebPreview: true,
+            replyMarkup: presenceListMarkup(),
         })
     } catch (err) {
         console.error(`[presence] failed to post list to chat ${chatId}:`, err)
@@ -197,8 +153,8 @@ export const upsertPresenceListInChat = async (
 }
 
 /**
- * Снимает отметку с резидента и постит обновлённый список во все чаты,
- * где он был админом.
+ * Снимает отметку с резидента и пересобирает доску «кто сегодня в спейсе».
+ * `residents` больше не нужен для постинга, оставлен для единообразия сигнатуры вызовов.
  */
 export const removePresence = async (
     client: TelegramClient,
@@ -213,10 +169,7 @@ export const removePresence = async (
         delete s.presence[String(userId)]
     })
 
-    const chats = await residents.presenceChats(userId)
-    for (const chatId of chats) {
-        await upsertPresenceListInChat(client, storage, chatId)
-    }
+    onPresenceChanged?.()
 
     if (reason === 'timeout') {
         try {
@@ -255,9 +208,7 @@ export const checkInResident = async (
         s.presence[String(user.id)] = presence
     })
 
-    for (const chatId of chats) {
-        await upsertPresenceListInChat(client, storage, chatId)
-    }
+    onPresenceChanged?.()
     // Только на появление в спейсе: existing — это смена ника/повторный тап, юзер уже внутри.
     if (!existing) remindOnArrival(client, storage, user.id)
     return { chats, alreadyChecked: !!existing }
@@ -465,9 +416,7 @@ export const registerPresenceHandlers = (
                         p.displayLabel = anon ? ANON_LABEL : (uname ? `@${uname}` : ANON_LABEL)
                     }
                 })
-                for (const chatId of await residents.presenceChats(userId)) {
-                    await upsertPresenceListInChat(client, storage, chatId)
-                }
+                onPresenceChanged?.()
             }
             try {
                 await ctx.editMessage({
@@ -528,8 +477,7 @@ export const registerPresenceHandlers = (
 
 /**
  * Регистрирует подписку на сообщения в групповых чатах для отслеживания последней активности.
- * Авто-постинг списка идёт по интервалу (PRESENCE_LIST_INTERVAL_MS), а не по тишине, так что
- * chatLastActivity сейчас служит лишь информационным сигналом и на отправку не влияет.
+ * chatLastActivity — информационный сигнал, на отправку сообщений не влияет.
  */
 export const registerChatActivityTracker = (
     dp: Dispatcher,
@@ -551,91 +499,16 @@ export const registerChatActivityTracker = (
     dp.onMessageGroup(track)
 }
 
-/**
- * Подписка на удаление сообщений: если удалили наше «последнее сообщение со списком»,
- * забываем его id и сразу постим новое (если есть отмеченные).
- */
-export const registerPresenceDeleteWatcher = (
-    dp: Dispatcher,
-    client: TelegramClient,
-    storage: Storage,
-    allowedChats: ReadonlySet<number>,
-): void => {
-    dp.onDeleteMessage(async (upd) => {
-        const ids = new Set(upd.messageIds)
-        const channelId = upd.channelId
-        const candidates: number[] = []
-        const map = storage.get().presenceListMessages
-        for (const [chatIdStr, messageId] of Object.entries(map)) {
-            if (!ids.has(messageId)) continue
-            const chatId = Number(chatIdStr)
-            if (!allowedChats.has(chatId)) continue
-            // У супергрупп/каналов update'ы привязаны к channelId; у обычных групп он null
-            // и удаления приходят глобально по сообщению — поэтому если channelId есть,
-            // сравниваем с положительной формой (chatId у супергрупп — отрицательный с префиксом).
-            if (channelId !== null) {
-                // chatId хранится в «marked» виде (-100xxxxxxxxxx); channelId — без префикса.
-                // Простейший матчинг: проверим, что -1000000000000 - channelId == chatId.
-                const expected = -1000000000000 - channelId
-                if (expected !== chatId) continue
-            }
-            candidates.push(chatId)
-        }
-        if (candidates.length === 0) return PropagationAction.Continue
-
-        for (const chatId of candidates) {
-            await storage.update((s) => {
-                delete s.presenceListMessages[String(chatId)]
-                delete s.presenceListPostedAt[String(chatId)]
-            })
-            // В чатах с выключенными авто-сообщениями список сам не восстанавливаем.
-            if (storage.get().presenceAutoMuted[String(chatId)]) continue
-            if (Object.keys(storage.get().presence).length > 0) {
-                await upsertPresenceListInChat(client, storage, chatId, 'new')
-            }
-        }
-        return PropagationAction.Continue
-    })
-}
-
-/** Запускает таймер: пинги резидентам, обработка таймаутов, авто-постинг при тишине. */
+/** Запускает таймер: пинги резидентам и снятие отметок по таймауту подтверждения. */
 export const startPresenceScheduler = (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
     residents: ResidentDirectory,
 ): { stop: () => void } => {
     const tick = async () => {
         const now = Date.now()
 
-        // 0) Страховка: если в чате с отмеченными «последнее сообщение со списком»
-        //    физически удалено (а onDeleteMessage не пришёл) — забываем его id, чтобы
-        //    при следующей же отметке либо при тишине отправилось новое.
-        if (Object.keys(storage.get().presence).length > 0) {
-            const ids = storage.get().presenceListMessages
-            const muted = storage.get().presenceAutoMuted
-            for (const [chatIdStr, messageId] of Object.entries(ids)) {
-                const chatId = Number(chatIdStr)
-                if (!allowedChats.has(chatId)) continue
-                if (muted[chatIdStr]) continue
-                try {
-                    const [m] = await client.getMessages(chatId, messageId)
-                    if (m == null) {
-                        await storage.update((s) => {
-                            delete s.presenceListMessages[String(chatId)]
-                            delete s.presenceListPostedAt[String(chatId)]
-                        })
-                        // Сразу постим новый список, чтобы участники чата его увидели.
-                        await upsertPresenceListInChat(client, storage, chatId, 'new')
-                    }
-                } catch (err) {
-                    // Не удалось проверить — не критично, попробуем на следующем тике.
-                    console.warn(`[presence] getMessages probe failed in chat ${chatId}:`, err)
-                }
-            }
-        }
-
-        // 1) Пинги и таймауты по каждому отмеченному резиденту
+        // Пинги и таймауты по каждому отмеченному резиденту
         const presents = Object.values(storage.get().presence)
         for (const p of presents) {
             // Авто-отметки по MAC живут по присутствию устройства в сети (см. startMacPresencePoller),
@@ -661,39 +534,6 @@ export const startPresenceScheduler = (
                     // Не смогли написать в личку — снимаем отметку, чтобы не висел вечно.
                     console.warn(`[presence] cannot DM user ${p.userId}, removing presence:`, err)
                     await removePresence(client, storage, residents, p.userId, 'timeout')
-                }
-            }
-        }
-
-        // 2) Периодический постинг: пока внутри есть хоть один отмеченный, раз в
-        //    PRESENCE_LIST_INTERVAL_MS постим в каждый незаглушённый чат свежий список —
-        //    независимо от активности чата. Якорь интервала — когда список в этот чат
-        //    в последний раз ОТПРАВЛЯЛИ (presenceListPostedAt), а не редактировали, так что
-        //    чек-ин с собственным репостом сдвигает следующий авто-пост на полный интервал.
-        if (Object.keys(storage.get().presence).length > 0) {
-            const postedAt = storage.get().presenceListPostedAt
-            const muted = storage.get().presenceAutoMuted
-            for (const chatId of allowedChats) {
-                if (muted[String(chatId)]) continue
-                const ts = postedAt[String(chatId)]
-                const last = ts ? Date.parse(ts) : 0
-                if (now - last < PRESENCE_LIST_INTERVAL_MS) continue
-                // Каждый чат — в своём try/catch: сбой в одном (например, бот не добавлен
-                // во второй чат или неверный id в ALLOWED_CHATS) не должен мешать остальным.
-                try {
-                    await upsertPresenceListInChat(client, storage, chatId, 'new')
-                } catch (err) {
-                    console.error(`[presence] interval post failed in chat ${chatId}:`, err)
-                }
-                // upsertPresenceListInChat пишет presenceListPostedAt ТОЛЬКО при успешной отправке.
-                // Если отправка упала, таймстамп останется пустым, условие интервала будет
-                // вечно истинным, и бот начнёт долбить недоступный чат каждую минуту —
-                // вплоть до FLOOD_WAIT на весь аккаунт, из-за которого встают и рабочие чаты.
-                // Поэтому фиксируем попытку сами, чтобы недоступный чат ретраился не чаще раза в интервал.
-                if (!storage.get().presenceListPostedAt[String(chatId)]) {
-                    await storage.update((s) => {
-                        s.presenceListPostedAt[String(chatId)] = new Date(now).toISOString()
-                    })
                 }
             }
         }
@@ -754,9 +594,7 @@ const macCheckIn = async (
         created = true
     })
     if (!created) return false
-    for (const chatId of chats) {
-        await upsertPresenceListInChat(client, storage, chatId)
-    }
+    onPresenceChanged?.()
     remindOnArrival(client, storage, binding.userId)
     return true
 }

@@ -8,6 +8,7 @@ import {
     residentsAttendingDay,
     todayKey,
 } from './hosting.js'
+import { insideBoardLines } from './presence.js'
 import type { Storage } from './storage.js'
 
 /** Как часто сверяем доску с состоянием (открепление на следующий день, смена показанного дня, свежесть счётчиков). */
@@ -31,25 +32,30 @@ const boardMarkup = () =>
 const escapeHtml = (s: string): string =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-/** В дне есть активность, ради которой заводится доска: подтверждённый визит или отметка резидента «я приду». */
-const dayHasActivity = (storage: Storage, dateKey: string): boolean =>
+/**
+ * В дне есть активность, ради которой заводится доска: подтверждённый визит, отметка
+ * резидента «я приду» или (только для сегодня) кто-то отмечен внутри спейса.
+ */
+const dayHasActivity = (storage: Storage, dateKey: string, today: string): boolean =>
     residentsAttendingDay(storage, dateKey).length > 0 ||
-    requestsForDay(storage, dateKey).some((r) => r.status === 'approved')
+    requestsForDay(storage, dateKey).some((r) => r.status === 'approved') ||
+    (dateKey === today && Object.keys(storage.get().presence).length > 0)
 
 /** Ближайший день в окне [сегодня; +6] с активностью, или null — активности нет нигде. */
 export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): string | null => {
     const today = todayKey(tzOffsetMinutes)
     for (let i = 0; i < HOSTING_DAYS_AHEAD; i++) {
         const dateKey = addDaysToKey(today, i)
-        if (dayHasActivity(storage, dateKey)) return dateKey
+        if (dayHasActivity(storage, dateKey, today)) return dateKey
     }
     return null
 }
 
 /**
- * Текст доски за конкретный день: кто придёт (резиденты «я приду» + подтверждённые
- * гости без анонимных) и общее число заявок. Ники — t.me-ссылки (текст-ссылка не
- * пингует упомянутого), имена без ника — экранируем. Собираем через `<br>`.
+ * Текст доски за конкретный день: кто сейчас внутри (блок «Сейчас в спейсе», только
+ * для сегодня), кто придёт (резиденты «я приду» + подтверждённые гости без анонимных)
+ * и общее число заявок. Ники — t.me-ссылки (текст-ссылка не пингует упомянутого),
+ * имена без ника — экранируем. Собираем через `<br>`.
  */
 export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMinutes: number): string => {
     const isToday = dateKey === todayKey(tzOffsetMinutes)
@@ -61,6 +67,14 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     const lines: string[] = []
     lines.push(`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> в спейсе`)
     lines.push('')
+    // Кто физически внутри прямо сейчас — только на доске сегодняшнего дня.
+    if (isToday) {
+        const inside = insideBoardLines(storage)
+        if (inside.length > 0) {
+            lines.push(...inside)
+            lines.push('')
+        }
+    }
     if (attendees.length > 0) {
         lines.push('<b>Придут:</b>')
         for (const a of attendees) {

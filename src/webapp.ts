@@ -36,7 +36,7 @@ import {
 import { syncHostingBoard } from './hosting-board.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
-import { ANON_LABEL, removePresence, upsertPresenceListInChat } from './presence.js'
+import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { HostingRequest, HostingUser } from './types.js'
@@ -769,9 +769,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                         p.username = anon ? null : username
                     }
                 })
-                for (const chatId of await residents.presenceChats(user.userId)) {
-                    await upsertPresenceListInChat(client, storage, chatId)
-                }
+                syncBoard()
             }
             sendJson(res, 200, buildBootstrap(ctx))
             return

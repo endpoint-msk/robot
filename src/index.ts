@@ -10,14 +10,14 @@ import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
 import { createTelegramResidentDirectory } from './residents.js'
 import {
     registerChatActivityTracker,
-    registerPresenceDeleteWatcher,
     registerPresenceHandlers,
     setHostingMiniappLink,
     setHostingReminder,
+    setPresenceChangeHook,
     startMacPresencePoller,
     startPresenceScheduler,
 } from './presence.js'
-import { setHostingBoardLink, startHostingBoardScheduler } from './hosting-board.js'
+import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
@@ -124,7 +124,6 @@ const main = async () => {
     // а групповой /start (алиас /help) — общий обработчик ниже
     registerPresenceHandlers(dp, { client: tg, storage, residents })
     registerChatActivityTracker(dp, storage, allowedChats)
-    registerPresenceDeleteWatcher(dp, tg, storage, allowedChats)
     registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl: webappConfig?.publicUrl ?? null })
     registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl: webappConfig?.publicUrl ?? null })
     if (printerUrl !== null) {
@@ -165,6 +164,13 @@ const main = async () => {
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
+        // Чек-ин/чек-аут/MAC-отметки пересобирают доску «кто сегодня в спейсе» (присутствие
+        // на ней показывается). Без миниаппа доски нет, хук не ставится — остаётся ручной /inside.
+        setPresenceChangeHook(() => {
+            void syncHostingBoard(tg, storage, allowedChats, hostingTzOffset).catch((err) =>
+                console.error('[hosting-board] presence sync error:', err),
+            )
+        })
         try {
             await tg.call({
                 _: 'bots.setBotMenuButton',
@@ -188,7 +194,6 @@ const main = async () => {
     // Большинство админских команд показываем только админам группы; /inside — всем участникам.
     const adminCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
-        BotCommands.cmd('insidemute', 'Вкл/выкл авто-рассылку списка присутствующих в чат'),
         BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
@@ -238,7 +243,7 @@ const main = async () => {
 
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
-    const presence = startPresenceScheduler(tg, storage, allowedChats, residents)
+    const presence = startPresenceScheduler(tg, storage, residents)
     // Доска «кто сегодня в спейсе» — часть подсистемы хостинга: только при включённом миниаппе.
     const hostingBoard = webappConfig !== null
         ? startHostingBoardScheduler(tg, storage, allowedChats, hostingTzOffset)

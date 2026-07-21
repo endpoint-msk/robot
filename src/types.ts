@@ -42,15 +42,6 @@ export type State = {
     presence: Record<string, ResidentPresence>
     /** Когда в чате последний раз было «обычное» сообщение (от пользователя, не от бота). Ключ — chatId. */
     chatLastActivity: Record<string, string>
-    /** ID последнего сообщения со списком присутствующих в каждом чате (для редактирования вместо нового). */
-    presenceListMessages: Record<string, number>
-    /** Когда сообщение со списком было ОТПРАВЛЕНО (не отредактировано) в каждом чате (ISO). Используется, чтобы при checkin/checkout
-     *  публиковать новое сообщение, если предыдущее «протухло» — иначе апдейт никто не увидит. */
-    presenceListPostedAt: Record<string, string>
-    /** Чаты, в которых выключены АВТОМАТИЧЕСКИЕ сообщения со списком присутствующих
-     *  (таймер тишины + авто-восстановление удалённого списка). Ключ — chatId. Ручной /inside работает всегда.
-     *  Переключается командой /autoinside админом чата. */
-    presenceAutoMuted: Record<string, true>
     /** userId, попросивших уведомить в личку по окончании текущей печати. Чистится после уведомления. */
     printerSubscribers: Record<string, true>
     /** MAC-адреса резидентов для авто-отметок. Ключ — userId. */
@@ -198,9 +189,6 @@ export const emptyState = (): State => ({
     lastMessages: {},
     presence: {},
     chatLastActivity: {},
-    presenceListMessages: {},
-    presenceListPostedAt: {},
-    presenceAutoMuted: {},
     printerSubscribers: {},
     macBindings: {},
     resetDay: 1,

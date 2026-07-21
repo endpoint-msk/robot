@@ -18,7 +18,7 @@ import {
     MIN_RESET_DAY,
     MAX_RESET_DAY,
 } from './fundraiser.js'
-import { renderPresenceText, upsertPresenceListInChat } from './presence.js'
+import { postPresenceList, renderPresenceText } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { Fundraiser, State } from './types.js'
@@ -207,8 +207,8 @@ export const registerHandlers = (
                 'Бот хакерспейса. Часть команд доступна любому участнику, часть — только админам группы.',
                 '',
                 'Присутствие в спейсе:',
-                '/inside — показать (или обновить) список тех, кто сейчас в спейсе',
-                '/insidemute — вкл/выкл автоматическую рассылку списка в этот чат (только админы)',
+                '/inside — показать разовый список тех, кто сейчас в спейсе',
+                'Постоянная доска «кто сегодня в спейсе» обновляется сама; выключить в чате — /boardmute (только админы).',
                 'Отметиться, уйти и привязать MAC для авто-отметок — в личке с ботом (/start).',
                 '',
                 '3D-принтер:',
@@ -252,26 +252,8 @@ export const registerHandlers = (
             return
         }
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
-        // Всегда новое сообщение — это и есть «принудительный вызов».
-        await upsertPresenceListInChat(client, storage, Number(msg.chat.id), 'new')
-    })
-
-    // /insidemute — включить/выключить АВТОМАТИЧЕСКУЮ рассылку списка присутствующих в этот чат
-    // (пуш по тишине ≥ 5ч и авто-восстановление удалённого списка). Ручной /inside работает всегда.
-    // Касается только сообщений в чат, не авто-отметок по MAC. Только для админов: это настройка чата.
-    dp.onNewMessage(filters.command('insidemute'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
-        const chatId = Number(msg.chat.id)
-        const wasMuted = storage.get().presenceAutoMuted[String(chatId)] === true
-        await storage.update((s) => {
-            if (wasMuted) delete s.presenceAutoMuted[String(chatId)]
-            else s.presenceAutoMuted[String(chatId)] = true
-        })
-        await msg.answerText(
-            wasMuted
-                ? 'Снова буду сам присылать список присутствующих в этот чат (при долгой тишине). Выключить — /insidemute.'
-                : 'Больше не буду сам присылать список присутствующих в этот чат. Ручной /inside по-прежнему работает. Включить обратно — /insidemute.',
-        )
+        // Разовый снимок списка присутствующих: постоянная поверхность — доска (/boardmute).
+        await postPresenceList(client, storage, Number(msg.chat.id))
     })
 
     dp.onNewMessage(filters.command('komanda'), async (msg) => {
