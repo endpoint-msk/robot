@@ -1,16 +1,15 @@
 FROM node:20-alpine
 WORKDIR /app
 
-RUN apk add python3 make g++ 
-    #&& \
-    #corepack enable && \
-    #corepack prepare pnpm@10 --activate
+RUN apk add python3 make g++
 
 COPY package*.json tsconfig.json ./
-RUN npm install #--frozen-lockfile
+RUN npm install
+
+# Мини-апп (React + Vite) собираем в webapp/dist — оттуда её раздаёт src/webapp.ts.
+COPY webapp /app/webapp
+RUN npm --prefix webapp install && npm --prefix webapp run build
 
 COPY src /app/src
-COPY webapp /app/webapp
-#RUN pnpm run build
 
 CMD [ "npm", "run", "start" ]

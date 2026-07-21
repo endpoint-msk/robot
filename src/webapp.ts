@@ -114,7 +114,9 @@ export const validateInitData = (initData: string, botToken: string, now: Date =
 // HTTP-сервер: статика миниаппа + JSON API
 // ---------------------------------------------------------------------------
 
-const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'webapp')
+// Миниапп теперь React + Vite: сервер раздаёт готовую сборку из webapp/dist
+// (`npm --prefix webapp run build`), а не сырые исходники.
+const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'webapp', 'dist')
 
 const CONTENT_TYPES: Record<string, string> = {
     '.html': 'text/html; charset=utf-8',

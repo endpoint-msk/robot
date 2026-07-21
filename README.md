@@ -49,15 +49,19 @@
 
 Кнопки входа: рядом с полем ввода в личке, под списком `/inside` и в `/start`.
 
-Включается `WEBAPP_URL` — публичный HTTPS-адрес, под которым отдаётся `webapp/`. Бот поднимает HTTP-сервер на `WEBAPP_HOST:WEBAPP_PORT`, наружу его выставляет реверс-прокси с TLS. Чтобы кнопки из групп открывали миниапп, включи Main Mini App в BotFather (Bot Settings → Configure Mini App) с тем же URL. Авторизация запросов — подпись `initData`.
+Включается `WEBAPP_URL` — публичный HTTPS-адрес, под которым отдаётся собранный миниапп из `webapp/dist`. Бот поднимает HTTP-сервер на `WEBAPP_HOST:WEBAPP_PORT`, наружу его выставляет реверс-прокси с TLS. Чтобы кнопки из групп открывали миниапп, включи Main Mini App в BotFather (Bot Settings → Configure Mini App) с тем же URL. Авторизация запросов — подпись `initData`.
 
 ## Запуск
 
 ```bash
-cp .env.example .env   # API_ID, API_HASH, BOT_TOKEN, ALLOWED_CHATS
+cp .env.example .env          # API_ID, API_HASH, BOT_TOKEN, ALLOWED_CHATS
 npm install
-npm start              # npm run dev — watch-режим
+npm --prefix webapp install   # зависимости миниаппа (React + Vite)
+npm --prefix webapp run build  # сборка миниаппа в webapp/dist (если задан WEBAPP_URL)
+npm start                     # npm run dev — watch-режим
 ```
+
+Миниапп хостинга — отдельное React + Vite + TypeScript приложение в `webapp/`; сервер бота раздаёт готовую сборку из `webapp/dist`. Для разработки фронта — `npm --prefix webapp run dev` (Vite dev-сервер с прокси `/api`, `/avatar.jpg`, `/visit.ics` на бэкенд). В Docker сборка миниаппа — шаг в `Dockerfile`.
 
 Остальные переменные — в `.env.example`, каждая выключает свою подсистему, если не задана: `PRINTER_URL`/`PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD`, `WEBAPP_URL`/`WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `DEV_USER_IDS`, `DATA_FILE`, форвардинг и live-чат.
 
@@ -74,9 +78,9 @@ src/residents.ts   — ResidentDirectory: кто резидент и кто ад
 src/keenetic.ts    — клиент RCI-API Keenetic для авто-отметок по MAC
 src/printer.ts     — /printer, Moonraker, поллер окончания печати
 src/hosting.ts     — модель хостинга: заявки, дни/недели, архив, .ics
-src/webapp.ts      — HTTP-сервер миниаппа: статика + JSON API
+src/webapp.ts      — HTTP-сервер миниаппа: статика webapp/dist + JSON API
 src/scheduler.ts   — смена периода + ежедневный постинг сбора
 src/storage.ts     — JSON-хранилище с атомарной записью
 src/types.ts       — типы стейта
-webapp/            — фронт миниаппа (vanilla JS, iOS, светлая и тёмная темы)
+webapp/            — фронт миниаппа (React + Vite + TypeScript, iOS, светлая и тёмная темы)
 ```
