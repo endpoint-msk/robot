@@ -1,6 +1,7 @@
-import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import {
+    buildDonationsCsv,
     buildLeaderboard,
     createFundraiser,
     isAnonNick,
@@ -230,6 +231,7 @@ export const registerHandlers = (
                 '/settitle <тема> — изменить тему сбора, например: /settitle аренду',
                 '/setdesc <текст> — задать описание под сбором (реквизиты/ссылки, можно в несколько строк; без текста — убрать)',
                 '/setresetday <число 1–29> — день месяца, в который сбор сбрасывается (по умолчанию 1)',
+                '/export — выгрузить донаты текущего сбора в CSV; /export all — за все периоды',
                 'С новым периодом сбор обновляется автоматически; каждый день в 00:00 и 12:00 по МСК бот постит свежее сообщение со сбором.',
                 '',
                 '/help — это сообщение',
@@ -301,6 +303,41 @@ export const registerHandlers = (
             disableWebPreview: true,
         })
         await rememberLastMessage(storage, Number(msg.chat.id), sent.id, f.periodKey)
+    })
+
+    // /export [all] — выгрузка донатов в CSV. Без аргумента — текущий сбор, `all` — все сборы.
+    // Только для админов: это выгрузка для отчётности.
+    dp.onNewMessage(filters.command('export'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
+        const wantsAll = (msg.command[1] ?? '').toLowerCase() === 'all'
+        const state = storage.get()
+
+        let fundraisers: Fundraiser[]
+        let fileName: string
+        if (wantsAll) {
+            fundraisers = Object.values(state.fundraisers)
+            fileName = 'donations-all.csv'
+        } else {
+            const f = ensureCurrentFundraiser(storage)
+            fundraisers = [f]
+            fileName = `donations-${f.periodKey}.csv`
+        }
+
+        const donationCount = fundraisers.reduce((n, f) => n + f.donations.length, 0)
+        if (donationCount === 0) {
+            await msg.answerText(wantsAll ? 'Пока нет ни одного доната.' : 'В текущем сборе пока нет донатов.')
+            return
+        }
+
+        // BOM (U+FEFF) в начале — чтобы Excel открыл кириллицу в UTF-8 без «крякозябр».
+        const csv = Buffer.from(String.fromCharCode(0xfeff) + buildDonationsCsv(fundraisers), 'utf8')
+        await msg.answerMedia(
+            InputMedia.document(csv, {
+                fileName,
+                fileMime: 'text/csv',
+                caption: html(`Выгрузка донатов (${donationCount} шт.).`),
+            }),
+        )
     })
 
     dp.onNewMessage(filters.command('goalsmute'), async (msg) => {

@@ -260,6 +260,38 @@ export const renderFundraiser = (
     return { text: lines.join('<br>'), page, pages, closed }
 }
 
+/** Экранирует поле по RFC 4180: оборачивает в кавычки, если есть `,`, `"`, перенос или крайние пробелы. */
+const csvField = (raw: string): string => {
+    const s = raw ?? ''
+    if (/[",\r\n]/.test(s) || s !== s.trim()) {
+        return `"${s.replace(/"/g, '""')}"`
+    }
+    return s
+}
+
+/**
+ * CSV с итогами по каждому нику за каждый сбор (RFC 4180, CRLF).
+ * Столбцы: месяц (`periodKey`, напр. `2026-06`), ник, суммарный донат за месяц.
+ * Внутри месяца — та же группировка и сортировка, что в лидерборде (по убыванию суммы,
+ * анонимы схлопнуты в одну строку под ANON_LABEL). Месяцы — по возрастанию periodKey.
+ */
+export const buildDonationsCsv = (fundraisers: Fundraiser[]): string => {
+    const header = ['Месяц', 'Ник', 'Сумма']
+    const rows: string[] = [header.join(',')]
+    const sorted = [...fundraisers].sort((a, b) => a.periodKey.localeCompare(b.periodKey))
+    for (const f of sorted) {
+        for (const entry of buildLeaderboard(f)) {
+            const nick = isAnonNick(entry.nick) ? ANON_LABEL : entry.nick
+            rows.push([
+                csvField(f.periodKey),
+                csvField(nick),
+                csvField(formatAmount(entry.total)),
+            ].join(','))
+        }
+    }
+    return rows.join('\r\n')
+}
+
 /**
  * Парсит аргументы /donate.
  * Принимает: `/donate 10000 @otomir23` или `/donate 10000 otomir23` или
