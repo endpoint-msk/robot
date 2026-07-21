@@ -273,6 +273,7 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('komanda'), async (msg) => {
+        if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         let set
         try {
             set = await client.getStickerSet('komoji23')

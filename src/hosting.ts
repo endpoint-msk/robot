@@ -264,7 +264,7 @@ export const formatDayKey = (key: string): string => {
 }
 
 const guestLabel = (guest: HostingUser): string =>
-    guest.username ? `${guest.name} (@${guest.username})` : guest.name
+    guest.username ? `${html.escape(guest.name)} (@${guest.username})` : html.escape(guest.name)
 
 // ---------------------------------------------------------------------------
 // Уведомления
@@ -313,7 +313,7 @@ export const notifyResidentsAboutRequest = async (
         `🚪 Новая заявка на визит: <b>${formatDayKey(request.dateKey)}</b> к ${request.time}${isForToday ? ' (сегодня)' : ''}.`,
         `Гость: ${guestLabel(request.guest)}.`,
     ]
-    if (request.purpose) lines.push(`Цель: ${request.purpose}`)
+    if (request.purpose) lines.push(`Цель: ${html.escape(request.purpose)}`)
     const text = lines.join('<br>')
     const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]])
 
