@@ -34,6 +34,7 @@ import {
     weekStartOf,
 } from './hosting.js'
 import { syncHostingBoard } from './hosting-board.js'
+import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { ANON_LABEL, removePresence, upsertPresenceListInChat } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -165,6 +166,8 @@ export type WebappDeps = {
     /** userId дев-аккаунтов (DEV_USER_IDS): дев-меню и переключатель перспективы. */
     devUserIds: ReadonlySet<number>
     tzOffsetMinutes: number
+    /** GitHub-репо 'owner/name' для чтения релизов в дев-анонсах. */
+    githubRepo: string
 }
 
 type ApiContext = WebappDeps & {
@@ -256,7 +259,7 @@ const buildBootstrap = (ctx: ApiContext) => {
 }
 
 const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
-    const { client, storage, allowedChats, residents, tzOffsetMinutes, config, user, resident, body, res } = ctx
+    const { client, storage, allowedChats, residents, tzOffsetMinutes, config, githubRepo, user, resident, body, res } = ctx
 
     const requireResident = (): boolean => {
         if (!resident) sendError(res, 403, 'not_resident', 'Доступно только резидентам.')
@@ -785,6 +788,46 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 days.push({ dateKey, requests: requestsView(requestsForDay(storage, dateKey)) })
             }
             sendJson(res, 200, { weekStart, days })
+            return
+        }
+
+        // Дев-анонсы: снапшот для экрана рассылки — последний релиз, дефолтный текст,
+        // до какой версии уже анонсили, сколько чатов получат (allowlist минус мьют).
+        case 'announce.latest': {
+            if (!requireDev()) return
+            const release = await fetchLatestRelease(githubRepo)
+            sendJson(res, 200, {
+                release: release
+                    ? { version: release.version, name: release.name, url: release.url, publishedAt: release.publishedAt }
+                    : null,
+                defaultText: release ? buildDefaultAnnouncement(release) : '',
+                lastAnnouncedVersion: storage.get().lastAnnouncedVersion || '',
+                targetChats: announceTargets(storage, allowedChats).length,
+            })
+            return
+        }
+
+        // Дев-рассылка: произвольный текст во все allowlist-чаты (минус замьюченные).
+        // version — маркер «до какой версии анонсили» (пусто для обычной рассылки).
+        case 'announce.send': {
+            if (!requireDev()) return
+            const text = (typeof body.text === 'string' ? body.text : '').trim()
+            const version = typeof body.version === 'string' ? body.version : ''
+            if (!text) {
+                sendError(res, 400, 'empty_text', 'Текст анонса пуст.')
+                return
+            }
+            if (announceTargets(storage, allowedChats).length === 0) {
+                sendError(res, 400, 'no_targets', 'Нет чатов для рассылки (все замьючены или ALLOWED_CHATS пуст).')
+                return
+            }
+            const result = await broadcastAnnouncement(client, storage, allowedChats, text)
+            if (version) {
+                await storage.update((s) => {
+                    s.lastAnnouncedVersion = version
+                })
+            }
+            sendJson(res, 200, { sent: result.sent, failed: result.failed })
             return
         }
 

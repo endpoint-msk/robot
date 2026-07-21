@@ -213,6 +213,9 @@ export const registerHandlers = (
                 '3D-принтер:',
                 '/printer — статус принтера, превью печати и подписка на уведомление об окончании',
                 '',
+                'Прочее:',
+                '/announcemute — вкл/выкл анонсы (обновления бота и объявления) в этот чат (только админы)',
+                '',
                 'Сборы донатов:',
                 '/goals — показать текущий сбор (доступно всем участникам)',
                 '',
@@ -311,6 +314,24 @@ export const registerHandlers = (
             muted
                 ? 'Автоотправка сбора в этот чат снова включена (00:00 и 12:00 по МСК).'
                 : 'Автоотправка сбора в этот чат отключена. Ручной /goals по-прежнему работает. Повторный /goalsmute включит её обратно.',
+        )
+    })
+
+    // /announcemute — вкл/выкл анонсы (рассылку обновлений/объявлений) в этот чат.
+    // Настройка чата, поэтому только для админов. Сами анонсы шлёт дев из миниаппа.
+    dp.onNewMessage(filters.command('announcemute'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
+        const chatId = Number(msg.chat.id)
+        const key = String(chatId)
+        const muted = storage.get().announceMuted[key] === true
+        await storage.update((s) => {
+            if (muted) delete s.announceMuted[key]
+            else s.announceMuted[key] = true
+        })
+        await msg.answerText(
+            muted
+                ? 'Анонсы (обновления бота и объявления) снова будут приходить в этот чат. Выключить — /announcemute.'
+                : 'Больше не буду присылать анонсы в этот чат. Включить обратно — /announcemute.',
         )
     })
 

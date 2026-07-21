@@ -672,6 +672,33 @@ body {
 }
 .purpose-input::placeholder { color: rgba(var(--sec), 0.4); }
 
+/* --- Дев-анонс: рассылка обновлений/объявлений --- */
+.announce-status { font-size: 14px; color: var(--text-2); margin: 2px 4px 14px; }
+.announce-card { padding: 12px 14px; }
+.announce-text {
+    width: 100%;
+    border: none;
+    outline: none;
+    resize: vertical;
+    background: transparent;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.4;
+    color: var(--text);
+    padding: 0;
+    min-height: 120px;
+}
+.announce-text::placeholder { color: rgba(var(--sec), 0.4); }
+.announce-preview {
+    padding: 14px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.announce-preview.is-placeholder { color: rgba(var(--sec), 0.4); }
+
 .text-input {
     flex: 1;
     min-width: 0;

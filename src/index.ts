@@ -80,6 +80,8 @@ const main = async () => {
         host: process.env.WEBAPP_HOST,
     })
     const hostingTzOffset = parseHostingTzOffset(process.env.HOSTING_TZ_OFFSET_MINUTES)
+    // Репо для чтения GitHub-релизов в дев-анонсах (публичное, токен не нужен).
+    const githubRepo = process.env.GITHUB_REPO?.trim() || 'endpoint-msk/robot'
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -152,6 +154,7 @@ const main = async () => {
             config: webappConfig,
             devUserIds,
             tzOffsetMinutes: hostingTzOffset,
+            githubRepo,
         })
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
@@ -196,6 +199,7 @@ const main = async () => {
         BotCommands.cmd('settitle', 'Изменить тему сбора'),
         BotCommands.cmd('setdesc', 'Изменить описание сбора (реквизиты/ссылки)'),
         BotCommands.cmd('setresetday', 'День сброса сбора (1–29)'),
+        BotCommands.cmd('announcemute', 'Вкл/выкл анонсы (обновления/объявления) в этот чат'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]
     const memberCommands = [

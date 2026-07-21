@@ -73,6 +73,8 @@ export class Storage {
                 hostingAttendance: parsed.hostingAttendance ?? {},
                 hostingNotify: parsed.hostingNotify ?? {},
                 hostingBoard: parsed.hostingBoard ?? {},
+                announceMuted: parsed.announceMuted ?? {},
+                lastAnnouncedVersion: typeof parsed.lastAnnouncedVersion === 'string' ? parsed.lastAnnouncedVersion : '',
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

@@ -68,6 +68,12 @@ export type State = {
     hostingNotify: Record<string, HostingNotifyPrefs>
     /** Закреплённая доска «кто сегодня в спейсе» по чатам (ключ — chatId как строка). */
     hostingBoard: Record<string, HostingBoardMessage>
+    /** Чаты, где выключены анонсы (рассылка обновлений/объявлений). Ключ — chatId как строка.
+     *  Переключается командой /announcemute админом чата. */
+    announceMuted: Record<string, true>
+    /** Версия (tag_name последнего релиза), до которой уже разослали анонс. Пусто — ещё ни разу.
+     *  Чисто индикатор для дев-меню миниаппа: видно, есть ли неанонсированный релиз. */
+    lastAnnouncedVersion: string
 }
 
 /** Закреплённое сообщение-доска хостинга в чате: одно на календарный день (пояс спейса). */
@@ -200,4 +206,6 @@ export const emptyState = (): State => ({
     hostingAttendance: {},
     hostingNotify: {},
     hostingBoard: {},
+    announceMuted: {},
+    lastAnnouncedVersion: '',
 })

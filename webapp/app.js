@@ -1695,6 +1695,15 @@ function screenDev(params) {
     return h('div', { class: 'screen has-bottom-bar' },
         backRow('Назад'),
         header('Dev', 'Тестовые данные - резиденты не будут уведомлены'),
+        sectionTitle('Рассылка'),
+        h('div', { class: 'card' },
+            h('div', { class: 'row tappable', onclick: () => push('announce', {}) },
+                h('span', { class: 'row-label' }, 'Анонс новой версии',
+                    h('span', { class: 'row-sublabel' }, 'Разослать обновление или объявление в чаты'),
+                ),
+                icons.chevron(),
+            ),
+        ),
         sectionTitle('День'),
         chips,
         sectionTitle('Детали'),
@@ -1770,6 +1779,81 @@ function screenDevEdit(params) {
     )
 }
 
+// Экран: дев-анонс — рассылка обновления/объявления во все чаты бота.
+function screenAnnounce() {
+    const holder = h('div', null, spinnerCenter())
+
+    api('announce.latest').then((info) => {
+        holder.replaceChildren()
+
+        const already = info.release && info.lastAnnouncedVersion === info.release.version
+        const status = info.release
+            ? `Последний релиз: ${info.release.version}` + (
+                already ? ' · уже анонсирован'
+                    : info.lastAnnouncedVersion ? ` · анонсирован ${info.lastAnnouncedVersion}`
+                        : ' · ещё не анонсирован')
+            : 'Релизов пока нет — можно разослать произвольный текст.'
+
+        const textarea = h('textarea', {
+            class: 'announce-text',
+            rows: '8',
+            maxlength: '3500',
+            placeholder: 'Текст анонса',
+        })
+        textarea.value = info.defaultText || ''
+
+        const preview = h('div', { class: 'announce-preview' })
+        const syncPreview = () => {
+            preview.textContent = textarea.value.trim() || 'Здесь появится текст анонса…'
+            preview.classList.toggle('is-placeholder', !textarea.value.trim())
+        }
+        textarea.addEventListener('input', syncPreview)
+        syncPreview()
+
+        const targets = info.targetChats
+        const submit = h('button', {
+            class: 'primary-btn',
+            onclick: async () => {
+                const text = textarea.value.trim()
+                if (!text) { showAlert('Текст анонса пуст.'); return }
+                if (targets === 0) { showAlert('Нет чатов для рассылки — все замьючены.'); return }
+                const ok = await confirmDialog(`Разослать анонс в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}?`,
+                    { confirmLabel: 'Разослать' })
+                if (!ok) return
+                setBusy(true)
+                try {
+                    const r = await api('announce.send', { text, version: (info.release && info.release.version) || '' })
+                    haptic('success')
+                    const tail = r.failed ? `, не дошло в ${r.failed}` : ''
+                    showAlert(`Отправлено в ${r.sent} ${plural(r.sent, 'чат', 'чата', 'чатов')}${tail}.`)
+                    pop()
+                } catch (err) {
+                    showAlert(err.message)
+                } finally {
+                    setBusy(false)
+                }
+            },
+        }, targets === 0 ? 'Нет чатов для рассылки' : `Разослать в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}`)
+
+        holder.append(
+            h('div', { class: 'announce-status' }, status),
+            sectionTitle('Текст'),
+            h('div', { class: 'card announce-card' }, textarea),
+            sectionTitle('Превью'),
+            h('div', { class: 'card' }, preview),
+            h('div', { style: 'padding:18px 0 8px' }, submit),
+        )
+    }).catch((err) => {
+        holder.replaceChildren(h('div', { class: 'card' }, emptyState('Не получилось загрузить', err.message)))
+    })
+
+    return h('div', { class: 'screen' },
+        backRow('Dev'),
+        header('Анонс', 'Рассылка обновлений и объявлений в чаты'),
+        holder,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Загрузка
 // ---------------------------------------------------------------------------
@@ -1788,6 +1872,7 @@ const SCREENS = {
     editRequest: screenEditRequest,
     dev: screenDev,
     devEdit: screenDevEdit,
+    announce: screenAnnounce,
 }
 
 function boot() {
