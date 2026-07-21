@@ -25,7 +25,7 @@ export async function api<T = any>(method: string, params?: Record<string, unkno
 }
 
 // Коды, при которых данные разошлись с сервером — подтягиваем актуальные.
-const RESYNC_CODES = ['already_approved', 'not_found', 'not_approved', 'no_proposal', 'bad_status']
+const RESYNC_CODES = ['already_approved', 'not_found', 'not_approved', 'no_proposal', 'bad_status', 'stale']
 
 /** Мутация, возвращающая свежий bootstrap: обновляет стор и перерисовывает экран.
     Возвращает null при ошибке (алерт показан внутри). */

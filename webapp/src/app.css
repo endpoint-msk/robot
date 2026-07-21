@@ -422,6 +422,13 @@ body {
     cursor: pointer;
 }
 .link-btn:active { opacity: 0.5; }
+.link-btn.danger { color: var(--red); }
+
+/* Чипы дней в модалке переноса: узкая карточка (--card), поэтому чипам даём контраст (--chip). */
+.modal-resched-day { margin: 12px 14px 4px; }
+.modal-resched-day .day-chips { margin: 0; gap: 4px; }
+.modal-resched-day .day-chip { min-height: 48px; background: var(--chip); box-shadow: none; }
+.modal-resched-day .day-chip.selected { background: var(--blue); }
 
 /* Строка-плашка под заявкой с активным предложением времени. */
 .proposal-note {

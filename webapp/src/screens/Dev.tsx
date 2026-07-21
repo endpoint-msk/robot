@@ -32,6 +32,7 @@ export function Dev() {
 
   // Все заявки ближайших 7 дней: правка и удаление (dev получает days[].requests).
   const all = days.flatMap((d) => d.requests || [])
+  const blocked = data!.blocked || []
 
   return (
     <Screen hasBottomBar>
@@ -100,6 +101,40 @@ export function Dev() {
                   }}
                 >
                   {icons.minusCircle()}
+                </button>
+              </div>
+            </Fragment>
+          ))
+        )}
+      </div>
+      <SectionTitle>Заблокированные</SectionTitle>
+      <div className="card">
+        {blocked.length === 0 ? (
+          <EmptyState title="Никто не заблокирован" text="Резидент может заблокировать гостя из его заявки." />
+        ) : (
+          blocked.map((b, i) => (
+            <Fragment key={b.userId}>
+              {i > 0 ? <Sep left={14} /> : null}
+              <div className="row">
+                <span className="row-label">
+                  {b.name}
+                  <span className="row-sublabel">
+                    {(b.username ? '@' + b.username + ' · ' : '') + 'заблокировал ' + b.by.name}
+                  </span>
+                </span>
+                <button
+                  className="small-btn gray"
+                  onClick={async () => {
+                    const ok = await confirmDialog(`Разблокировать ${b.name}? Бот снимет бан во всех чатах.`, {
+                      confirmLabel: 'Разблокировать',
+                    })
+                    if (ok) {
+                      const res = await action('unblock', { userId: b.userId })
+                      if (res) haptic('success')
+                    }
+                  }}
+                >
+                  Разблокировать
                 </button>
               </div>
             </Fragment>

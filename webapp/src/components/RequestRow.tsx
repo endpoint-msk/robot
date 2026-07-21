@@ -6,13 +6,18 @@ import { action } from '../api'
 import { fmtShortDate } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { confirmDialog, timePrompt } from '../modals'
+import { confirmDialog, reschedulePrompt } from '../modals'
 import { useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
-import type { HostingRequest } from '../types'
+import type { HostingRequest, RescheduleProposal } from '../types'
 import { Avatar, Profile, userLabel } from './people'
 import { Sep } from './common'
+
+/** Слот предложения: «Пт, 17 июля · 15:00», если день отличается от текущего дня заявки; иначе только время. */
+function proposalSlot(r: HostingRequest, p: RescheduleProposal): string {
+  return p.dateKey !== r.dateKey ? `${fmtShortDate(p.dateKey)} · ${p.time}` : p.time
+}
 
 /** Цель визита: одна строка с многоточием; если текст не влез — кнопка «ещё». */
 function PurposeBlock({ text }: { text: string }) {
@@ -44,27 +49,40 @@ function PurposeBlock({ text }: { text: string }) {
   )
 }
 
-/** Предложить гостю перенос времени (резидент): модалка с вводом → API `propose`. */
-async function proposeTimeFor(r: HostingRequest): Promise<void> {
-  const time = await timePrompt({
-    text: `Предложить ${r.guest.name} другое время визита ${fmtShortDate(r.dateKey)}?`,
-    initial: (r.timeProposal && r.timeProposal.time) || r.time,
+/** Предложить гостю перенос дня/времени (резидент): модалка с выбором → API `propose`. */
+async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
+  const p = r.proposal
+  const slot = await reschedulePrompt({
+    text: `Предложить ${r.guest.name} перенести визит на другой день или время?`,
+    initialDay: (p && p.dateKey) || r.dateKey,
+    initialTime: (p && p.time) || r.time,
   })
-  // Согласованное время не изменилось — предлагать нечего (сервер тоже это гасит).
-  if (!time || time === r.time) return
-  const done = await action('propose', { id: r.id, time })
+  // Согласованный слот не изменился — предлагать нечего (сервер тоже это гасит).
+  if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
+  const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
   if (done) haptic('success')
+}
+
+/** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
+async function blockGuest(r: HostingRequest): Promise<void> {
+  const ok = await confirmDialog(
+    `Заблокировать ${r.guest.name}? Бот забанит его во всех чатах, удалит его заявки и закроет ему миниапп.`,
+    { confirmLabel: 'Заблокировать', destructive: true },
+  )
+  if (!ok) return
+  const done = await action('block', { id: r.id })
+  if (done) haptic('warning')
 }
 
 export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?: boolean }) {
   const me = useStore().data!.me
   const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')
-  const p = r.timeProposal
+  const p = r.proposal
 
-  // Действия переноса (принять/предложить) — отдельной строкой под текстом.
-  const proposalActions = (): ReactNode => (
+  // Действия под строкой: перенос (принять/предложить) + блокировка гостя (резиденту).
+  const rowActions = (canReschedule: boolean): ReactNode => (
     <div className="req-proposal-actions">
-      {p && p.by === 'guest' ? (
+      {canReschedule && p && p.by === 'guest' ? (
         <button
           className="accept-btn"
           onClick={async () => {
@@ -73,12 +91,19 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           }}
         >
           {icons.check(14, '#34c759', 2.4)}
-          Принять {p.time}
+          Принять {proposalSlot(r, p)}
         </button>
       ) : null}
-      <button className="link-btn" onClick={() => void proposeTimeFor(r)}>
-        {p ? 'Другое время' : 'Перенести'}
-      </button>
+      {canReschedule ? (
+        <button className="link-btn" onClick={() => void proposeRescheduleFor(r)}>
+          {p ? 'Другой слот' : 'Перенести'}
+        </button>
+      ) : null}
+      {me.isResident && !archive ? (
+        <button className="link-btn danger" onClick={() => void blockGuest(r)}>
+          Заблокировать
+        </button>
+      ) : null}
     </div>
   )
 
@@ -113,8 +138,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         {pill}
       </div>
     )
-    // Подтверждённый визит тоже можно подвинуть по времени — но только своему хосту.
-    if (mine) proposalRow = proposalActions()
+    // Подтверждённый визит двигает только его хост; блокировка гостя доступна любому резиденту.
+    proposalRow = archive ? null : rowActions(mine)
   } else if (archive) {
     right = <span className="waiting-label">Без ответа</span>
   } else {
@@ -133,7 +158,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         Захостить
       </button>
     )
-    proposalRow = proposalActions()
+    proposalRow = rowActions(true)
   }
 
   const top = (
@@ -157,11 +182,11 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         {icons.clock(14, sec(0.5))}
         {p.by === 'guest' ? (
           <span>
-            гость предлагает <span className="pn-time">{p.time}</span>
+            гость предлагает <span className="pn-time">{proposalSlot(r, p)}</span>
           </span>
         ) : (
           <span>
-            вы предложили <span className="pn-time">{p.time}</span> · ждём гостя
+            вы предложили <span className="pn-time">{proposalSlot(r, p)}</span> · ждём гостя
           </span>
         )}
       </div>

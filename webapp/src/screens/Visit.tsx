@@ -3,7 +3,7 @@ import { action, api } from '../api'
 import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { confirmDialog, showAlert, timePrompt } from '../modals'
+import { confirmDialog, reschedulePrompt, showAlert } from '../modals'
 import { pop, push, setBusy, setData, useParams, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic, initData, tg } from '../telegram'
@@ -23,7 +23,10 @@ export function Visit() {
   if (!r) return <Screen />
 
   const approved = r.status === 'approved' && !!r.approvedBy
-  const p = r.timeProposal
+  const p = r.proposal
+  // Слот с днём, если предложенный день отличается от текущего дня заявки; иначе только время.
+  const slotLabel = (dateKey: string, time: string): string =>
+    p && p.dateKey !== r.dateKey ? `${fmtShortDate(dateKey)} · ${time}` : time
 
   // Карточка статуса и карточка предложения независимы: у подтверждённого визита
   // тоже может висеть перенос, и тогда показываем обе.
@@ -52,16 +55,18 @@ export function Visit() {
     )
   }
   if (p && p.by === 'resident') {
-    // Резидент предложил другое время — гость принимает или отвечает своим.
+    // Резидент предложил другой слот — гость принимает или отвечает своим.
     proposalCard = (
       <div className="status-card proposal">
         <div className="status-card-head">
           <div className="status-card-icon">{icons.clock(15, sec(0.55))}</div>
-          <span className="status-card-title">Резидент предлагает другое время</span>
+          <span className="status-card-title">
+            {p.dateKey !== r.dateKey ? 'Резидент предлагает другой день' : 'Резидент предлагает другое время'}
+          </span>
         </div>
         <div className="propose-time-big">
-          <span className="ptb-new">{p.time}</span>
-          <span className="ptb-old">{r.time}</span>
+          <span className="ptb-new">{slotLabel(p.dateKey, p.time)}</span>
+          <span className="ptb-old">{slotLabel(r.dateKey, r.time)}</span>
         </div>
         <div className="propose-actions">
           <button
@@ -71,14 +76,18 @@ export function Visit() {
               if (done) haptic('success')
             }}
           >
-            Принять {p.time}
+            Принять
           </button>
           <button
             className="chip-btn"
             onClick={async () => {
-              const time = await timePrompt({ text: 'Предложить своё время визита?', initial: p.time, confirmLabel: 'Предложить' })
-              if (!time) return
-              const done = await action('propose', { id: r.id, time })
+              const slot = await reschedulePrompt({
+                text: 'Предложить свой день или время визита?',
+                initialDay: p.dateKey,
+                initialTime: p.time,
+              })
+              if (!slot) return
+              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
               if (done) haptic('success')
             }}
           >
@@ -93,12 +102,12 @@ export function Visit() {
             if (done) haptic('warning')
           }}
         >
-          Оставить как есть ({r.time})
+          Оставить как есть ({slotLabel(r.dateKey, r.time)})
         </button>
       </div>
     )
   } else if (p && p.by === 'guest') {
-    // Гость предложил своё время — ждём резидента; можно изменить или отозвать.
+    // Гость предложил свой слот — ждём резидента; можно изменить или отозвать.
     proposalCard = (
       <div className="status-card proposal">
         <div className="status-card-head">
@@ -106,17 +115,22 @@ export function Visit() {
           <span className="status-card-title">Ждём ответа резидента</span>
         </div>
         <div className="propose-time-big">
-          <span className="ptb-new">{p.time}</span>
-          <span className="ptb-old">{r.time}</span>
+          <span className="ptb-new">{slotLabel(p.dateKey, p.time)}</span>
+          <span className="ptb-old">{slotLabel(r.dateKey, r.time)}</span>
         </div>
-        <div className="status-card-note">Вы предложили это время. Резидент примет его или предложит другое.</div>
+        <div className="status-card-note">Вы предложили этот вариант. Резидент примет его или предложит другой.</div>
         <div className="propose-actions">
           <button
             className="chip-btn"
             onClick={async () => {
-              const time = await timePrompt({ text: 'Изменить предложенное время?', initial: p.time, confirmLabel: 'Обновить' })
-              if (!time) return
-              const done = await action('propose', { id: r.id, time })
+              const slot = await reschedulePrompt({
+                text: 'Изменить предложенный вариант?',
+                initialDay: p.dateKey,
+                initialTime: p.time,
+                confirmLabel: 'Обновить',
+              })
+              if (!slot) return
+              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
               if (done) haptic('success')
             }}
           >
@@ -161,20 +175,21 @@ export function Visit() {
           Изменить день или время
         </button>
       ) : null}
-      {/* У подтверждённого визита день уже не двигаем, а время можно попросить перенести. */}
+      {/* У подтверждённого визита можно попросить перенести день или время. */}
       {approved && !p ? (
         <button
           className="secondary-btn"
           style={{ marginTop: 12 }}
           onClick={async () => {
-            const time = await timePrompt({
-              text: 'Попросить перенести визит на другое время?',
-              initial: r.time,
+            const slot = await reschedulePrompt({
+              text: 'Попросить перенести визит на другой день или время?',
+              initialDay: r.dateKey,
+              initialTime: r.time,
               confirmLabel: 'Попросить',
             })
-            // Оставили время как есть — переносить нечего (сервер тоже это гасит).
-            if (!time || time === r.time) return
-            const done = await action('propose', { id: r.id, time })
+            // Оставили слот как есть — переносить нечего (сервер тоже это гасит).
+            if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
+            const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
             if (done) haptic('success')
           }}
         >

@@ -5,31 +5,35 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { TelegramClient } from '@mtcute/node'
 import {
-    acceptTimeProposal,
+    acceptReschedule,
     addDaysToKey,
     archiveWeeks,
     attendeesForDay,
+    blockUser,
     buildVisitIcs,
-    clearTimeProposal,
+    clearReschedule,
     createHostingRequest,
     deleteHostingRequest,
     editHostingRequest,
     HOSTING_DAYS_AHEAD,
+    isBlocked,
     isValidDayKey,
+    listBlockedUsers,
     nowTimeKey,
     notifyApproverCancelled,
     notifyGuestApproved,
     notifyGuestUnapproved,
-    notifyGuestTimeProposed,
+    notifyGuestReschedule,
     notifyPrefsFor,
     notifyProposalAccepted,
     notifyProposalCancelled,
     notifyResidentsAboutRequest,
-    notifyResidentTimeCountered,
-    proposeTime,
+    notifyResidentRescheduleCountered,
+    proposeReschedule,
     requestsForDay,
     setResidentAttendance,
     todayKey,
+    unblockUser,
     updateHostingRequest,
     weekStartOf,
 } from './hosting.js'
@@ -191,7 +195,7 @@ const requestsView = (list: HostingRequest[]) =>
         createdAt: r.createdAt,
         guest: r.guest,
         approvedBy: r.approvedBy,
-        timeProposal: r.timeProposal ?? null,
+        proposal: r.proposal ?? null,
         anon: r.anon === true,
     }))
 
@@ -259,6 +263,8 @@ const buildBootstrap = (ctx: ApiContext) => {
         days,
         myRequests: requestsView(myRequests),
         settings,
+        // Список заблокированных с разблокировкой — только в дев-меню.
+        ...(isDevUser(ctx) ? { blocked: listBlockedUsers(storage) } : {}),
     }
 }
 
@@ -444,8 +450,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     r.status = 'approved'
                     r.approvedBy = user
                     r.approvedAt = new Date().toISOString()
-                    // Захостил при текущем времени — незакрытое предложение переноса больше не актуально.
-                    r.timeProposal = null
+                    // Захостил при текущем слоте — незакрытое предложение переноса больше не актуально.
+                    r.proposal = null
                 }
             })
             const updated = storage.get().hostingRequests[request.id]
@@ -507,7 +513,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
-        // Предложить перенос времени. На pending-заявке: резидент — любой, гость — только
+        // Предложить перенос дня/времени. На pending-заявке: резидент — любой, гость — только
         // в ответ на предложение резидента. На одобренной: обе стороны могут начать сами,
         // но со стороны резидентов — только тот, кто хостит (чужой визит не двигаем).
         case 'propose': {
@@ -516,70 +522,77 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const isGuest = request.guest.userId === user.userId
             const by: 'resident' | 'guest' | null = isGuest ? 'guest' : resident ? 'resident' : null
             if (!by) {
-                sendError(res, 403, 'not_allowed', 'Предлагать время может гость заявки или резидент.')
+                sendError(res, 403, 'not_allowed', 'Предлагать перенос может гость заявки или резидент.')
                 return
             }
             if (by === 'resident' && request.approvedBy && request.approvedBy.userId !== user.userId) {
                 sendError(res, 403, 'not_allowed', 'Перенести подтверждённый визит может только тот, кто его хостит.')
                 return
             }
-            if (by === 'guest' && request.status !== 'approved' && request.timeProposal?.by !== 'resident') {
-                sendError(res, 409, 'no_proposal', 'Отвечать своим временем можно только на предложение резидента.')
+            if (by === 'guest' && request.status !== 'approved' && request.proposal?.by !== 'resident') {
+                sendError(res, 409, 'no_proposal', 'Отвечать своим вариантом можно только на предложение резидента.')
                 return
             }
+            // Гость дефолтит день на текущий день заявки: он свой день двигать не просит, только время.
+            const dateKey = typeof body.dateKey === 'string' && body.dateKey ? body.dateKey : request.dateKey
             const time = typeof body.time === 'string' ? body.time : ''
-            // Встречное предложение ровно того же времени — это согласие, а не новый раунд:
-            // иначе стороны пингуют друг друга одинаковым временем и никто не «принял».
-            const counter = request.timeProposal
-            if (counter && counter.by !== by && counter.time === time) {
-                const accepted = await acceptTimeProposal(storage, request.id)
+            const sameSlot = (d: string, t: string): boolean => d === dateKey && t === time
+            // Встречное предложение ровно того же слота — это согласие, а не новый раунд:
+            // иначе стороны пингуют друг друга одинаковым слотом и никто не «принял».
+            const counter = request.proposal
+            if (counter && counter.by !== by && sameSlot(counter.dateKey, counter.time)) {
+                const accepted = await acceptReschedule(storage, tzOffsetMinutes, request.id)
                 if (!accepted.ok) {
-                    sendError(res, accepted.error === 'not_found' ? 404 : 409, accepted.error,
+                    const status = accepted.error === 'not_found' ? 404 : 409
+                    sendError(res, status, accepted.error,
                         accepted.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
                     return
                 }
                 if (counter.by === 'resident') {
                     void notifyProposalAccepted(client, counter.user.userId, config.publicUrl, accepted.request, false)
-                        .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии времени:', err))
+                        .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии переноса:', err))
                 } else {
                     void notifyProposalAccepted(client, accepted.request.guest.userId, config.publicUrl, accepted.request, true)
-                        .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии времени:', err))
+                        .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
                 }
                 syncBoard()
                 sendJson(res, 200, buildBootstrap(ctx))
                 return
             }
-            // Предложить ровно то время, которое и так согласовано, — не событие. Молча
-            // отдаём текущее состояние: иначе заводится пустое предложение «перенести
-            // на 15:00» при времени 15:00 и второй стороне летит бессмысленный DM.
-            // Проверка после встречного согласия: там то же равенство значит другое.
-            if (time === request.time) {
+            // Предложить ровно тот слот, что и так согласован, — не событие. Молча отдаём
+            // текущее состояние: иначе заводится пустое предложение при неизменном слоте и
+            // второй стороне летит бессмысленный DM. Проверка после встречного согласия.
+            if (sameSlot(request.dateKey, request.time)) {
                 sendJson(res, 200, buildBootstrap(ctx))
                 return
             }
-            // Повторно предложить своё же уже висящее время — не событие: предложение не
-            // меняется, а второй стороне иначе улетает дубль-DM. (Встречное согласие тем же
-            // временем поймано выше — там `counter.by !== by`.)
-            if (counter && counter.by === by && counter.time === time) {
+            // Повторно предложить свой же уже висящий слот — не событие: предложение не
+            // меняется, а второй стороне иначе улетает дубль-DM.
+            if (counter && counter.by === by && sameSlot(counter.dateKey, counter.time)) {
                 sendJson(res, 200, buildBootstrap(ctx))
                 return
             }
-            const result = await proposeTime(storage, request.id, { time, by, user })
+            const result = await proposeReschedule(storage, tzOffsetMinutes, request.id, { dateKey, time, by, user })
             if (!result.ok) {
                 const messages = {
                     not_found: 'Заявка не найдена — возможно, её уже отменили.',
+                    bad_date: 'Выбери день в пределах ближайшей недели.',
                     bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    past_time: 'Это время уже прошло — выбери время позже текущего.',
+                    duplicate: 'У гостя уже есть заявка на этот день.',
                 } as const
                 sendError(res, result.error === 'not_found' ? 404 : 400, result.error, messages[result.error])
                 return
             }
             if (by === 'resident') {
-                void notifyGuestTimeProposed(client, config.publicUrl, result.request)
-                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о предложении времени:', err))
+                void notifyGuestReschedule(client, config.publicUrl, result.request)
+                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о предложении переноса:', err))
             } else if (result.recipientId != null) {
-                void notifyResidentTimeCountered(client, result.recipientId, config.publicUrl, result.request)
-                    .catch((err) => console.error('[hosting] не удалось уведомить резидента о встречном времени:', err))
+                void notifyResidentRescheduleCountered(client, result.recipientId, config.publicUrl, result.request)
+                    .catch((err) => console.error('[hosting] не удалось уведомить резидента о встречном переносе:', err))
             }
+            // Доску не трогаем: предложение меняет только `proposal`, а `dateKey`/`time`
+            // применяются лишь при accept (там syncBoard и стоит).
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -588,7 +601,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'proposal.accept': {
             const request = findRequest()
             if (!request) return
-            const proposal = request.timeProposal
+            const proposal = request.proposal
             if (!proposal) {
                 sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
                 return
@@ -603,29 +616,34 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_allowed', 'Это предложение адресовано другой стороне.')
                 return
             }
-            const result = await acceptTimeProposal(storage, request.id)
+            const result = await acceptReschedule(storage, tzOffsetMinutes, request.id)
             if (!result.ok) {
-                sendError(res, result.error === 'not_found' ? 404 : 409, result.error,
-                    result.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
+                const status = result.error === 'not_found' ? 404 : 409
+                const message = result.error === 'not_found'
+                    ? 'Заявка не найдена.'
+                    : result.error === 'stale'
+                        ? 'Предложенный день уже недоступен — предложение снято.'
+                        : 'Предложение уже неактуально.'
+                sendError(res, status, result.error, message)
                 return
             }
             if (proposal.by === 'resident') {
                 void notifyProposalAccepted(client, proposal.user.userId, config.publicUrl, result.request, false)
-                    .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии времени:', err))
+                    .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии переноса:', err))
             } else {
                 void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true)
-                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии времени:', err))
+                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
             }
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
 
-        // Снять предложение: отклонить (сторона-адресат) или отозвать (автор). Время не меняется.
+        // Снять предложение: отклонить (сторона-адресат) или отозвать (автор). Слот не меняется.
         case 'proposal.decline': {
             const request = findRequest()
             if (!request) return
-            const proposal = request.timeProposal
+            const proposal = request.proposal
             if (!proposal) {
                 sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
                 return
@@ -639,28 +657,58 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_allowed', 'Подтверждённый визит ведёт тот, кто его хостит.')
                 return
             }
-            const result = await clearTimeProposal(storage, request.id)
+            const result = await clearReschedule(storage, request.id)
             if (!result.ok) {
                 sendError(res, result.error === 'not_found' ? 404 : 409, result.error,
                     result.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
                 return
             }
-            // Уведомляем противоположную сторону. Для встречного времени гостя адрес
+            const proposed = { dateKey: proposal.dateKey, time: proposal.time }
+            // Уведомляем противоположную сторону. Для встречного предложения гостя адрес
             // резидента мы не храним — если гость сам отзывает, DM просто не шлём.
             if (proposal.by === 'resident') {
                 const targetIsGuest = !isGuest
                 const targetId = targetIsGuest ? result.request.guest.userId : proposal.user.userId
-                void notifyProposalCancelled(client, targetId, config.publicUrl, result.request, proposal.time, targetIsGuest)
+                void notifyProposalCancelled(client, targetId, config.publicUrl, result.request, proposed, targetIsGuest)
                     .catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
             } else if (!isGuest) {
-                void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposal.time, true)
+                void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposed, true)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о снятии предложения:', err))
             } else if (result.request.approvedBy) {
                 // Гость отзывает своё предложение на подтверждённом визите — адрес хоста
                 // известен (approvedBy), уведомляем его. Для pending адреса нет — молчим.
-                void notifyProposalCancelled(client, result.request.approvedBy.userId, config.publicUrl, result.request, proposal.time, false)
+                void notifyProposalCancelled(client, result.request.approvedBy.userId, config.publicUrl, result.request, proposed, false)
                     .catch((err) => console.error('[hosting] не удалось уведомить хоста о снятии предложения:', err))
             }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Заблокировать гостя заявки: любой резидент. Бан во всех allowlist-чатах, чистка
+        // его заявок/отметок и отказ в миниаппе (см. гейт blocked ниже).
+        case 'block': {
+            if (!requireResident()) return
+            const request = findRequest()
+            if (!request) return
+            if (request.guest.userId === user.userId) {
+                sendError(res, 400, 'self', 'Себя блокировать нельзя.')
+                return
+            }
+            await blockUser(client, storage, allowedChats, request.guest, user)
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Разблокировать участника: только dev. Разбан во всех allowlist-чатах.
+        case 'unblock': {
+            if (!requireDev()) return
+            const targetId = typeof body.userId === 'number' ? body.userId : Number(body.userId)
+            if (!Number.isSafeInteger(targetId)) {
+                sendError(res, 400, 'bad_user', 'Некорректный участник.')
+                return
+            }
+            await unblockUser(client, storage, allowedChats, targetId)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -930,6 +978,10 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                         .end('Ссылка устарела — открой миниапп заново.')
                     return
                 }
+                if (isBlocked(deps.storage, user.userId)) {
+                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
+                    return
+                }
                 const request = deps.storage.get().hostingRequests[url.searchParams.get('id') ?? '']
                 // Только свой визит: в файле цель визита и кто хостит.
                 if (!request || request.guest.userId !== user.userId) {
@@ -1003,6 +1055,11 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 const user = validateInitData(initData, deps.botToken)
                 if (!user) {
                     sendError(res, 401, 'bad_init_data', 'Открой миниапп заново — сессия устарела.')
+                    return
+                }
+                // Заблокированный участник не имеет доступа к миниаппу — глухой отказ.
+                if (isBlocked(deps.storage, user.userId)) {
+                    sendError(res, 403, 'blocked', 'Доступ закрыт.')
                     return
                 }
                 const resident = await deps.residents.isResident(user.userId)

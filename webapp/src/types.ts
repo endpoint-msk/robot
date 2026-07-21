@@ -11,7 +11,8 @@ export type User = {
   name: string
 }
 
-export type TimeProposal = {
+export type RescheduleProposal = {
+  dateKey: string
   time: string
   by: 'resident' | 'guest'
   user: User
@@ -29,8 +30,16 @@ export type HostingRequest = {
   createdAt: string
   guest: User
   approvedBy: User | null
-  timeProposal: TimeProposal | null
+  proposal: RescheduleProposal | null
   anon: boolean
+}
+
+export type BlockedUser = {
+  userId: number
+  username: string | null
+  name: string
+  by: User
+  at: string
 }
 
 export type Attendee = {
@@ -78,6 +87,8 @@ export type Bootstrap = {
   settings: Settings | null
   /** create/edit возвращают ещё и саму созданную/изменённую заявку. */
   request?: HostingRequest
+  /** Список заблокированных — только dev-аккаунтам (для дев-меню). */
+  blocked?: BlockedUser[]
 }
 
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }

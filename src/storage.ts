@@ -36,13 +36,22 @@ const normalizeMacBindings = (raw: unknown): Record<string, ResidentMacs> => {
     return out
 }
 
-/** Заявки на диске от прежних версий не знали про `timeProposal` — проставляем null, чтобы код не спотыкался. */
+/**
+ * Заявки на диске от прежних версий не знали про предложение переноса — проставляем
+ * `proposal: null`. Старое поле `timeProposal` (только время) конвертируем в новый
+ * слот `{ dateKey, time }`, подставляя день заявки: раньше день не переносился.
+ */
 const normalizeHostingRequests = (raw: unknown): Record<string, HostingRequest> => {
     if (!raw || typeof raw !== 'object') return {}
     const out: Record<string, HostingRequest> = {}
-    for (const [key, value] of Object.entries(raw as Record<string, HostingRequest>)) {
+    for (const [key, value] of Object.entries(raw as Record<string, any>)) {
         if (!value || typeof value !== 'object') continue
-        out[key] = { ...value, anon: value.anon === true, timeProposal: value.timeProposal ?? null }
+        const legacy = value.timeProposal
+        const proposal = value.proposal ?? (legacy && typeof legacy === 'object'
+            ? { dateKey: legacy.dateKey ?? value.dateKey, time: legacy.time, by: legacy.by, user: legacy.user, at: legacy.at }
+            : null)
+        const { timeProposal: _drop, ...rest } = value
+        out[key] = { ...(rest as HostingRequest), anon: value.anon === true, proposal }
     }
     return out
 }
@@ -73,6 +82,7 @@ export class Storage {
                 hostingBoardMuted: parsed.hostingBoardMuted ?? {},
                 announceMuted: parsed.announceMuted ?? {},
                 lastAnnouncedVersion: typeof parsed.lastAnnouncedVersion === 'string' ? parsed.lastAnnouncedVersion : '',
+                blockedUsers: parsed.blockedUsers ?? {},
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

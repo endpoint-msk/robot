@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { fmtWeekdayDate } from '../dates'
+import { fmtShortDate, fmtWeekdayDate } from '../dates'
 import { icons } from '../icons'
 import { bump, push, useStore } from '../store'
 import { sec } from '../theme'
@@ -11,9 +11,11 @@ import { Screen } from '../components/Screen'
 
 function VisitRow({ r }: { r: HostingRequest }) {
   const approved = r.status === 'approved'
-  const p = r.timeProposal
-  // Резидент предложил новое время — ход за гостем: строка явно зовёт к действию.
+  const p = r.proposal
+  // Резидент предложил новый слот — ход за гостем: строка явно зовёт к действию.
   const needsAnswer = Boolean(p && p.by === 'resident')
+  // Слот предложения с днём, если предложенный день отличается от дня заявки.
+  const pSlot = p ? (p.dateKey !== r.dateKey ? `${fmtShortDate(p.dateKey)} · ${p.time}` : p.time) : ''
   const iconSquare = needsAnswer ? (
     <div className="status-square attn">{icons.clock(18, '#007aff')}</div>
   ) : approved ? (
@@ -23,8 +25,8 @@ function VisitRow({ r }: { r: HostingRequest }) {
   )
 
   let subText: string
-  if (needsAnswer) subText = `Резидент предлагает ${p!.time} — нужен ответ`
-  else if (p && p.by === 'guest') subText = `вы предложили ${p.time} · ждём${approved ? ' хоста' : ''}`
+  if (needsAnswer) subText = `Резидент предлагает ${pSlot} — нужен ответ`
+  else if (p && p.by === 'guest') subText = `вы предложили ${pSlot} · ждём${approved ? ' хоста' : ''}`
   else if (approved) subText = `к ${r.time} · подтверждён`
   else subText = `к ${r.time} · ждём резидента`
 

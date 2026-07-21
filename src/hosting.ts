@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { Storage } from './storage.js'
-import type { HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, TimeProposal } from './types.js'
+import type { BlockedUser, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -99,7 +99,7 @@ export const createHostingRequest = async (
         status: 'pending',
         approvedBy: null,
         approvedAt: null,
-        timeProposal: null,
+        proposal: null,
     }
     await storage.update((s) => {
         s.hostingRequests[request.id] = request
@@ -112,7 +112,7 @@ export type EditRequestError = 'not_found' | 'not_pending' | 'bad_date' | 'bad_t
 /**
  * Правка гостем своей заявки: день/время/цель/анонимность. Только пока заявка без
  * хоста (`pending`); окно дня и «не в прошлом» — как при создании; дубль на день
- * не считаем сам с собой. Любое незакрытое предложение переноса времени снимаем —
+ * не считаем сам с собой. Любое незакрытое предложение переноса снимаем —
  * гость сам сменил слот.
  */
 export const editHostingRequest = async (
@@ -145,7 +145,7 @@ export const editHostingRequest = async (
         r.time = patch.time
         r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
         r.anon = patch.anon
-        r.timeProposal = null
+        r.proposal = null
     })
     return { ok: true, request: storage.get().hostingRequests[id]! }
 }
@@ -265,6 +265,15 @@ export const formatDayKey = (key: string): string => {
 
 const guestLabel = (guest: HostingUser): string =>
     guest.username ? `${html.escape(guest.name)} (@${guest.username})` : html.escape(guest.name)
+
+/** Человекочитаемый слот для сообщений: «Пт, 17 июля к 15:00». */
+const slotLabel = (dateKey: string, time: string): string => `${formatDayKey(dateKey)} к ${time}`
+
+/** У гостя уже есть другая заявка на этот день (исключая заявку с id). */
+const hasOtherRequestOnDay = (storage: Storage, guestUserId: number, dateKey: string, exceptId: string): boolean =>
+    Object.values(storage.get().hostingRequests).some(
+        (r) => r.id !== exceptId && r.guest.userId === guestUserId && r.dateKey === dateKey,
+    )
 
 // ---------------------------------------------------------------------------
 // Уведомления
@@ -416,19 +425,19 @@ export const notifyApproverCancelled = async (
 }
 
 // ---------------------------------------------------------------------------
-// Уведомления о переносе времени
+// Уведомления о переносе дня/времени
 // ---------------------------------------------------------------------------
 
-/** Гостю в личку: резидент предлагает перенести визит. `request.timeProposal.by` === 'resident'. */
-export const notifyGuestTimeProposed = async (
+/** Гостю в личку: резидент предлагает перенести визит. `request.proposal.by` === 'resident'. */
+export const notifyGuestReschedule = async (
     client: TelegramClient,
     webappUrl: string,
     request: HostingRequest,
 ): Promise<void> => {
-    const p = request.timeProposal
+    const p = request.proposal
     if (!p) return
     const who = p.user.username ? `${p.user.name} (@${p.user.username})` : p.user.name
-    const text = `🕘 Резидент ${who} предлагает перенести визит <b>${formatDayKey(request.dateKey)}</b> на <b>${p.time}</b> (сейчас ${request.time}).<br>Открой «Мои визиты», чтобы принять или предложить своё время.`
+    const text = `🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Открой «Мои визиты», чтобы принять или предложить свой вариант.`
     try {
         await client.sendText(request.guest.userId, html(text), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]),
@@ -439,16 +448,16 @@ export const notifyGuestTimeProposed = async (
     }
 }
 
-/** Резиденту-адресату в личку: гость ответил своим временем. `request.timeProposal.by` === 'guest'. */
-export const notifyResidentTimeCountered = async (
+/** Резиденту-адресату в личку: гость ответил своим слотом. `request.proposal.by` === 'guest'. */
+export const notifyResidentRescheduleCountered = async (
     client: TelegramClient,
     recipientId: number,
     webappUrl: string,
     request: HostingRequest,
 ): Promise<void> => {
-    const p = request.timeProposal
+    const p = request.proposal
     if (!p) return
-    const text = `🕘 Гость ${guestLabel(request.guest)} предлагает время <b>${p.time}</b> для визита <b>${formatDayKey(request.dateKey)}</b> (было ${request.time}).<br>Открой заявки, чтобы принять или предложить другое.`
+    const text = `🕘 Гость ${guestLabel(request.guest)} предлагает <b>${slotLabel(p.dateKey, p.time)}</b> (было ${slotLabel(request.dateKey, request.time)}).<br>Открой заявки, чтобы принять или предложить другое.`
     try {
         await client.sendText(recipientId, html(text), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
@@ -459,7 +468,7 @@ export const notifyResidentTimeCountered = async (
     }
 }
 
-/** Предложившей стороне в личку: предложение приняли, действует новое время `request.time`. */
+/** Предложившей стороне в личку: предложение приняли, действует новый слот `request.dateKey`/`time`. */
 export const notifyProposalAccepted = async (
     client: TelegramClient,
     targetId: number,
@@ -467,9 +476,10 @@ export const notifyProposalAccepted = async (
     request: HostingRequest,
     targetIsGuest: boolean,
 ): Promise<void> => {
+    const slot = slotLabel(request.dateKey, request.time)
     const text = targetIsGuest
-        ? `✅ Резидент принял время <b>${request.time}</b> для визита <b>${formatDayKey(request.dateKey)}</b>.`
-        : `✅ Гость ${guestLabel(request.guest)} принял новое время <b>${request.time}</b> — визит <b>${formatDayKey(request.dateKey)}</b>.`
+        ? `✅ Резидент принял ваш вариант — визит <b>${slot}</b>.`
+        : `✅ Гость ${guestLabel(request.guest)} принял новый слот — визит <b>${slot}</b>.`
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {
@@ -481,16 +491,16 @@ export const notifyProposalAccepted = async (
     }
 }
 
-/** Второй стороне в личку: предложение о переносе сняли, остаётся прежнее время `request.time`. */
+/** Второй стороне в личку: предложение о переносе сняли, остаётся прежний слот `request.dateKey`/`time`. */
 export const notifyProposalCancelled = async (
     client: TelegramClient,
     targetId: number,
     webappUrl: string,
     request: HostingRequest,
-    proposedTime: string,
+    proposed: { dateKey: string; time: string },
     targetIsGuest: boolean,
 ): Promise<void> => {
-    const text = `↩️ Предложение перенести визит <b>${formatDayKey(request.dateKey)}</b> на ${proposedTime} снято — остаётся ${request.time}.`
+    const text = `↩️ Предложение перенести визит на ${slotLabel(proposed.dateKey, proposed.time)} снято — остаётся ${slotLabel(request.dateKey, request.time)}.`
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {
@@ -549,75 +559,175 @@ export const deleteHostingRequest = async (storage: Storage, id: string): Promis
 }
 
 // ---------------------------------------------------------------------------
-// Предложения переноса времени (резидент ↔ гость)
+// Предложения переноса дня/времени (резидент ↔ гость)
 // ---------------------------------------------------------------------------
 
-export type ProposeTimeError = 'not_found' | 'bad_time'
+export type ProposeError = 'not_found' | 'bad_date' | 'bad_time' | 'past_time' | 'duplicate'
 
 /**
- * Ставит предложение перенести визит на другое время — и у pending-заявки, и у уже
- * одобренной (подтверждённый визит тоже иногда надо сдвинуть; сам факт хостинга при
- * этом не отменяется, меняется только `time` после согласия второй стороны).
+ * Ставит предложение перенести визит на другой день и/или время — и у pending-заявки,
+ * и у уже одобренной (подтверждённый визит тоже иногда надо сдвинуть; сам факт хостинга
+ * при этом не отменяется, меняются `dateKey`/`time` после согласия второй стороны).
+ * День проверяем как при создании: окно обзора, не в прошлом, без дубля на этот день.
  *
  * `recipientId` — кому уходит уведомление: резидент всегда пишет гостю; гость пишет
- * либо своему хосту (заявка одобрена), либо резиденту, предложившему время ранее.
+ * либо своему хосту (заявка одобрена), либо резиденту, предложившему слот ранее.
  * Для встречного предложения на pending-заявке без прошлого предложения адреса нет.
  */
-export const proposeTime = async (
+export const proposeReschedule = async (
     storage: Storage,
+    tzOffsetMinutes: number,
     id: string,
-    input: { time: string; by: 'resident' | 'guest'; user: HostingUser },
-): Promise<{ ok: true; request: HostingRequest; recipientId: number | null } | { ok: false; error: ProposeTimeError }> => {
+    input: { dateKey: string; time: string; by: 'resident' | 'guest'; user: HostingUser },
+): Promise<{ ok: true; request: HostingRequest; recipientId: number | null } | { ok: false; error: ProposeError }> => {
     const existing = storage.get().hostingRequests[id]
     if (!existing) return { ok: false, error: 'not_found' }
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(input.dateKey) || input.dateKey < today || input.dateKey > maxDay) {
+        return { ok: false, error: 'bad_date' }
+    }
     if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
+    if (isPastSlot(input.dateKey, input.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
+    if (hasOtherRequestOnDay(storage, existing.guest.userId, input.dateKey, id)) return { ok: false, error: 'duplicate' }
     const recipientId = input.by === 'resident'
         ? existing.guest.userId
         : existing.approvedBy
             ? existing.approvedBy.userId
-            : existing.timeProposal?.by === 'resident'
-                ? existing.timeProposal.user.userId
+            : existing.proposal?.by === 'resident'
+                ? existing.proposal.user.userId
                 : null
     await storage.update((s) => {
         const r = s.hostingRequests[id]
-        if (r) r.timeProposal = { time: input.time, by: input.by, user: input.user, at: new Date().toISOString() }
+        if (r) r.proposal = { dateKey: input.dateKey, time: input.time, by: input.by, user: input.user, at: new Date().toISOString() }
     })
     return { ok: true, request: storage.get().hostingRequests[id]!, recipientId }
 }
 
-/** Принимает активное предложение: согласованным временем заявки становится предложенное. */
-export const acceptTimeProposal = async (
+export type AcceptError = 'not_found' | 'no_proposal' | 'stale'
+
+/**
+ * Принимает активное предложение: согласованным слотом заявки становится предложенный.
+ * День перепроверяем на момент принятия (мог выпасть из окна обзора или у гостя
+ * появилась другая заявка на этот день) — протухшее предложение снимаем (`stale`).
+ */
+export const acceptReschedule = async (
     storage: Storage,
+    tzOffsetMinutes: number,
     id: string,
-): Promise<{ ok: true; request: HostingRequest; proposal: TimeProposal } | { ok: false; error: 'not_found' | 'no_proposal' }> => {
+): Promise<{ ok: true; request: HostingRequest; proposal: RescheduleProposal } | { ok: false; error: AcceptError }> => {
     const existing = storage.get().hostingRequests[id]
     if (!existing) return { ok: false, error: 'not_found' }
-    if (!existing.timeProposal) return { ok: false, error: 'no_proposal' }
-    const proposal = existing.timeProposal
+    const proposal = existing.proposal
+    if (!proposal) return { ok: false, error: 'no_proposal' }
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    const stale =
+        !isValidDayKey(proposal.dateKey) ||
+        proposal.dateKey < today ||
+        proposal.dateKey > maxDay ||
+        (proposal.dateKey !== existing.dateKey && hasOtherRequestOnDay(storage, existing.guest.userId, proposal.dateKey, id))
+    if (stale) {
+        await storage.update((s) => {
+            const r = s.hostingRequests[id]
+            if (r) r.proposal = null
+        })
+        return { ok: false, error: 'stale' }
+    }
     await storage.update((s) => {
         const r = s.hostingRequests[id]
-        if (r?.timeProposal) {
-            r.time = r.timeProposal.time
-            r.timeProposal = null
+        if (r?.proposal) {
+            r.dateKey = r.proposal.dateKey
+            r.time = r.proposal.time
+            r.proposal = null
         }
     })
     return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
 }
 
-/** Снимает активное предложение без смены времени (отклонили или отозвали). */
-export const clearTimeProposal = async (
+/** Снимает активное предложение без смены слота (отклонили или отозвали). */
+export const clearReschedule = async (
     storage: Storage,
     id: string,
-): Promise<{ ok: true; request: HostingRequest; proposal: TimeProposal } | { ok: false; error: 'not_found' | 'no_proposal' }> => {
+): Promise<{ ok: true; request: HostingRequest; proposal: RescheduleProposal } | { ok: false; error: 'not_found' | 'no_proposal' }> => {
     const existing = storage.get().hostingRequests[id]
     if (!existing) return { ok: false, error: 'not_found' }
-    if (!existing.timeProposal) return { ok: false, error: 'no_proposal' }
-    const proposal = existing.timeProposal
+    if (!existing.proposal) return { ok: false, error: 'no_proposal' }
+    const proposal = existing.proposal
     await storage.update((s) => {
         const r = s.hostingRequests[id]
-        if (r) r.timeProposal = null
+        if (r) r.proposal = null
     })
     return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
+}
+
+// ---------------------------------------------------------------------------
+// Блокировка участников (бан во всех allowlist-чатах + отказ в миниаппе)
+// ---------------------------------------------------------------------------
+
+export const isBlocked = (storage: Storage, userId: number): boolean =>
+    Boolean(storage.get().blockedUsers[String(userId)])
+
+/** Заблокированные участники, от свежих к старым. */
+export const listBlockedUsers = (storage: Storage): BlockedUser[] =>
+    Object.values(storage.get().blockedUsers).sort((a, b) => b.at.localeCompare(a.at))
+
+/**
+ * Блокирует участника: пишет запись в стейт, стирает все его заявки/отметки/присутствие
+ * и банит во всех allowlist-чатах. Бан по чатам fire-and-safe: недоступный/уже вышедший
+ * участник просто логируется и не роняет остальные чаты.
+ */
+export const blockUser = async (
+    client: TelegramClient,
+    storage: Storage,
+    allowedChats: ReadonlySet<number>,
+    target: HostingUser,
+    by: HostingUser,
+): Promise<void> => {
+    await storage.update((s) => {
+        s.blockedUsers[String(target.userId)] = {
+            userId: target.userId,
+            username: target.username,
+            name: target.name,
+            by,
+            at: new Date().toISOString(),
+        }
+        for (const [id, r] of Object.entries(s.hostingRequests)) {
+            if (r.guest.userId === target.userId) delete s.hostingRequests[id]
+        }
+        for (const [k, a] of Object.entries(s.hostingAttendance)) {
+            if (a.user.userId === target.userId) delete s.hostingAttendance[k]
+        }
+        delete s.presence[String(target.userId)]
+    })
+    for (const chatId of allowedChats) {
+        try {
+            await client.banChatMember({ chatId, participantId: target.userId })
+        } catch (err) {
+            console.warn(`[hosting] не удалось забанить ${target.userId} в чате ${chatId}:`, err)
+        }
+    }
+}
+
+/** Снимает блокировку: убирает запись из стейта и разбанивает во всех allowlist-чатах. */
+export const unblockUser = async (
+    client: TelegramClient,
+    storage: Storage,
+    allowedChats: ReadonlySet<number>,
+    userId: number,
+): Promise<boolean> => {
+    const existed = isBlocked(storage, userId)
+    await storage.update((s) => {
+        delete s.blockedUsers[String(userId)]
+    })
+    for (const chatId of allowedChats) {
+        try {
+            await client.unbanChatMember({ chatId, participantId: userId })
+        } catch (err) {
+            console.warn(`[hosting] не удалось разбанить ${userId} в чате ${chatId}:`, err)
+        }
+    }
+    return existed
 }
 
 // ---------------------------------------------------------------------------
