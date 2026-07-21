@@ -104,6 +104,17 @@ const syncChatBoard = async (
     const key = String(chatId)
     let entry = storage.get().hostingBoard[key]
 
+    // Доску отключили в этом чате (/boardmute) — открепляем и забываем существующую, новую не постим.
+    if (storage.get().hostingBoardMuted[key]) {
+        if (entry) {
+            await safeUnpin(client, chatId, entry.messageId)
+            await storage.update((s) => {
+                delete s.hostingBoard[key]
+            })
+        }
+        return
+    }
+
     // «Одно сообщение в день»: вчерашнюю доску открепляем и забываем — новая заведётся
     // при первой активности уже нового дня.
     if (entry && entry.postedDay !== today) {

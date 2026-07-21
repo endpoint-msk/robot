@@ -73,6 +73,7 @@ export class Storage {
                 hostingAttendance: parsed.hostingAttendance ?? {},
                 hostingNotify: parsed.hostingNotify ?? {},
                 hostingBoard: parsed.hostingBoard ?? {},
+                hostingBoardMuted: parsed.hostingBoardMuted ?? {},
                 announceMuted: parsed.announceMuted ?? {},
                 lastAnnouncedVersion: typeof parsed.lastAnnouncedVersion === 'string' ? parsed.lastAnnouncedVersion : '',
             }

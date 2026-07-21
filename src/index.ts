@@ -200,6 +200,7 @@ const main = async () => {
         BotCommands.cmd('setdesc', 'Изменить описание сбора (реквизиты/ссылки)'),
         BotCommands.cmd('setresetday', 'День сброса сбора (1–29)'),
         BotCommands.cmd('announcemute', 'Вкл/выкл анонсы (обновления/объявления) в этот чат'),
+        BotCommands.cmd('boardmute', 'Вкл/выкл доску «кто сегодня в спейсе» в этом чате'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]
     const memberCommands = [

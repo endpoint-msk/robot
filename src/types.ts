@@ -68,6 +68,9 @@ export type State = {
     hostingNotify: Record<string, HostingNotifyPrefs>
     /** Закреплённая доска «кто сегодня в спейсе» по чатам (ключ — chatId как строка). */
     hostingBoard: Record<string, HostingBoardMessage>
+    /** Чаты, где доска «кто сегодня в спейсе» отключена (ключ — chatId как строка).
+     *  Переключается командой /boardmute админом чата. */
+    hostingBoardMuted: Record<string, true>
     /** Чаты, где выключены анонсы (рассылка обновлений/объявлений). Ключ — chatId как строка.
      *  Переключается командой /announcemute админом чата. */
     announceMuted: Record<string, true>
@@ -206,6 +209,7 @@ export const emptyState = (): State => ({
     hostingAttendance: {},
     hostingNotify: {},
     hostingBoard: {},
+    hostingBoardMuted: {},
     announceMuted: {},
     lastAnnouncedVersion: '',
 })

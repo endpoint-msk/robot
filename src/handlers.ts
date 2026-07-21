@@ -214,6 +214,7 @@ export const registerHandlers = (
                 '/printer — статус принтера, превью печати и подписка на уведомление об окончании',
                 '',
                 'Прочее:',
+                '/boardmute — вкл/выкл доску «кто сегодня в спейсе» в этом чате (только админы)',
                 '/announcemute — вкл/выкл анонсы (обновления бота и объявления) в этот чат (только админы)',
                 '',
                 'Сборы донатов:',
@@ -332,6 +333,24 @@ export const registerHandlers = (
             muted
                 ? 'Анонсы (обновления бота и объявления) снова будут приходить в этот чат. Выключить — /announcemute.'
                 : 'Больше не буду присылать анонсы в этот чат. Включить обратно — /announcemute.',
+        )
+    })
+
+    // /boardmute — вкл/выкл доску «кто сегодня в спейсе» в этом чате. Настройка чата — только админам.
+    // Замьютили: шедулер откреплит и забудет висящую доску на ближайшем тике (≤60 с).
+    dp.onNewMessage(filters.command('boardmute'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
+        const chatId = Number(msg.chat.id)
+        const key = String(chatId)
+        const muted = storage.get().hostingBoardMuted[key] === true
+        await storage.update((s) => {
+            if (muted) delete s.hostingBoardMuted[key]
+            else s.hostingBoardMuted[key] = true
+        })
+        await msg.answerText(
+            muted
+                ? 'Доска «кто сегодня в спейсе» снова включена в этом чате. Выключить — /boardmute.'
+                : 'Доска «кто сегодня в спейсе» отключена в этом чате — открепляю. Включить обратно — /boardmute.',
         )
     })
 
