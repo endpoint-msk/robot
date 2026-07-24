@@ -123,14 +123,15 @@ const main = async () => {
     }
     // presence-хендлеры регистрируем РАНЬШЕ — чтобы /start в личке ловил presence,
     // а групповой /start (алиас /help) — общий обработчик ниже
+    // РАНЬШЕ menu.ts: тот ловит любой /start в личке и останавливает пропагацию, а нам
+    // нужно перехватить deep link `?start=u<id>` (карточка профиля из миниаппа).
+    if (webappConfig !== null) {
+        registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
+    }
     registerPresenceHandlers(dp, { client: tg, storage, residents })
     registerChatActivityTracker(dp, storage, allowedChats)
     registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl: webappConfig?.publicUrl ?? null })
     registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl: webappConfig?.publicUrl ?? null })
-    // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
-    if (webappConfig !== null) {
-        registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
-    }
     if (printerUrl !== null) {
         registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)
@@ -155,6 +156,7 @@ const main = async () => {
             allowedChats,
             residents,
             botToken,
+            botUsername: self.username ?? null,
             config: webappConfig,
             devUserIds,
             tzOffsetMinutes: hostingTzOffset,

@@ -51,26 +51,31 @@ export function openUrl(url: string): void {
   window.open(url, '_blank', 'noopener')
 }
 
-// Профиль: с ником — обычная t.me-ссылка (работает везде). Без ника t.me-ссылки на
-// человека не существует, остаётся диплинк tg://user?id=. Его openTelegramLink не
-// принимает («только t.me»), а openLink на части клиентов роняет вебвью — поэтому
-// такой URL отдаём window.open, единственный способ, который клиент прокидывает в ОС.
+// Профиль: с ником — обычная t.me-ссылка. Без ника ссылки на человека не существует, а
+// `tg://user?id=` из вебвью не открывается НИ В КАКОМ виде (openTelegramLink принимает
+// только t.me, openLink/window.open/location.href такую схему молча проглатывают — в
+// официальном примере Telegram эти ссылки помечены «does not open»). Поэтому ведём в чат
+// с ботом: он пришлёт карточку, где имя — настоящее упоминание, и оно тапается.
 // Отрицательные id — фейковые гости дев-сида, для них профиля нет.
+// Ник бота держим здесь, а не читаем из стора: telegram.ts не должен зависеть от store
+// (store → theme → telegram уже есть, обратный импорт замкнул бы цикл). Ставит setData.
+let botUsername: string | null = null
+export const setBotUsername = (name: string | null): void => {
+  botUsername = name
+}
+
+const profileUrl = (u: { userId?: number; username?: string | null }): string | null => {
+  if (u.username) return 'https://t.me/' + u.username
+  if (!botUsername || u.userId == null || u.userId <= 0) return null
+  return `https://t.me/${botUsername}?start=u${u.userId}`
+}
+
 export const hasProfile = (u: { userId?: number; username?: string | null } | null | undefined): boolean =>
-  Boolean(u && (u.username || (u.userId != null && u.userId > 0)))
+  Boolean(u && profileUrl(u))
 
 export const openProfile = (u: { userId?: number; username?: string | null }): void => {
-  if (u.username) {
-    openUrl('https://t.me/' + u.username)
-    return
-  }
-  if (u.userId == null || u.userId <= 0) return
-  const url = 'tg://user?id=' + u.userId
-  try {
-    if (!window.open(url, '_blank')) location.href = url
-  } catch {
-    location.href = url
-  }
+  const url = profileUrl(u)
+  if (url) openUrl(url)
 }
 
 // initData не обновляется в рамках сессии, поэтому выданный доступ помним сами.

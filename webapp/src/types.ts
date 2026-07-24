@@ -91,6 +91,8 @@ export type Me = {
 
 export type Bootstrap = {
   me: Me
+  /** @ник бота: по нему строится deep link на карточку профиля человека без ника. */
+  botUsername: string | null
   todayKey: string
   nowTime: string
   days: Day[]
