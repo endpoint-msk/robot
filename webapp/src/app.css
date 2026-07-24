@@ -328,6 +328,9 @@ body {
 
 .req-avatar { width: 40px; height: 40px; font-size: 16px; }
 .req-main { min-width: 0; flex: 1; }
+/* Имя и подпись — в одну строку с многоточием: длинное имя иначе переносится и
+   налезает на пилл «одобрил» / кнопку справа (они не сжимаются). */
+.req-name, .req-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .req-name { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .req-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 .req-purpose-wrap {
@@ -424,6 +427,20 @@ body {
 }
 .link-btn:active { opacity: 0.5; }
 .link-btn.danger { color: var(--red); }
+/* Иконка-действие в строке заявки (блокировка): идёт в общем потоке кнопок. */
+.icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+}
+.icon-btn:active { opacity: 0.5; }
 
 /* Чипы дней в модалке переноса: узкая карточка (--card), поэтому чипам даём контраст (--chip). */
 .modal-resched-day { margin: 12px 14px 4px; }

@@ -99,9 +99,15 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           {p ? 'Другой слот' : 'Перенести'}
         </button>
       ) : null}
+      {/* Блокировка — иконка: подпись у каждого гостя читалась как призыв. */}
       {me.isResident && !archive ? (
-        <button className="link-btn danger" onClick={() => void blockGuest(r)}>
-          Заблокировать
+        <button
+          className="icon-btn danger"
+          aria-label="Заблокировать"
+          title="Заблокировать"
+          onClick={() => void blockGuest(r)}
+        >
+          {icons.ban()}
         </button>
       ) : null}
     </div>
