@@ -240,7 +240,9 @@ export const registerPrinterHandlers = (
         try {
             status = await fetchPrinterStatus(printerUrl, printerAuth)
         } catch (err) {
-            console.error('[printer] не удалось получить статус:', err)
+            // warn, а не error: выключенный/недоступный принтер — обычное дело, а console.error
+            // форвардится дев-аккаунтам в личку (см. errors.ts) и превращается там в спам.
+            console.warn('[printer] не удалось получить статус:', err)
             await msg.answerText('Не удалось связаться с принтером. Он включён и доступен в сети?')
             return
         }

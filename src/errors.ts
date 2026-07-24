@@ -43,7 +43,8 @@ export const installErrorReporting = (
 
         const trimmed = text.length > MAX_REPORT_LEN ? `${text.slice(0, MAX_REPORT_LEN)}…` : text
         for (const id of ids) {
-            client.sendText(id, `⚠️ Ошибка бота\n\n${trimmed}`).catch((err) => {
+            // silent: отчёты приходят пачками и по ночам — уведомление без звука.
+            client.sendText(id, `⚠️ Ошибка бота\n\n${trimmed}`, { silent: true }).catch((err) => {
                 origError(`${SELF_PREFIX} не смог отправить отчёт ${id}:`, err)
             })
         }
