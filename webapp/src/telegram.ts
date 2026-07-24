@@ -51,31 +51,17 @@ export function openUrl(url: string): void {
   window.open(url, '_blank', 'noopener')
 }
 
-// Профиль: с ником — обычная t.me-ссылка. Без ника ссылки на человека не существует, а
-// `tg://user?id=` из вебвью не открывается НИ В КАКОМ виде (openTelegramLink принимает
-// только t.me, openLink/window.open/location.href такую схему молча проглатывают — в
-// официальном примере Telegram эти ссылки помечены «does not open»). Поэтому ведём в чат
-// с ботом: он пришлёт карточку, где имя — настоящее упоминание, и оно тапается.
-// Отрицательные id — фейковые гости дев-сида, для них профиля нет.
-// Ник бота держим здесь, а не читаем из стора: telegram.ts не должен зависеть от store
-// (store → theme → telegram уже есть, обратный импорт замкнул бы цикл). Ставит setData.
-let botUsername: string | null = null
-export const setBotUsername = (name: string | null): void => {
-  botUsername = name
-}
+// Профиль открывается только по @нику: ссылки t.me на человека без ника не существует.
+// Обходные пути проверены и не работают: `tg://user?id=` из вебвью не открывается ни в
+// каком виде (openTelegramLink берёт только t.me, openLink/window.open/location.href схему
+// проглатывают), а карточка с text-mention от бота бесполезна для тех, у кого в приватности
+// запрещена ссылка на аккаунт — Telegram молча выкидывает сущность упоминания.
+// Поэтому без ника строка просто не тапается.
+export const hasProfile = (u: { username?: string | null } | null | undefined): boolean =>
+  Boolean(u && u.username)
 
-const profileUrl = (u: { userId?: number; username?: string | null }): string | null => {
-  if (u.username) return 'https://t.me/' + u.username
-  if (!botUsername || u.userId == null || u.userId <= 0) return null
-  return `https://t.me/${botUsername}?start=u${u.userId}`
-}
-
-export const hasProfile = (u: { userId?: number; username?: string | null } | null | undefined): boolean =>
-  Boolean(u && profileUrl(u))
-
-export const openProfile = (u: { userId?: number; username?: string | null }): void => {
-  const url = profileUrl(u)
-  if (url) openUrl(url)
+export const openProfile = (u: { username?: string | null }): void => {
+  if (u.username) openUrl('https://t.me/' + u.username)
 }
 
 // initData не обновляется в рамках сессии, поэтому выданный доступ помним сами.

@@ -175,8 +175,6 @@ export type WebappDeps = {
     allowedChats: ReadonlySet<number>
     residents: ResidentDirectory
     botToken: string
-    /** @ник бота (без @) — миниапп строит по нему deep link на карточку профиля. null, если ника нет. */
-    botUsername: string | null
     config: WebappConfig
     /** userId дев-аккаунтов (DEV_USER_IDS): дев-меню и переключатель перспективы. */
     devUserIds: ReadonlySet<number>
@@ -233,7 +231,7 @@ const makeFakeGuest = (): HostingUser => {
 
 /** Общий снапшот для фронта: 7 дней обзора, свои заявки, настройки (резиденту). */
 const buildBootstrap = (ctx: ApiContext) => {
-    const { storage, tzOffsetMinutes, user, resident, botUsername } = ctx
+    const { storage, tzOffsetMinutes, user, resident } = ctx
     const today = todayKey(tzOffsetMinutes)
     const days = []
     for (let i = 0; i < HOSTING_DAYS_AHEAD; i++) {
@@ -272,7 +270,6 @@ const buildBootstrap = (ctx: ApiContext) => {
             isResident: resident,
             isDev: isDevUser(ctx),
         },
-        botUsername,
         todayKey: today,
         nowTime: nowTimeKey(tzOffsetMinutes),
         days,

@@ -4,7 +4,6 @@
 // перерисовку подписчиков.
 
 import { useSyncExternalStore } from 'react'
-import { setBotUsername } from './telegram'
 import { applyTheme, loadTheme, saveTheme } from './theme'
 import type { Bootstrap, Perspective, ThemeChoice } from './types'
 
@@ -97,12 +96,7 @@ export function setPerspective(p: Perspective): void {
 // --- Данные ---
 
 /** Обновление данных без навигации: экран не ремаунтится, скролл/фокус сохраняются. */
-export const setData = (data: Bootstrap): void => {
-  // Ник бота нужен в telegram.ts (deep link на карточку профиля), а импортировать оттуда
-  // стор нельзя — цикл. Поэтому проталкиваем значение на каждом обновлении данных.
-  setBotUsername(data.botUsername)
-  set({ data })
-}
+export const setData = (data: Bootstrap): void => set({ data })
 
 // --- Busy-оверлей (как в старом миниаппе: класс на body, CSS показывает #busy-overlay) ---
 

@@ -1,15 +1,11 @@
-// Мостики между миниаппом и личкой:
-//  - «Позвать в спейс»: резидент зовёт человека на конкретный день, тому приходит DM.
-//    Резиденту кладём кнопку «Приду» (сразу ставит отметку), гостю — вход в миниапп:
-//    у гостя визит это заявка со временем и одобрением, одной кнопкой её не оформить.
-//  - Карточка профиля по deep link `?start=u<id>`: у человека без @ника ссылки на профиль
-//    не существует, а `tg://user?id=` из вебвью не открывается ни в каком виде. Зато в
-//    сообщении это работает — там не ссылка, а сущность упоминания. Поэтому миниапп ведёт
-//    в чат с ботом, а бот присылает карточку, где имя тапается.
+// «Позвать в спейс»: резидент из миниаппа зовёт человека на конкретный день, тому
+// приходит DM. Резиденту в личку кладём кнопку «Приду» (сразу ставит отметку на день),
+// гостю — вход в миниапп: у гостя визит это заявка со временем и одобрением, одной
+// кнопкой её не оформить.
 
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { CallbackQueryContext, Dispatcher } from '@mtcute/dispatcher'
-import { filters, PropagationAction } from '@mtcute/dispatcher'
+import { PropagationAction } from '@mtcute/dispatcher'
 import {
     addDaysToKey,
     displayName,
@@ -119,54 +115,6 @@ export const sendHostingInvite = async (
     }
 }
 
-/** Имя человека по id из всего, что бот про него помнит (заявки, отметки, блокировки). */
-const knownPersonName = (storage: Storage, userId: number): string | null => {
-    const s = storage.get()
-    for (const r of Object.values(s.hostingRequests)) {
-        for (const u of [r.guest, r.approvedBy, r.proposal?.user]) {
-            if (u && u.userId === userId) return displayName(u.name)
-        }
-    }
-    for (const a of Object.values(s.hostingAttendance)) {
-        if (a.user.userId === userId) return displayName(a.user.name)
-    }
-    const blocked = s.blockedUsers[String(userId)]
-    return blocked ? displayName(blocked.name) : null
-}
-
-/**
- * Карточка профиля по deep link `t.me/<bot>?start=u<id>` — так миниапп открывает профиль
- * человека без @ника. Упоминание mtcute резолвит в inputUser перед отправкой: не резолвится
- * (бот никогда не видел этого человека) — честно говорим об этом вместо битого сообщения.
- * Доступно только резидентам; чужой /start пропускаем дальше, в обычное меню (menu.ts).
- */
-const registerProfileCardHandler = (
-    dp: Dispatcher,
-    client: TelegramClient,
-    storage: Storage,
-    residents: ResidentDirectory,
-): void => {
-    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('start')), async (msg) => {
-        const match = /^u(\d+)$/.exec(msg.command[1] ?? '')
-        if (!match) return PropagationAction.Continue
-        if (!msg.sender || msg.sender.type !== 'user') return PropagationAction.Continue
-        if (!(await residents.isResident(msg.sender.id))) return PropagationAction.Continue
-
-        const targetId = Number(match[1])
-        const name = html.escape(knownPersonName(storage, targetId) ?? 'Профиль')
-        try {
-            await client.resolveUser(targetId)
-        } catch {
-            await msg.answerText('Не могу открыть этот профиль: у человека нет @ника, а бот с ним ни разу не переписывался.')
-            return
-        }
-        await msg.answerText(
-            html(`👤 <a href="tg://user?id=${targetId}">${name}</a><br>Тапни по имени — откроется профиль.`),
-            { disableWebPreview: true },
-        )
-    })
-}
-
 /**
  * Кнопка «Приду» из зова: ставит отметку резидента на день и пересобирает доску.
  * Чужие callback'и пропускаем дальше (см. инвариант про PropagationAction в CLAUDE.md).
@@ -182,8 +130,6 @@ export const registerHostingInviteHandlers = (
     },
 ): void => {
     const { client, storage, residents, allowedChats, tzOffsetMinutes } = deps
-
-    registerProfileCardHandler(dp, client, storage, residents)
 
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
         if (!ctx.dataStr?.startsWith(CB_COME)) return PropagationAction.Continue
