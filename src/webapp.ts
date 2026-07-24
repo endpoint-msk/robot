@@ -11,9 +11,11 @@ import {
     attendeesForDay,
     blockUser,
     buildVisitIcs,
+    cleanName,
     clearReschedule,
     createHostingRequest,
     deleteHostingRequest,
+    displayName,
     editHostingRequest,
     HOSTING_DAYS_AHEAD,
     isBlocked,
@@ -107,7 +109,9 @@ export const validateInitData = (initData: string, botToken: string, now: Date =
     try {
         const user = JSON.parse(userRaw) as { id?: number; first_name?: string; last_name?: string; username?: string; is_bot?: boolean }
         if (typeof user.id !== 'number' || user.is_bot === true) return null
-        const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || (user.username ?? String(user.id))
+        // Имя чистим от невидимых символов сразу на входе: имя из одних zero-width/юникод-пробелов
+        // выглядит в любом списке как пустое место. Не осталось ничего — берём ник, потом id.
+        const name = cleanName([user.first_name, user.last_name].filter(Boolean).join(' ')) || (user.username ?? String(user.id))
         return { userId: user.id, username: user.username ?? null, name }
     } catch {
         return null
@@ -185,6 +189,13 @@ type ApiContext = WebappDeps & {
     res: ServerResponse
 }
 
+/**
+ * Имена чистим на выдаче, а не только на входе (см. cleanName в validateInitData):
+ * в стейте лежат заявки, заведённые до этой чистки, — иначе гость с именем из невидимых
+ * символов так и останется пустой строкой в списке.
+ */
+const userView = <T extends { name: string }>(u: T): T => ({ ...u, name: displayName(u.name) })
+
 const requestsView = (list: HostingRequest[]) =>
     list.map((r) => ({
         id: r.id,
@@ -193,9 +204,9 @@ const requestsView = (list: HostingRequest[]) =>
         purpose: r.purpose,
         status: r.status,
         createdAt: r.createdAt,
-        guest: r.guest,
-        approvedBy: r.approvedBy,
-        proposal: r.proposal ?? null,
+        guest: userView(r.guest),
+        approvedBy: r.approvedBy ? userView(r.approvedBy) : null,
+        proposal: r.proposal ? { ...r.proposal, user: userView(r.proposal.user) } : null,
         anon: r.anon === true,
     }))
 
@@ -233,7 +244,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             // дев-меню — правка и удаление). Гостям — только счётчики.
             ...(resident || isDevUser(ctx) ? { requests: requestsView(requests) } : {}),
             // Публичный список «кто придёт» — виден всем.
-            attendees: attendeesForDay(storage, dateKey),
+            attendees: attendeesForDay(storage, dateKey).map(userView),
         })
     }
     const myRequests = Object.values(storage.get().hostingRequests)

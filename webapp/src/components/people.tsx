@@ -22,7 +22,7 @@ export function Avatar({
 }: {
   user: AvatarUser
   className?: string
-  /** Тап по аватарке открывает профиль в Telegram (если есть username). */
+  /** Тап по аватарке открывает профиль в Telegram (по нику либо по id). */
   profile?: boolean
 }) {
   const [loaded, setLoaded] = useState(false)
@@ -47,7 +47,7 @@ export function Avatar({
         tappable
           ? (e) => {
               e.stopPropagation()
-              openProfile(user as User)
+              openProfile(user)
             }
           : undefined
       }

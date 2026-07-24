@@ -51,13 +51,26 @@ export function openUrl(url: string): void {
   window.open(url, '_blank', 'noopener')
 }
 
-// Профиль открывается только по юзернейму: у tg://user?id= нет гарантий (работает
-// лишь для «известных» клиенту юзеров), поэтому без юзернейма строка не тапается.
-export const hasProfile = (u: { username?: string | null } | null | undefined): boolean =>
-  Boolean(u && u.username)
+// Профиль: с ником — обычная t.me-ссылка (работает везде). Без ника t.me-ссылки на
+// человека не существует, остаётся диплинк tg://user?id=. Его openTelegramLink не
+// принимает («только t.me»), а openLink на части клиентов роняет вебвью — поэтому
+// такой URL отдаём window.open, единственный способ, который клиент прокидывает в ОС.
+// Отрицательные id — фейковые гости дев-сида, для них профиля нет.
+export const hasProfile = (u: { userId?: number; username?: string | null } | null | undefined): boolean =>
+  Boolean(u && (u.username || (u.userId != null && u.userId > 0)))
 
-export const openProfile = (u: { username: string | null }): void => {
-  if (hasProfile(u)) openUrl('https://t.me/' + u.username)
+export const openProfile = (u: { userId?: number; username?: string | null }): void => {
+  if (u.username) {
+    openUrl('https://t.me/' + u.username)
+    return
+  }
+  if (u.userId == null || u.userId <= 0) return
+  const url = 'tg://user?id=' + u.userId
+  try {
+    if (!window.open(url, '_blank')) location.href = url
+  } catch {
+    location.href = url
+  }
 }
 
 // initData не обновляется в рамках сессии, поэтому выданный доступ помним сами.

@@ -263,8 +263,39 @@ export const formatDayKey = (key: string): string => {
     return `${WEEKDAYS_SHORT[weekdayOfKey(key)]}, ${d} ${MONTHS_GENITIVE[(m ?? 1) - 1]}`
 }
 
-const guestLabel = (guest: HostingUser): string =>
-    guest.username ? `${html.escape(guest.name)} (@${guest.username})` : html.escape(guest.name)
+/**
+ * Невидимые символы, из которых состоит «пустое» имя: форматирующие (zero-width, RTL-марки),
+ * управляющие, все виды юникод-пробелов + отдельные «пробельные» буквы и символы, которые
+ * unicode-классы не ловят (hangul filler, шрифтовые пустышки, пустой брайль).
+ */
+const INVISIBLE_RE = /[\p{Cf}\p{Cc}\p{Zs}\p{Zl}\p{Zp}\u115F\u1160\u17B4\u17B5\u180E\u2800\u3164\uFFA0]/gu
+
+/** Имя без невидимых символов; '' — если после чистки ничего не осталось. */
+export const cleanName = (name: string): string => name.replace(INVISIBLE_RE, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * Имя для показа в списках. Имя в Telegram задаёт сам пользователь: пустое или собранное
+ * из невидимых символов даёт на вид пустую строку в списке — такие схлопываем в 'n/a'.
+ */
+export const displayName = (name: string): string => cleanName(name) || 'n/a'
+
+/**
+ * Имя человека для сообщения в личку: с ником — имя + @ник, без ника — text-mention
+ * (`tg://user?id=`), чтобы получателю было куда тапнуть. Упоминание mtcute перед отправкой
+ * резолвит в inputUser, и нерезолвящийся юзер уронил бы всё сообщение — поэтому проверяем
+ * заранее и молча откатываемся на простое имя. Отрицательные id — фейки дев-сида.
+ */
+const mentionLabel = async (client: TelegramClient, user: HostingUser): Promise<string> => {
+    const name = html.escape(displayName(user.name))
+    if (user.username) return `${name} (@${user.username})`
+    if (user.userId <= 0) return name
+    try {
+        await client.resolveUser(user.userId)
+        return `<a href="tg://user?id=${user.userId}">${name}</a>`
+    } catch {
+        return name
+    }
+}
 
 /** Человекочитаемый слот для сообщений: «Пт, 17 июля к 15:00». */
 const slotLabel = (dateKey: string, time: string): string => `${formatDayKey(dateKey)} к ${time}`
@@ -320,7 +351,7 @@ export const notifyResidentsAboutRequest = async (
     const residents = await listResidentIds(client, allowedChats)
     const lines = [
         `🚪 Новая заявка на визит: <b>${formatDayKey(request.dateKey)}</b> к ${request.time}${isForToday ? ' (сегодня)' : ''}.`,
-        `Гость: ${guestLabel(request.guest)}.`,
+        `Гость: ${await mentionLabel(client, request.guest)}.`,
     ]
     if (request.purpose) lines.push(`Цель: ${html.escape(request.purpose)}`)
     const text = lines.join('<br>')
@@ -360,7 +391,7 @@ export const remindAboutTodayRequests = async (
         pending.length === 1
             ? '👋 Ты в спейсе — на сегодня есть заявка без хоста:'
             : '👋 Ты в спейсе — на сегодня есть заявки без хоста:',
-        ...pending.map((r) => `• ${r.time} — ${guestLabel(r.guest)}`),
+        ...(await Promise.all(pending.map(async (r) => `• ${r.time} — ${await mentionLabel(client, r.guest)}`))),
     ]
     try {
         await client.sendText(userId, html(lines.join('<br>')), {
@@ -380,7 +411,7 @@ export const notifyGuestApproved = async (
 ): Promise<void> => {
     const approver = request.approvedBy
     if (!approver) return
-    const who = approver.username ? `${approver.name} (@${approver.username})` : approver.name
+    const who = await mentionLabel(client, approver)
     const text = `✅ Ваш визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time} подтверждён!<br>Вас хостит ${who}.`
     try {
         await client.sendText(request.guest.userId, html(text), {
@@ -416,7 +447,7 @@ export const notifyApproverCancelled = async (
 ): Promise<void> => {
     const approver = request.approvedBy
     if (!approver) return
-    const text = `Гость ${guestLabel(request.guest)} отменил визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time}.`
+    const text = `Гость ${await mentionLabel(client, request.guest)} отменил визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time}.`
     try {
         await client.sendText(approver.userId, html(text), { disableWebPreview: true })
     } catch {
@@ -436,7 +467,7 @@ export const notifyGuestReschedule = async (
 ): Promise<void> => {
     const p = request.proposal
     if (!p) return
-    const who = p.user.username ? `${p.user.name} (@${p.user.username})` : p.user.name
+    const who = await mentionLabel(client, p.user)
     const text = `🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Открой «Мои визиты», чтобы принять или предложить свой вариант.`
     try {
         await client.sendText(request.guest.userId, html(text), {
@@ -457,7 +488,7 @@ export const notifyResidentRescheduleCountered = async (
 ): Promise<void> => {
     const p = request.proposal
     if (!p) return
-    const text = `🕘 Гость ${guestLabel(request.guest)} предлагает <b>${slotLabel(p.dateKey, p.time)}</b> (было ${slotLabel(request.dateKey, request.time)}).<br>Открой заявки, чтобы принять или предложить другое.`
+    const text = `🕘 Гость ${await mentionLabel(client, request.guest)} предлагает <b>${slotLabel(p.dateKey, p.time)}</b> (было ${slotLabel(request.dateKey, request.time)}).<br>Открой заявки, чтобы принять или предложить другое.`
     try {
         await client.sendText(recipientId, html(text), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
@@ -479,7 +510,7 @@ export const notifyProposalAccepted = async (
     const slot = slotLabel(request.dateKey, request.time)
     const text = targetIsGuest
         ? `✅ Резидент принял ваш вариант — визит <b>${slot}</b>.`
-        : `✅ Гость ${guestLabel(request.guest)} принял новый слот — визит <b>${slot}</b>.`
+        : `✅ Гость ${await mentionLabel(client, request.guest)} принял новый слот — визит <b>${slot}</b>.`
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {
@@ -776,7 +807,7 @@ export const buildVisitIcs = (
     if (request.purpose) description.push(request.purpose)
     if (request.approvedBy) {
         const a = request.approvedBy
-        description.push(`Хостит: ${a.name}${a.username ? ` (@${a.username})` : ''}`)
+        description.push(`Хостит: ${displayName(a.name)}${a.username ? ` (@${a.username})` : ''}`)
     }
 
     const lines = [

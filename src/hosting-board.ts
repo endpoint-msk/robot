@@ -2,6 +2,8 @@ import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
     attendeesForDay,
+    type DayAttendee,
+    displayName,
     formatDayKey,
     HOSTING_DAYS_AHEAD,
     requestsForDay,
@@ -33,6 +35,17 @@ const escapeHtml = (s: string): string =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /**
+ * Имя участника в списке. С ником — t.me-ссылка. Без ника ссылки на человека не сделать:
+ * text-mention (`tg://user?id=`) тапался бы, но это настоящее упоминание — оно пингует
+ * человека при каждой публикации доски, а доска не повод дёргать. Поэтому просто имя;
+ * пустое/из невидимых символов схлопывается в 'n/a' (см. displayName).
+ */
+const attendeeLabel = (a: DayAttendee): string =>
+    a.username
+        ? `<a href="https://t.me/${encodeURIComponent(a.username)}">@${a.username}</a>`
+        : escapeHtml(displayName(a.name))
+
+/**
  * В дне есть активность, ради которой заводится доска: подтверждённый визит, отметка
  * резидента «я приду» или (только для сегодня) кто-то отмечен внутри спейса.
  */
@@ -55,7 +68,7 @@ export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): st
  * Текст доски за конкретный день: кто сейчас внутри (блок «Сейчас в спейсе», только
  * для сегодня), кто придёт (резиденты «я приду» + подтверждённые гости без анонимных)
  * и общее число заявок. Ники — t.me-ссылки (текст-ссылка не пингует упомянутого),
- * имена без ника — экранируем. Собираем через `<br>`.
+ * имена без ника — просто текст (см. attendeeLabel). Собираем через `<br>`.
  */
 export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMinutes: number): string => {
     const isToday = dateKey === todayKey(tzOffsetMinutes)
@@ -78,11 +91,8 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     if (attendees.length > 0) {
         lines.push('<b>Придут:</b>')
         for (const a of attendees) {
-            const who = a.username
-                ? `<a href="https://t.me/${encodeURIComponent(a.username)}">@${a.username}</a>`
-                : escapeHtml(a.name)
             const mark = a.resident ? ' (резидент)' : a.time ? ` к ${a.time}` : ''
-            lines.push(`• ${who}${mark}`)
+            lines.push(`• ${attendeeLabel(a)}${mark}`)
         }
     } else {
         lines.push('Пока никого в открытом списке.')
