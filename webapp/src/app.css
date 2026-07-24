@@ -404,6 +404,7 @@ body {
     cursor: pointer;
 }
 .host-btn:active { opacity: 0.6; }
+.host-btn[disabled] { opacity: 0.5; }
 .waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.5); flex-shrink: 0; }
 
 /* --- Перенос времени (резидент ↔ гость) --- */

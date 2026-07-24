@@ -2,7 +2,7 @@ import { action } from '../api'
 import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { haptic } from '../telegram'
-import { useParams, useStore } from '../store'
+import { push, useParams, useStore } from '../store'
 import type { HostingRequest } from '../types'
 import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
@@ -48,6 +48,12 @@ export function Day() {
         >
           {iAmComing ? icons.check(15, '#fff', 2.6) : null}
           {iAmComing ? 'Вы придёте в этот день' : 'Я приду'}
+        </button>
+      ) : null}
+      {!archive ? (
+        <button className="secondary-btn" style={{ marginTop: 10 }} onClick={() => push('invite', { dateKey: params.dateKey })}>
+          {icons.personPlus()}
+          Позвать в спейс
         </button>
       ) : null}
       {!archive && residentsComing.length > 0 ? (

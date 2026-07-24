@@ -99,6 +99,13 @@ export const icons = {
       <path d="M13 5.2a2.4 2.4 0 0 1 0 4.6M14.5 15.5c0-2.2-1.2-3.6-3-4" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  personPlus: (): ReactElement => (
+    <svg width="19" height="19" viewBox="0 0 20 20">
+      <circle cx="8" cy="6.3" r="2.8" fill="none" stroke="#007aff" strokeWidth="1.7" />
+      <path d="M2.8 16c0-2.6 2.2-4.3 5.2-4.3 0.9 0 1.8.2 2.5.5" fill="none" stroke="#007aff" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M15 11.5v5.2M12.4 14.1h5.2" stroke="#007aff" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
   pencil: (): ReactElement => (
     <svg width="17" height="17" viewBox="0 0 20 20">
       <path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" fill="none" stroke="#007aff" strokeWidth="1.7" strokeLinejoin="round" />

@@ -10,6 +10,7 @@ import { tg } from './telegram'
 import { AnimContext } from './components/Screen'
 import { Overview } from './screens/Overview'
 import { Day } from './screens/Day'
+import { Invite } from './screens/Invite'
 import { Archive } from './screens/Archive'
 import { ArchiveWeek } from './screens/ArchiveWeek'
 import { Settings } from './screens/Settings'
@@ -26,6 +27,7 @@ import { Announce } from './screens/Announce'
 const SCREENS: Record<ScreenName, ComponentType> = {
   overview: Overview,
   day: Day,
+  invite: Invite,
   archive: Archive,
   archiveWeek: ArchiveWeek,
   settings: Settings,

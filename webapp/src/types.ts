@@ -50,6 +50,18 @@ export type Attendee = {
   time: string | null
 }
 
+/** Кандидат из списка «кого позвать в спейс» (резидент или гость из заявок). */
+export type InviteCandidate = {
+  userId: number
+  name: string
+  username: string | null
+  resident: boolean
+  /** Уже придёт: отметился «я приду» или у него есть заявка на этот день. */
+  attending: boolean
+}
+
+export type InviteListResponse = { people: InviteCandidate[] }
+
 export type Day = {
   dateKey: string
   total: number

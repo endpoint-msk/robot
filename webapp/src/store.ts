@@ -10,6 +10,7 @@ import type { Bootstrap, Perspective, ThemeChoice } from './types'
 export type ScreenName =
   | 'overview'
   | 'day'
+  | 'invite'
   | 'archive'
   | 'archiveWeek'
   | 'settings'

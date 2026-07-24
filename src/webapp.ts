@@ -39,6 +39,7 @@ import {
     updateHostingRequest,
     weekStartOf,
 } from './hosting.js'
+import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
 import { syncHostingBoard } from './hosting-board.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
@@ -378,6 +379,43 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Кого можно позвать в спейс на день: резиденты + гости из заявок.
+        case 'invite.list': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const people = await listInviteCandidates(client, storage, allowedChats, dateKey, user.userId)
+            sendJson(res, 200, { people })
+            return
+        }
+
+        // Зов в личку. Стейт не меняется — отвечаем коротким ok, а не bootstrap'ом.
+        case 'invite': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const targetId = typeof body.userId === 'number' ? body.userId : 0
+            const candidates = await listInviteCandidates(client, storage, allowedChats, dateKey, user.userId)
+            const target = candidates.find((c) => c.userId === targetId)
+            if (!target) {
+                sendError(res, 404, 'not_found', 'Этого человека больше нет в списке — обнови экран.')
+                return
+            }
+            const sent = await sendHostingInvite(
+                client, storage, residents, tzOffsetMinutes, config.publicUrl, dateKey, target, user,
+            )
+            if (!sent.ok) {
+                const messages = {
+                    bad_date: 'Позвать можно только на ближайшую неделю.',
+                    blocked: 'Этот участник заблокирован.',
+                    self: 'Себя звать не нужно — просто отметься «я приду».',
+                    dm_closed: 'Не смог написать ему в личку: он не открывал чат с ботом.',
+                } as const
+                sendError(res, sent.error === 'dm_closed' ? 409 : 400, sent.error, messages[sent.error])
+                return
+            }
+            sendJson(res, 200, { ok: true })
             return
         }
 

@@ -18,6 +18,7 @@ import {
     startPresenceScheduler,
 } from './presence.js'
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
+import { registerHostingInviteHandlers } from './hosting-invite.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
@@ -126,6 +127,10 @@ const main = async () => {
     registerChatActivityTracker(dp, storage, allowedChats)
     registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl: webappConfig?.publicUrl ?? null })
     registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl: webappConfig?.publicUrl ?? null })
+    // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
+    if (webappConfig !== null) {
+        registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
+    }
     if (printerUrl !== null) {
         registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)

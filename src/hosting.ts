@@ -311,27 +311,54 @@ const hasOtherRequestOnDay = (storage: Storage, guestUserId: number, dateKey: st
 // ---------------------------------------------------------------------------
 
 /**
- * Собирает userId всех резидентов: админы (и создатели) каждого allowlist-чата,
- * кроме ботов. Живой запрос без кэша — как и остальные админ-проверки.
+ * Все резиденты с именами: админы (и создатели) каждого allowlist-чата, кроме ботов.
+ * Живой запрос без кэша — как и остальные админ-проверки. Дубли между чатами схлопываем
+ * по userId (первое вхождение выигрывает).
  */
-export const listResidentIds = async (
+export const listResidents = async (
     client: TelegramClient,
     allowedChats: ReadonlySet<number>,
-): Promise<Set<number>> => {
-    const out = new Set<number>()
+): Promise<HostingUser[]> => {
+    const out = new Map<number, HostingUser>()
     for (const chatId of allowedChats) {
         try {
             const members = await client.getChatMembers(chatId, { type: 'admins' })
             for (const m of members) {
                 if (m.status !== 'admin' && m.status !== 'creator') continue
                 if (m.user.type !== 'user' || m.user.isBot) continue
-                out.add(m.user.id)
+                if (out.has(m.user.id)) continue
+                out.set(m.user.id, {
+                    userId: m.user.id,
+                    username: m.user.username ?? null,
+                    name: displayName(m.user.displayName),
+                })
             }
         } catch (err) {
             console.warn(`[hosting] не удалось получить админов чата ${chatId}:`, err)
         }
     }
-    return out
+    return [...out.values()]
+}
+
+/** Только userId резидентов — для рассылок, где имена не нужны. */
+export const listResidentIds = async (
+    client: TelegramClient,
+    allowedChats: ReadonlySet<number>,
+): Promise<Set<number>> => new Set((await listResidents(client, allowedChats)).map((r) => r.userId))
+
+/**
+ * Гости, которых бот вообще знает: авторы заявок (включая архивные — заявки не чистятся).
+ * Заблокированные и фейки дев-сида (отрицательный id) не попадают. Имя берём из самой
+ * свежей заявки: человек мог сменить его с прошлого визита.
+ */
+export const listKnownGuests = (storage: Storage): HostingUser[] => {
+    const out = new Map<number, HostingUser>()
+    const byDate = Object.values(storage.get().hostingRequests).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    for (const r of byDate) {
+        if (r.guest.userId <= 0 || isBlocked(storage, r.guest.userId)) continue
+        out.set(r.guest.userId, { ...r.guest, name: displayName(r.guest.name) })
+    }
+    return [...out.values()]
 }
 
 /**
