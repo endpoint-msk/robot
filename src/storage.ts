@@ -83,6 +83,7 @@ export class Storage {
                 announceMuted: parsed.announceMuted ?? {},
                 lastAnnouncedVersion: typeof parsed.lastAnnouncedVersion === 'string' ? parsed.lastAnnouncedVersion : '',
                 blockedUsers: parsed.blockedUsers ?? {},
+                backups: parsed.backups ?? {},
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -98,6 +99,16 @@ export class Storage {
         return this.state
     }
 
+    /** Путь к файлу хранилища — нужен для имени файла бэкапа. */
+    path(): string {
+        return this.file
+    }
+
+    /** Снимок стейта ровно в том виде, в каком он ложится на диск. */
+    snapshot(): string {
+        return JSON.stringify(this.state, null, 2)
+    }
+
     /** Изменяет стейт через `mutator` и атомарно сохраняет. Запись сериализуется через цепочку промисов. */
     update(mutator: (s: State) => void): Promise<void> {
         mutator(this.state)
@@ -105,7 +116,7 @@ export class Storage {
     }
 
     private flush(): Promise<void> {
-        const snapshot = JSON.stringify(this.state, null, 2)
+        const snapshot = this.snapshot()
         const target = this.file
         const tmp = `${target}.tmp`
         const next = this.writeChain.then(async () => {

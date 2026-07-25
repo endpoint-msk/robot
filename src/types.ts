@@ -70,6 +70,25 @@ export type State = {
     lastAnnouncedVersion: string
     /** Заблокированные участники (бан во всех allowlist-чатах + отказ в миниаппе). Ключ — userId. */
     blockedUsers: Record<string, BlockedUser>
+    /** Расписания авто-бэкапа хранилища по чатам (ключ — chatId как строка). Включает дев через /autobackup. */
+    backups: Record<string, BackupSchedule>
+}
+
+/** Единица интервала авто-бэкапа. `m` — календарный месяц, НЕ минуты. */
+export type BackupUnit = 'h' | 'd' | 'w' | 'm'
+
+/** Расписание отправки бэкапа хранилища в конкретный чат. */
+export type BackupSchedule = {
+    chatId: number
+    /** Раз в `value` единиц `unit`. */
+    value: number
+    unit: BackupUnit
+    /** Когда должен уйти следующий бэкап (ISO). */
+    nextAt: string
+    /** Когда ушёл последний (ISO). null — ещё ни разу. */
+    lastSentAt: string | null
+    /** userId дева, включившего расписание. */
+    by: number
 }
 
 /** Закреплённое сообщение-доска хостинга в чате: одно на календарный день (пояс спейса). */
@@ -220,4 +239,5 @@ export const emptyState = (): State => ({
     announceMuted: {},
     lastAnnouncedVersion: '',
     blockedUsers: {},
+    backups: {},
 })

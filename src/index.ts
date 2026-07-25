@@ -19,6 +19,7 @@ import {
 } from './presence.js'
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
+import { registerBackupHandlers, startBackupScheduler } from './backup.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
@@ -130,6 +131,10 @@ const main = async () => {
     // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
     if (webappConfig !== null) {
         registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
+    }
+    // Дев-команды бэкапа стейта: /backup (разово) и /autobackup <интервал> (по расписанию).
+    if (devUserIds.size > 0) {
+        registerBackupHandlers(dp, { client: tg, storage, devUserIds, allowedChats })
     }
     if (printerUrl !== null) {
         registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
@@ -250,6 +255,9 @@ const main = async () => {
 
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
+    // Шедулер бэкапов поднимаем всегда: расписания лежат в стейте и переживают рестарт,
+    // даже если DEV_USER_IDS временно пуст (иначе включённый бэкап тихо перестал бы ходить).
+    const backups = startBackupScheduler(tg, storage)
     const presence = startPresenceScheduler(tg, storage, residents)
     // Доска «кто сегодня в спейсе» — часть подсистемы хостинга: только при включённом миниаппе.
     const hostingBoard = webappConfig !== null
@@ -287,6 +295,7 @@ const main = async () => {
     const shutdown = async () => {
         scheduler.stop()
         dailyPoster.stop()
+        backups.stop()
         presence.stop()
         hostingBoard?.stop()
         printerWatcher?.stop()
