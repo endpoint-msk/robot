@@ -1048,7 +1048,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                         .end('Ссылка устарела — открой миниапп заново.')
                     return
                 }
-                if (isBlocked(deps.storage, user.userId)) {
+                if (isBlocked(deps.storage, user.userId) || (await deps.residents.access(user.userId)).banned) {
                     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
                     return
                 }
@@ -1128,11 +1128,14 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     return
                 }
                 // Заблокированный участник не имеет доступа к миниаппу — глухой отказ.
-                if (isBlocked(deps.storage, user.userId)) {
+                // Источников бана два: своя запись в blockedUsers (блокировка из миниаппа)
+                // и живой статус в allowlist-чатах — забаненного руками в Телеграме, минуя
+                // миниапп, в blockedUsers нет, но внутрь его пускать всё равно нельзя.
+                const { resident, banned } = await deps.residents.access(user.userId)
+                if (banned || isBlocked(deps.storage, user.userId)) {
                     sendError(res, 403, 'blocked', 'Доступ закрыт.')
                     return
                 }
-                const resident = await deps.residents.isResident(user.userId)
                 const method = pathname.slice('/api/'.length).replace(/\/+$/, '').replaceAll('/', '.')
                 await handleApi({ ...deps, user, resident, body, res }, method)
                 return
