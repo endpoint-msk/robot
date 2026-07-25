@@ -202,6 +202,7 @@ const main = async () => {
         BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
+        BotCommands.cmd('history', 'Прошлые сборы: /history [период]'),
         BotCommands.cmd('goalsmute', 'Вкл/выкл автоотправку сбора в этот чат'),
         BotCommands.cmd('donate', 'Добавить донат: /donate <сумма> <ник>'),
         BotCommands.cmd('remove', 'Удалить донат: /remove <номер|ник> [сумма]'),
@@ -219,6 +220,7 @@ const main = async () => {
         BotCommands.cmd('komanda', 'команда'),
         BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
+        BotCommands.cmd('history', 'Прошлые сборы: /history [период]'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]
     try {

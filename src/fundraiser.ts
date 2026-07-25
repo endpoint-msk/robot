@@ -78,6 +78,12 @@ export const displayPeriodOf = (year: number, month: number, resetDay: number): 
     return month >= 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }
 }
 
+/** Подпись периода для показа: «Июнь 2026» (день сброса берётся из ключа сбора). */
+export const fundraiserPeriodLabel = (f: Fundraiser): string => {
+    const disp = displayPeriodOf(f.year, f.month, resetDayFromKey(f.periodKey))
+    return `${monthNameRu(disp.month)} ${disp.year}`
+}
+
 export const createFundraiser = (
     year: number,
     month: number,
@@ -216,8 +222,7 @@ export const renderFundraiser = (
     const page = clampPage(requestedPage, pages)
     const closed = f.goal > 0 && total >= f.goal
 
-    const disp = displayPeriodOf(f.year, f.month, resetDayFromKey(f.periodKey))
-    const header = `Сбор на ${escapeHtml(f.title)} за ${monthNameRu(disp.month)} ${disp.year}.`
+    const header = `Сбор на ${escapeHtml(f.title)} за ${fundraiserPeriodLabel(f)}.`
     const bar = renderProgressBar(total, f.goal)
 
     const lines: string[] = [header, bar]
@@ -258,6 +263,33 @@ export const renderFundraiser = (
         lines.push('', ...descLines)
     }
     return { text: lines.join('<br>'), page, pages, closed }
+}
+
+/**
+ * Завершённые сборы, свежие сверху: без текущего периода и без пустых.
+ * Пустые отсекаем намеренно — период заводится автоматически при первом обращении,
+ * и месяц без единого доната в истории только шумит.
+ */
+export const pastFundraisers = (all: Fundraiser[], currentKey: string): Fundraiser[] =>
+    all
+        .filter((f) => f.periodKey !== currentKey && f.donations.length > 0)
+        .sort((a, b) => b.periodKey.localeCompare(a.periodKey))
+
+/** Список прошлых сборов: период, итог, цель и отметка «цель взята». */
+export const renderHistoryList = (past: Fundraiser[], truncated = false): string => {
+    if (past.length === 0) return 'Прошлых сборов пока нет.'
+    const lines = ['История сборов:', '']
+    for (const f of past) {
+        const total = totalAmount(f)
+        const goalSuffix = f.goal > 0 ? ` из ${formatAmount(f.goal)}${f.currency}` : ''
+        const done = f.goal > 0 && total >= f.goal ? ' ✅' : ''
+        lines.push(`${fundraiserPeriodLabel(f)} — ${formatAmount(total)}${f.currency}${goalSuffix}${done}`)
+    }
+    lines.push('')
+    // Текст уходит через html(): угловые скобки в подсказке дали бы «тег», поэтому пример без них.
+    if (truncated) lines.push('Показаны только последние периоды. Остальные — командой вида /history 2026-06.')
+    lines.push('Открыть сбор целиком — кнопкой ниже.')
+    return lines.join('<br>')
 }
 
 /** Экранирует поле по RFC 4180: оборачивает в кавычки, если есть `,`, `"`, перенос или крайние пробелы. */

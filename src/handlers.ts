@@ -4,14 +4,17 @@ import {
     buildDonationsCsv,
     buildLeaderboard,
     createFundraiser,
+    fundraiserPeriodLabel,
     isAnonNick,
     ANON_LABEL,
     parseDonateArgs,
     parseRemoveArgs,
+    pastFundraisers,
     periodAnchorOf,
     periodKeyOf,
     previousPeriodKey,
     renderFundraiser,
+    renderHistoryList,
     totalPages,
     clampPage,
     clampResetDay,
@@ -25,6 +28,12 @@ import type { Fundraiser, State } from './types.js'
 
 const REFRESH_CALLBACK = 'fundraiser:refresh'
 const PAGE_CALLBACK_PREFIX = 'fundraiser:page:'
+/** Возврат к списку истории. */
+const HISTORY_LIST_CALLBACK = 'fundraiser:history'
+/** Открытый сбор из истории: `fundraiser:history:<periodKey>:<page>` (в ключе только цифры и дефисы). */
+const HISTORY_OPEN_PREFIX = 'fundraiser:history:'
+/** Сколько периодов показываем в списке истории; остальные — по `/history <период>`. */
+const HISTORY_LIMIT = 12
 
 export type AllowedChats = Set<number>
 
@@ -55,6 +64,42 @@ const buildKeyboard = (page: number, pages: number) => {
     // Возвращаем undefined, чтобы сообщение ушло вообще без разметки.
     if (rows.length === 0) return undefined
     return BotKeyboard.inline(rows)
+}
+
+/** Кнопки списка истории: по кнопке на период, свежие сверху, по две в ряд. */
+const historyListKeyboard = (past: Fundraiser[]) => {
+    const rows: ReturnType<typeof BotKeyboard.callback>[][] = []
+    for (let i = 0; i < past.length; i += 2) {
+        rows.push(
+            past.slice(i, i + 2).map((f) =>
+                BotKeyboard.callback(fundraiserPeriodLabel(f), `${HISTORY_OPEN_PREFIX}${f.periodKey}:1`),
+            ),
+        )
+    }
+    if (rows.length === 0) return undefined
+    return BotKeyboard.inline(rows)
+}
+
+/** Клавиатура открытого сбора из истории: пагинация лидерборда + возврат к списку. */
+const historyEntryKeyboard = (periodKey: string, page: number, pages: number) => {
+    const rows: ReturnType<typeof BotKeyboard.callback>[][] = []
+    if (pages > 1) {
+        const prev = page > 1 ? page - 1 : pages
+        const next = page < pages ? page + 1 : 1
+        rows.push([
+            BotKeyboard.callback('◀️', `${HISTORY_OPEN_PREFIX}${periodKey}:${prev}`),
+            BotKeyboard.callback(`${page}/${pages}`, `${HISTORY_OPEN_PREFIX}${periodKey}:${page}`),
+            BotKeyboard.callback('▶️', `${HISTORY_OPEN_PREFIX}${periodKey}:${next}`),
+        ])
+    }
+    rows.push([BotKeyboard.callback('⬅️ К списку', HISTORY_LIST_CALLBACK)])
+    return BotKeyboard.inline(rows)
+}
+
+/** Прошлые сборы (свежие сверху) на момент вызова. */
+const historyOf = (storage: Storage, now: Date = new Date()): Fundraiser[] => {
+    const state = storage.get()
+    return pastFundraisers(Object.values(state.fundraisers), periodKeyOf(now, state.resetDay))
 }
 
 /** Самый поздний из уже существующих сборов (по periodKey). undefined — если сборов ещё нет. */
@@ -220,6 +265,8 @@ export const registerHandlers = (
                 '',
                 'Сборы донатов:',
                 '/goals — показать текущий сбор (доступно всем участникам)',
+                '/history — прошлые сборы: список периодов с итогами, по кнопке — полный лидерборд',
+                '/history <период> — сразу открыть сбор за период, например: /history 2026-06',
                 '',
                 'Управление сбором (только админы):',
                 '/goalsmute — вкл/выкл автоотправку сбора в этот чат (00:00 и 12:00 по МСК)',
@@ -285,6 +332,40 @@ export const registerHandlers = (
             disableWebPreview: true,
         })
         await rememberLastMessage(storage, Number(msg.chat.id), sent.id, f.periodKey)
+    })
+
+    // /history [период] — прошлые сборы. Без аргумента — список периодов с кнопками,
+    // с аргументом (`2026-06` или `2026-06-25` для нестандартного дня сброса) — сразу сбор.
+    // Сообщение НЕ запоминается как «последнее со сбором»: иначе шедулер смены периода
+    // перерисовал бы историю в текущий сбор.
+    dp.onNewMessage(filters.command('history'), async (msg) => {
+        if (!(await requireUserInAllowedChat(msg, allowedChats))) return
+        const past = historyOf(storage)
+        const arg = (msg.command[1] ?? '').trim()
+
+        if (arg) {
+            if (!/^\d{4}-\d{2}(-\d{2})?$/.test(arg)) {
+                await msg.answerText('Период указывается как 2026-06 (год-месяц). Список прошлых сборов — /history без аргументов.')
+                return
+            }
+            const f = past.find((x) => x.periodKey === arg || x.periodKey.startsWith(arg + '-'))
+            if (!f) {
+                await msg.answerText(`Не нашёл сбор за ${arg}. Список прошлых сборов — /history без аргументов.`)
+                return
+            }
+            const rendered = renderFundraiser(f, 1)
+            await msg.answerText(html(rendered.text), {
+                replyMarkup: historyEntryKeyboard(f.periodKey, rendered.page, rendered.pages),
+                disableWebPreview: true,
+            })
+            return
+        }
+
+        const shown = past.slice(0, HISTORY_LIMIT)
+        await msg.answerText(html(renderHistoryList(shown, past.length > shown.length)), {
+            replyMarkup: historyListKeyboard(shown),
+            disableWebPreview: true,
+        })
     })
 
     // /export [all] — выгрузка донатов в CSV. Без аргумента — текущий сбор, `all` — все сборы.
@@ -515,6 +596,60 @@ export const registerHandlers = (
             await msg.answerText(`Удалил: @${removed.nick} — ${removed.amount}${f.currency}.`)
         }
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
+    })
+
+    // История сборов: список ↔ конкретный сбор с пагинацией лидерборда.
+    dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
+        const data = ctx.dataStr
+        if (data === null) return PropagationAction.Continue
+        const isList = data === HISTORY_LIST_CALLBACK
+        const isOpen = data.startsWith(HISTORY_OPEN_PREFIX)
+        if (!isList && !isOpen) return PropagationAction.Continue
+
+        const chatId = Number(ctx.chat.id)
+        if (!isAllowedChat(allowedChats, chatId)) {
+            await ctx.answer({ text: 'Бот в этой группе не работает.', alert: true })
+            return
+        }
+
+        const past = historyOf(storage)
+        let text: string
+        let replyMarkup: ReturnType<typeof BotKeyboard.inline> | undefined
+        let answer: string
+        if (isList) {
+            const shown = past.slice(0, HISTORY_LIMIT)
+            text = renderHistoryList(shown, past.length > shown.length)
+            replyMarkup = historyListKeyboard(shown)
+            answer = 'История сборов'
+        } else {
+            // `<periodKey>:<page>` — ключ сам содержит дефисы, но не двоеточия.
+            const rest = data.slice(HISTORY_OPEN_PREFIX.length)
+            const sep = rest.lastIndexOf(':')
+            const periodKey = sep < 0 ? rest : rest.slice(0, sep)
+            const f = past.find((x) => x.periodKey === periodKey)
+            if (!f) {
+                await ctx.answer({ text: 'Этот сбор больше недоступен.', alert: true })
+                return
+            }
+            const requested = sep < 0 ? 1 : Number(rest.slice(sep + 1))
+            const pages = totalPages(buildLeaderboard(f))
+            const rendered = renderFundraiser(f, clampPage(Number.isFinite(requested) ? requested : 1, pages))
+            text = rendered.text
+            replyMarkup = historyEntryKeyboard(f.periodKey, rendered.page, rendered.pages)
+            answer = pages > 1 ? `Страница ${rendered.page}` : fundraiserPeriodLabel(f)
+        }
+
+        try {
+            await ctx.editMessage({ text: html(text), replyMarkup, disableWebPreview: true })
+            await ctx.answer({ text: answer })
+        } catch (err) {
+            const msg = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
+            if (/MESSAGE_NOT_MODIFIED/i.test(msg)) {
+                await ctx.answer({ text: 'Уже актуально' })
+                return
+            }
+            throw err
+        }
     })
 
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
