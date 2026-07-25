@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { TelegramClient } from '@mtcute/node'
 import {
     acceptReschedule,
+    acceptRules,
     addDaysToKey,
     archiveWeeks,
     attendeesForDay,
@@ -17,10 +18,13 @@ import {
     deleteHostingRequest,
     displayName,
     editHostingRequest,
+    hasAcceptedRules,
     HOSTING_DAYS_AHEAD,
     isBlocked,
     isValidDayKey,
     listBlockedUsers,
+    listGuestNotes,
+    MAX_NOTE_LENGTH,
     nowTimeKey,
     notifyApproverCancelled,
     notifyGuestApproved,
@@ -34,6 +38,7 @@ import {
     notifyResidentRescheduleCountered,
     proposeReschedule,
     requestsForDay,
+    setGuestNote,
     setResidentAttendance,
     todayKey,
     unblockUser,
@@ -270,12 +275,18 @@ const buildBootstrap = (ctx: ApiContext) => {
             name: user.name,
             isResident: resident,
             isDev: isDevUser(ctx),
+            // Правила спейса гость принимает один раз, перед первой заявкой (см. `rules.accept`).
+            acceptedRules: hasAcceptedRules(storage, user.userId),
         },
         todayKey: today,
         nowTime: nowTimeKey(tzOffsetMinutes),
         days,
         myRequests: requestsView(myRequests),
         settings,
+        // Заметки о гостях — общая память резидентов, гостю их не показываем (в т.ч.
+        // заметку о нём самом). Отдаём разом все: их единицы, а строка заявки с иконкой
+        // «есть заметка» встречается и в архиве, который грузится отдельным запросом.
+        ...(resident ? { notes: listGuestNotes(storage).map((n) => ({ ...n, by: userView(n.by) })) } : {}),
         // Список заблокированных с разблокировкой — только в дев-меню.
         ...(isDevUser(ctx) ? { blocked: listBlockedUsers(storage) } : {}),
     }
@@ -313,7 +324,20 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // Согласие с правилами спейса. Идемпотентно: повторный вызов просто обновляет запись.
+        case 'rules.accept': {
+            await acceptRules(storage, user.userId)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
         case 'create': {
+            // Гейт правил стоит на сервере, а не только в навигации миниаппа: экран согласия
+            // фронт может и обойти, а заявка без принятых правил не должна заводиться.
+            if (!hasAcceptedRules(storage, user.userId)) {
+                sendError(res, 403, 'rules_required', 'Сначала примите правила спейса.')
+                return
+            }
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const time = typeof body.time === 'string' ? body.time : ''
             const purpose = typeof body.purpose === 'string' ? body.purpose : ''
@@ -766,6 +790,24 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             await blockUser(client, storage, allowedChats, request.guest, user)
             syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Заметка о госте: одна на человека, общая для резидентов. Пустой текст стирает её.
+        case 'note.set': {
+            if (!requireResident()) return
+            const targetId = typeof body.userId === 'number' ? body.userId : Number(body.userId)
+            const text = typeof body.text === 'string' ? body.text : ''
+            if (!Number.isSafeInteger(targetId) || targetId === 0) {
+                sendError(res, 400, 'bad_user', 'Некорректный участник.')
+                return
+            }
+            if (text.length > MAX_NOTE_LENGTH) {
+                sendError(res, 400, 'too_long', `Заметка не должна быть длиннее ${MAX_NOTE_LENGTH} символов.`)
+                return
+            }
+            await setGuestNote(storage, targetId, text, user)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }

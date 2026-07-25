@@ -42,6 +42,14 @@ export type BlockedUser = {
   at: string
 }
 
+/** Заметка резидентов о госте: одна на человека, общая — правит любой резидент. */
+export type GuestNote = {
+  userId: number
+  text: string
+  by: User
+  updatedAt: string
+}
+
 export type Attendee = {
   userId: number
   name: string
@@ -87,6 +95,8 @@ export type Me = {
   name: string
   isResident: boolean
   isDev: boolean
+  /** Согласился с правилами спейса: спрашивается один раз, перед первой заявкой. */
+  acceptedRules: boolean
 }
 
 export type Bootstrap = {
@@ -101,6 +111,8 @@ export type Bootstrap = {
   request?: HostingRequest
   /** Список заблокированных — только dev-аккаунтам (для дев-меню). */
   blocked?: BlockedUser[]
+  /** Заметки о гостях — только резидентам; гостю (в т.ч. о нём самом) не приходят. */
+  notes?: GuestNote[]
 }
 
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }

@@ -7,7 +7,7 @@ import { fmtShortDate } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
 import { confirmDialog, reschedulePrompt } from '../modals'
-import { useStore } from '../store'
+import { push, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
 import type { HostingRequest, RescheduleProposal } from '../types'
@@ -76,8 +76,13 @@ async function blockGuest(r: HostingRequest): Promise<void> {
 }
 
 export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?: boolean }) {
-  const me = useStore().data!.me
+  const data = useStore().data!
+  const me = data.me
   const p = r.proposal
+  // Заметки приходят только резидентам (см. bootstrap) — гостю тут всегда пусто.
+  const guestNote = (data.notes || []).find((n) => n.userId === r.guest.userId) || null
+  // Строка заявки живёт только на экране дня (живого или архивного) — туда и возвращаемся.
+  const openNote = (): void => push('guestNote', { guest: r.guest, backLabel: 'День' })
 
   // Перенос и блокировка живут в свайпе (см. SwipeRow), в строке их кнопок нет.
   let canReschedule = false
@@ -152,22 +157,48 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       </div>
     ) : null
 
+  // Действия свайпа — иконками: подписи втроём занимали почти всю ширину строки.
   const swipeActions: SwipeAction[] = []
+  // Заметка о госте — общая память резидентов; в архиве тоже доступна: заметка живёт
+  // отдельно от заявки, и дописать её после визита осмысленно.
+  if (me.isResident) {
+    swipeActions.push({ key: 'note', label: 'Заметка', icon: icons.note(21, '#fff'), tone: 'neutral', onSelect: openNote })
+  }
   if (canReschedule) {
-    swipeActions.push({ key: 'reschedule', label: 'Перенести', onSelect: () => proposeRescheduleFor(r) })
+    swipeActions.push({
+      key: 'reschedule',
+      label: 'Перенести',
+      icon: icons.clock(21, '#fff'),
+      onSelect: () => proposeRescheduleFor(r),
+    })
   }
   // Блокировать гостя вправе любой резидент, но не в архиве (там только чтение).
   if (me.isResident && !archive) {
-    swipeActions.push({ key: 'block', label: 'Заблокировать', tone: 'red', onSelect: () => blockGuest(r) })
+    swipeActions.push({ key: 'block', label: 'Заблокировать', icon: icons.ban(21, '#fff'), tone: 'red', onSelect: () => blockGuest(r) })
   }
 
   const top = (
     <div className="req-top">
       <Avatar user={r.guest} className="req-avatar" profile />
       <div className="req-main">
-        <Profile user={r.guest} className="req-name">
-          {r.guest.name}
-        </Profile>
+        {/* Флажок «о госте есть заметка» — единственный её след в списке; тап ведёт в неё. */}
+        <div className="req-name-line">
+          <Profile user={r.guest} className="req-name">
+            {r.guest.name}
+          </Profile>
+          {guestNote ? (
+            <button
+              className="note-flag"
+              aria-label="Заметка о госте"
+              onClick={(e) => {
+                e.stopPropagation()
+                openNote()
+              }}
+            >
+              {icons.note(13, sec(0.45))}
+            </button>
+          ) : null}
+        </div>
         {/* Ник режем многоточием, время и метки — нет: время тут главное. */}
         <div className="req-sub split">
           {r.guest.username ? <span className="req-sub-nick">@{r.guest.username}</span> : null}

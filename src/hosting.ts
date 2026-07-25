@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { Storage } from './storage.js'
-import type { BlockedUser, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal } from './types.js'
+import type { BlockedUser, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -763,6 +763,68 @@ export const clearReschedule = async (
 }
 
 // ---------------------------------------------------------------------------
+// Правила спейса: согласие перед первой заявкой на визит
+// ---------------------------------------------------------------------------
+
+/**
+ * Версия текста правил. Текст живёт во фронте (`webapp/src/screens/Rules.tsx`), сюда
+ * едет только версия: поднимаем её вместе с правкой текста — и согласие спрашивается
+ * заново у всех, кто соглашался со старой редакцией.
+ */
+export const HOSTING_RULES_VERSION = 1
+
+/** Гость уже согласился с актуальной редакцией правил. */
+export const hasAcceptedRules = (storage: Storage, userId: number): boolean =>
+    (storage.get().hostingRules[String(userId)]?.version ?? 0) >= HOSTING_RULES_VERSION
+
+export const acceptRules = async (storage: Storage, userId: number): Promise<void> => {
+    await storage.update((s) => {
+        s.hostingRules[String(userId)] = { userId, version: HOSTING_RULES_VERSION, at: new Date().toISOString() }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Заметки резидентов о гостях
+// ---------------------------------------------------------------------------
+
+/** Потолок длины заметки: это поле в миниаппе, а не файл — держим в разумных рамках. */
+export const MAX_NOTE_LENGTH = 1000
+
+export const guestNoteFor = (storage: Storage, userId: number): GuestNote | null =>
+    storage.get().guestNotes[String(userId)] ?? null
+
+/** Все заметки, от свежих к старым. */
+export const listGuestNotes = (storage: Storage): GuestNote[] =>
+    Object.values(storage.get().guestNotes).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+
+/**
+ * Пишет заметку о госте. Заметка одна на человека и общая для резидентов: тот, кто
+ * правил последним, становится её `by`. Пустой текст = удалить заметку (так же, как
+ * очистка поля в миниаппе).
+ */
+export const setGuestNote = async (
+    storage: Storage,
+    targetUserId: number,
+    text: string,
+    by: HostingUser,
+): Promise<GuestNote | null> => {
+    const trimmed = text.trim().slice(0, MAX_NOTE_LENGTH)
+    await storage.update((s) => {
+        if (!trimmed) {
+            delete s.guestNotes[String(targetUserId)]
+            return
+        }
+        s.guestNotes[String(targetUserId)] = {
+            userId: targetUserId,
+            text: trimmed,
+            by,
+            updatedAt: new Date().toISOString(),
+        }
+    })
+    return guestNoteFor(storage, targetUserId)
+}
+
+// ---------------------------------------------------------------------------
 // Блокировка участников (бан во всех allowlist-чатах + отказ в миниаппе)
 // ---------------------------------------------------------------------------
 
@@ -799,6 +861,7 @@ export const blockUser = async (
         for (const [k, a] of Object.entries(s.hostingAttendance)) {
             if (a.user.userId === target.userId) delete s.hostingAttendance[k]
         }
+        // Заметку о госте намеренно оставляем: она объясняет резидентам, почему он в блоке.
         delete s.presence[String(target.userId)]
     })
     for (const chatId of allowedChats) {

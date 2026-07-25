@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import { fmtShortDate, fmtWeekdayDate } from '../dates'
 import { icons } from '../icons'
-import { bump, push, useStore } from '../store'
+import { bump, push, startNewRequest, useStore } from '../store'
 import { sec } from '../theme'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
@@ -141,7 +141,7 @@ export function MyVisits() {
         </div>
       </div>
       <BottomBar>
-        <button className="primary-btn" onClick={() => push('newRequest')}>
+        <button className="primary-btn" onClick={startNewRequest}>
           {icons.plus()}
           Новая заявка
         </button>

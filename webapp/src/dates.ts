@@ -38,6 +38,12 @@ export const fmtRange = (a: string, b: string): string =>
 export const fmtWeekdayDate = (k: string): string => `${WEEKDAYS_FULL[weekdayIdx(k)]}, ${fmtDayMonth(k)}`
 export const fmtShortDate = (k: string): string => `${WEEKDAYS_SHORT[weekdayIdx(k)]}, ${fmtDayMonth(k)}`
 
+/** ISO-метка времени (например, правка заметки) → «21 июля». */
+export const fmtIsoDay = (iso: string): string => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`
+}
+
 export function plural(n: number, one: string, few: string, many: string): string {
   const abs = Math.abs(n) % 100
   const d = abs % 10

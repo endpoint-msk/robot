@@ -33,6 +33,9 @@
     --blue: #007aff;
     --green: #34c759;
     --red: #ff3b30;
+    /* Нейтральное действие свайпа (заметка): рядом с синим и красным нужен третий
+       тон, иначе соседние кнопки сливаются в одну полосу. */
+    --gray: #8e8e93;
     --radius-card: 22px;
 }
 
@@ -56,6 +59,8 @@
     --ok-name: #e8f8ec;
     --ok-sec: 190, 240, 200;
     --ok-shadow: none;
+
+    --gray: #636366;
 }
 
 :root {
@@ -335,6 +340,19 @@ body {
    налезает на пилл «одобрил» / кнопку справа (они не сжимаются). */
 .req-name, .req-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .req-name { font-size: 16px; font-weight: 600; line-height: 1.25; }
+/* Имя + флажок заметки: имя сжимается многоточием, иконка не сжимается никогда. */
+.req-name-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.req-name-line .req-name { flex: 0 1 auto; }
+.note-flag {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+.note-flag:active { opacity: 0.5; }
 .req-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 /* Подпись из ника и времени: многоточие достаётся нику, время видно всегда
    (общий ellipsis на всю строку съедал время у длинных ников). */
@@ -461,12 +479,14 @@ body {
     visibility: hidden;
 }
 .swipe-actions.revealed { visibility: visible; }
+/* Кнопки — иконочные: три подписи растягивали панель почти на всю ширину строки.
+   Тон у каждой свой (серый/синий/красный), иначе соседние действия читаются как одно. */
 .swipe-action {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 92px;
-    padding: 0 14px;
+    min-width: 62px;
+    padding: 0 12px;
     border: none;
     font-family: inherit;
     font-size: 14px;
@@ -477,6 +497,7 @@ body {
     cursor: pointer;
 }
 .swipe-action.danger { background: var(--red); }
+.swipe-action.neutral { background: var(--gray); }
 .swipe-action:active { filter: brightness(0.88); }
 /* Непрозрачный фон обязателен: он перекрывает действия во время жеста.
    touch-action: pan-y отдаёт браузеру вертикальный скролл, а горизонталь — нам. */
@@ -747,6 +768,57 @@ body {
     min-height: 44px;
 }
 .purpose-input::placeholder { color: rgba(var(--sec), 0.4); }
+
+/* --- Правила спейса (согласие перед первой заявкой) --- */
+
+.rules-intro { font-size: 15px; line-height: 1.45; color: var(--text-2); margin: 0 6px 14px; }
+/* Правило — многострочное, поэтому номер прижат к верху, а не по центру строки. */
+.row.rule-row { align-items: flex-start; }
+.rule-num {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-2);
+}
+.rule-text { font-size: 16px; line-height: 1.35; }
+/* Согласие — единственная строка экрана с многоточием ни к чему: даём переноситься. */
+.row-label.rule-agree { white-space: normal; overflow: visible; }
+.checkbox {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1.6px solid rgba(var(--sec), 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.checkbox.on { background: var(--blue); border-color: var(--blue); }
+
+/* --- Заметка о госте (резиденты) --- */
+.note-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    resize: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.4;
+    color: var(--text);
+    padding: 0;
+    min-height: 120px;
+}
+.note-input::placeholder { color: rgba(var(--sec), 0.4); }
+.note-meta { font-size: 13px; color: rgba(var(--sec), 0.55); margin: 8px 6px 0; }
 
 /* --- Дев-анонс: рассылка обновлений/объявлений --- */
 .announce-status { font-size: 14px; color: var(--text-2); margin: 2px 4px 14px; }

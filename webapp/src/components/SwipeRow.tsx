@@ -7,13 +7,16 @@
 //   • wheel с deltaX — двумя пальцами по трекпаду. Трекпад НЕ шлёт pointer-событий,
 //     поэтому без этой ветки на макбуке строка не двигается вообще.
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactElement, type ReactNode } from 'react'
 
 export type SwipeAction = {
   key: string
+  /** Подпись действия: показывается, если нет иконки, и всегда идёт в aria-label. */
   label: string
-  /** 'red' — деструктивное действие (блокировка). По умолчанию синее. */
-  tone?: 'blue' | 'red'
+  /** Иконка вместо подписи — три текстовые кнопки растягивали панель на всю строку. */
+  icon?: ReactElement
+  /** 'red' — деструктивное (блокировка), 'neutral' — нейтральное (заметка). По умолчанию синее. */
+  tone?: 'blue' | 'red' | 'neutral'
   onSelect: () => void | Promise<void>
 }
 
@@ -190,13 +193,15 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
         {actions.map((a) => (
           <button
             key={a.key}
-            className={'swipe-action' + (a.tone === 'red' ? ' danger' : '')}
+            className={'swipe-action' + (a.tone === 'red' ? ' danger' : a.tone === 'neutral' ? ' neutral' : '')}
+            aria-label={a.label}
+            title={a.label}
             onClick={() => {
               close()
               void a.onSelect()
             }}
           >
-            {a.label}
+            {a.icon ?? a.label}
           </button>
         ))}
       </div>

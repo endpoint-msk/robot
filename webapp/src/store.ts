@@ -8,6 +8,7 @@ import { applyTheme, loadTheme, saveTheme } from './theme'
 import type { Bootstrap, Perspective, ThemeChoice } from './types'
 
 export type ScreenName =
+  | 'rules'
   | 'overview'
   | 'day'
   | 'invite'
@@ -18,6 +19,7 @@ export type ScreenName =
   | 'peek'
   | 'peekDay'
   | 'visit'
+  | 'guestNote'
   | 'newRequest'
   | 'editRequest'
   | 'dev'
@@ -86,6 +88,11 @@ export function pop(): void {
 export function resetRoot(): void {
   const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
   set({ stack: [{ name: root, params: {} }], navId: state.navId + 1, anim: 'in-fade' })
+}
+
+/** Новая заявка: до первой из них гость проходит через экран правил (сервер это тоже проверяет). */
+export function startNewRequest(): void {
+  push(state.data?.me.acceptedRules ? 'newRequest' : 'rules')
 }
 
 export function setPerspective(p: Perspective): void {

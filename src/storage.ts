@@ -83,6 +83,8 @@ export class Storage {
                 announceMuted: parsed.announceMuted ?? {},
                 lastAnnouncedVersion: typeof parsed.lastAnnouncedVersion === 'string' ? parsed.lastAnnouncedVersion : '',
                 blockedUsers: parsed.blockedUsers ?? {},
+                guestNotes: parsed.guestNotes ?? {},
+                hostingRules: parsed.hostingRules ?? {},
                 backups: parsed.backups ?? {},
             }
         } catch (err) {

@@ -70,6 +70,10 @@ export type State = {
     lastAnnouncedVersion: string
     /** Заблокированные участники (бан во всех allowlist-чатах + отказ в миниаппе). Ключ — userId. */
     blockedUsers: Record<string, BlockedUser>
+    /** Заметки резидентов о гостях: одна на человека, общая для всех резидентов. Ключ — userId гостя. */
+    guestNotes: Record<string, GuestNote>
+    /** Согласия с правилами спейса перед первой заявкой на визит. Ключ — userId. */
+    hostingRules: Record<string, RulesAcceptance>
     /** Расписания авто-бэкапа хранилища по чатам (ключ — chatId как строка). Включает дев через /autobackup. */
     backups: Record<string, BackupSchedule>
 }
@@ -164,6 +168,31 @@ export type BlockedUser = {
     at: string
 }
 
+/** Согласие гостя с правилами спейса: спрашивается один раз, перед первой заявкой. */
+export type RulesAcceptance = {
+    userId: number
+    /** Версия текста правил (`HOSTING_RULES_VERSION`): подняли текст — спросим заново. */
+    version: number
+    /** Когда согласился (ISO). */
+    at: string
+}
+
+/**
+ * Заметка резидентов о госте: «приходил с паяльником», «шумный», «свой человек».
+ * Одна на гостя и общая — правит любой резидент, `by` перезаписывается автором
+ * последней правки. Гость своей заметки не видит (она не уходит в его bootstrap).
+ */
+export type GuestNote = {
+    /** userId гостя, о котором заметка. */
+    userId: number
+    /** Текст заметки. Пустой не хранится — запись удаляется. */
+    text: string
+    /** Кто правил последним. */
+    by: HostingUser
+    /** Когда правили последний раз (ISO). */
+    updatedAt: string
+}
+
 /** Отметка резидента «я приду» на конкретный день (без заявки, просто присутствие в списке). */
 export type HostingAttendance = {
     /** День визита: 'YYYY-MM-DD' в поясе спейса. */
@@ -239,5 +268,7 @@ export const emptyState = (): State => ({
     announceMuted: {},
     lastAnnouncedVersion: '',
     blockedUsers: {},
+    guestNotes: {},
+    hostingRules: {},
     backups: {},
 })
