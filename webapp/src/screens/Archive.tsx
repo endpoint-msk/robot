@@ -12,7 +12,8 @@ function weeksAgoLabel(weekStart: string, todayKey: string): string {
   const diffWeeks = Math.round(
     (keyToDate(currentMonday).getTime() - keyToDate(weekStart).getTime()) / (7 * 24 * 3600 * 1000),
   )
-  if (diffWeeks <= 1) return 'Прошлая неделя'
+  if (diffWeeks <= 0) return 'Текущая неделя'
+  if (diffWeeks === 1) return 'Прошлая неделя'
   return `${diffWeeks} ${plural(diffWeeks, 'неделю', 'недели', 'недель')} назад`
 }
 
@@ -97,7 +98,7 @@ export function Archive() {
   else if (state.weeks.length === 0)
     body = (
       <div className="card">
-        <EmptyState title="Архив пуст" text="Здесь появятся прошедшие недели с заявками." />
+        <EmptyState title="Архив пуст" text="Здесь появятся недели с заявками." />
       </div>
     )
   else body = <ArchiveList weeks={state.weeks} />

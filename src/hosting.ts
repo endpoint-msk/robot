@@ -228,7 +228,9 @@ export const requestsForDay = (storage: Storage, dateKey: string): HostingReques
         .sort((a, b) => (a.time === b.time ? a.createdAt.localeCompare(b.createdAt) : a.time.localeCompare(b.time)))
 
 /**
- * Прошедшие недели (до текущей), в которых были заявки: ключ понедельника + счётчики.
+ * Недели, в которых были заявки: ключ понедельника + счётчики. Включая текущую —
+ * обзор показывает скользящие 7 дней и «понедельник этой недели» из него уже выпал,
+ * так что без неё начало текущей недели было бы не посмотреть нигде.
  * Сортировка — от свежих к старым.
  */
 export const archiveWeeks = (
@@ -239,7 +241,7 @@ export const archiveWeeks = (
     const byWeek = new Map<string, { total: number; approved: number }>()
     for (const r of Object.values(storage.get().hostingRequests)) {
         const week = weekStartOf(r.dateKey)
-        if (week >= currentWeek) continue
+        if (week > currentWeek) continue
         const agg = byWeek.get(week) ?? { total: 0, approved: 0 }
         agg.total += 1
         if (r.status === 'approved') agg.approved += 1

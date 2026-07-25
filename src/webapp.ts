@@ -903,7 +903,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const weekStart = typeof body.weekStart === 'string' ? body.weekStart : ''
             const currentWeek = weekStartOf(todayKey(tzOffsetMinutes))
-            if (!isValidDayKey(weekStart) || weekStartOf(weekStart) !== weekStart || weekStart >= currentWeek) {
+            if (!isValidDayKey(weekStart) || weekStartOf(weekStart) !== weekStart || weekStart > currentWeek) {
                 sendError(res, 400, 'bad_week', 'Неделя недоступна в архиве.')
                 return
             }
