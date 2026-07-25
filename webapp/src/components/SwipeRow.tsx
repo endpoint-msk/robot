@@ -124,7 +124,6 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
       // Строка закрыта, а жест ведёт вправо — открывать нечего, отдаём событие дальше.
       if (offsetRef.current <= 0 && e.deltaX <= 0) return
       e.preventDefault()
-      draggedRef.current = true
       setAnimate(false)
       setDragging(true)
       setRevealed(true)
@@ -176,13 +175,22 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
   }
 
   // Тап по открытой строке закрывает её и не проходит внутрь (в профиль/ссылку).
-  // Клик сразу после перетаскивания гасим по той же причине.
   const onClickCapture = (e: ReactMouseEvent<HTMLDivElement>): void => {
-    if (!openRef.current && !draggedRef.current) return
+    const dragged = draggedRef.current
+    draggedRef.current = false
+    // Клик, который браузер шлёт после перетаскивания мышью, гасим, но состояние
+    // строки НЕ трогаем: его уже решил settle(). Chromium (Telegram Desktop на Windows)
+    // шлёт этот клик даже при pointer capture — без этой ветки строка открывалась
+    // жестом и тут же схлопывалась обратно. WebKit его не шлёт, поэтому на маке бага нет.
+    if (dragged) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    if (!openRef.current) return
     e.preventDefault()
     e.stopPropagation()
-    if (openRef.current) close()
-    draggedRef.current = false
+    close()
   }
 
   if (actions.length === 0) return <>{children}</>
