@@ -321,7 +321,10 @@ body {
 
 /* Заявка — колонка: верхняя полоса (аватар · текст · акцессуар) + плашки переноса под ней. */
 .row.req-row { flex-direction: column; align-items: stretch; gap: 0; }
+/* Аватар и текст прижаты к верху (цель визита может быть в несколько строк), а
+   акцессуар справа центрируем по высоте строки — как в нативных списках. */
 .req-top { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+.req-top > .host-btn, .req-top > .approver, .req-top > .waiting-label { align-self: center; }
 /* Плашка предложения переноса + кнопки — во всю ширину, с отступом под имя (аватар 40 + gap 10). */
 .req-extra { margin-left: 50px; margin-top: 7px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .req-extra .proposal-note, .req-extra .req-proposal-actions { margin-top: 0; }
@@ -441,21 +444,54 @@ body {
     cursor: pointer;
 }
 .link-btn:active { opacity: 0.5; }
-.link-btn.danger { color: var(--red); }
-/* Иконка-действие в строке заявки (блокировка): идёт в общем потоке кнопок. */
-.icon-btn {
+/* --- Свайп-действия строки (iOS/macOS) --- */
+
+.swipe-row { position: relative; overflow: hidden; }
+/* Действия лежат под строкой у правого края и открываются её сдвигом влево.
+   Пока строку не тронули — панель не отрисовывается вовсе: перекрытия сдвинутым
+   контентом мало, слой с transform композитится отдельно и на дробном DPR давал
+   полоску красного по правому краю. Видимость снимается в onTransitionEnd. */
+.swipe-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: stretch;
+    visibility: hidden;
+}
+.swipe-actions.revealed { visibility: visible; }
+.swipe-action {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
+    min-width: 92px;
+    padding: 0 14px;
     border: none;
-    border-radius: 999px;
-    background: transparent;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: #fff;
+    background: var(--blue);
     cursor: pointer;
 }
-.icon-btn:active { opacity: 0.5; }
+.swipe-action.danger { background: var(--red); }
+.swipe-action:active { filter: brightness(0.88); }
+/* Непрозрачный фон обязателен: он перекрывает действия во время жеста.
+   touch-action: pan-y отдаёт браузеру вертикальный скролл, а горизонталь — нам. */
+.swipe-content {
+    position: relative;
+    background: var(--card);
+    touch-action: pan-y;
+    overscroll-behavior-x: contain;
+}
+.swipe-content.animate { transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+/* Во время жеста мышью текст не выделяем — иначе drag тянет выделение по строке. */
+.swipe-content.dragging { user-select: none; }
+/* Аватарки и ссылки внутри строки не должны утаскиваться нативным drag-and-drop:
+   он перебивает pointer-жест (см. onDragStart в SwipeRow). */
+.swipe-content img, .swipe-content a { -webkit-user-drag: none; user-select: none; }
 
 /* Чипы дней в модалке переноса: узкая карточка (--card), поэтому чипам даём контраст (--chip). */
 .modal-resched-day { margin: 12px 14px 4px; }

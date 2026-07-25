@@ -1,5 +1,5 @@
 // Строка заявки в деталях дня (резидент): гость, время, цель; справа — одобривший
-// или «Захостить». Плюс блок переноса времени под строкой.
+// или «Захостить». Перенос и блокировка гостя — свайпом влево (см. SwipeRow).
 
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { action } from '../api'
@@ -13,6 +13,7 @@ import { haptic } from '../telegram'
 import type { HostingRequest, RescheduleProposal } from '../types'
 import { Avatar, Profile, userLabel } from './people'
 import { Sep } from './common'
+import { SwipeRow, type SwipeAction } from './SwipeRow'
 
 /** Слот предложения: «Пт, 17 июля · 15:00», если день отличается от текущего дня заявки; иначе только время. */
 function proposalSlot(r: HostingRequest, p: RescheduleProposal): string {
@@ -78,41 +79,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
   const me = useStore().data!.me
   const p = r.proposal
 
-  // Действия под строкой: перенос (принять/предложить) + блокировка гостя (резиденту).
-  const rowActions = (canReschedule: boolean): ReactNode => (
-    <div className="req-proposal-actions">
-      {canReschedule && p && p.by === 'guest' ? (
-        <button
-          className="accept-btn"
-          onClick={async () => {
-            const done = await action('proposal.accept', { id: r.id })
-            if (done) haptic('success')
-          }}
-        >
-          {icons.check(14, '#34c759', 2.4)}
-          Принять {proposalSlot(r, p)}
-        </button>
-      ) : null}
-      {canReschedule ? (
-        <button className="link-btn" onClick={() => void proposeRescheduleFor(r)}>
-          {p ? 'Другой слот' : 'Перенести'}
-        </button>
-      ) : null}
-      {/* Блокировка — иконка: подпись у каждого гостя читалась как призыв. */}
-      {me.isResident && !archive ? (
-        <button
-          className="icon-btn danger"
-          aria-label="Заблокировать"
-          title="Заблокировать"
-          onClick={() => void blockGuest(r)}
-        >
-          {icons.ban()}
-        </button>
-      ) : null}
-    </div>
-  )
-
-  let proposalRow: ReactNode = null
+  // Перенос и блокировка живут в свайпе (см. SwipeRow), в строке их кнопок нет.
+  let canReschedule = false
   let right: ReactNode
   if (r.status === 'approved' && r.approvedBy) {
     const mine = !archive && r.approvedBy.userId === me.id
@@ -143,8 +111,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         {pill}
       </div>
     )
-    // Подтверждённый визит двигает только его хост; блокировка гостя доступна любому резиденту.
-    proposalRow = archive ? null : rowActions(mine)
+    // Подтверждённый визит двигает только его хост.
+    canReschedule = mine
   } else if (archive) {
     right = <span className="waiting-label">Без ответа</span>
   } else {
@@ -163,7 +131,34 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         Захостить
       </button>
     )
-    proposalRow = rowActions(true)
+    canReschedule = true
+  }
+
+  // «Принять {слот}» остаётся в самой строке: это ответ на живое предложение гостя,
+  // его нельзя прятать за жест — иначе предложение просто не заметят.
+  const proposalRow: ReactNode =
+    canReschedule && p && p.by === 'guest' ? (
+      <div className="req-proposal-actions">
+        <button
+          className="accept-btn"
+          onClick={async () => {
+            const done = await action('proposal.accept', { id: r.id })
+            if (done) haptic('success')
+          }}
+        >
+          {icons.check(14, '#34c759', 2.4)}
+          Принять {proposalSlot(r, p)}
+        </button>
+      </div>
+    ) : null
+
+  const swipeActions: SwipeAction[] = []
+  if (canReschedule) {
+    swipeActions.push({ key: 'reschedule', label: 'Перенести', onSelect: () => proposeRescheduleFor(r) })
+  }
+  // Блокировать гостя вправе любой резидент, но не в архиве (там только чтение).
+  if (me.isResident && !archive) {
+    swipeActions.push({ key: 'block', label: 'Заблокировать', tone: 'red', onSelect: () => blockGuest(r) })
   }
 
   const top = (
@@ -207,15 +202,17 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
 
   const hasExtra = Boolean(note) || Boolean(proposalRow)
   return (
-    <div className="row req-row">
-      {top}
-      {hasExtra ? (
-        <div className="req-extra">
-          {note}
-          {proposalRow}
-        </div>
-      ) : null}
-    </div>
+    <SwipeRow actions={swipeActions}>
+      <div className="row req-row">
+        {top}
+        {hasExtra ? (
+          <div className="req-extra">
+            {note}
+            {proposalRow}
+          </div>
+        ) : null}
+      </div>
+    </SwipeRow>
   )
 }
 
