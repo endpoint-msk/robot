@@ -76,7 +76,6 @@ async function blockGuest(r: HostingRequest): Promise<void> {
 
 export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?: boolean }) {
   const me = useStore().data!.me
-  const sub = (r.guest.username ? '@' + r.guest.username + ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')
   const p = r.proposal
 
   // Действия под строкой: перенос (принять/предложить) + блокировка гостя (резиденту).
@@ -174,7 +173,13 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         <Profile user={r.guest} className="req-name">
           {r.guest.name}
         </Profile>
-        <div className="req-sub">{sub}</div>
+        {/* Ник режем многоточием, время и метки — нет: время тут главное. */}
+        <div className="req-sub split">
+          {r.guest.username ? <span className="req-sub-nick">@{r.guest.username}</span> : null}
+          <span className="req-sub-fixed">
+            {(r.guest.username ? ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')}
+          </span>
+        </div>
         {r.purpose ? <PurposeBlock text={r.purpose} /> : null}
       </div>
       {right}
@@ -191,8 +196,10 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
             гость предлагает <span className="pn-time">{proposalSlot(r, p)}</span>
           </span>
         ) : (
+          // Предложить мог и другой резидент — «вы» только автору предложения.
           <span>
-            вы предложили <span className="pn-time">{proposalSlot(r, p)}</span> · ждём гостя
+            {p.user.userId === me.id ? 'вы предложили' : 'предложено'}{' '}
+            <span className="pn-time">{proposalSlot(r, p)}</span> · ждём гостя
           </span>
         )}
       </div>

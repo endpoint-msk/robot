@@ -333,6 +333,11 @@ body {
 .req-name, .req-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .req-name { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .req-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+/* Подпись из ника и времени: многоточие достаётся нику, время видно всегда
+   (общий ellipsis на всю строку съедал время у длинных ников). */
+.req-sub.split { display: flex; }
+.req-sub.split .req-sub-nick { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-sub.split .req-sub-fixed { flex: none; white-space: pre; }
 .req-purpose-wrap {
     display: flex;
     align-items: baseline;
@@ -389,7 +394,17 @@ body {
     background: var(--chip);
 }
 .pill .avatar { width: 20px; height: 20px; font-size: 10px; }
-.pill-name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+/* Пилл не сжимается (.approver flex-shrink: 0), поэтому длинный ник хоста
+   выдавливал бы левую колонку со временем — режем сам ник. */
+.pill-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .pill.mine { cursor: pointer; }
 .pill.mine .pill-x { font-size: 13px; color: var(--text-3); padding: 0 2px 0 0; line-height: 1; }
 
