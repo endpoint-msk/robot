@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { api } from '../api'
-import { addDays, dayNum, fmtRange, keyToDate, monthIdx, MONTHS_NOM, plural, weekdayIdx, yearOf } from '../dates'
+import { addDays, dayNum, fmtRange, keyToDate, monthIdx, MONTHS_ABBR, MONTHS_NOM, plural, weekdayIdx, yearOf } from '../dates'
 import { icons } from '../icons'
 import { push, useStore } from '../store'
 import type { ArchiveResponse, ArchiveWeekSummary } from '../types'
@@ -39,9 +39,11 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                 <Fragment key={week.weekStart}>
                   {i > 0 ? <Sep left={70} /> : null}
                   <div className="row tappable" onClick={() => push('archiveWeek', { weekStart: week.weekStart })}>
+                    {/* Плитка-календарь: число старта + месяц. Диапазон целиком стоит
+                        в заголовке справа, а «20 / –26» в две строки читалось как минус. */}
                     <div className="week-square">
-                      <span className="ws-from">{String(dayNum(week.weekStart))}</span>
-                      <span className="ws-to">{'–' + dayNum(weekEnd)}</span>
+                      <span className="ws-day">{String(dayNum(week.weekStart))}</span>
+                      <span className="ws-month">{MONTHS_ABBR[monthIdx(week.weekStart)]}</span>
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div className="week-title">{fmtRange(week.weekStart, weekEnd)}</div>

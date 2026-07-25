@@ -862,8 +862,16 @@ body {
     align-items: center;
     justify-content: center;
 }
-.week-square .ws-from { font-size: 15px; font-weight: 700; line-height: 1; }
-.week-square .ws-to { font-size: 9px; color: rgba(var(--sec), 0.5); }
+.week-square .ws-day { font-size: 15px; font-weight: 700; line-height: 1; }
+.week-square .ws-month {
+    margin-top: 2px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: rgba(var(--sec), 0.5);
+}
 .week-title { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .week-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 
