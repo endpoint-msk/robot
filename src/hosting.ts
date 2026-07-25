@@ -526,18 +526,23 @@ export const notifyResidentRescheduleCountered = async (
     }
 }
 
-/** Предложившей стороне в личку: предложение приняли, действует новый слот `request.dateKey`/`time`. */
+/**
+ * Предложившей стороне в личку: предложение приняли, действует новый слот `request.dateKey`/`time`.
+ * `actor` — кто принял: без имени получателю не видно, чьё это действие.
+ */
 export const notifyProposalAccepted = async (
     client: TelegramClient,
     targetId: number,
     webappUrl: string,
     request: HostingRequest,
     targetIsGuest: boolean,
+    actor: HostingUser,
 ): Promise<void> => {
     const slot = slotLabel(request.dateKey, request.time)
+    const who = await mentionLabel(client, actor)
     const text = targetIsGuest
-        ? `✅ Резидент принял ваш вариант — визит <b>${slot}</b>.`
-        : `✅ Гость ${await mentionLabel(client, request.guest)} принял новый слот — визит <b>${slot}</b>.`
+        ? `✅ Резидент ${who} принимает ваш вариант — визит <b>${slot}</b>.`
+        : `✅ Гость ${who} принимает новый слот — визит <b>${slot}</b>.`
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {
@@ -549,7 +554,12 @@ export const notifyProposalAccepted = async (
     }
 }
 
-/** Второй стороне в личку: предложение о переносе сняли, остаётся прежний слот `request.dateKey`/`time`. */
+/**
+ * Второй стороне в личку: предложение о переносе сняли, остаётся прежний слот `request.dateKey`/`time`.
+ * `actor` — кто снял: своё предложение (`withdrawn`) или чужое (отклонил). Без этого
+ * получателю не видно, чьё это действие, — на pending снять предложение резидента
+ * может и другой резидент, поэтому формулировка нейтральна к авторству.
+ */
 export const notifyProposalCancelled = async (
     client: TelegramClient,
     targetId: number,
@@ -557,8 +567,15 @@ export const notifyProposalCancelled = async (
     request: HostingRequest,
     proposed: { dateKey: string; time: string },
     targetIsGuest: boolean,
+    actor: { user: HostingUser; isGuest: boolean; withdrawn: boolean },
 ): Promise<void> => {
-    const text = `↩️ Предложение перенести визит на ${slotLabel(proposed.dateKey, proposed.time)} снято — остаётся ${slotLabel(request.dateKey, request.time)}.`
+    const who = await mentionLabel(client, actor.user)
+    const role = actor.isGuest ? 'Гость' : 'Резидент'
+    const proposedSlot = slotLabel(proposed.dateKey, proposed.time)
+    const staysSlot = slotLabel(request.dateKey, request.time)
+    const text = actor.withdrawn
+        ? `↩️ ${role} ${who} снимает предложение перенести визит на ${proposedSlot} — остаётся ${staysSlot}.`
+        : `↩️ ${role} ${who} отклоняет перенос на ${proposedSlot} — остаётся ${staysSlot}.`
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {

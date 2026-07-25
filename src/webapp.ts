@@ -598,10 +598,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     return
                 }
                 if (counter.by === 'resident') {
-                    void notifyProposalAccepted(client, counter.user.userId, config.publicUrl, accepted.request, false)
+                    void notifyProposalAccepted(client, counter.user.userId, config.publicUrl, accepted.request, false, user)
                         .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии переноса:', err))
                 } else {
-                    void notifyProposalAccepted(client, accepted.request.guest.userId, config.publicUrl, accepted.request, true)
+                    void notifyProposalAccepted(client, accepted.request.guest.userId, config.publicUrl, accepted.request, true, user)
                         .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
                 }
                 syncBoard()
@@ -677,10 +677,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             if (proposal.by === 'resident') {
-                void notifyProposalAccepted(client, proposal.user.userId, config.publicUrl, result.request, false)
+                void notifyProposalAccepted(client, proposal.user.userId, config.publicUrl, result.request, false, user)
                     .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии переноса:', err))
             } else {
-                void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true)
+                void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true, user)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
             }
             syncBoard()
@@ -713,20 +713,22 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             const proposed = { dateKey: proposal.dateKey, time: proposal.time }
+            // Своё предложение сняли или чужое отклонили — от этого зависит формулировка DM.
+            const actor = { user, isGuest, withdrawn: (proposal.by === 'guest') === isGuest }
             // Уведомляем противоположную сторону. Для встречного предложения гостя адрес
             // резидента мы не храним — если гость сам отзывает, DM просто не шлём.
             if (proposal.by === 'resident') {
                 const targetIsGuest = !isGuest
                 const targetId = targetIsGuest ? result.request.guest.userId : proposal.user.userId
-                void notifyProposalCancelled(client, targetId, config.publicUrl, result.request, proposed, targetIsGuest)
+                void notifyProposalCancelled(client, targetId, config.publicUrl, result.request, proposed, targetIsGuest, actor)
                     .catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
             } else if (!isGuest) {
-                void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposed, true)
+                void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposed, true, actor)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о снятии предложения:', err))
             } else if (result.request.approvedBy) {
                 // Гость отзывает своё предложение на подтверждённом визите — адрес хоста
                 // известен (approvedBy), уведомляем его. Для pending адреса нет — молчим.
-                void notifyProposalCancelled(client, result.request.approvedBy.userId, config.publicUrl, result.request, proposed, false)
+                void notifyProposalCancelled(client, result.request.approvedBy.userId, config.publicUrl, result.request, proposed, false, actor)
                     .catch((err) => console.error('[hosting] не удалось уведомить хоста о снятии предложения:', err))
             }
             sendJson(res, 200, buildBootstrap(ctx))
