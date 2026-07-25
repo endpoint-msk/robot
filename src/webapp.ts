@@ -925,7 +925,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 release: release
                     ? { version: release.version, name: release.name, url: release.url, publishedAt: release.publishedAt }
                     : null,
-                defaultText: release ? buildDefaultAnnouncement(release) : '',
+                defaultText: release ? buildDefaultAnnouncement(release, githubRepo) : '',
                 lastAnnouncedVersion: storage.get().lastAnnouncedVersion || '',
                 targetChats: announceTargets(storage, allowedChats).length,
             })
