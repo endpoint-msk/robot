@@ -587,6 +587,30 @@ export const notifyProposalCancelled = async (
     }
 }
 
+/**
+ * Резиденту-автору предложения в личку: гость сам передвинул заявку, и висящее
+ * предложение снялось (`editHostingRequest` его обнуляет). Без этого DM предложение
+ * пропадало у резидента молча — он видел только, что плашка исчезла.
+ */
+export const notifyProposalDroppedByEdit = async (
+    client: TelegramClient,
+    targetId: number,
+    webappUrl: string,
+    request: HostingRequest,
+    proposed: { dateKey: string; time: string },
+): Promise<void> => {
+    const who = await mentionLabel(client, request.guest)
+    const text = `✏️ Гость ${who} переносит заявку на <b>${slotLabel(request.dateKey, request.time)}</b> — предложение перенести на ${slotLabel(proposed.dateKey, proposed.time)} снято.`
+    try {
+        await client.sendText(targetId, html(text), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // личка закрыта — не критично
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Дев-операции над заявками (гейт — requireDev в webapp.ts)
 // ---------------------------------------------------------------------------

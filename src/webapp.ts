@@ -29,6 +29,7 @@ import {
     notifyPrefsFor,
     notifyProposalAccepted,
     notifyProposalCancelled,
+    notifyProposalDroppedByEdit,
     notifyResidentsAboutRequest,
     notifyResidentRescheduleCountered,
     proposeReschedule,
@@ -348,6 +349,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const time = typeof body.time === 'string' ? body.time : ''
             const purpose = typeof body.purpose === 'string' ? body.purpose : ''
             const anon = body.anon === true
+            // Снимок предложения ДО правки: editHostingRequest его обнуляет, а `request` —
+            // живая ссылка на объект в стейте.
+            const dropped = request.proposal && request.proposal.by === 'resident'
+                ? {
+                    dateKey: request.proposal.dateKey,
+                    time: request.proposal.time,
+                    residentId: request.proposal.user.userId,
+                }
+                : null
             const edited = await editHostingRequest(storage, tzOffsetMinutes, request.id, user.userId, { dateKey, time, purpose, anon })
             if (!edited.ok) {
                 const messages = {
@@ -361,6 +371,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 const status = edited.error === 'not_found' ? 404 : edited.error === 'not_pending' ? 409 : 400
                 sendError(res, status, edited.error, messages[edited.error])
                 return
+            }
+            // Правка гостя снимает висящее предложение резидента — сообщаем автору.
+            // Гость выставил ровно предложенный слот — это по сути согласие, а не отказ.
+            if (dropped) {
+                const agreed = dropped.dateKey === edited.request.dateKey && dropped.time === edited.request.time
+                const notify = agreed
+                    ? notifyProposalAccepted(client, dropped.residentId, config.publicUrl, edited.request, false, user)
+                    : notifyProposalDroppedByEdit(client, dropped.residentId, config.publicUrl, edited.request, dropped)
+                void notify.catch((err) => console.error('[hosting] не удалось уведомить резидента о правке заявки:', err))
             }
             syncBoard()
             sendJson(res, 200, { request: requestsView([edited.request])[0], ...buildBootstrap(ctx) })
