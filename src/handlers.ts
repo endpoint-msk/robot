@@ -32,7 +32,7 @@ const PAGE_CALLBACK_PREFIX = 'fundraiser:page:'
 const HISTORY_LIST_CALLBACK = 'fundraiser:history'
 /** Открытый сбор из истории: `fundraiser:history:<periodKey>:<page>` (в ключе только цифры и дефисы). */
 const HISTORY_OPEN_PREFIX = 'fundraiser:history:'
-/** Сколько периодов показываем в списке истории; остальные — по `/history <период>`. */
+/** Сколько периодов показываем в списке истории; остальные - по `/history <период>`. */
 const HISTORY_LIMIT = 12
 
 export type AllowedChats = Set<number>
@@ -60,7 +60,7 @@ const buildKeyboard = (page: number, pages: number) => {
             BotKeyboard.callback('▶️', `${PAGE_CALLBACK_PREFIX}${next}`),
         ])
     }
-    // Пустая inline-клавиатура (одна страница, нет стрелок) — это REPLY_MARKUP_INVALID.
+    // Пустая inline-клавиатура (одна страница, нет стрелок) - это REPLY_MARKUP_INVALID.
     // Возвращаем undefined, чтобы сообщение ушло вообще без разметки.
     if (rows.length === 0) return undefined
     return BotKeyboard.inline(rows)
@@ -102,7 +102,7 @@ const historyOf = (storage: Storage, now: Date = new Date()): Fundraiser[] => {
     return pastFundraisers(Object.values(state.fundraisers), periodKeyOf(now, state.resetDay))
 }
 
-/** Самый поздний из уже существующих сборов (по periodKey). undefined — если сборов ещё нет. */
+/** Самый поздний из уже существующих сборов (по periodKey). undefined - если сборов ещё нет. */
 const latestFundraiser = (state: State): Fundraiser | undefined => {
     let latest: Fundraiser | undefined
     for (const f of Object.values(state.fundraisers)) {
@@ -118,7 +118,7 @@ const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fund
     const key = periodKeyOf(now, state.resetDay)
     let f = state.fundraisers[key]
     if (!f) {
-        // Цель, тема и описание (реквизиты/ссылки) — «липкие» настройки: переносим их
+        // Цель, тема и описание (реквизиты/ссылки) - «липкие» настройки: переносим их
         // с прошлого сбора, чтобы на новом периоде не сбрасывались к дефолту. Аренда
         // из месяца в месяц одна и та же, заново звать /setgoal каждый период незачем.
         const prev = latestFundraiser(state)
@@ -192,7 +192,7 @@ export const refreshLastMessageInChat = async (
             })
         }
     } catch (err) {
-        // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` — описание без кода.
+        // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` - описание без кода.
         const msg = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
         if (/MESSAGE_NOT_MODIFIED/i.test(msg)) return
         if (/MESSAGE_ID_INVALID|MESSAGE_DELETE/i.test(msg)) {
@@ -205,14 +205,14 @@ export const refreshLastMessageInChat = async (
     }
 }
 
-/** Чат в allowlist и сообщение от обычного пользователя. Иначе — молча или с ответом, что только пользователям. */
+/** Чат в allowlist и сообщение от обычного пользователя. Иначе - молча или с ответом, что только пользователям. */
 const requireUserInAllowedChat = async (
     msg: MessageContext,
     allowed: AllowedChats,
 ): Promise<boolean> => {
     const chatId = Number(msg.chat.id)
     if (!isAllowedChat(allowed, chatId)) {
-        // В неразрешённых чатах — полное молчание, чтобы бот не светился.
+        // В неразрешённых чатах - полное молчание, чтобы бот не светился.
         return false
     }
     if (!msg.sender || msg.sender.type !== 'user') {
@@ -222,7 +222,7 @@ const requireUserInAllowedChat = async (
     return true
 }
 
-/** Прошёл ли пользователь все проверки (чат в allowlist + админ). Если нет — отвечает и возвращает false. */
+/** Прошёл ли пользователь все проверки (чат в allowlist + админ). Если нет - отвечает и возвращает false. */
 const requireChatAdminInAllowedChat = async (
     residents: ResidentDirectory,
     msg: MessageContext,
@@ -244,7 +244,7 @@ export const registerHandlers = (
         storage: Storage
         allowedChats: AllowedChats
         residents: ResidentDirectory
-        /** Публичный URL миниаппа хостинга. null — миниапп не настроен. */
+        /** Публичный URL миниаппа хостинга. null - миниапп не настроен. */
         webappUrl: string | null
     },
 ): void => {
@@ -254,45 +254,34 @@ export const registerHandlers = (
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         await msg.answerText(
             [
-                'Бот хакерспейса. Часть команд доступна любому участнику, часть — только админам группы.',
-                '',
                 'Присутствие в спейсе:',
-                '/inside — показать разовый список тех, кто сейчас в спейсе',
-                'Постоянная доска «кто сегодня в спейсе» обновляется сама; выключить в чате — /boardmute (только админы).',
-                'Отметиться, уйти и привязать MAC для авто-отметок — в личке с ботом (/start).',
+                '/inside - показать список тех, кто сейчас в спейсе',
                 '',
                 '3D-принтер:',
-                '/printer — статус принтера, превью печати и подписка на уведомление об окончании',
-                '',
-                'Прочее:',
-                '/boardmute — вкл/выкл доску «кто сегодня в спейсе» в этом чате (только админы)',
-                '/announcemute — вкл/выкл анонсы (обновления бота и объявления) в этот чат (только админы)',
+                '/printer - статус принтера',
                 '',
                 'Сборы донатов:',
-                '/goals — показать текущий сбор (доступно всем участникам)',
-                '/history — прошлые сборы: список периодов с итогами, по кнопке — полный лидерборд',
-                '/history <период> — сразу открыть сбор за период, например: /history 2026-06',
+                '/goals - показать текущий сбор (доступно всем участникам)',
+                '/history - прошлые сборы: список периодов с итогами, по кнопке - полный лидерборд',
+                '/history <период> - сразу открыть сбор за период, например: /history 2026-06',
                 '',
-                'Управление сбором (только админы):',
-                '/goalsmute — вкл/выкл автоотправку сбора в этот чат (00:00 и 12:00 по МСК)',
-                '/donate <сумма> <ник> — добавить донат',
-                '/donate <сумма> — добавить анонимный донат (без ника, в списке «Анонимно»)',
-                '/remove <номер> — удалить все донаты участника №<номер> в лидерборде (работает и для «Анонимно»)',
-                '/remove <ник> [сумма] — удалить один донат по нику (и опционально сумме)',
-                '/setgoal <сумма> — задать цель текущего сбора (0 — снять цель)',
-                '/settitle <тема> — изменить тему сбора, например: /settitle аренду',
-                '/setdesc <текст> — задать описание под сбором (реквизиты/ссылки, можно в несколько строк; без текста — убрать)',
-                '/setresetday <число 1–29> — день месяца, в который сбор сбрасывается (по умолчанию 1)',
-                '/export — выгрузить донаты текущего сбора в CSV; /export all — за все периоды',
-                'С новым периодом сбор обновляется автоматически; каждый день в 00:00 и 12:00 по МСК бот постит свежее сообщение со сбором.',
+                'Управление сбором (админ):',
+                '/donate <сумма> <ник> - добавить донат',
+                '/donate <сумма> - добавить анонимный донат (без ника, в списке «Анонимно»)',
+                '/remove <номер> - удалить все донаты участника №<номер> в лидерборде (работает и для «Анонимно»)',
+                '/remove <ник> [сумма] - удалить один донат по нику (и опционально сумме)',
+                '/setgoal <сумма> - задать цель текущего сбора (0 - снять цель)',
+                '/settitle <тема> - изменить тему сбора, например: /settitle аренду',
+                '/setdesc <текст> - задать описание под сбором',
+                '/setresetday <число 1–29> - день месяца, в который сбор сбрасывается (по умолчанию 1)',
                 '',
-                '/help — это сообщение',
+                '/help - это сообщение',
             ].join('\n'),
         )
     })
 
     dp.onNewMessage(filters.command('inside'), async (msg) => {
-        // В личке /inside просто отдаёт текущий список текстом — без привязки к сообщению чата.
+        // В личке /inside просто отдаёт текущий список текстом - без привязки к сообщению чата.
         // В личке web_app-кнопки разрешены, поэтому открываем миниапп хостинга напрямую.
         if (msg.chat.type === 'user') {
             await msg.answerText(html(renderPresenceText(storage)), {
@@ -304,7 +293,7 @@ export const registerHandlers = (
             return
         }
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
-        // Разовый снимок списка присутствующих: постоянная поверхность — доска (/boardmute).
+        // Разовый снимок списка присутствующих: постоянная поверхность - доска (/boardmute).
         await postPresenceList(client, storage, Number(msg.chat.id))
     })
 
@@ -339,8 +328,8 @@ export const registerHandlers = (
         await rememberLastMessage(storage, Number(msg.chat.id), sent.id, f.periodKey)
     })
 
-    // /history [период] — прошлые сборы. Без аргумента — список периодов с кнопками,
-    // с аргументом (`2026-06` или `2026-06-25` для нестандартного дня сброса) — сразу сбор.
+    // /history [период] - прошлые сборы. Без аргумента - список периодов с кнопками,
+    // с аргументом (`2026-06` или `2026-06-25` для нестандартного дня сброса) - сразу сбор.
     // Сообщение НЕ запоминается как «последнее со сбором»: иначе шедулер смены периода
     // перерисовал бы историю в текущий сбор.
     dp.onNewMessage(filters.command('history'), async (msg) => {
@@ -350,12 +339,12 @@ export const registerHandlers = (
 
         if (arg) {
             if (!/^\d{4}-\d{2}(-\d{2})?$/.test(arg)) {
-                await msg.answerText('Период указывается как 2026-06 (год-месяц). Список прошлых сборов — /history без аргументов.')
+                await msg.answerText('Период указывается как 2026-06 (год-месяц). Список прошлых сборов - /history без аргументов.')
                 return
             }
             const f = past.find((x) => x.periodKey === arg || x.periodKey.startsWith(arg + '-'))
             if (!f) {
-                await msg.answerText(`Не нашёл сбор за ${arg}. Список прошлых сборов — /history без аргументов.`)
+                await msg.answerText(`Не нашёл сбор за ${arg}. Список прошлых сборов - /history без аргументов.`)
                 return
             }
             const rendered = renderFundraiser(f, 1)
@@ -373,7 +362,7 @@ export const registerHandlers = (
         })
     })
 
-    // /export [all] — выгрузка донатов в CSV. Без аргумента — текущий сбор, `all` — все сборы.
+    // /export [all] - выгрузка донатов в CSV. Без аргумента - текущий сбор, `all` - все сборы.
     // Только для админов: это выгрузка для отчётности.
     dp.onNewMessage(filters.command('export'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
@@ -397,7 +386,7 @@ export const registerHandlers = (
             return
         }
 
-        // BOM (U+FEFF) в начале — чтобы Excel открыл кириллицу в UTF-8 без «крякозябр».
+        // BOM (U+FEFF) в начале - чтобы Excel открыл кириллицу в UTF-8 без «крякозябр».
         const csv = Buffer.from(String.fromCharCode(0xfeff) + buildDonationsCsv(fundraisers), 'utf8')
         await msg.answerMedia(
             InputMedia.document(csv, {
@@ -412,7 +401,7 @@ export const registerHandlers = (
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
         const key = String(chatId)
-        const muted = storage.get().goalsMuted[key] === true
+        const muted = storage.get().goalsMuted[key]
         await storage.update((s) => {
             if (muted) delete s.goalsMuted[key]
             else s.goalsMuted[key] = true
@@ -424,39 +413,39 @@ export const registerHandlers = (
         )
     })
 
-    // /announcemute — вкл/выкл анонсы (рассылку обновлений/объявлений) в этот чат.
+    // /announcemute - вкл/выкл анонсы (рассылку обновлений/объявлений) в этот чат.
     // Настройка чата, поэтому только для админов. Сами анонсы шлёт дев из миниаппа.
     dp.onNewMessage(filters.command('announcemute'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
         const key = String(chatId)
-        const muted = storage.get().announceMuted[key] === true
+        const muted = storage.get().announceMuted[key]
         await storage.update((s) => {
             if (muted) delete s.announceMuted[key]
             else s.announceMuted[key] = true
         })
         await msg.answerText(
             muted
-                ? 'Анонсы (обновления бота и объявления) снова будут приходить в этот чат. Выключить — /announcemute.'
-                : 'Больше не буду присылать анонсы в этот чат. Включить обратно — /announcemute.',
+                ? 'Анонсы (обновления бота и объявления) снова будут приходить в этот чат. Выключить - /announcemute.'
+                : 'Больше не буду присылать анонсы в этот чат. Включить обратно - /announcemute.',
         )
     })
 
-    // /boardmute — вкл/выкл доску «кто сегодня в спейсе» в этом чате. Настройка чата — только админам.
+    // /boardmute - вкл/выкл доску «кто сегодня в спейсе» в этом чате. Настройка чата - только админам.
     // Замьютили: шедулер откреплит и забудет висящую доску на ближайшем тике (≤60 с).
     dp.onNewMessage(filters.command('boardmute'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
         const key = String(chatId)
-        const muted = storage.get().hostingBoardMuted[key] === true
+        const muted = storage.get().hostingBoardMuted[key]
         await storage.update((s) => {
             if (muted) delete s.hostingBoardMuted[key]
             else s.hostingBoardMuted[key] = true
         })
         await msg.answerText(
             muted
-                ? 'Доска «кто сегодня в спейсе» снова включена в этом чате. Выключить — /boardmute.'
-                : 'Доска «кто сегодня в спейсе» отключена в этом чате — открепляю. Включить обратно — /boardmute.',
+                ? 'Доска «кто сегодня в спейсе» снова включена в этом чате. Выключить - /boardmute.'
+                : 'Доска «кто сегодня в спейсе» отключена в этом чате - открепляю. Включить обратно - /boardmute.',
         )
     })
 
@@ -477,7 +466,7 @@ export const registerHandlers = (
             })
         })
         const who = parsed.nick === '' ? ANON_LABEL : `@${parsed.nick}`
-        await msg.answerText(`Добавил: ${who} — ${parsed.amount}${f.currency}.`)
+        await msg.answerText(`Добавил: ${who} - ${parsed.amount}${f.currency}.`)
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 
@@ -485,7 +474,7 @@ export const registerHandlers = (
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const arg = msg.command[1]
         if (arg === undefined) {
-            await msg.answerText('Использование: /setgoal <сумма> (0 — снять цель)')
+            await msg.answerText('Использование: /setgoal <сумма> (0 - снять цель)')
             return
         }
         const value = Number(arg.replace(',', '.'))
@@ -538,7 +527,7 @@ export const registerHandlers = (
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const arg = msg.command[1]
         if (arg === undefined || !/^\d+$/.test(arg)) {
-            await msg.answerText(`Использование: /setresetday <число ${MIN_RESET_DAY}–${MAX_RESET_DAY}> — день месяца, когда сбор сбрасывается.`)
+            await msg.answerText(`Использование: /setresetday <число ${MIN_RESET_DAY}–${MAX_RESET_DAY}> - день месяца, когда сбор сбрасывается.`)
             return
         }
         const value = Number(arg)
@@ -551,7 +540,7 @@ export const registerHandlers = (
             s.resetDay = resetDay
         })
         await msg.answerText(`Сбор теперь сбрасывается ${resetDay} числа каждого месяца.`)
-        // День сброса мог сменить «текущий» период — перерисуем запомненное сообщение.
+        // День сброса мог сменить «текущий» период - перерисуем запомненное сообщение.
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 
@@ -587,8 +576,8 @@ export const registerHandlers = (
             const wantedNick = spec.nick.toLowerCase()
             const idx = f.donations.findIndex((d) => {
                 if (d.nick.toLowerCase() !== wantedNick) return false
-                if (spec.amount !== undefined && d.amount !== spec.amount) return false
-                return true
+                return !(spec.amount !== undefined && d.amount !== spec.amount);
+
             })
             if (idx < 0) {
                 await msg.answerText(`Не нашёл доната${spec.amount !== undefined ? ` от @${spec.nick} на ${spec.amount}` : ` от @${spec.nick}`}.`)
@@ -598,7 +587,7 @@ export const registerHandlers = (
             await storage.update(() => {
                 f.donations.splice(idx, 1)
             })
-            await msg.answerText(`Удалил: @${removed.nick} — ${removed.amount}${f.currency}.`)
+            await msg.answerText(`Удалил: @${removed.nick} - ${removed.amount}${f.currency}.`)
         }
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
@@ -627,7 +616,7 @@ export const registerHandlers = (
             replyMarkup = historyListKeyboard(shown)
             answer = 'История сборов'
         } else {
-            // `<periodKey>:<page>` — ключ сам содержит дефисы, но не двоеточия.
+            // `<periodKey>:<page>` - ключ сам содержит дефисы, но не двоеточия.
             const rest = data.slice(HISTORY_OPEN_PREFIX.length)
             const sep = rest.lastIndexOf(':')
             const periodKey = sep < 0 ? rest : rest.slice(0, sep)
@@ -669,14 +658,14 @@ export const registerHandlers = (
             await ctx.answer({ text: 'Бот в этой группе не работает.', alert: true })
             return
         }
-        // Листать страницы может любой участник; «Обновить» — только админы.
+        // Листать страницы может любой участник; «Обновить» - только админы.
         if (isRefresh && !(await residents.isChatAdmin(chatId, ctx.user.id))) {
             await ctx.answer({ text: 'Кнопка доступна только админам этой группы.', alert: true })
             return
         }
 
         const f = ensureCurrentFundraiser(storage)
-        // На «Обновить» всегда первая страница; на стрелки — указанная.
+        // На «Обновить» всегда первая страница; на стрелки - указанная.
         let requestedPage = 1
         if (isPage) {
             const n = Number(data.slice(PAGE_CALLBACK_PREFIX.length))
