@@ -118,11 +118,16 @@ const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fund
     const key = periodKeyOf(now, state.resetDay)
     let f = state.fundraisers[key]
     if (!f) {
-        // Тема и описание (реквизиты/ссылки) — «липкие» настройки: переносим их
-        // с прошлого сбора, чтобы на новом периоде не сбрасывались к дефолту.
-        // Цель (goal) намеренно НЕ переносим — она своя на каждый период.
+        // Цель, тема и описание (реквизиты/ссылки) — «липкие» настройки: переносим их
+        // с прошлого сбора, чтобы на новом периоде не сбрасывались к дефолту. Аренда
+        // из месяца в месяц одна и та же, заново звать /setgoal каждый период незачем.
         const prev = latestFundraiser(state)
-        f = createFundraiser(year, month, { title: prev?.title, description: prev?.description }, state.resetDay)
+        f = createFundraiser(
+            year,
+            month,
+            { goal: prev?.goal, title: prev?.title, description: prev?.description },
+            state.resetDay,
+        )
         state.fundraisers[key] = f
     }
     return f
