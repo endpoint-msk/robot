@@ -48,7 +48,7 @@ export type State = {
     macBindings: Record<string, ResidentMacs>
     /** День месяца (1..29), в который сбрасывается сбор. По умолчанию 1 = календарный месяц UTC. */
     resetDay: number
-    /** Чаты, где отключена автоотправка сбора дважды в день (ключ — chatId как строка). Ручные /goals продолжают работать. */
+    /** Чаты, где отключена ежедневная автоотправка сбора (ключ — chatId как строка). Ручные /goals продолжают работать. */
     goalsMuted: Record<string, true>
     /** Заявки гостей на визит (хостинг). Ключ — id заявки. */
     hostingRequests: Record<string, HostingRequest>
