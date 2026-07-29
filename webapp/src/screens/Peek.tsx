@@ -12,7 +12,9 @@ function PeekDayRow({ day }: { day: Day }) {
   const { data } = useStore()
   const isToday = day.dateKey === data!.todayKey
   const att = day.attendees || []
-  const empty = att.length === 0
+  const events = day.events || []
+  // День с ивентом «не пустой», даже если никто ещё не отметился: сам ивент и есть повод прийти.
+  const empty = att.length === 0 && events.length === 0
   const cls = 'row' + (!empty ? ' tappable' : '') + (isToday ? ' today' : '') + (empty ? ' day-empty' : '')
   const dayCol = (
     <div className="day-col">
@@ -28,11 +30,21 @@ function PeekDayRow({ day }: { day: Day }) {
       </div>
     )
   }
+  const first = events[0]
   return (
     <div className={cls} onClick={() => push('peekDay', { dateKey: day.dateKey })}>
       {dayCol}
-      <AvatarStack users={att.map((a) => ({ userId: a.userId, name: a.name, username: a.username }))} />
-      <span className="day-count">{peopleWord(att.length)}</span>
+      {first ? (
+        <div className="ev-day-label">
+          {icons.calendar(13, '#bf5af2')}
+          <span>{first.title}</span>
+        </div>
+      ) : (
+        <>
+          <AvatarStack users={att.map((a) => ({ userId: a.userId, name: a.name, username: a.username }))} />
+          <span className="day-count">{peopleWord(att.length)}</span>
+        </>
+      )}
       <div className="row-right">{icons.chevron(isToday ? sec(0.4) : undefined)}</div>
     </div>
   )

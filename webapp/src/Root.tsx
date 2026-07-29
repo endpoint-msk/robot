@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { App } from './App'
-import { bump, getState, pop, setData, setPerspective } from './store'
+import { bump, getState, pop, push, setData, setPerspective } from './store'
 import { applyTheme } from './theme'
 import { tg } from './telegram'
 import type { Bootstrap } from './types'
@@ -30,6 +30,19 @@ const BootError = ({ message }: { message: string }) => (
 )
 
 type Phase = 'notg' | 'loading' | 'ready' | 'error'
+
+/**
+ * Бот открывает миниапп с `?draft=1`, когда резидент переслал пост из канала анонсов
+ * и согласился сделать из него ивент. Читаем именно query, а не `start_param`: в личке
+ * кнопка web_app ведёт прямо на URL, deep link с `startapp` там не нужен.
+ */
+const wantsEventDraft = (): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('draft') === '1'
+  } catch {
+    return false
+  }
+}
 
 export function Root() {
   const [phase, setPhase] = useState<Phase>(tg && tg.initData ? 'loading' : 'notg')
@@ -78,12 +91,19 @@ export function Root() {
       /* старый браузер */
     }
 
+    const wantsDraft = wantsEventDraft()
     let cancelled = false
     api<Bootstrap>('bootstrap')
       .then((data) => {
         if (cancelled) return
         setData(data)
         setPerspective(data.me.isResident ? 'resident' : 'guest')
+        // Кнопка «Создать ивент» из лички ведёт сюда с ?draft=1 — открываем редактор
+        // с уже вставленным текстом поста. Проверяем и саму заготовку: её могли
+        // отработать с другого устройства, и тогда открывать нечего.
+        if (wantsDraft && data.me.isResident && data.eventDraft) {
+          push('event', { fromDraft: true, backLabel: 'Обзор' })
+        }
         setPhase('ready')
       })
       .catch((e) => {

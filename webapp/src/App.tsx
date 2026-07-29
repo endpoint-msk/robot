@@ -22,6 +22,8 @@ import { GuestNote } from './screens/GuestNote'
 import { NewRequest } from './screens/NewRequest'
 import { Rules } from './screens/Rules'
 import { EditRequest } from './screens/EditRequest'
+import { Event } from './screens/Event'
+import { Route } from './screens/Route'
 import { Dev } from './screens/Dev'
 import { DevEdit } from './screens/DevEdit'
 import { Announce } from './screens/Announce'
@@ -41,6 +43,8 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   rules: Rules,
   newRequest: NewRequest,
   editRequest: EditRequest,
+  event: Event,
+  route: Route,
   dev: Dev,
   devEdit: DevEdit,
   announce: Announce,

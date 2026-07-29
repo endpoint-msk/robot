@@ -28,6 +28,7 @@ import {
     nowTimeKey,
     notifyApproverCancelled,
     notifyGuestApproved,
+    notifyGuestClosed,
     notifyGuestUnapproved,
     notifyGuestReschedule,
     notifyPrefsFor,
@@ -46,13 +47,28 @@ import {
     weekStartOf,
 } from './hosting.js'
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
+import {
+    adoptDraftPhoto,
+    canEditEvent,
+    clearEventDraft,
+    createEvent,
+    deleteEvent,
+    draftPhotoId,
+    eventDraftFor,
+    eventsForDay,
+    readEventPhoto,
+    setEventPhoto,
+    updateEvent,
+    type EventError,
+    type EventInput,
+} from './events.js'
 import { syncHostingBoard } from './hosting-board.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { HostingRequest, HostingUser } from './types.js'
+import type { HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
 const INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60
@@ -139,6 +155,11 @@ const CONTENT_TYPES: Record<string, string> = {
     '.js': 'text/javascript; charset=utf-8',
     '.svg': 'image/svg+xml',
     '.png': 'image/png',
+    // Фото двери и иконки метро на экране «Как пройти» лежат в webapp/public.
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.ico': 'image/x-icon',
     '.json': 'application/json; charset=utf-8',
 }
 
@@ -196,12 +217,45 @@ type ApiContext = WebappDeps & {
     res: ServerResponse
 }
 
+/** Потолок реестра «кого бот уже показывал»: людей вокруг спейса на порядки меньше. */
+const DISCLOSED_LIMIT = 5000
+
+/**
+ * userId, которых сервер сам отдал клиенту в каком-либо ответе.
+ *
+ * Это whitelist для `/avatar.jpg`: аватарку можно попросить только у того, кого бот
+ * и так назвал. Без него `id` в query не сверялся ни с чем, и перебор диапазона
+ * заставлял бота дёргать `getUsers` + `downloadAsBuffer` на каждый холодный id —
+ * то есть усилитель флуда в Telegram поверх общего mtcute-клиента.
+ *
+ * Реестр в памяти и переживает только процесс: после рестарта он наполнится заново
+ * первым же bootstrap'ом, а до тех пор фронт покажет градиентную заглушку с буквой.
+ */
+const disclosedUserIds = new Set<number>()
+
+const discloseUser = (userId: number): void => {
+    if (!Number.isSafeInteger(userId) || userId <= 0) return
+    if (disclosedUserIds.has(userId)) return
+    // Set перебирается в порядке вставки, поэтому первый ключ — самый старый.
+    if (disclosedUserIds.size >= DISCLOSED_LIMIT) {
+        const oldest = disclosedUserIds.values().next().value
+        if (oldest !== undefined) disclosedUserIds.delete(oldest)
+    }
+    disclosedUserIds.add(userId)
+}
+
 /**
  * Имена чистим на выдаче, а не только на входе (см. cleanName в validateInitData):
  * в стейте лежат заявки, заведённые до этой чистки, — иначе гость с именем из невидимых
  * символов так и останется пустой строкой в списке.
+ *
+ * Заодно это единственная воронка карточек участников наружу, поэтому тут же
+ * отмечаем id как «показанный» (см. `disclosedUserIds`).
  */
-const userView = <T extends { name: string }>(u: T): T => ({ ...u, name: displayName(u.name) })
+const userView = <T extends { userId: number; name: string }>(u: T): T => {
+    discloseUser(u.userId)
+    return { ...u, name: displayName(u.name) }
+}
 
 const requestsView = (list: HostingRequest[]) =>
     list.map((r) => ({
@@ -216,6 +270,54 @@ const requestsView = (list: HostingRequest[]) =>
         proposal: r.proposal ? { ...r.proposal, user: userView(r.proposal.user) } : null,
         anon: r.anon === true,
     }))
+
+/**
+ * Стороны переговоров о переносе: кто предложил и кому.
+ *
+ * Принять предложение вправе только адресат, снять — адресат (отказ) или автор (отзыв).
+ * До появления `proposal.to` адресат со стороны резидентов выводился из `approvedBy`,
+ * которого у pending-заявки нет, — и в чужие переговоры влезал любой резидент.
+ * Для старых записей без `to` оставлено прежнее поведение.
+ */
+const proposalSides = (
+    request: HostingRequest,
+    proposal: RescheduleProposal,
+    userId: number,
+    isResident: boolean,
+): { isAuthor: boolean; isAddressee: boolean; counterpartId: number | null } => {
+    const isGuest = request.guest.userId === userId
+    const isAuthor = proposal.user.userId === userId
+    const addressee = proposal.to ?? null
+    const isAddressee = proposal.by === 'resident'
+        ? isGuest
+        : addressee
+            ? addressee.userId === userId
+            : !isGuest && isResident && (!request.approvedBy || request.approvedBy.userId === userId)
+    const counterpartId = isAuthor
+        ? addressee?.userId ?? (proposal.by === 'resident' ? request.guest.userId : request.approvedBy?.userId ?? null)
+        : proposal.user.userId
+    return { isAuthor, isAddressee, counterpartId }
+}
+
+/** Карточка ивента для фронта: имя автора чистим тем же `userView`, что и остальных. */
+const eventView = (e: SpaceEvent) => ({ ...e, host: userView(e.host) })
+
+const EVENT_ERRORS: Record<EventError, string> = {
+    not_found: 'Ивент не найден — обнови экран.',
+    bad_date: 'Выбери день в пределах ближайшей недели.',
+    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+    past_time: 'Это время уже прошло.',
+    bad_title: 'Без названия ивент не понять — впиши его.',
+    not_yours: 'Править ивент может тот, кто его завёл.',
+}
+
+const eventInputFrom = (body: Record<string, unknown>): EventInput => ({
+    dateKey: typeof body.dateKey === 'string' ? body.dateKey : '',
+    time: typeof body.time === 'string' ? body.time : '',
+    title: typeof body.title === 'string' ? body.title : '',
+    description: typeof body.description === 'string' ? body.description : '',
+    residentsOnly: body.residentsOnly === true,
+})
 
 /** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
 const isDevUser = (ctx: ApiContext): boolean => ctx.devUserIds.has(ctx.user.userId)
@@ -252,6 +354,8 @@ const buildBootstrap = (ctx: ApiContext) => {
             ...(resident || isDevUser(ctx) ? { requests: requestsView(requests) } : {}),
             // Публичный список «кто придёт» — виден всем.
             attendees: attendeesForDay(storage, dateKey).map(userView),
+            // Ивенты дня: гостю — только открытые, резиденту — все.
+            events: eventsForDay(storage, dateKey, resident).map(eventView),
         })
     }
     const myRequests = Object.values(storage.get().hostingRequests)
@@ -288,7 +392,10 @@ const buildBootstrap = (ctx: ApiContext) => {
         // «есть заметка» встречается и в архиве, который грузится отдельным запросом.
         ...(resident ? { notes: listGuestNotes(storage).map((n) => ({ ...n, by: userView(n.by) })) } : {}),
         // Список заблокированных с разблокировкой — только в дев-меню.
-        ...(isDevUser(ctx) ? { blocked: listBlockedUsers(storage) } : {}),
+        ...(isDevUser(ctx) ? { blocked: listBlockedUsers(storage).map(userView) } : {}),
+        // Заготовка ивента из пересланного поста канала: миниапп открывает по ней
+        // редактор, если пришёл по кнопке из лички (?draft=1).
+        ...(resident ? { eventDraft: eventDraftFor(storage, user.userId) } : {}),
     }
 }
 
@@ -430,7 +537,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const people = await listInviteCandidates(client, storage, allowedChats, dateKey, user.userId)
-            sendJson(res, 200, { people })
+            // Резиденты сюда попадают живым getChatMembers, а не из стейта, поэтому в
+            // реестре показанных их может не быть — иначе аватарки в списке зова отвалятся.
+            sendJson(res, 200, { people: people.map(userView) })
             return
         }
 
@@ -605,6 +714,101 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // --- Ивенты спейса ---------------------------------------------------
+        //
+        // Заводит и правит только резидент: ивент — это то, что спейс обещает людям,
+        // и отвечает за него автор. Гость их только видит (открытые) в «Активности».
+        case 'event.create': {
+            if (!requireResident()) return
+            const created = await createEvent(storage, tzOffsetMinutes, user, eventInputFrom(body))
+            if (!created.ok) {
+                sendError(res, 400, created.error, EVENT_ERRORS[created.error])
+                return
+            }
+            // Заготовка отработала: её афиша переезжает на ивент, сама заготовка удаляется,
+            // иначе миниапп предложил бы завести тот же ивент второй раз.
+            if (body.fromDraft === true) {
+                const moved = await adoptDraftPhoto(storage.path(), draftPhotoId(user.userId), created.event.id)
+                if (moved) await setEventPhoto(storage, created.event.id, true)
+                await clearEventDraft(storage, storage.path(), user.userId)
+            }
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'event.update': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const existing = storage.get().events[id]
+            if (!existing) {
+                sendError(res, 404, 'not_found', 'Ивент не найден — обнови экран.')
+                return
+            }
+            if (!canEditEvent(existing, user.userId, isDevUser(ctx))) {
+                sendError(res, 403, 'not_yours', 'Править ивент может тот, кто его завёл.')
+                return
+            }
+            const updated = await updateEvent(storage, tzOffsetMinutes, id, eventInputFrom(body))
+            if (!updated.ok) {
+                sendError(res, 400, updated.error, EVENT_ERRORS[updated.error])
+                return
+            }
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'event.delete': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const existing = storage.get().events[id]
+            if (!existing) {
+                sendError(res, 404, 'not_found', 'Ивент не найден — обнови экран.')
+                return
+            }
+            if (!canEditEvent(existing, user.userId, isDevUser(ctx))) {
+                sendError(res, 403, 'not_yours', 'Удалить ивент может тот, кто его завёл.')
+                return
+            }
+            await deleteEvent(storage, storage.path(), id)
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Отказаться от заготовки, не заводя ивент: иначе она висела бы до следующей пересылки.
+        case 'event.draft.drop': {
+            if (!requireResident()) return
+            await clearEventDraft(storage, storage.path(), user.userId)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Закрыть заявку со стороны спейса: визит не состоится. Заявка удаляется (как при
+        // отмене гостем), гостю уходит DM с предложением выбрать другой день.
+        //
+        // Отдельный глагол нужен потому, что удалить заявку мог только сам гость: резиденту,
+        // который не может принять, оставалось уговаривать его или идти к деву. Блокировка
+        // для этого не годится — она банит человека во всех чатах.
+        case 'close': {
+            if (!requireResident()) return
+            const request = findRequest()
+            if (!request) return
+            // Подтверждённый визит закрывает тот, кто его ведёт: остальные к нему не
+            // прикасаются, как и в переносе. Ничей (pending) — любой резидент.
+            if (request.approvedBy && request.approvedBy.userId !== user.userId) {
+                sendError(res, 403, 'not_allowed', 'Этот визит ведёт другой резидент — закрыть может только он.')
+                return
+            }
+            await deleteHostingRequest(storage, request.id)
+            void notifyGuestClosed(client, config.publicUrl, request, user)
+                .catch((err) => console.error('[hosting] не удалось уведомить гостя о закрытии заявки:', err))
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
         // Предложить перенос дня/времени. На pending-заявке: резидент — любой, гость — только
         // в ответ на предложение резидента. На одобренной: обе стороны могут начать сами,
         // но со стороны резидентов — только тот, кто хостит (чужой визит не двигаем).
@@ -624,6 +828,16 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (by === 'guest' && request.status !== 'approved' && request.proposal?.by !== 'resident') {
                 sendError(res, 409, 'no_proposal', 'Отвечать своим вариантом можно только на предложение резидента.')
                 return
+            }
+            // Пока висит живое предложение, встревать в переговоры посторонний резидент не
+            // может: перебить чужой вариант или ответить на адресованное другому — значит
+            // стереть предложение, о снятии которого его автор даже не узнает.
+            if (by === 'resident' && request.proposal) {
+                const sides = proposalSides(request, request.proposal, user.userId, resident)
+                if (!sides.isAuthor && !sides.isAddressee) {
+                    sendError(res, 403, 'not_allowed', 'Перенос по этой заявке обсуждает другой резидент.')
+                    return
+                }
             }
             // Гость дефолтит день на текущий день заявки: он свой день двигать не просит, только время.
             const dateKey = typeof body.dateKey === 'string' && body.dateKey ? body.dateKey : request.dateKey
@@ -698,13 +912,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
                 return
             }
-            const isGuest = request.guest.userId === user.userId
-            // У одобренной заявки адресат со стороны резидентов — конкретно хост, а не
-            // любой резидент: иначе чужой визит подвинет посторонний.
-            const canAccept = proposal.by === 'resident'
-                ? isGuest
-                : !isGuest && resident && (!request.approvedBy || request.approvedBy.userId === user.userId)
-            if (!canAccept) {
+            // Принимает только адресат: у предложения резидента это гость, у предложения
+            // гостя — конкретный резидент (хост либо автор предыдущего предложения).
+            if (!proposalSides(request, proposal, user.userId, resident).isAddressee) {
                 sendError(res, 403, 'not_allowed', 'Это предложение адресовано другой стороне.')
                 return
             }
@@ -745,8 +955,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_allowed', 'Недоступно.')
                 return
             }
-            if (!isGuest && request.approvedBy && request.approvedBy.userId !== user.userId) {
-                sendError(res, 403, 'not_allowed', 'Подтверждённый визит ведёт тот, кто его хостит.')
+            // Снять предложение вправе его автор (отзыв) и адресат (отказ). Посторонний
+            // резидент — нет: раньше на pending-заявке он гасил чужое предложение, автору
+            // ничего не приходило, а гость читал «снимает своё предложение» про не того.
+            const sides = proposalSides(request, proposal, user.userId, resident)
+            if (!sides.isAuthor && !sides.isAddressee) {
+                sendError(res, 403, 'not_allowed', 'Перенос по этой заявке обсуждает другой резидент.')
                 return
             }
             const result = await clearReschedule(storage, request.id)
@@ -756,23 +970,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             const proposed = { dateKey: proposal.dateKey, time: proposal.time }
-            // Своё предложение сняли или чужое отклонили — от этого зависит формулировка DM.
-            const actor = { user, isGuest, withdrawn: (proposal.by === 'guest') === isGuest }
-            // Уведомляем противоположную сторону. Для встречного предложения гостя адрес
-            // резидента мы не храним — если гость сам отзывает, DM просто не шлём.
-            if (proposal.by === 'resident') {
-                const targetIsGuest = !isGuest
-                const targetId = targetIsGuest ? result.request.guest.userId : proposal.user.userId
-                void notifyProposalCancelled(client, targetId, config.publicUrl, result.request, proposed, targetIsGuest, actor)
-                    .catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
-            } else if (!isGuest) {
-                void notifyProposalCancelled(client, result.request.guest.userId, config.publicUrl, result.request, proposed, true, actor)
-                    .catch((err) => console.error('[hosting] не удалось уведомить гостя о снятии предложения:', err))
-            } else if (result.request.approvedBy) {
-                // Гость отзывает своё предложение на подтверждённом визите — адрес хоста
-                // известен (approvedBy), уведомляем его. Для pending адреса нет — молчим.
-                void notifyProposalCancelled(client, result.request.approvedBy.userId, config.publicUrl, result.request, proposed, false, actor)
-                    .catch((err) => console.error('[hosting] не удалось уведомить хоста о снятии предложения:', err))
+            // Своё предложение отозвали или чужое отклонили — от этого зависит формулировка DM.
+            const actor = { user, isGuest, withdrawn: sides.isAuthor }
+            // Пишем противоположной стороне. Адресат лежит на самом предложении, поэтому
+            // отзыв гостя доходит и на pending-заявке — раньше там адреса не было и DM молчал.
+            if (sides.counterpartId !== null) {
+                void notifyProposalCancelled(
+                    client, sides.counterpartId, config.publicUrl, result.request, proposed,
+                    sides.counterpartId === result.request.guest.userId, actor,
+                ).catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
             }
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -786,6 +992,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!request) return
             if (request.guest.userId === user.userId) {
                 sendError(res, 400, 'self', 'Себя блокировать нельзя.')
+                return
+            }
+            // Резидента заблокировать нельзя. Заявку он завести может (гейта резидентства
+            // на `create` нет, да и в резиденты повышают уже после визита), а вот бан во
+            // всех чатах по свайпу — с откатом только через дева — это не тот вес.
+            if (await residents.isResident(request.guest.userId)) {
+                sendError(res, 400, 'resident', 'Это резидент — блокировка не для своих. Разбирайтесь в чате.')
                 return
             }
             await blockUser(client, storage, allowedChats, request.guest, user)
@@ -1006,7 +1219,22 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
 /** Сколько держим фото профиля в памяти: аватарки меняются редко, а рендер списка просит их пачками. */
 const AVATAR_TTL_MS = 6 * 60 * 60 * 1000
 
+/** Потолок кэша аватарок: без него Map растёт на каждый новый id и никогда не чистится. */
+const AVATAR_CACHE_LIMIT = 512
+
 const avatarCache = new Map<number, { photo: Uint8Array | null; at: number }>()
+
+/** Кладёт фото в кэш, вытесняя самое старое по вставке, если упёрлись в потолок. */
+const putAvatar = (userId: number, photo: Uint8Array | null): void => {
+    // delete+set поднимает существующий ключ в конец, чтобы вытеснялся действительно старый.
+    avatarCache.delete(userId)
+    while (avatarCache.size >= AVATAR_CACHE_LIMIT) {
+        const oldest = avatarCache.keys().next().value
+        if (oldest === undefined) break
+        avatarCache.delete(oldest)
+    }
+    avatarCache.set(userId, { photo, at: Date.now() })
+}
 
 /** Скачивания в полёте: без этого пачка <img> на один рендер качает одно фото N раз. */
 const avatarInflight = new Set<number>()
@@ -1037,7 +1265,7 @@ const warmAvatar = async (client: TelegramClient, userId: number): Promise<void>
         console.warn(`[webapp] не удалось получить аватарку ${userId}:`, err)
     } finally {
         // Ошибку кэшируем как «фото нет»: иначе битый юзер перезапрашивается на каждый рендер.
-        avatarCache.set(userId, { photo, at: Date.now() })
+        putAvatar(userId, photo)
         avatarInflight.delete(userId)
     }
 }
@@ -1052,11 +1280,13 @@ const serveStatic = async (pathname: string, res: ServerResponse): Promise<void>
     try {
         const data = await fs.readFile(target)
         const ext = path.extname(target).toLowerCase()
+        // Телеграм-webview агрессивно кэширует; разметку и скрипты отдаём без кэша,
+        // чтобы после деплоя не ловить смесь старого JS и нового API. Картинки —
+        // наоборот, кэшируем: они не меняются, а фото двери весит сотню килобайт.
+        const immutable = ext === '.jpg' || ext === '.jpeg' || ext === '.png' || ext === '.webp' || ext === '.svg'
         res.writeHead(200, {
             'Content-Type': CONTENT_TYPES[ext] ?? 'application/octet-stream',
-            // Телеграм-webview агрессивно кэширует; статика мелкая — отдаём без кэша,
-            // чтобы после деплоя не ловить смесь старого JS и нового API.
-            'Cache-Control': 'no-store',
+            'Cache-Control': immutable ? 'public, max-age=86400' : 'no-store',
         })
         res.end(data)
     } catch {
@@ -1108,6 +1338,46 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
+            // Афиша ивента: тоже <img>, поэтому GET и initData в query, как у аватарок.
+            // Файл лежит рядом со стейтом (см. events.ts), в JSON его нет.
+            if (pathname === '/event-photo.jpg') {
+                if (req.method !== 'GET' && req.method !== 'HEAD') {
+                    res.writeHead(405).end()
+                    return
+                }
+                const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
+                if (!viewer) {
+                    res.writeHead(401).end()
+                    return
+                }
+                const access = await deps.residents.access(viewer.userId)
+                if (isBlocked(deps.storage, viewer.userId) || access.banned) {
+                    res.writeHead(403).end()
+                    return
+                }
+                const id = url.searchParams.get('id') ?? ''
+                // Заготовку видит только её владелец: это ещё не опубликованный ивент.
+                const isOwnDraft = id === draftPhotoId(viewer.userId) && access.resident
+                const event = deps.storage.get().events[id]
+                // Резидентский ивент гостю не показываем — иначе афиша выдаёт то,
+                // что скрыто галочкой «только резидентам».
+                const visible = event ? access.resident || !event.residentsOnly : false
+                if (!isOwnDraft && !visible) {
+                    res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
+                    return
+                }
+                const bytes = await readEventPhoto(deps.storage.path(), id)
+                if (!bytes) {
+                    res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
+                    return
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'image/jpeg',
+                    'Cache-Control': 'private, max-age=3600',
+                }).end(bytes)
+                return
+            }
+
             // Аватарки — тоже GET вне /api/: их грузит <img>, тело не отправить,
             // поэтому initData едет в query (как в /visit.ics). Нет фото — 404,
             // фронт остаётся на градиентной заглушке с буквой.
@@ -1116,13 +1386,27 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     res.writeHead(405).end()
                     return
                 }
-                if (!validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)) {
+                const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
+                if (!viewer) {
                     res.writeHead(401).end()
+                    return
+                }
+                // Гейт blocked — тот же, что у /visit.ics выше. Живой `access` (бан в чате)
+                // тут намеренно не зовём: это getChatMember на каждый <img>, а список
+                // рендерится пачками. Данные всё равно закрыты в /api/*, где access есть.
+                if (isBlocked(deps.storage, viewer.userId)) {
+                    res.writeHead(403).end()
                     return
                 }
                 const id = Number(url.searchParams.get('id'))
                 if (!Number.isSafeInteger(id) || id <= 0) {
                     res.writeHead(400).end()
+                    return
+                }
+                // Просить можно себя и тех, кого бот сам показал (см. `disclosedUserIds`).
+                // Иначе перебором id качается чужое фото и греется очередь mtcute.
+                if (id !== viewer.userId && !disclosedUserIds.has(id)) {
+                    res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
                     return
                 }
                 const hit = cachedAvatar(id)

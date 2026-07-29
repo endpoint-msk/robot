@@ -15,8 +15,9 @@ export type SwipeAction = {
   label: string
   /** Иконка вместо подписи — три текстовые кнопки растягивали панель на всю строку. */
   icon?: ReactElement
-  /** 'red' — деструктивное (блокировка), 'neutral' — нейтральное (заметка). По умолчанию синее. */
-  tone?: 'blue' | 'red' | 'neutral'
+  /** 'red' — деструктивное (блокировка), 'orange' — обратимое (закрыть заявку),
+   *  'neutral' — нейтральное (заметка). По умолчанию синее. */
+  tone?: 'blue' | 'red' | 'orange' | 'neutral'
   onSelect: () => void | Promise<void>
 }
 
@@ -201,7 +202,10 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
         {actions.map((a) => (
           <button
             key={a.key}
-            className={'swipe-action' + (a.tone === 'red' ? ' danger' : a.tone === 'neutral' ? ' neutral' : '')}
+            className={
+              'swipe-action' +
+              (a.tone === 'red' ? ' danger' : a.tone === 'orange' ? ' warn' : a.tone === 'neutral' ? ' neutral' : '')
+            }
             aria-label={a.label}
             title={a.label}
             onClick={() => {

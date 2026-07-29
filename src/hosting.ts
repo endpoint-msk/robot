@@ -193,9 +193,20 @@ export type DayAttendee = {
 }
 
 /**
+ * Фейковый гость из дев-сида (`dev.seed`): у него отрицательный userId, настоящие
+ * Telegram-id всегда положительные.
+ *
+ * Такие заявки живут в обычном стейте, поэтому их надо отсекать на каждой публичной
+ * поверхности — иначе отладка миниаппа выносит «Гришу Тестова» на закреплённую доску
+ * в каждом чате. В резидентских списках (`days[].requests`, архив) они, наоборот,
+ * должны быть видны: ради этого сид и существует.
+ */
+export const isFakeUserId = (userId: number): boolean => userId < 0
+
+/**
  * Публичный список «кто придёт» на день (виден всем, включая гостей): резиденты,
  * отметившиеся «я приду» (в приоритете, с пометкой), затем подтверждённые гости
- * без анонимных. Цель визита сюда НЕ попадает.
+ * без анонимных. Цель визита сюда НЕ попадает. Фейки дев-сида отсекаются.
  */
 export const attendeesForDay = (storage: Storage, dateKey: string): DayAttendee[] => {
     const residents: DayAttendee[] = residentsAttendingDay(storage, dateKey).map((a) => ({
@@ -207,7 +218,7 @@ export const attendeesForDay = (storage: Storage, dateKey: string): DayAttendee[
     }))
     const seen = new Set(residents.map((a) => a.userId))
     const guests: DayAttendee[] = requestsForDay(storage, dateKey)
-        .filter((r) => r.status === 'approved' && !r.anon)
+        .filter((r) => r.status === 'approved' && !r.anon && !isFakeUserId(r.guest.userId))
         .map((r) => ({
             userId: r.guest.userId,
             name: r.guest.name,
@@ -469,6 +480,31 @@ export const notifyGuestUnapproved = async (
     }
 }
 
+/**
+ * Гостю в личку: резидент закрыл его заявку.
+ *
+ * Закрытие — это удаление заявки со стороны спейса: визит не состоится (резидент не
+ * может принять, планы поменялись). Раньше такого глагола не было вовсе, и резиденту
+ * оставалось либо просить гостя удалить заявку самому, либо звать дева.
+ */
+export const notifyGuestClosed = async (
+    client: TelegramClient,
+    webappUrl: string,
+    request: HostingRequest,
+    by: HostingUser,
+): Promise<void> => {
+    const who = await mentionLabel(client, by)
+    const text = `Резидент ${who} закрыл заявку на визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time} — в этот день не получится.<br>Можно выбрать другой день.`
+    try {
+        await client.sendText(request.guest.userId, html(text), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Выбрать другой день', webappUrl)]]),
+            disableWebPreview: true,
+        })
+    } catch {
+        // гость не открывал личку с ботом
+    }
+}
+
 /** Сообщает одобрившему резиденту, что гость отменил визит. */
 export const notifyApproverCancelled = async (
     client: TelegramClient,
@@ -691,18 +727,18 @@ export const proposeReschedule = async (
     if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
     if (isPastSlot(input.dateKey, input.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
     if (hasOtherRequestOnDay(storage, existing.guest.userId, input.dateKey, id)) return { ok: false, error: 'duplicate' }
-    const recipientId = input.by === 'resident'
-        ? existing.guest.userId
+    // Адресат: гостю — если предложил резидент; резиденту — хост, а на pending-заявке
+    // автор предложения, на которое гость отвечает. Запоминаем его на самом предложении,
+    // иначе после перезаписи `proposal` неизвестно, чьи это переговоры.
+    const to: HostingUser | null = input.by === 'resident'
+        ? existing.guest
         : existing.approvedBy
-            ? existing.approvedBy.userId
-            : existing.proposal?.by === 'resident'
-                ? existing.proposal.user.userId
-                : null
+            ?? (existing.proposal?.by === 'resident' ? existing.proposal.user : null)
     await storage.update((s) => {
         const r = s.hostingRequests[id]
-        if (r) r.proposal = { dateKey: input.dateKey, time: input.time, by: input.by, user: input.user, at: new Date().toISOString() }
+        if (r) r.proposal = { dateKey: input.dateKey, time: input.time, by: input.by, user: input.user, to, at: new Date().toISOString() }
     })
-    return { ok: true, request: storage.get().hostingRequests[id]!, recipientId }
+    return { ok: true, request: storage.get().hostingRequests[id]!, recipientId: to?.userId ?? null }
 }
 
 export type AcceptError = 'not_found' | 'no_proposal' | 'stale'

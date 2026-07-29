@@ -1,10 +1,11 @@
+import { Fragment } from 'react'
 import { action } from '../api'
 import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { haptic } from '../telegram'
 import { push, useParams, useStore } from '../store'
 import type { HostingRequest } from '../types'
-import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle } from '../components/common'
+import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle, Sep } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
 import { RequestsCard } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
@@ -29,6 +30,7 @@ export function Day() {
   const dayObj = !archive ? data!.days.find((d) => d.dateKey === params.dateKey) : undefined
   const residentsComing = !archive ? ((dayObj && dayObj.attendees) || []).filter((a) => a.resident) : []
   const iAmComing = residentsComing.some((a) => a.userId === data!.me.id)
+  const events = (dayObj && dayObj.events) || []
 
   return (
     <Screen>
@@ -56,13 +58,44 @@ export function Day() {
           Позвать в спейс
         </button>
       ) : null}
+      {/* Ивенты дня: список с переходом в редактор, а если ивентов нет — кнопка «создать». */}
+      {!archive && events.length > 0 ? (
+        <div className="card" style={{ marginTop: 20 }}>
+          {events.map((ev, i) => (
+            <Fragment key={ev.id}>
+              {i > 0 ? <Sep left={62} /> : null}
+              <div className="row tappable" onClick={() => push('event', { event: ev })}>
+                <div className="row-icon ev-row-icon">{icons.calendar(17, '#bf5af2')}</div>
+                <div className="ev-row-main">
+                  <div className="ev-row-title-line">
+                    <span className="ev-row-title">{ev.title}</span>
+                    {ev.residentsOnly ? <span className="ev-chip">резидентам</span> : null}
+                  </div>
+                  <div className="ev-row-sub">{`в ${ev.time} · ${ev.host.username ? '@' + ev.host.username : ev.host.name}`}</div>
+                </div>
+                <div className="row-right">{icons.chevron()}</div>
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      ) : null}
+      {!archive && events.length === 0 ? (
+        <button
+          className="secondary-btn event-btn"
+          style={{ marginTop: 10 }}
+          onClick={() => push('event', { dateKey: params.dateKey })}
+        >
+          {icons.calendar(16, '#bf5af2')}
+          Создать ивент
+        </button>
+      ) : null}
       {!archive && residentsComing.length > 0 ? (
         <>
           <SectionTitle>{`Придут резиденты · ${residentsComing.length}`}</SectionTitle>
           <AttendeesCard list={residentsComing} />
         </>
       ) : null}
-      {requests.length === 0 && (archive || residentsComing.length === 0) ? (
+      {requests.length === 0 && (archive || (residentsComing.length === 0 && events.length === 0)) ? (
         <div className="card">
           <EmptyState
             title={archive ? 'Заявок не было' : 'Нет заявок гостей'}

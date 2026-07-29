@@ -19,6 +19,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/avatar.jpg': 'http://localhost:8080',
+      '/event-photo.jpg': 'http://localhost:8080',
       '/visit.ics': 'http://localhost:8080',
     },
   },

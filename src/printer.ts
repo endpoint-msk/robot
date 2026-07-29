@@ -1,6 +1,7 @@
 import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import type { AllowedChats } from './handlers.js'
+import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 
 /** Состояние печати, как его отдаёт Moonraker (`print_stats.state`). */
@@ -186,22 +187,47 @@ export const renderStatus = (status: PrinterStatus): string => {
 
 const isAllowedChat = (allowed: AllowedChats, chatId: number): boolean => allowed.has(chatId)
 
-/** Личка с ботом. В таких чатах `/printer` доступен всем. */
+/** Личка с ботом. */
 const isPrivateChat = (msg: MessageContext): boolean => msg.chat.type === 'user'
 
 /**
- * Пропускаем команду, если это личка с ботом ИЛИ allowlist-чат с сообщением от пользователя.
+ * Кому доступен принтер в этом чате: в allowlist-группе — её участникам (как и раньше),
+ * в личке — только резидентам.
+ *
+ * Личка отдельным гейтом потому, что за кнопкой «Камера» живой кадр из помещения
+ * спейса. Без проверки его вытягивал любой, кто нашёл бота и написал `/printer`.
+ */
+const canUsePrinterIn = async (
+    residents: ResidentDirectory,
+    chatType: string,
+    chatId: number,
+    allowed: AllowedChats,
+    userId: number,
+): Promise<boolean> => {
+    if (chatType === 'user') return residents.isResident(userId)
+    return isAllowedChat(allowed, chatId)
+}
+
+/**
+ * Пропускаем команду, если это личка резидента ИЛИ allowlist-чат с сообщением от пользователя.
  * В чужих группах — молчим.
  */
-const canUsePrinter = async (msg: MessageContext, allowed: AllowedChats): Promise<boolean> => {
-    if (isPrivateChat(msg)) return true
-    const chatId = Number(msg.chat.id)
-    if (!isAllowedChat(allowed, chatId)) return false
+const canUsePrinter = async (
+    residents: ResidentDirectory,
+    msg: MessageContext,
+    allowed: AllowedChats,
+): Promise<boolean> => {
+    if (!isPrivateChat(msg) && !isAllowedChat(allowed, Number(msg.chat.id))) return false
     if (!msg.sender || msg.sender.type !== 'user') {
-        await msg.answerText('Команды доступны только пользователям.')
+        // В чужих группах молчим, поэтому отвечаем только там, где бот и так говорит.
+        if (!isPrivateChat(msg)) await msg.answerText('Команды доступны только пользователям.')
         return false
     }
-    return true
+    if (await canUsePrinterIn(residents, msg.chat.type, Number(msg.chat.id), allowed, msg.sender.id)) return true
+    if (isPrivateChat(msg)) {
+        await msg.answerText('Статус принтера доступен резидентам спейса.')
+    }
+    return false
 }
 
 const unsubscribeKeyboard = () =>
@@ -227,14 +253,15 @@ export const registerPrinterHandlers = (
         client: TelegramClient
         storage: Storage
         allowedChats: AllowedChats
+        residents: ResidentDirectory
         printerUrl: string
         printerAuth: string | null
     },
 ): void => {
-    const { client, storage, allowedChats, printerUrl, printerAuth } = deps
+    const { client, storage, allowedChats, residents, printerUrl, printerAuth } = deps
 
     dp.onNewMessage(filters.command('printer'), async (msg) => {
-        if (!(await canUsePrinter(msg, allowedChats))) return
+        if (!(await canUsePrinter(residents, msg, allowedChats))) return
 
         let status: PrinterStatus
         try {
@@ -270,6 +297,20 @@ export const registerPrinterHandlers = (
     })
 
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
+        // Гейт тот же, что у команды: кадр с камеры и подписка живут в allowlist-чатах
+        // и в личке резидентов. Сообщение с кнопками остаётся в истории навсегда, поэтому
+        // права проверяем на каждый тап, а не только в момент отправки.
+        // Отписку не гейтим: снявшийся с резидентства должен уметь отписаться.
+        if (ctx.dataStr === CB_VIEW_PREVIEW || ctx.dataStr === CB_VIEW_CAMERA || ctx.dataStr === CB_NOTIFY) {
+            const allowedHere = await canUsePrinterIn(
+                residents, ctx.chat.type, Number(ctx.chat.id), allowedChats, ctx.user.id,
+            )
+            if (!allowedHere) {
+                await ctx.answer({ text: 'Принтер доступен резидентам спейса.', alert: true })
+                return
+            }
+        }
+
         if (ctx.dataStr === CB_VIEW_PREVIEW || ctx.dataStr === CB_VIEW_CAMERA) {
             const wantCamera = ctx.dataStr === CB_VIEW_CAMERA
 

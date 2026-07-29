@@ -22,6 +22,8 @@ export type ScreenName =
   | 'guestNote'
   | 'newRequest'
   | 'editRequest'
+  | 'event'
+  | 'route'
   | 'dev'
   | 'devEdit'
   | 'announce'

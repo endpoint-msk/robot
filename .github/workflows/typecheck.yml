@@ -17,3 +17,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # Фронт миниаппа тайпчекается отдельно: у него свой tsconfig, а корневой
+      # include ограничен src/**. Без этого шага ошибка типов во фронте проходила
+      # CI зелёной и падала уже в `docker build` на боевом хосте — после того как
+      # деплой успел перевести чекаут на новый коммит.
+      - run: npm --prefix webapp ci
+      - run: npm --prefix webapp run typecheck

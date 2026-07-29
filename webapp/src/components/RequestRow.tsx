@@ -64,6 +64,23 @@ async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
   if (done) haptic('success')
 }
 
+/**
+ * Закрыть заявку со стороны спейса: визит не состоится. Заявка удаляется, гостю уходит
+ * DM с предложением выбрать другой день — он не остаётся ждать ответа, которого не будет.
+ */
+async function closeRequest(r: HostingRequest): Promise<void> {
+  const approved = r.status === 'approved'
+  const ok = await confirmDialog(
+    approved
+      ? `Закрыть подтверждённый визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`
+      : `Закрыть заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`,
+    { confirmLabel: 'Закрыть', destructive: true },
+  )
+  if (!ok) return
+  const done = await action('close', { id: r.id })
+  if (done) haptic('warning')
+}
+
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
 async function blockGuest(r: HostingRequest): Promise<void> {
   const ok = await confirmDialog(
@@ -83,6 +100,11 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
   const guestNote = (data.notes || []).find((n) => n.userId === r.guest.userId) || null
   // Строка заявки живёт только на экране дня (живого или архивного) — туда и возвращаемся.
   const openNote = (): void => push('guestNote', { guest: r.guest, backLabel: 'День' })
+
+  // Переговоры о переносе адресные: пока висит предложение, работать с ним вправе
+  // только его автор и адресат (тот же гейт стоит на сервере, см. proposalSides).
+  // У записей без `to` (заведены до появления поля) остаётся прежнее «любой резидент».
+  const iAmParty = !p || p.user.userId === me.id || (p.to ? p.to.userId === me.id : true)
 
   // Перенос и блокировка живут в свайпе (см. SwipeRow), в строке их кнопок нет.
   let canReschedule = false
@@ -117,7 +139,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       </div>
     )
     // Подтверждённый визит двигает только его хост.
-    canReschedule = mine
+    canReschedule = mine && iAmParty
   } else if (archive) {
     right = <span className="waiting-label">Без ответа</span>
   } else {
@@ -136,7 +158,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         Захостить
       </button>
     )
-    canReschedule = true
+    canReschedule = iAmParty
   }
 
   // «Принять {слот}» остаётся в самой строке: это ответ на живое предложение гостя,
@@ -170,6 +192,17 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       label: 'Перенести',
       icon: icons.clock(21, '#fff'),
       onSelect: () => proposeRescheduleFor(r),
+    })
+  }
+  // Закрыть заявку: ничью — любой резидент, подтверждённый визит — только его хост
+  // (тот же принцип, что у переноса; сервер проверяет это сам).
+  if (me.isResident && !archive && (!r.approvedBy || r.approvedBy.userId === me.id)) {
+    swipeActions.push({
+      key: 'close',
+      label: 'Закрыть заявку',
+      icon: icons.xmark(21, '#fff'),
+      tone: 'orange',
+      onSelect: () => closeRequest(r),
     })
   }
   // Блокировать гостя вправе любой резидент, но не в архиве (там только чтение).
@@ -220,6 +253,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         {p.by === 'guest' ? (
           <span>
             гость предлагает <span className="pn-time">{proposalSlot(r, p)}</span>
+            {/* Отвечает адресат — иначе непонятно, почему кнопки «Принять» нет. */}
+            {!iAmParty && p.to ? ` · ответит ${p.to.name}` : ''}
           </span>
         ) : (
           // Предложить мог и другой резидент — «вы» только автору предложения.

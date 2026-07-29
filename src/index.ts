@@ -4,12 +4,12 @@ import { Dispatcher, filters } from '@mtcute/dispatcher'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
+import { registerEventIntake } from './event-intake.js'
 import { registerMenuHandlers } from './menu.js'
 import { normalizePrinterUrl, parsePrinterAuth, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
 import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
 import { createTelegramResidentDirectory } from './residents.js'
 import {
-    registerChatActivityTracker,
     registerPresenceHandlers,
     setHostingMiniappLink,
     setHostingReminder,
@@ -64,6 +64,8 @@ const main = async () => {
     const forwardFrom = parseChatId(process.env.FORWARD_FROM_CHAT)
     const forwardTo = parseChatId(process.env.FORWARD_TO_CHAT)
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
+    // Канал анонсов: пересланный оттуда пост бот предлагает превратить в ивент.
+    const announceChannelId = parseChatId(process.env.ANNOUNCE_CHANNEL_ID)
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
     const keeneticConfig = parseKeeneticConfig({
@@ -99,7 +101,9 @@ const main = async () => {
     const tg = new TelegramClient({
         apiId,
         apiHash,
-        storage: 'bot.session',
+        // Путь к сессии тоже настраиваемый: в контейнере он обязан лежать в примонтированном
+        // томе, иначе пересборка образа теряет сессию вместе со всем слоем.
+        storage: process.env.SESSION_FILE?.trim() || 'bot.session',
         // Группируем сообщения одного альбома (media group) и отдаём их пачкой
         // в onMessageGroup, иначе форвардер разбивал бы альбом на отдельные посты.
         updates: { messageGroupingInterval: 250 },
@@ -125,19 +129,33 @@ const main = async () => {
     // presence-хендлеры регистрируем РАНЬШЕ — чтобы /start в личке ловил presence,
     // а групповой /start (алиас /help) — общий обработчик ниже
     registerPresenceHandlers(dp, { client: tg, storage, residents })
-    registerChatActivityTracker(dp, storage, allowedChats)
     registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl: webappConfig?.publicUrl ?? null })
     registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl: webappConfig?.publicUrl ?? null })
     // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
     if (webappConfig !== null) {
         registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
     }
+    // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
+    // поэтому без WEBAPP_URL приёмник бесполезен.
+    if (webappConfig !== null && announceChannelId !== null) {
+        registerEventIntake(dp, {
+            client: tg,
+            storage,
+            residents,
+            channelId: announceChannelId,
+            webappUrl: webappConfig.publicUrl,
+            dataFile,
+        })
+        console.log(`[events] приём анонсов из канала ${announceChannelId} включён`)
+    } else if (announceChannelId === null) {
+        console.warn('[warn] ANNOUNCE_CHANNEL_ID не задан — пересылка постов канала в ивенты отключена.')
+    }
     // Дев-команды бэкапа стейта: /backup (разово) и /autobackup <интервал> (по расписанию).
     if (devUserIds.size > 0) {
         registerBackupHandlers(dp, { client: tg, storage, devUserIds, allowedChats })
     }
     if (printerUrl !== null) {
-        registerPrinterHandlers(dp, { client: tg, storage, allowedChats, printerUrl, printerAuth })
+        registerPrinterHandlers(dp, { client: tg, storage, allowedChats, residents, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)
     } else {
         console.warn('[warn] PRINTER_URL не задан — команда /printer отключена.')
@@ -196,6 +214,9 @@ const main = async () => {
 
     // После логина: форвардить все ошибки (console.error + process-level) в личку dev'ам.
     installErrorReporting(tg, devUserIds)
+    // Жалобы загрузки стейта копятся до этого момента: сама загрузка идёт раньше логина,
+    // и console.error там ушёл бы только в докер-лог (см. Storage.takeWarnings).
+    for (const w of storage.takeWarnings()) console.error('[storage]', w)
     if (devUserIds.size > 0) {
         console.log(`[errors] отчёты об ошибках идут в личку: ${[...devUserIds].join(', ')}`)
     }
@@ -292,7 +313,13 @@ const main = async () => {
         console.log(`[keenetic] /forcemacupdate enabled for dev users: ${[...devUserIds].join(', ')}`)
     }
 
-    const shutdown = async () => {
+    /** Сколько ждём дозаписи стейта на выключении: дальше докер всё равно пришлёт SIGKILL. */
+    const DRAIN_TIMEOUT_MS = 5_000
+    let shuttingDown = false
+    const shutdown = async (signal: string) => {
+        if (shuttingDown) return
+        shuttingDown = true
+        console.log(`[shutdown] ${signal}`)
         scheduler.stop()
         dailyPoster.stop()
         backups.stop()
@@ -301,11 +328,17 @@ const main = async () => {
         printerWatcher?.stop()
         macPoller?.stop()
         webappServer?.stop()
+        // Записи в Storage поставлены в очередь и могут быть ещё в полёте: без ожидания
+        // подтверждённая пользователю правка (донат, одобренный визит, чек-ин) терялась.
+        await Promise.race([
+            storage.drain(),
+            new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
+        ])
         await tg.destroy()
         process.exit(0)
     }
-    process.once('SIGINT', shutdown)
-    process.once('SIGTERM', shutdown)
+    process.once('SIGINT', () => void shutdown('SIGINT'))
+    process.once('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
 main().catch((err) => {

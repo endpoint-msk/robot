@@ -50,12 +50,6 @@ export const periodKeyOf = (date: Date, resetDay = DEFAULT_RESET_DAY): string =>
     return keyForPeriod(year, month, rd)
 }
 
-/** Ключ предыдущего периода (на один цикл назад от старта (year, month)). Январь → декабрь прошлого года. */
-export const previousPeriodKey = (year: number, month: number, resetDay = DEFAULT_RESET_DAY): string => {
-    const rd = clampResetDay(resetDay)
-    return month > 1 ? keyForPeriod(year, month - 1, rd) : keyForPeriod(year - 1, 12, rd)
-}
-
 export const monthNameRu = (month: number): string => MONTH_NAMES_RU[month - 1] ?? '?'
 export const monthNameRuGenitive = (month: number): string => MONTH_NAMES_RU_GENITIVE[month - 1] ?? '?'
 

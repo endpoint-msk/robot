@@ -124,6 +124,14 @@ export function MyVisits() {
         </>
       ) : null}
       <div className="card" style={{ marginTop: 22 }}>
+        <div className="row tappable" onClick={() => push('route')}>
+          <div className="row-icon" style={{ background: '#007aff' }}>
+            {icons.pin(17, '#fff')}
+          </div>
+          <span className="row-label">Как пройти</span>
+          <div className="row-right">{icons.chevron()}</div>
+        </div>
+        <Sep left={54} />
         <div className="row tappable" onClick={() => push('peek')}>
           <div className="row-icon" style={{ background: '#34c759' }}>
             {icons.people()}

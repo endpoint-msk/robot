@@ -33,6 +33,12 @@
     --blue: #007aff;
     --green: #34c759;
     --red: #ff3b30;
+    /* Закрытие заявки: обратимое по смыслу действие (гость может подать заново),
+       поэтому не красный — красный занят блокировкой и должен пугать сильнее. */
+    --orange: #ff9500;
+    /* Ивенты — собственный тон подсистемы: синий занят действиями, зелёный одобрением,
+       красный блокировкой, оранжевый закрытием заявки. */
+    --purple: #bf5af2;
     /* Нейтральное действие свайпа (заметка): рядом с синим и красным нужен третий
        тон, иначе соседние кнопки сливаются в одну полосу. */
     --gray: #8e8e93;
@@ -497,6 +503,7 @@ body {
     cursor: pointer;
 }
 .swipe-action.danger { background: var(--red); }
+.swipe-action.warn { background: var(--orange); }
 .swipe-action.neutral { background: var(--gray); }
 .swipe-action:active { filter: brightness(0.88); }
 /* Непрозрачный фон обязателен: он перекрывает действия во время жеста.
@@ -1096,3 +1103,210 @@ body.busy #app { pointer-events: none; }
     z-index: 50;
 }
 body.busy #busy-overlay { display: flex; }
+
+/* --- Ивенты ---------------------------------------------------------------
+   Фиолетовый — собственный тон подсистемы: синий занят действиями, зелёный
+   одобрением, красный блокировкой. Ивент ничем из этого не является. */
+
+.event-card {
+    background: rgba(191, 90, 242, 0.10);
+    border-radius: var(--radius-card);
+    padding: 18px 18px 16px;
+    margin-bottom: 18px;
+}
+.ev-head { display: flex; align-items: center; gap: 7px; }
+.ev-kicker {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--purple);
+}
+.ev-chip {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(191, 90, 242, 0.16);
+    color: var(--purple);
+    font-size: 11px;
+    font-weight: 700;
+}
+.ev-title {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    line-height: 1.2;
+    margin-top: 12px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+/* Плейсхолдер названия в превью: видно, что это подсказка, а не введённый текст. */
+.ev-title.dim { color: var(--text-3); }
+.ev-desc {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-2);
+    margin-top: 5px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.ev-host { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.ev-poster {
+    display: block;
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    border-radius: 14px;
+    margin-top: 14px;
+    background: rgba(191, 90, 242, 0.08);
+}
+
+/* Редактор */
+.ev-field { padding: 11px 14px; }
+.ev-title-input, .ev-desc-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    padding: 0;
+}
+.ev-title-input { font-size: 17px; font-weight: 600; }
+.ev-desc-input { font-size: 16px; line-height: 1.4; resize: none; }
+.ev-poster-slot { padding: 0; }
+.ev-poster-slot .event-poster {
+    display: block;
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+}
+.ev-time { gap: 12px; }
+.ev-step {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.ev-step:active { opacity: 0.6; }
+.ev-time-value {
+    min-width: 58px;
+    text-align: center;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: var(--chip);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+/* Строка ивента на экране дня */
+.ev-row-icon { background: rgba(191, 90, 242, 0.16); }
+.ev-row-main { min-width: 0; flex: 1; }
+.ev-row-title-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ev-row-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ev-row-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+.secondary-btn.event-btn { color: var(--purple); }
+
+/* Метки ивента в списках дней */
+.dow-line { display: flex; align-items: center; gap: 5px; }
+.ev-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); flex-shrink: 0; }
+.ev-day-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--purple);
+}
+.ev-day-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- «Как пройти» ---------------------------------------------------------- */
+
+.route-address { align-items: center; }
+.route-pin { background: rgba(0, 122, 255, 0.16); border-radius: 10px; width: 34px; height: 34px; }
+.route-address-main { min-width: 0; flex: 1; }
+.route-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
+.route-value {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    margin-top: 2px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+.route-copy {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.route-metro { padding: 13px 14px 15px; }
+.route-metro-list { display: flex; flex-direction: column; gap: 11px; margin-top: 10px; }
+.route-metro-row { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
+.route-metro-row img { flex-shrink: 0; display: block; border-radius: 50%; }
+
+.route-door {
+    margin-top: 22px;
+    height: 236px;
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+}
+.route-door img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.route-map-card { margin-top: 7px; overflow: hidden; }
+/* Тайлы позиционируются абсолютно внутри окна фиксированной высоты — мозаика
+   собрана под конкретную точку, поэтому окно не резиновое по высоте. */
+.route-map { position: relative; height: 210px; background: #14181d; overflow: hidden; }
+.route-map img { position: absolute; display: block; }
+.route-pin-mark {
+    position: absolute;
+    left: 185px;
+    top: 105px;
+    transform: translate(-50%, -100%);
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
+}
+.route-map-credit {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.35);
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.route-map-open {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--blue);
+}
