@@ -39,6 +39,8 @@ import {
     notifyResidentRescheduleCountered,
     proposeReschedule,
     requestsForDay,
+    requestsOfGuest,
+    searchGuests,
     setGuestNote,
     setResidentAttendance,
     todayKey,
@@ -48,16 +50,22 @@ import {
 } from './hosting.js'
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
 import {
-    adoptDraftPhoto,
     canEditEvent,
     clearEventDraft,
     createEvent,
     deleteEvent,
     draftPhotoId,
     eventDraftFor,
+    eventForPhoto,
+    eventPhotoIds,
     eventsForDay,
+    isStagedPhotoOf,
+    MAX_EVENT_PHOTO_BYTES,
+    MAX_EVENT_PHOTOS,
     readEventPhoto,
-    setEventPhoto,
+    saveEventPhoto,
+    stagedPhotoId,
+    syncEventPhotos,
     updateEvent,
     type EventError,
     type EventInput,
@@ -195,6 +203,32 @@ const readBody = (req: IncomingMessage): Promise<string> =>
         req.on('error', reject)
     })
 
+/** Тело-картинка: свой потолок, тот же приём с `pause()`, что и у `readBody`. */
+const readBinaryBody = (req: IncomingMessage, maxBytes: number): Promise<Buffer> =>
+    new Promise((resolve, reject) => {
+        let size = 0
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => {
+            size += chunk.length
+            if (size > maxBytes) {
+                req.pause()
+                reject(Object.assign(new Error('body too large'), { code: 'body_too_large' }))
+                return
+            }
+            chunks.push(chunk)
+        })
+        req.on('end', () => resolve(Buffer.concat(chunks)))
+        req.on('error', reject)
+    })
+
+/**
+ * JPEG ли это. Файлы афиш лежат на том же origin, что и миниапп, и отдаются с
+ * `image/jpeg` — пустить туда произвольные байты (SVG, HTML) значит пустить чужой
+ * скрипт в своё же происхождение. Редактор шлёт результат canvas, так что проверка
+ * магии ничего рабочего не отсекает.
+ */
+const isJpeg = (bytes: Buffer): boolean => bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+
 export type WebappDeps = {
     client: TelegramClient
     storage: Storage
@@ -299,8 +333,11 @@ const proposalSides = (
     return { isAuthor, isAddressee, counterpartId }
 }
 
-/** Карточка ивента для фронта: имя автора чистим тем же `userView`, что и остальных. */
-const eventView = (e: SpaceEvent) => ({ ...e, host: userView(e.host) })
+/**
+ * Карточка ивента для фронта: имя автора чистим тем же `userView`, что и остальных,
+ * а афиши отдаём готовым списком — легаси-флаг `hasPhoto` фронт знать не должен.
+ */
+const eventView = (e: SpaceEvent) => ({ ...e, photos: eventPhotoIds(e), host: userView(e.host) })
 
 const EVENT_ERRORS: Record<EventError, string> = {
     not_found: 'Ивент не найден — обнови экран.',
@@ -310,6 +347,12 @@ const EVENT_ERRORS: Record<EventError, string> = {
     bad_title: 'Без названия ивент не понять — впиши его.',
     not_yours: 'Править ивент может тот, кто его завёл.',
 }
+
+/** Список афиш из тела: редактор присылает желаемый порядок целиком (см. `syncEventPhotos`). */
+const photosFrom = (body: Record<string, unknown>): string[] =>
+    Array.isArray(body.photos)
+        ? body.photos.filter((id): id is string => typeof id === 'string').slice(0, MAX_EVENT_PHOTOS)
+        : []
 
 const eventInputFrom = (body: Record<string, unknown>): EventInput => ({
     dateKey: typeof body.dateKey === 'string' ? body.dateKey : '',
@@ -720,18 +763,22 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         // и отвечает за него автор. Гость их только видит (открытые) в «Активности».
         case 'event.create': {
             if (!requireResident()) return
-            const created = await createEvent(storage, tzOffsetMinutes, user, eventInputFrom(body))
+            // Ссылку на исходный пост берём из заготовки, а не из тела запроса: в чате
+            // она уходит в доску гиперссылкой, и клиент не должен решать, куда та ведёт.
+            const draft = body.fromDraft === true ? eventDraftFor(storage, user.userId) : null
+            const created = await createEvent(storage, tzOffsetMinutes, user, {
+                ...eventInputFrom(body),
+                ...(draft?.postUrl ? { sourceUrl: draft.postUrl } : {}),
+            })
             if (!created.ok) {
                 sendError(res, 400, created.error, EVENT_ERRORS[created.error])
                 return
             }
-            // Заготовка отработала: её афиша переезжает на ивент, сама заготовка удаляется,
-            // иначе миниапп предложил бы завести тот же ивент второй раз.
-            if (body.fromDraft === true) {
-                const moved = await adoptDraftPhoto(storage.path(), draftPhotoId(user.userId), created.event.id)
-                if (moved) await setEventPhoto(storage, created.event.id, true)
-                await clearEventDraft(storage, storage.path(), user.userId)
-            }
+            // Залитые в редакторе картинки (и афиша заготовки) переезжают под id ивента.
+            await syncEventPhotos(storage, storage.path(), created.event.id, photosFrom(body), user.userId)
+            // Заготовка отработала — снимаем, иначе миниапп предложил бы завести тот же
+            // ивент второй раз. Её афишу к этому моменту уже забрал syncEventPhotos.
+            if (body.fromDraft === true) await clearEventDraft(storage, storage.path(), user.userId)
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -754,6 +801,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, updated.error, EVENT_ERRORS[updated.error])
                 return
             }
+            await syncEventPhotos(storage, storage.path(), id, photosFrom(body), user.userId)
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -1154,6 +1202,30 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // Поиск по людям и карточка человека: архив по неделям отвечает на «что было
+        // в тот вторник», а этот вход — на «кто такой N и сколько раз он у нас был».
+        case 'guests.search': {
+            if (!requireResident()) return
+            const query = typeof body.query === 'string' ? body.query : ''
+            sendJson(res, 200, {
+                guests: searchGuests(storage, query).map((g) => ({ ...g, user: userView(g.user) })),
+            })
+            return
+        }
+
+        case 'guest.requests': {
+            if (!requireResident()) return
+            const userId = typeof body.userId === 'number' ? body.userId : 0
+            const requests = requestsOfGuest(storage, userId)
+            const guest = requests[0]?.guest
+            if (!guest) {
+                sendError(res, 404, 'not_found', 'Заявок этого человека уже нет.')
+                return
+            }
+            sendJson(res, 200, { user: userView(guest), requests: requestsView(requests) })
+            return
+        }
+
         case 'archive.week': {
             if (!requireResident()) return
             const weekStart = typeof body.weekStart === 'string' ? body.weekStart : ''
@@ -1341,7 +1413,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             // Афиша ивента: тоже <img>, поэтому GET и initData в query, как у аватарок.
             // Файл лежит рядом со стейтом (см. events.ts), в JSON его нет.
             if (pathname === '/event-photo.jpg') {
-                if (req.method !== 'GET' && req.method !== 'HEAD') {
+                if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
                     res.writeHead(405).end()
                     return
                 }
@@ -1355,10 +1427,34 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     res.writeHead(403).end()
                     return
                 }
+                // Заливка афиши из редактора. Тело — картинка, поэтому не /api/ (там JSON
+                // и потолок в 64 КБ): подпись и проверки те же, id файла возвращаем в JSON.
+                if (req.method === 'POST') {
+                    if (!access.resident) {
+                        sendError(res, 403, 'not_resident', 'Заводить ивенты могут резиденты.')
+                        return
+                    }
+                    let bytes: Buffer
+                    try {
+                        bytes = await readBinaryBody(req, MAX_EVENT_PHOTO_BYTES)
+                    } catch {
+                        sendError(res, 413, 'too_large', 'Картинка слишком большая.')
+                        return
+                    }
+                    if (!isJpeg(bytes)) {
+                        sendError(res, 400, 'bad_image', 'Не получилось прочитать картинку — попробуй другую.')
+                        return
+                    }
+                    const photoId = stagedPhotoId(viewer.userId)
+                    await saveEventPhoto(deps.storage.path(), photoId, bytes)
+                    sendJson(res, 200, { id: photoId })
+                    return
+                }
                 const id = url.searchParams.get('id') ?? ''
-                // Заготовку видит только её владелец: это ещё не опубликованный ивент.
-                const isOwnDraft = id === draftPhotoId(viewer.userId) && access.resident
-                const event = deps.storage.get().events[id]
+                // Заготовку и только что залитое видит только владелец: это ещё не
+                // опубликованный ивент.
+                const isOwnDraft = access.resident && (id === draftPhotoId(viewer.userId) || isStagedPhotoOf(id, viewer.userId))
+                const event = eventForPhoto(deps.storage, id)
                 // Резидентский ивент гостю не показываем — иначе афиша выдаёт то,
                 // что скрыто галочкой «только резидентам».
                 const visible = event ? access.resident || !event.residentsOnly : false

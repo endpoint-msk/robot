@@ -81,8 +81,10 @@ export type SpaceEvent = {
   description: string
   /** Гости не увидят такой ивент в «Активности» и на доске. */
   residentsOnly: boolean
-  /** Есть афиша — грузится через /event-photo.jpg?id=. */
-  hasPhoto: boolean
+  /** Афиши в порядке показа — id файлов, каждый грузится через /event-photo.jpg?id=. */
+  photos: string[]
+  /** Пост канала, из которого сделан ивент, — только у заведённых пересылкой. */
+  sourceUrl?: string
   host: User
   createdAt: string
 }
@@ -147,6 +149,11 @@ export type Bootstrap = {
 
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }
 export type ArchiveResponse = { weeks: ArchiveWeekSummary[] }
+
+/** Человек в поиске по архиву: кто, сколько заявок и когда был в последний раз. */
+export type GuestSummary = { user: User; total: number; approved: number; lastDateKey: string }
+export type GuestSearchResponse = { guests: GuestSummary[] }
+export type GuestRequestsResponse = { user: User; requests: HostingRequest[] }
 
 export type ArchiveWeekDay = { dateKey: string; requests: HostingRequest[] }
 export type ArchiveWeekResponse = { weekStart: string; days: ArchiveWeekDay[] }

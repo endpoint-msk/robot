@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { DayChips, isPastForToday, useDayTime } from './components/forms'
+import { icons } from './icons'
 import { getState } from './store'
 
 type ConfirmInput = {
@@ -28,7 +29,12 @@ type RescheduleInput = {
   initialTime: string
   confirmLabel: string
 }
-type ModalInput = ConfirmInput | TimeInput | RescheduleInput
+type ImageInput = {
+  kind: 'image'
+  src: string
+  alt: string
+}
+type ModalInput = ConfirmInput | TimeInput | RescheduleInput | ImageInput
 type Modal = ModalInput & { id: number; resolve: (value: any) => void }
 
 let modals: Modal[] = []
@@ -198,12 +204,44 @@ function RescheduleCard({ modal }: { modal: Modal & { kind: 'reschedule' } }) {
   )
 }
 
+/**
+ * Картинка на весь экран. Тап по любому месту закрывает: это просмотрщик, а не диалог,
+ * и целиться в крестик на телефоне незачем — он тут только как подсказка, что выход есть.
+ */
+function ImageCard({ modal }: { modal: Modal & { kind: 'image' } }) {
+  const [shown, setShown] = useState(false)
+  const done = useRef(false)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const close = (): void => {
+    if (done.current) return
+    done.current = true
+    setShown(false)
+    modal.resolve(true)
+    setTimeout(() => remove(modal.id), 180)
+  }
+
+  return (
+    <div className={'lightbox' + (shown ? ' shown' : '')} onClick={close}>
+      <button className="lightbox-close" aria-label="Закрыть" onClick={close}>
+        {icons.xmark(15, '#fff')}
+      </button>
+      <img src={modal.src} alt={modal.alt} />
+    </div>
+  )
+}
+
 export function ModalHost() {
   const list = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   return createPortal(
     <>
       {list.map((m) =>
-        m.kind === 'reschedule' ? (
+        m.kind === 'image' ? (
+          <ImageCard key={m.id} modal={m} />
+        ) : m.kind === 'reschedule' ? (
           <RescheduleCard key={m.id} modal={m} />
         ) : (
           <ModalCard key={m.id} modal={m} />
@@ -212,6 +250,11 @@ export function ModalHost() {
     </>,
     document.body,
   )
+}
+
+/** Открыть картинку на весь экран. */
+export const showImage = (src: string, alt = ''): void => {
+  void open<boolean>({ kind: 'image', src, alt })
 }
 
 export const showAlert = (message: string): void => {

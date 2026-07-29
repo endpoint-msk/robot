@@ -37,6 +37,13 @@ export const icons = {
       <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
     </svg>
   ),
+  /** Лупа в поле поиска — цвет служебный, как у плейсхолдера. */
+  search: (): ReactElement => (
+    <svg width="15" height="15" viewBox="0 0 18 18">
+      <circle cx="8" cy="8" r="5.4" fill="none" stroke={sec(0.45)} strokeWidth="1.8" />
+      <path d="M12 12l4 4" stroke={sec(0.45)} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
   lock: (): ReactElement => (
     <svg width="13" height="13" viewBox="0 0 18 18">
       <path d="M4 8V6.5a5 5 0 0 1 10 0V8" fill="none" stroke={sec(0.55)} strokeWidth="1.6" />
@@ -136,9 +143,9 @@ export const icons = {
     </svg>
   ),
   /** Стрелка наружу — «открыть во внешнем приложении». */
-  external: (): ReactElement => (
+  external: (color = '#007aff'): ReactElement => (
     <svg width="17" height="17" viewBox="0 0 18 18">
-      <path d="M3 15L15 3M8 3h7v7" fill="none" stroke="#007aff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 15L15 3M8 3h7v7" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   /** Заливная булавка поверх карты — крупнее и с белой обводкой, чтобы читалась на тайлах. */
@@ -151,7 +158,7 @@ export const icons = {
   /** Минус в круглой кнопке шага времени — пара к `plusSmall`. */
   minus: (): ReactElement => (
     <svg width="14" height="14" viewBox="0 0 14 14">
-      <path d="M2 7h10" stroke="#007aff" strokeWidth="2" strokeLinecap="round" />
+      <path d="M2 7h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
   /** Календарь — метка ивента. Цвет задаётся вызывающим: у ивентов он фиолетовый. */

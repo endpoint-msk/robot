@@ -133,10 +133,12 @@ export function MyVisits() {
         </div>
         <Sep left={54} />
         <div className="row tappable" onClick={() => push('peek')}>
-          <div className="row-icon" style={{ background: '#34c759' }}>
-            {icons.people()}
+          {/* Календарь и фиолетовый — те же, что у ивентов: за этой строкой не только
+              список людей, но и то, что в спейсе происходит. */}
+          <div className="row-icon" style={{ background: '#bf5af2' }}>
+            {icons.calendar(17, '#fff')}
           </div>
-          <span className="row-label">Кто придёт</span>
+          <span className="row-label">Активность</span>
           <div className="row-right">{icons.chevron()}</div>
         </div>
         <Sep left={54} />

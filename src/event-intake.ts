@@ -1,4 +1,4 @@
-import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import { BotKeyboard, html, type MessageForwardInfo, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type Dispatcher } from '@mtcute/dispatcher'
 import {
     clearEventDraft,
@@ -10,6 +10,24 @@ import {
 } from './events.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
+
+/**
+ * Ссылка на исходный пост. У публичного канала это `t.me/<ник>/<id поста>`, у
+ * закрытого — `t.me/c/<id канала>/<id поста>`: она откроется только у подписчиков,
+ * но других ссылок у закрытого канала и нет.
+ *
+ * Id поста берём из `raw.channelPost`: `fromMessageId` в mtcute — это `savedFromMsgId`,
+ * он заполняется только у пересылок в «Избранное».
+ */
+const postUrlFrom = (fwd: MessageForwardInfo, channelId: number): string | null => {
+    const postId = fwd.raw.channelPost
+    if (!postId) return null
+    const sender = fwd.sender
+    const username = 'username' in sender ? sender.username : null
+    if (username) return `https://t.me/${username}/${postId}`
+    // -100 — префикс каналов в chatId; в ссылке идёт внутренний id, без него.
+    return `https://t.me/c/${String(Math.abs(channelId)).replace(/^100/, '')}/${postId}`
+}
 
 /**
  * Приём анонсов из канала: резидент пересылает боту в личку пост из
@@ -77,11 +95,13 @@ export const registerEventIntake = (
         // Прошлая заготовка вместе с её картинкой больше не нужна: одна на человека.
         if (!hasPhoto) await clearEventDraft(storage, dataFile, userId)
 
+        const postUrl = postUrlFrom(fwd, channelId)
         await saveEventDraft(storage, {
             userId,
             title,
             description,
             hasPhoto,
+            ...(postUrl ? { postUrl } : {}),
             at: new Date().toISOString(),
         })
 

@@ -14,6 +14,7 @@ export type ScreenName =
   | 'invite'
   | 'archive'
   | 'archiveWeek'
+  | 'guestVisits'
   | 'settings'
   | 'myVisits'
   | 'peek'

@@ -4,9 +4,10 @@
 // Содержимое — во фронте, как и текст правил (screens/Rules.tsx): это константа
 // конкретного спейса, а не настройка, и в стейте ей делать нечего.
 
+import { useEffect, useRef, useState } from 'react'
 import { icons } from '../icons'
-import { showAlert } from '../modals'
-import { openUrl } from '../telegram'
+import { showAlert, showImage } from '../modals'
+import { haptic, openUrl } from '../telegram'
 import { BackRow, Footnote, Header } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -31,11 +32,22 @@ const TILES = [
 
 const MAPS_URL = `https://yandex.ru/maps/?text=${encodeURIComponent(`Москва, ${ADDRESS}`)}`
 
+/** Сколько кнопка держит галочку после копирования. */
+const COPIED_MS = 1600
+
 export function Route() {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<number | null>(null)
+  useEffect(() => () => window.clearTimeout(timer.current ?? undefined), [])
+
   const copyAddress = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(ADDRESS)
-      showAlert('Адрес скопирован.')
+      haptic('success')
+      // Ответ — сменой иконки в самой кнопке: модалка ради «скопировано» слишком громкая.
+      setCopied(true)
+      window.clearTimeout(timer.current ?? undefined)
+      timer.current = window.setTimeout(() => setCopied(false), COPIED_MS)
     } catch {
       // В вебвью буфер обмена может быть недоступен — тогда просто показываем адрес,
       // выделить и скопировать его руками всё равно можно.
@@ -56,7 +68,9 @@ export function Route() {
             <div className="route-value">{ADDRESS}</div>
           </div>
           <div className="row-right">
-            <div className="route-copy">{icons.copy(15, '#007aff')}</div>
+            <div className={'route-copy' + (copied ? ' done' : '')}>
+              {copied ? icons.check(15, '#34c759', 2.6) : icons.copy(15, '#007aff')}
+            </div>
           </div>
         </div>
         <div className="sep" style={{ marginLeft: 60 }} />
@@ -73,7 +87,8 @@ export function Route() {
         </div>
       </div>
 
-      <div className="route-door">
+      {/* Дверь ищут в темноте по фотографии — её нужно уметь рассмотреть. */}
+      <div className="route-door tappable" onClick={() => showImage('/door.jpg', 'Дверь подъезда')}>
         <img src="/door.jpg" alt="Дверь подъезда" />
       </div>
 

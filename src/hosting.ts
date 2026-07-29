@@ -374,6 +374,60 @@ export const listKnownGuests = (storage: Storage): HostingUser[] => {
     return [...out.values()]
 }
 
+/** Человек в поиске по архиву: кто, сколько раз приходил и когда был в последний раз. */
+export type GuestSummary = {
+    user: HostingUser
+    total: number
+    approved: number
+    /** День самой поздней заявки — по нему же и сортировка. */
+    lastDateKey: string
+}
+
+const guestMatches = (user: HostingUser, query: string): boolean =>
+    displayName(user.name).toLowerCase().includes(query) ||
+    (user.username ? user.username.toLowerCase().includes(query) : false) ||
+    String(user.userId) === query
+
+/**
+ * Поиск по людям из заявок — включая архивные, потому что ради архива он и нужен:
+ * «кто это вообще и сколько раз он у нас был». Пустой запрос отдаёт всех, от самых
+ * свежих визитов к старым. Фейки дев-сида не прячем: они видны и в самом архиве.
+ *
+ * Имя и ник берём из самой поздней заявки — человек мог их сменить с прошлого визита.
+ */
+export const searchGuests = (storage: Storage, query: string, limit = 40): GuestSummary[] => {
+    const q = query.trim().toLowerCase().replace(/^@/, '')
+    const byUser = new Map<number, GuestSummary>()
+    for (const r of Object.values(storage.get().hostingRequests)) {
+        const seen = byUser.get(r.guest.userId)
+        if (!seen) {
+            byUser.set(r.guest.userId, {
+                user: { ...r.guest, name: displayName(r.guest.name) },
+                total: 1,
+                approved: r.status === 'approved' ? 1 : 0,
+                lastDateKey: r.dateKey,
+            })
+            continue
+        }
+        seen.total += 1
+        if (r.status === 'approved') seen.approved += 1
+        if (r.dateKey >= seen.lastDateKey) {
+            seen.lastDateKey = r.dateKey
+            seen.user = { ...r.guest, name: displayName(r.guest.name) }
+        }
+    }
+    return [...byUser.values()]
+        .filter((g) => q.length === 0 || guestMatches(g.user, q))
+        .sort((a, b) => b.lastDateKey.localeCompare(a.lastDateKey))
+        .slice(0, limit)
+}
+
+/** Все заявки человека — от свежих к старым, для карточки гостя в архиве. */
+export const requestsOfGuest = (storage: Storage, userId: number): HostingRequest[] =>
+    Object.values(storage.get().hostingRequests)
+        .filter((r) => r.guest.userId === userId)
+        .sort((a, b) => (a.dateKey === b.dateKey ? b.time.localeCompare(a.time) : b.dateKey.localeCompare(a.dateKey)))
+
 /**
  * Рассылает резидентам уведомление о новой заявке — в личку, с учётом настроек
  * (дефолт: включено, только заявки на сегодня). Автора заявки не уведомляем.

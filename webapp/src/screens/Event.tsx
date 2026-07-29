@@ -2,13 +2,15 @@
 // Вход двойной — «Создать ивент» на экране дня и заготовка из пересланного в личку
 // поста канала (тогда поля уже заполнены, см. params.draft).
 
-import { useState } from 'react'
-import { action } from '../api'
+import { useState, type ChangeEvent } from 'react'
+import { action, uploadEventPhoto } from '../api'
 import { fmtDayMonth, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
-import { confirmDialog } from '../modals'
-import { haptic } from '../telegram'
-import { pop, useParams, useStore } from '../store'
+import { compressImage } from '../image'
+import { linkedText } from '../linkify'
+import { confirmDialog, showAlert, showImage } from '../modals'
+import { haptic, openUrl } from '../telegram'
+import { pop, setBusy, useParams, useStore } from '../store'
 import { initData } from '../telegram'
 import type { SpaceEvent } from '../types'
 import { BackRow, Header, SectionTitle, Switch } from '../components/common'
@@ -16,6 +18,8 @@ import { Screen } from '../components/Screen'
 
 const MAX_TITLE = 120
 const MAX_DESCRIPTION = 2000
+/** Столько же держит сервер (MAX_EVENT_PHOTOS): ивент — анонс, а не фотоальбом. */
+const MAX_PHOTOS = 6
 /** Шаг стрелок времени: получасовой, как в афишах («в 19:00», «в 19:30»). */
 const STEP_MINUTES = 30
 
@@ -27,10 +31,24 @@ const stepTime = (time: string, deltaSteps: number): string => {
   return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`
 }
 
-/** Афиша: у ивента — по его id, у заготовки — по ключу владельца. */
+/**
+ * Афиша: у ивента — по его id, у заготовки — по ключу владельца. Тап открывает её на
+ * весь экран: в карточке картинка обрезана по `object-fit: cover`, и разглядеть на ней
+ * что-то (адрес, схему, состав) иначе нельзя.
+ */
 export function EventPoster({ photoId, className }: { photoId: string; className?: string }) {
   const src = `${location.origin}/event-photo.jpg?id=${encodeURIComponent(photoId)}&initData=${encodeURIComponent(initData())}`
-  return <img className={className || 'event-poster'} src={src} alt="" />
+  return (
+    <img
+      className={className || 'event-poster'}
+      src={src}
+      alt=""
+      onClick={(e) => {
+        e.stopPropagation()
+        showImage(src, 'Афиша ивента')
+      }}
+    />
+  )
 }
 
 export function Event() {
@@ -48,12 +66,34 @@ export function Event() {
   const [time, setTime] = useState(existing?.time ?? '19:00')
   const [residentsOnly, setResidentsOnly] = useState(existing?.residentsOnly ?? false)
 
-  const photoId = existing?.hasPhoto ? existing.id : draft?.hasPhoto ? `draft-${data!.me.id}` : null
+  // Афиши — список id файлов: у заготовки это её картинка, у нового ивента список
+  // копится заливкой (файл лежит на сервере ничей, пока ивент не сохранён).
+  const [photos, setPhotos] = useState<string[]>(existing?.photos ?? (draft?.hasPhoto ? [`draft-${data!.me.id}`] : []))
   const canSave = title.trim().length > 0
+
+  const addPhotos = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const picked = Array.from(e.target.files ?? [])
+    // Сбрасываем input сразу: иначе тот же файл вторым разом не выберется — значение не меняется.
+    e.target.value = ''
+    if (picked.length === 0) return
+    const room = MAX_PHOTOS - photos.length
+    setBusy(true)
+    try {
+      const added: string[] = []
+      for (const file of picked.slice(0, room)) added.push(await uploadEventPhoto(await compressImage(file)))
+      setPhotos((prev) => [...prev, ...added])
+      haptic('success')
+      if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
+    } catch (err) {
+      showAlert(err instanceof Error && err.message ? err.message : 'Не получилось загрузить фото.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const save = async (): Promise<void> => {
     if (!canSave) return
-    const payload = { dateKey, time, title, description, residentsOnly }
+    const payload = { dateKey, time, title, description, residentsOnly, photos }
     const done = existing
       ? await action('event.update', { id: existing.id, ...payload })
       : await action('event.create', { ...payload, fromDraft: Boolean(draft) })
@@ -75,15 +115,6 @@ export function Event() {
       haptic('warning')
       pop()
     }
-  }
-
-  // Заготовку, от которой отказались, надо снять с сервера — иначе миниапп предложит
-  // завести тот же ивент при следующем открытии.
-  const dropDraft = async (): Promise<void> => {
-    const ok = await confirmDialog('Не делать ивент из этого поста?', { confirmLabel: 'Не делать' })
-    if (!ok) return
-    const done = await action('event.draft.drop', {})
-    if (done) pop()
   }
 
   return (
@@ -116,14 +147,33 @@ export function Event() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
-        {photoId ? (
-          <>
-            <div className="sep" style={{ marginLeft: 14 }} />
-            <div className="ev-poster-slot">
-              <EventPoster photoId={photoId} />
+        <div className="sep" style={{ marginLeft: 14 }} />
+        {/* Афиши: лента миниатюр, последняя плитка — «добавить». Порядок в ленте
+            и есть порядок показа в карточке. */}
+        <div className="ev-photos">
+          {photos.map((id) => (
+            <div className="ev-thumb" key={id}>
+              <EventPoster photoId={id} className="ev-thumb-img" />
+              <button
+                className="ev-thumb-del"
+                aria-label="Убрать фото"
+                onClick={(e) => {
+                  // Клик по крестику не должен ещё и открывать просмотр под ним.
+                  e.stopPropagation()
+                  setPhotos((prev) => prev.filter((p) => p !== id))
+                }}
+              >
+                {icons.xmark(11, '#fff')}
+              </button>
             </div>
-          </>
-        ) : null}
+          ))}
+          {photos.length < MAX_PHOTOS ? (
+            <label className="ev-thumb ev-thumb-add" title="Добавить фото">
+              {icons.plusSmall()}
+              <input type="file" accept="image/*" multiple onChange={addPhotos} />
+            </label>
+          ) : null}
+        </div>
       </div>
 
       <SectionTitle>Когда</SectionTitle>
@@ -171,22 +221,16 @@ export function Event() {
           title: title.trim() || 'Название ивента',
           description,
           residentsOnly,
-          hasPhoto: Boolean(photoId),
+          photos,
           host: existing?.host ?? { userId: data!.me.id, username: data!.me.username, name: data!.me.name },
           createdAt: '',
         }}
-        photoId={photoId}
         dimTitle={title.trim().length === 0}
       />
 
       {existing ? (
         <button className="destructive-btn" style={{ marginTop: 22 }} onClick={remove}>
           Удалить ивент
-        </button>
-      ) : null}
-      {draft ? (
-        <button className="secondary-btn" style={{ marginTop: 10 }} onClick={dropDraft}>
-          Не делать ивент из поста
         </button>
       ) : null}
       <button className="primary-btn" style={{ marginTop: 22 }} disabled={!canSave} onClick={save}>
@@ -200,16 +244,8 @@ export function Event() {
  * Карточка ивента — одна и та же в превью редактора и в «Активности»,
  * чтобы резидент видел ровно то, что увидят остальные.
  */
-export function EventCard({
-  event,
-  photoId,
-  dimTitle = false,
-}: {
-  event: SpaceEvent
-  photoId?: string | null
-  dimTitle?: boolean
-}) {
-  const poster = photoId ?? (event.hasPhoto ? event.id : null)
+export function EventCard({ event, dimTitle = false }: { event: SpaceEvent; dimTitle?: boolean }) {
+  const photos = event.photos ?? []
   return (
     <div className="event-card">
       <div className="ev-head">
@@ -218,8 +254,25 @@ export function EventCard({
         {event.residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
       </div>
       <div className={'ev-title' + (dimTitle ? ' dim' : '')}>{event.title}</div>
-      {event.description ? <div className="ev-desc">{event.description}</div> : null}
-      {poster ? <EventPoster photoId={poster} className="ev-poster" /> : null}
+      {/* Описание часто приезжает из поста канала — там ссылки на регистрацию и подробности. */}
+      {event.description ? <div className="ev-desc">{linkedText(event.description)}</div> : null}
+      {/* Одна афиша — просто картинка, несколько — лента с прокруткой по снапу:
+          карусель со стрелками в вебвью только мешает жестам. */}
+      {photos.length === 1 ? <EventPoster photoId={photos[0]!} className="ev-poster" /> : null}
+      {photos.length > 1 ? (
+        <div className="ev-gallery">
+          {photos.map((id) => (
+            <EventPoster key={id} photoId={id} className="ev-poster ev-gallery-item" />
+          ))}
+        </div>
+      ) : null}
+      {/* Ивент из пересланного поста: в канале лежит полный анонс — с версткой и обсуждением. */}
+      {event.sourceUrl ? (
+        <button className="ev-source" onClick={() => openUrl(event.sourceUrl!)}>
+          {icons.external('#bf5af2')}
+          Пост в канале
+        </button>
+      ) : null}
       <div className="ev-host">
         <span>создал {event.host.username ? `@${event.host.username}` : event.host.name}</span>
       </div>

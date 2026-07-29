@@ -96,7 +96,12 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     const events = eventsForDay(storage, dateKey, false)
     if (events.length > 0) {
         for (const e of events) {
-            lines.push(`📅 <b>${escapeHtml(e.title)}</b> — в ${e.time}`)
+            // Ивент из пересылки ведёт на исходный пост канала: в анонсе есть вёрстка,
+            // картинки и комментарии, которых на доске быть не может.
+            const title = e.sourceUrl
+                ? `<a href="${escapeHtml(e.sourceUrl)}">${escapeHtml(e.title)}</a>`
+                : `<b>${escapeHtml(e.title)}</b>`
+            lines.push(`📅 ${title} в ${e.time}`)
         }
         lines.push('')
     }

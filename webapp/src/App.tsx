@@ -13,6 +13,7 @@ import { Day } from './screens/Day'
 import { Invite } from './screens/Invite'
 import { Archive } from './screens/Archive'
 import { ArchiveWeek } from './screens/ArchiveWeek'
+import { GuestVisits } from './screens/GuestVisits'
 import { Settings } from './screens/Settings'
 import { MyVisits } from './screens/MyVisits'
 import { Peek } from './screens/Peek'
@@ -34,6 +35,7 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   invite: Invite,
   archive: Archive,
   archiveWeek: ArchiveWeek,
+  guestVisits: GuestVisits,
   settings: Settings,
   myVisits: MyVisits,
   peek: Peek,

@@ -14,7 +14,7 @@ export function PeekDay() {
   const isToday = params.dateKey === data!.todayKey
   return (
     <Screen>
-      <BackRow label="Кто придёт" />
+      <BackRow label="Активность" />
       <Header
         title={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]}
         subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)} · ${peopleWord(att.length)}`}
