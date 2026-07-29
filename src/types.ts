@@ -55,6 +55,10 @@ export type State = {
     /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
      *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
     hostingNotify: Record<string, HostingNotifyPrefs>
+    /** Настройки уведомлений о новых ивентах per-резидент. Ключ — userId. Отдельный тумблер
+     *  от заявок: это разные потоки, и один нужен не всем, кому нужен другой.
+     *  Отсутствие записи = дефолт: включено, ивенты на любой день (см. DEFAULT_EVENT_NOTIFY). */
+    eventNotify: Record<string, HostingNotifyPrefs>
     /** Закреплённая доска «кто сегодня в спейсе» по чатам (ключ — chatId как строка). */
     hostingBoard: Record<string, HostingBoardMessage>
     /** Чаты, где доска «кто сегодня в спейсе» отключена (ключ — chatId как строка).
@@ -276,11 +280,11 @@ export type HostingAttendance = {
     at: string
 }
 
-/** Настройки уведомлений резидента о новых заявках. */
+/** Настройки уведомлений резидента в личку: одна форма и для заявок, и для ивентов. */
 export type HostingNotifyPrefs = {
-    /** Слать ли уведомления о новых заявках в личку. */
+    /** Слать ли уведомления в личку. */
     enabled: boolean
-    /** 'today' — только заявки на текущий день; 'all' — все новые заявки. */
+    /** 'today' — только про текущий день; 'all' — про любой день. */
     mode: 'today' | 'all'
 }
 
@@ -335,6 +339,7 @@ export const emptyState = (): State => ({
     hostingRequests: {},
     hostingAttendance: {},
     hostingNotify: {},
+    eventNotify: {},
     hostingBoard: {},
     hostingBoardMuted: {},
     announceMuted: {},

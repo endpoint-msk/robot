@@ -1,16 +1,20 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
+    formatDayKey,
     HOSTING_DAYS_AHEAD,
     isPastSlot,
     isValidDayKey,
     isValidTime,
+    listResidentIds,
+    mentionLabel,
     todayKey,
 } from './hosting.js'
 import type { Storage } from './storage.js'
-import type { EventDraft, HostingUser, SpaceEvent } from './types.js'
+import type { EventDraft, HostingNotifyPrefs, HostingUser, SpaceEvent } from './types.js'
 
 export const MAX_EVENT_TITLE = 120
 export const MAX_EVENT_DESCRIPTION = 2000
@@ -248,6 +252,73 @@ export const eventsForDay = (storage: Storage, dateKey: string, forResidents: bo
 /** Может ли этот человек править ивент: автор или любой dev (дев чинит чужое). */
 export const canEditEvent = (event: SpaceEvent, userId: number, isDev: boolean): boolean =>
     isDev || event.host.userId === userId
+
+// ---------------------------------------------------------------------------
+// Уведомления резидентам
+// ---------------------------------------------------------------------------
+
+/**
+ * Дефолт уведомлений об ивентах: включены, про любой день.
+ *
+ * Режим отличается от заявок (`DEFAULT_HOSTING_NOTIFY`, там 'today') намеренно: заявка —
+ * это просьба открыть дверь, и она горит только в свой день, а ивент анонсируют заранее
+ * и ровно ради того, чтобы на него успели прийти. Уведомление в день начала обесценило бы
+ * рассылку.
+ */
+export const DEFAULT_EVENT_NOTIFY: HostingNotifyPrefs = { enabled: true, mode: 'all' }
+
+export const eventNotifyPrefsFor = (storage: Storage, userId: number): HostingNotifyPrefs =>
+    storage.get().eventNotify[String(userId)] ?? { ...DEFAULT_EVENT_NOTIFY }
+
+/** Сколько описания уносим в личку: анонс, а не пересказ — подробности в миниаппе. */
+const NOTIFY_DESCRIPTION_LIMIT = 400
+
+/**
+ * Рассылает резидентам уведомление о новом ивенте — в личку, по тем же правилам, что и
+ * заявки (`notifyResidentsAboutRequest`), но со своим тумблером `eventNotify`. Автора не
+ * уведомляем. Ошибки отправки (закрытая личка) не фатальны.
+ *
+ * Резидентские ивенты рассылаем как обычные: получатели — сами резиденты.
+ */
+export const notifyResidentsAboutEvent = async (
+    client: TelegramClient,
+    storage: Storage,
+    allowedChats: ReadonlySet<number>,
+    tzOffsetMinutes: number,
+    webappUrl: string,
+    event: SpaceEvent,
+): Promise<void> => {
+    const isForToday = event.dateKey === todayKey(tzOffsetMinutes)
+    const residents = await listResidentIds(client, allowedChats)
+    const lines = [
+        `Новый ивент: <b>${html.escape(event.title)}</b>`,
+        `${formatDayKey(event.dateKey)} к ${event.time}${isForToday ? ' (сегодня)' : ''}.`,
+        `Организатор: ${await mentionLabel(client, event.host)}.`,
+    ]
+    if (event.residentsOnly) lines.push('Только для резидентов — гостям не показывается.')
+    if (event.description) {
+        const short =
+            event.description.length > NOTIFY_DESCRIPTION_LIMIT
+                ? `${event.description.slice(0, NOTIFY_DESCRIPTION_LIMIT).trimEnd()}…`
+                : event.description
+        // Переносы внутри описания живут только как <br>: html() схлопывает \n в пробел.
+        lines.push('', ...short.split('\n').map((line) => html.escape(line)))
+    }
+    const text = lines.join('<br>')
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappUrl)]])
+
+    for (const userId of residents) {
+        if (userId === event.host.userId) continue
+        const prefs = eventNotifyPrefsFor(storage, userId)
+        if (!prefs.enabled) continue
+        if (prefs.mode === 'today' && !isForToday) continue
+        try {
+            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+        } catch {
+            // резидент не открывал личку с ботом — молча пропускаем
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Заготовки из пересланных постов

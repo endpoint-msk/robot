@@ -298,7 +298,7 @@ export const displayName = (name: string): string => cleanName(name) || 'n/a'
  * резолвит в inputUser, и нерезолвящийся юзер уронил бы всё сообщение — поэтому проверяем
  * заранее и молча откатываемся на простое имя. Отрицательные id — фейки дев-сида.
  */
-const mentionLabel = async (client: TelegramClient, user: HostingUser): Promise<string> => {
+export const mentionLabel = async (client: TelegramClient, user: HostingUser): Promise<string> => {
     const name = html.escape(displayName(user.name))
     if (user.username) return `${name} (@${user.username})`
     if (user.userId <= 0) return name

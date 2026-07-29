@@ -114,6 +114,7 @@ export type MacEntry = { mac: string; label: string }
 
 export type Settings = {
   notify: NotifyPrefs
+  eventNotify: NotifyPrefs
   macs: MacEntry[]
   macAnon: boolean
   macPresenceActive: boolean
