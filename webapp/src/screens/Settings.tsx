@@ -4,7 +4,7 @@ import { icons } from '../icons'
 import { confirmDialog } from '../modals'
 import { setTheme, useStore } from '../store'
 import { haptic } from '../telegram'
-import type { Settings as SettingsData, ThemeChoice } from '../types'
+import type { NotifyPrefs, Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -33,38 +33,53 @@ function ThemeSection() {
   )
 }
 
-function NotifyCard({ s }: { s: SettingsData }) {
+// Одна карточка на оба потока уведомлений (заявки и ивенты): у них общая форма
+// настройки — тумблер + выбор дня, — но разные ручки и разные дефолты на сервере.
+function NotifyCard({
+  prefs,
+  method,
+  title,
+  color,
+  todaySublabel,
+  allLabel,
+  allSublabel,
+}: {
+  prefs: NotifyPrefs
+  method: string
+  title: string
+  color: string
+  todaySublabel: string
+  allLabel: string
+  allSublabel: string
+}) {
   const radioRow = (label: string, sublabel: string, mode: 'today' | 'all'): ReactNode => (
     <div
       className="row tappable"
       onClick={() => {
-        if (s.notify.mode !== mode) void action('notify', { enabled: s.notify.enabled, mode })
+        if (prefs.mode !== mode) void action(method, { enabled: prefs.enabled, mode })
       }}
     >
       <span className="row-label">
         {label}
         <span className="row-sublabel">{sublabel}</span>
       </span>
-      <div className="radio-check">{s.notify.mode === mode ? icons.check(16, '#007aff', 2.2) : null}</div>
+      <div className="radio-check">{prefs.mode === mode ? icons.check(16, '#007aff', 2.2) : null}</div>
     </div>
   )
   return (
     <div className="card">
       <div className="row">
-        <div className="row-icon" style={{ background: '#ff9500' }}>
+        <div className="row-icon" style={{ background: color }}>
           {icons.bell()}
         </div>
-        <span className="row-label">Новые заявки</span>
-        <Switch
-          on={s.notify.enabled}
-          onToggle={() => void action('notify', { enabled: !s.notify.enabled, mode: s.notify.mode })}
-        />
+        <span className="row-label">{title}</span>
+        <Switch on={prefs.enabled} onToggle={() => void action(method, { enabled: !prefs.enabled, mode: prefs.mode })} />
       </div>
       <Sep left={54} />
-      <div className={s.notify.enabled ? undefined : 'rows-disabled'}>
-        {radioRow('Только на сегодня', 'Заявки на текущий день', 'today')}
+      <div className={prefs.enabled ? undefined : 'rows-disabled'}>
+        {radioRow('Только на сегодня', todaySublabel, 'today')}
         <Sep left={14} />
-        {radioRow('Все заявки', 'На любой день', 'all')}
+        {radioRow(allLabel, allSublabel, 'all')}
       </div>
     </div>
   )
@@ -190,8 +205,27 @@ export function Settings() {
       <Header title="Настройки" />
       <ThemeSection />
       <SectionTitle>Уведомления о заявках</SectionTitle>
-      <NotifyCard s={s} />
+      <NotifyCard
+        prefs={s.notify}
+        method="notify"
+        title="Новые заявки"
+        color="#ff9500"
+        todaySublabel="Заявки на текущий день"
+        allLabel="Все заявки"
+        allSublabel="На любой день"
+      />
       <Footnote>Придут в личку бота. По умолчанию - только заявки на сегодня.</Footnote>
+      <SectionTitle>Уведомления об ивентах</SectionTitle>
+      <NotifyCard
+        prefs={s.eventNotify}
+        method="notify.events"
+        title="Новые ивенты"
+        color="#bf5af2"
+        todaySublabel="Ивенты на текущий день"
+        allLabel="Все ивенты"
+        allSublabel="На любой день"
+      />
+      <Footnote>Придут в личку бота, когда резидент заводит ивент. По умолчанию - на любой день.</Footnote>
       <SectionTitle>Авто-отметка по MAC</SectionTitle>
       <div className="card" style={{ marginBottom: 8 }}>
         <div className="row">

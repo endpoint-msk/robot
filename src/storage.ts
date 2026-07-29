@@ -86,6 +86,7 @@ export class Storage {
             hostingRequests: normalizeHostingRequests(parsed.hostingRequests),
             hostingAttendance: parsed.hostingAttendance ?? {},
             hostingNotify: parsed.hostingNotify ?? {},
+            eventNotify: parsed.eventNotify ?? {},
             hostingBoard: parsed.hostingBoard ?? {},
             hostingBoardMuted: parsed.hostingBoardMuted ?? {},
             announceMuted: parsed.announceMuted ?? {},

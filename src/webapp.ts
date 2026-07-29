@@ -57,9 +57,11 @@ import {
     draftPhotoId,
     eventDraftFor,
     eventForPhoto,
+    eventNotifyPrefsFor,
     eventPhotoIds,
     eventsForDay,
     isStagedPhotoOf,
+    notifyResidentsAboutEvent,
     MAX_EVENT_PHOTO_BYTES,
     MAX_EVENT_PHOTOS,
     readEventPhoto,
@@ -409,6 +411,7 @@ const buildBootstrap = (ctx: ApiContext) => {
     const settings = resident
         ? {
             notify: notifyPrefsFor(storage, user.userId),
+            eventNotify: eventNotifyPrefsFor(storage, user.userId),
             macs: binding ? [...binding.macs].sort((a, b) => a.mac.localeCompare(b.mac)) : [],
             macAnon: binding?.anon ?? false,
             macPresenceActive: storage.get().presence[String(user.userId)]?.source === 'mac',
@@ -779,6 +782,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Заготовка отработала — снимаем, иначе миниапп предложил бы завести тот же
             // ивент второй раз. Её афишу к этому моменту уже забрал syncEventPhotos.
             if (body.fromDraft === true) await clearEventDraft(storage, storage.path(), user.userId)
+            // Рассылка резидентам — в фоне, чтобы не держать ответ автору.
+            void notifyResidentsAboutEvent(client, storage, allowedChats, tzOffsetMinutes, config.publicUrl, created.event)
+                .catch((err) => console.error('[events] не удалось разослать уведомления об ивенте:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -1092,6 +1098,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const mode = body.mode === 'all' ? 'all' : 'today'
             await storage.update((s) => {
                 s.hostingNotify[String(user.userId)] = { enabled, mode }
+            })
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Уведомления об ивентах — отдельный тумблер от заявок (см. DEFAULT_EVENT_NOTIFY).
+        case 'notify.events': {
+            if (!requireResident()) return
+            const enabled = body.enabled === true
+            const mode = body.mode === 'today' ? 'today' : 'all'
+            await storage.update((s) => {
+                s.eventNotify[String(user.userId)] = { enabled, mode }
             })
             sendJson(res, 200, buildBootstrap(ctx))
             return
