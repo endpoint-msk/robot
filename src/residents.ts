@@ -25,13 +25,22 @@ export interface ResidentDirectory {
     isChatAdmin(chatId: number, userId: number): Promise<boolean>
 
     /**
-     * Доступ к миниаппу одним вопросом: резидент ли и не забанен ли.
+     * Состоит ли пользователь хотя бы в одном allowlist-чате (и не забанен там).
      *
-     * Отдельный метод, а не `isResident` + `isBanned`, потому что оба ответа берутся
-     * из одного и того же обхода allowlist-чатов — раздельные вызовы удвоили бы
-     * количество round-trip'ов в Telegram на каждый запрос миниаппа.
+     * Это аудитория «свои»: шире резидентов, но уже, чем «любой, кто нашёл бота».
+     * Ею гейтятся личные ответы, дублирующие групповые команды (`/inside`, `/printer`):
+     * в группе их видят участники чата, значит и в личке — те же люди, а не весь Telegram.
      */
-    access(userId: number): Promise<{ resident: boolean; banned: boolean }>
+    isMember(userId: number): Promise<boolean>
+
+    /**
+     * Доступ к миниаппу одним вопросом: резидент ли, участник ли и не забанен ли.
+     *
+     * Отдельный метод, а не три вызова, потому что все ответы берутся из одного и
+     * того же обхода allowlist-чатов — раздельные вызовы умножили бы количество
+     * round-trip'ов в Telegram на каждый запрос миниаппа.
+     */
+    access(userId: number): Promise<{ resident: boolean; member: boolean; banned: boolean }>
 }
 
 /**
@@ -56,6 +65,12 @@ export const createTelegramResidentDirectory = (
     const isAdminStatus = (status: ChatMemberStatus | null): boolean =>
         status === 'admin' || status === 'creator'
 
+    // `restricted` — это тоже участник: mtcute отдаёт его для channelParticipantBanned
+    // без viewMessages, то есть человек в чате, просто урезан в правах. `left`/`banned`/
+    // null участниками не считаются.
+    const isMemberStatus = (status: ChatMemberStatus | null): boolean =>
+        isAdminStatus(status) || status === 'member' || status === 'restricted'
+
     // Чаты опрашиваем параллельно: кэша нет, каждый ответ — round-trip в Telegram, а
     // access висит на каждом запросе миниаппа. Последовательный цикл складывал
     // задержки чатов в одну и заметно тормозил API.
@@ -77,13 +92,19 @@ export const createTelegramResidentDirectory = (
 
     // Бан хотя бы в одном allowlist-чате = бан везде: blockUser банит сразу во всех,
     // а ручной бан админом в главном чате — такой же «персона нон грата» для спейса.
-    const access = async (userId: number): Promise<{ resident: boolean; banned: boolean }> => {
+    const access = async (userId: number): Promise<{ resident: boolean; member: boolean; banned: boolean }> => {
         const all = await statuses(userId)
+        const banned = all.some((s) => s.status === 'banned')
         return {
             resident: all.some((s) => isAdminStatus(s.status)),
-            banned: all.some((s) => s.status === 'banned'),
+            // Бан перевешивает членство: забаненный в одном чате мог остаться участником
+            // другого, но «своим» он уже не считается.
+            member: !banned && all.some((s) => isMemberStatus(s.status)),
+            banned,
         }
     }
 
-    return { isResident, presenceChats, isChatAdmin, access }
+    const isMember = async (userId: number): Promise<boolean> => (await access(userId)).member
+
+    return { isResident, presenceChats, isChatAdmin, isMember, access }
 }

@@ -5,10 +5,20 @@ services:
     build:
       context: .
     restart: always
+    # PID 1 должен уметь пожинать зомби и пробрасывать сигналы — иначе SIGTERM не доходит.
+    init: true
+    # Даём боту дописать стейт и закрыть клиент, прежде чем прилетит SIGKILL.
+    stop_grace_period: 30s
     networks:
       - public
     env_file:
       - .env
+    # Пути к стейту и сессии — внутрь тома. В образе они пережили бы только до первой
+    # пересборки: `docker compose up --build` создаёт новый контейнер, и всё, что лежало
+    # вне тома, исчезает. `environment` перекрывает одноимённые значения из env_file.
+    environment:
+      DATA_FILE: /app/bot-data/data.json
+      SESSION_FILE: /app/bot-data/bot.session
     volumes:
       - ./bot-data:/app/bot-data
 networks:

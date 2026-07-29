@@ -475,29 +475,6 @@ export const registerPresenceHandlers = (
     })
 }
 
-/**
- * Регистрирует подписку на сообщения в групповых чатах для отслеживания последней активности.
- * chatLastActivity — информационный сигнал, на отправку сообщений не влияет.
- */
-export const registerChatActivityTracker = (
-    dp: Dispatcher,
-    storage: Storage,
-    allowedChats: ReadonlySet<number>,
-): void => {
-    const track = async (msg: { chat: { id: number | string }; isOutgoing: boolean }) => {
-        const chatId = Number(msg.chat.id)
-        if (!allowedChats.has(chatId)) return PropagationAction.Continue
-        if (msg.isOutgoing) return PropagationAction.Continue
-        await storage.update((s) => {
-            s.chatLastActivity[String(chatId)] = new Date().toISOString()
-        })
-        // Не глотаем сообщение — пусть командные обработчики тоже видят его.
-        return PropagationAction.Continue
-    }
-    dp.onNewMessage(track)
-    // Альбомы приходят отдельным апдейтом и не дублируются как new_message — учитываем и их.
-    dp.onMessageGroup(track)
-}
 
 /** Запускает таймер: пинги резидентам и снятие отметок по таймауту подтверждения. */
 export const startPresenceScheduler = (

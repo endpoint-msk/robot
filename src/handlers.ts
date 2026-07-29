@@ -12,7 +12,6 @@ import {
     pastFundraisers,
     periodAnchorOf,
     periodKeyOf,
-    previousPeriodKey,
     renderFundraiser,
     renderHistoryList,
     totalPages,
@@ -26,7 +25,6 @@ import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { Fundraiser, State } from './types.js'
 
-const REFRESH_CALLBACK = 'fundraiser:refresh'
 const PAGE_CALLBACK_PREFIX = 'fundraiser:page:'
 /** Возврат к списку истории. */
 const HISTORY_LIST_CALLBACK = 'fundraiser:history'
@@ -133,9 +131,24 @@ const ensureCurrentFundraiser = (storage: Storage, now: Date = new Date()): Fund
     return f
 }
 
-/** Сбор за предыдущий период относительно текущего, если он есть. */
-const previousFundraiser = (storage: Storage, current: Fundraiser): Fundraiser | undefined =>
-    storage.get().fundraisers[previousPeriodKey(current.year, current.month, storage.get().resetDay)]
+/**
+ * Сбор за предыдущий период относительно текущего, если он есть.
+ *
+ * Ищем ближайший существующий сбор с меньшим ключом, а не вычисляем ключ по текущему
+ * `resetDay`: после /setresetday меняется сам формат ключа (`YYYY-MM` ↔ `YYYY-MM-DD`),
+ * и вычисленный ключ переставал находить прошлый сбор — строка «Топ за <месяц>» молча
+ * исчезала из сообщения до тех пор, пока не пройдут два полных периода. Заодно
+ * переживает пропущенные периоды: сборы заводятся лениво, месяц без обращений записи
+ * не получает вовсе. Ключи сравнимы лексикографически: `2026-06` < `2026-06-25` < `2026-07`.
+ */
+const previousFundraiser = (storage: Storage, current: Fundraiser): Fundraiser | undefined => {
+    let best: Fundraiser | undefined
+    for (const f of Object.values(storage.get().fundraisers)) {
+        if (f.periodKey >= current.periodKey) continue
+        if (!best || f.periodKey > best.periodKey) best = f
+    }
+    return best
+}
 
 const rememberLastMessage = async (
     storage: Storage,
@@ -274,6 +287,12 @@ export const registerHandlers = (
                 '/settitle <тема> - изменить тему сбора, например: /settitle аренду',
                 '/setdesc <текст> - задать описание под сбором',
                 '/setresetday <число 1–29> - день месяца, в который сбор сбрасывается (по умолчанию 1)',
+                '/export [all] - выгрузить донаты в CSV: текущий сбор или все периоды',
+                '',
+                'Что бот присылает в этот чат (админ):',
+                '/goalsmute - вкл/выкл ежедневную автоотправку сбора',
+                '/boardmute - вкл/выкл доску «кто сегодня в спейсе»',
+                '/announcemute - вкл/выкл анонсы обновлений и объявления',
                 '',
                 '/help - это сообщение',
             ].join('\n'),
@@ -284,6 +303,23 @@ export const registerHandlers = (
         // В личке /inside просто отдаёт текущий список текстом - без привязки к сообщению чата.
         // В личке web_app-кнопки разрешены, поэтому открываем миниапп хостинга напрямую.
         if (msg.chat.type === 'user') {
+            // Кто внутри - это данные о резидентах, а не публичная витрина: в группе
+            // список видят участники allowlist-чата, значит и в личке - только они.
+            // Гостю миниаппа и постороннему тут отвечать нечем.
+            if (!msg.sender || msg.sender.type !== 'user') return
+            if (!(await residents.isMember(msg.sender.id))) {
+                await msg.answerText(
+                    webappUrl
+                        ? 'Список тех, кто в спейсе, виден участникам сообщества. Если хочешь зайти в гости - оставь заявку на визит.'
+                        : 'Список тех, кто в спейсе, виден участникам сообщества.',
+                    {
+                        replyMarkup: webappUrl
+                            ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]])
+                            : undefined,
+                    },
+                )
+                return
+            }
             await msg.answerText(html(renderPresenceText(storage)), {
                 disableWebPreview: true,
                 replyMarkup: webappUrl
@@ -536,10 +572,25 @@ export const registerHandlers = (
             return
         }
         const resetDay = clampResetDay(value)
+        // Смена дня сброса меняет и формулу ключа периода: то, что было «текущим сбором»,
+        // мгновенно становится прошлым, а на его месте заводится пустой. Раньше об этом
+        // не говорилось ни слова, и админ считал, что донаты пропали.
+        const now = new Date()
+        const beforeKey = periodKeyOf(now, storage.get().resetDay)
+        const movedDonations = storage.get().fundraisers[beforeKey]?.donations.length ?? 0
+        const afterKey = periodKeyOf(now, resetDay)
         await storage.update((s) => {
             s.resetDay = resetDay
         })
-        await msg.answerText(`Сбор теперь сбрасывается ${resetDay} числа каждого месяца.`)
+        const lines = [`Сбор теперь сбрасывается ${resetDay} числа каждого месяца.`]
+        if (afterKey !== beforeKey) {
+            lines.push(
+                movedDonations > 0
+                    ? `Текущий период при этом сменился: прошлый сбор (донатов: ${movedDonations}) ушёл в /history, новый начат с нуля — цель, тема и описание перенесены.`
+                    : 'Текущий период при этом сменился — начат новый сбор с теми же целью, темой и описанием.',
+            )
+        }
+        await msg.answerText(lines.join('\n'))
         // День сброса мог сменить «текущий» период - перерисуем запомненное сообщение.
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
@@ -646,32 +697,23 @@ export const registerHandlers = (
         }
     })
 
+    // Пагинация лидерборда. Кнопки «Обновить» тут нет и не было в разметке: сообщение
+    // сбора и так перерисовывается само на каждую правку (refreshLastMessageInChat).
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
         const data = ctx.dataStr
         if (data === null) return PropagationAction.Continue
-        const isRefresh = data === REFRESH_CALLBACK
-        const isPage = data.startsWith(PAGE_CALLBACK_PREFIX)
-        if (!isRefresh && !isPage) return PropagationAction.Continue
+        if (!data.startsWith(PAGE_CALLBACK_PREFIX)) return PropagationAction.Continue
 
         const chatId = Number(ctx.chat.id)
         if (!isAllowedChat(allowedChats, chatId)) {
             await ctx.answer({ text: 'Бот в этой группе не работает.', alert: true })
             return
         }
-        // Листать страницы может любой участник; «Обновить» - только админы.
-        if (isRefresh && !(await residents.isChatAdmin(chatId, ctx.user.id))) {
-            await ctx.answer({ text: 'Кнопка доступна только админам этой группы.', alert: true })
-            return
-        }
 
         const f = ensureCurrentFundraiser(storage)
-        // На «Обновить» всегда первая страница; на стрелки - указанная.
-        let requestedPage = 1
-        if (isPage) {
-            const n = Number(data.slice(PAGE_CALLBACK_PREFIX.length))
-            const pages = totalPages(buildLeaderboard(f))
-            requestedPage = clampPage(Number.isFinite(n) ? n : 1, pages)
-        }
+        const n = Number(data.slice(PAGE_CALLBACK_PREFIX.length))
+        const pages = totalPages(buildLeaderboard(f))
+        const requestedPage = clampPage(Number.isFinite(n) ? n : 1, pages)
         const rendered = renderFundraiser(f, requestedPage, previousFundraiser(storage, f))
 
         const messageId = ctx.messageId
@@ -682,7 +724,7 @@ export const registerHandlers = (
                 disableWebPreview: true,
             })
             await rememberLastMessage(storage, chatId, messageId, f.periodKey)
-            await ctx.answer({ text: isRefresh ? 'Обновлено' : `Страница ${rendered.page}` })
+            await ctx.answer({ text: `Страница ${rendered.page}` })
         } catch (err) {
             const text = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
             if (/MESSAGE_NOT_MODIFIED/i.test(text)) {

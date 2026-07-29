@@ -12,4 +12,7 @@ RUN npm --prefix webapp install && npm --prefix webapp run build
 
 COPY src /app/src
 
-CMD [ "npm", "run", "start" ]
+# Запускаем node напрямую, а не через npm: с `npm run start` PID 1 — это npm, и SIGTERM
+# от `docker stop` до процесса не доходит вовсе (обработчик выключения в src/index.ts
+# просто не выполнялся, докер ждал 10 с и слал SIGKILL посреди записи стейта).
+CMD [ "node", "--import", "tsx", "src/index.ts" ]

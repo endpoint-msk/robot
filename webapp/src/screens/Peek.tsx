@@ -12,7 +12,9 @@ function PeekDayRow({ day }: { day: Day }) {
   const { data } = useStore()
   const isToday = day.dateKey === data!.todayKey
   const att = day.attendees || []
-  const empty = att.length === 0
+  const events = day.events || []
+  // День с ивентом «не пустой», даже если никто ещё не отметился: сам ивент и есть повод прийти.
+  const empty = att.length === 0 && events.length === 0
   const cls = 'row' + (!empty ? ' tappable' : '') + (isToday ? ' today' : '') + (empty ? ' day-empty' : '')
   const dayCol = (
     <div className="day-col">
@@ -28,11 +30,32 @@ function PeekDayRow({ day }: { day: Day }) {
       </div>
     )
   }
+  const first = events[0]
   return (
-    <div className={cls} onClick={() => push('peekDay', { dateKey: day.dateKey })}>
+    // day-stack — только когда строк внутри две: у неё своя вертикальная подложка,
+    // чтобы зазоры над надписью, между ней и аватарками и под ними были равны.
+    <div
+      className={cls + (first && att.length > 0 ? ' day-stack' : '')}
+      onClick={() => push('peekDay', { dateKey: day.dateKey })}
+    >
       {dayCol}
-      <AvatarStack users={att.map((a) => ({ userId: a.userId, name: a.name, username: a.username }))} />
-      <span className="day-count">{peopleWord(att.length)}</span>
+      {/* Ивент и люди — двумя строками, как в макете: ивент это повод прийти, но кто
+          уже собрался, гостю важно не меньше, а в одну строку метка и список не влезают.
+          В метке только время — название он прочитает внутри дня. */}
+      <div className="day-main">
+        {first ? (
+          <div className="ev-day-label">
+            {icons.calendar(13, '#bf5af2')}
+            <span>{`в ${first.time}`}</span>
+          </div>
+        ) : null}
+        {att.length > 0 ? (
+          <div className="day-people">
+            <AvatarStack users={att.map((a) => ({ userId: a.userId, name: a.name, username: a.username }))} />
+            <span className="day-count">{peopleWord(att.length)}</span>
+          </div>
+        ) : null}
+      </div>
       <div className="row-right">{icons.chevron(isToday ? sec(0.4) : undefined)}</div>
     </div>
   )
@@ -44,7 +67,7 @@ export function Peek() {
   return (
     <Screen>
       <BackRow label="Мои визиты" />
-      <Header title="Кто придёт" subtitle="Подтверждённые гости и резиденты" />
+      <Header title="Активность" subtitle="Ивенты и кто придёт" />
       <div className="card">
         {days.map((day, i) => (
           <Fragment key={day.dateKey}>

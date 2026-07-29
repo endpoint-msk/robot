@@ -24,6 +24,29 @@ export async function api<T = any>(method: string, params?: Record<string, unkno
   return data as T
 }
 
+/**
+ * Заливка афиши ивента. Тело — сама картинка, поэтому мимо api(): там JSON и потолок
+ * в 64 КБ. Возвращает id файла — редактор кладёт его в список и присылает вместе с
+ * ивентом (до сохранения картинка ничьей и не привязана).
+ */
+export async function uploadEventPhoto(blob: Blob): Promise<string> {
+  const res = await fetch('/event-photo.jpg?initData=' + encodeURIComponent(initData()), {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: blob,
+  })
+  let data: any = {}
+  try {
+    data = await res.json()
+  } catch {
+    /* не-JSON — ниже упадём в generic */
+  }
+  if (!res.ok) {
+    throw new ApiError(data?.message || 'Не получилось загрузить фото. Попробуй ещё раз.', data?.error)
+  }
+  return String(data.id)
+}
+
 // Коды, при которых данные разошлись с сервером — подтягиваем актуальные.
 const RESYNC_CODES = ['already_approved', 'not_found', 'not_approved', 'no_proposal', 'bad_status', 'stale']
 

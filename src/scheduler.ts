@@ -33,7 +33,7 @@ export const startMonthlyScheduler = (
     }
 
     const handle = setInterval(() => {
-        void tick()
+        void tick().catch((err) => console.error('[scheduler] monthly tick error:', err))
     }, 60_000)
 
     return {

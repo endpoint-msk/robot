@@ -33,6 +33,12 @@
     --blue: #007aff;
     --green: #34c759;
     --red: #ff3b30;
+    /* Закрытие заявки: обратимое по смыслу действие (гость может подать заново),
+       поэтому не красный — красный занят блокировкой и должен пугать сильнее. */
+    --orange: #ff9500;
+    /* Ивенты — собственный тон подсистемы: синий занят действиями, зелёный одобрением,
+       красный блокировкой, оранжевый закрытием заявки. */
+    --purple: #bf5af2;
     /* Нейтральное действие свайпа (заметка): рядом с синим и красным нужен третий
        тон, иначе соседние кнопки сливаются в одну полосу. */
     --gray: #8e8e93;
@@ -183,6 +189,44 @@ body {
 }
 .modal-overlay.shown { opacity: 1; }
 
+/* Просмотр картинки на весь экран. Фон непрозрачно-чёрный в обеих темах: под
+   фотографией нужен нейтральный контекст, а не цвет интерфейса. */
+.lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.94);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+.lightbox.shown { opacity: 1; }
+.lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 12px;
+}
+.lightbox-close {
+    position: absolute;
+    top: calc(14px + var(--tg-content-safe-area-inset-top, 0px));
+    right: 14px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.lightbox-close:active { opacity: 0.6; }
+
 .modal-card {
     width: 100%;
     max-width: 300px;
@@ -254,7 +298,52 @@ body {
     color: var(--text-2);
     margin: 0 18px 7px;
 }
-.card + .section-title, .footnote + .section-title, button + .section-title { margin-top: 22px; }
+.card + .section-title, .footnote + .section-title, button + .section-title,
+.route-door + .section-title { margin-top: 22px; }
+
+/* Цель визита в истории гостя: одна строка с многоточием — там их десятки. */
+.guest-purpose { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Поле поиска — как в нативных списках iOS: серая плашка, лупа слева, крестик справа. */
+.search-field {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 18px;
+    padding: 0 12px;
+    min-height: 40px;
+    border-radius: 12px;
+    background: var(--chip);
+}
+.search-field input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--text);
+    /* Родной крестик Safari дублировал бы свою кнопку и ломал раскладку. */
+    -webkit-appearance: none;
+    appearance: none;
+}
+.search-field input::-webkit-search-cancel-button { display: none; }
+.search-field input::placeholder { color: rgba(var(--sec), 0.45); }
+.search-clear {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(var(--sec), 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.search-clear:active { opacity: 0.6; }
 
 .card {
     background: var(--card);
@@ -262,7 +351,7 @@ body {
     box-shadow: var(--shadow-card);
     overflow: hidden;
 }
-.card + .card { margin-top: 22px; }
+.card + .card, button + .card { margin-top: 22px; }
 
 .row {
     display: flex;
@@ -289,6 +378,14 @@ body {
 .row.day-empty .date { color: var(--text-4); }
 .day-none { font-size: 15px; color: var(--text-4); }
 .day-count { font-size: 15px; color: var(--text); }
+/* «Активность»: метка ивента и список людей идут строками друг под другом —
+   в одну строку они не помещаются (так же в макете прототипа). */
+/* В строке с ивентом зазор над надписью, между ней и аватарками и под ними — один и
+   тот же: у .row подложка 11px, а стек жил со своим gap, и сверху выходило заметно
+   больше, чем в середине. */
+.row.day-stack { padding-top: 8px; padding-bottom: 8px; }
+.day-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.day-people { display: flex; align-items: center; gap: 10px; }
 
 .avatar-stack { display: flex; align-items: center; flex-shrink: 0; }
 .avatar {
@@ -497,6 +594,7 @@ body {
     cursor: pointer;
 }
 .swipe-action.danger { background: var(--red); }
+.swipe-action.warn { background: var(--orange); }
 .swipe-action.neutral { background: var(--gray); }
 .swipe-action:active { filter: brightness(0.88); }
 /* Непрозрачный фон обязателен: он перекрывает действия во время жеста.
@@ -608,7 +706,9 @@ body {
     gap: 8px;
     width: 100%;
     min-height: 48px;
-    margin: 0 0 20px;
+    /* 10px — тот же зазор, что у кнопок ниже («Позвать в спейс», «Создать ивент»):
+       все три идут стопкой, и разный отступ читается как сбой вёрстки. */
+    margin: 0 0 10px;
     padding: 0 14px;
     border: none;
     border-radius: 16px;
@@ -1096,3 +1196,295 @@ body.busy #app { pointer-events: none; }
     z-index: 50;
 }
 body.busy #busy-overlay { display: flex; }
+
+/* --- Ивенты ---------------------------------------------------------------
+   Фиолетовый — собственный тон подсистемы: синий занят действиями, зелёный
+   одобрением, красный блокировкой. Ивент ничем из этого не является. */
+
+.event-card {
+    background: rgba(191, 90, 242, 0.10);
+    border-radius: var(--radius-card);
+    padding: 18px 18px 16px;
+    margin-bottom: 18px;
+}
+.ev-head { display: flex; align-items: center; gap: 7px; }
+.ev-kicker {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--purple);
+}
+.ev-chip {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(191, 90, 242, 0.16);
+    color: var(--purple);
+    font-size: 11px;
+    font-weight: 700;
+}
+.ev-title {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    line-height: 1.2;
+    margin-top: 12px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+/* Плейсхолдер названия в превью: видно, что это подсказка, а не введённый текст. */
+.ev-title.dim { color: var(--text-3); }
+.ev-desc {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-2);
+    margin-top: 5px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.ev-source {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--purple);
+    cursor: pointer;
+}
+.ev-source:active { opacity: 0.6; }
+.ev-host { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.ev-poster {
+    display: block;
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    border-radius: 14px;
+    margin-top: 14px;
+    background: rgba(191, 90, 242, 0.08);
+    cursor: pointer;
+}
+/* Несколько афиш — горизонтальная лента: жест привычнее стрелок, а снап не даёт
+   остановиться между картинками. Скроллбар в вебвью не показываем. */
+.ev-gallery {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.ev-gallery::-webkit-scrollbar { display: none; }
+.ev-gallery-item {
+    flex: 0 0 86%;
+    scroll-snap-align: center;
+}
+
+/* Редактор */
+.ev-field { padding: 11px 14px; }
+.ev-title-input, .ev-desc-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    padding: 0;
+}
+.ev-title-input { font-size: 17px; font-weight: 600; }
+/* Описание — до 2000 символов, а заготовка из канала приносит сразу весь пост: три строки под это мало. */
+.ev-desc-input { font-size: 16px; line-height: 1.4; resize: none; min-height: 132px; }
+/* Лента афиш в редакторе: квадратные плитки, последняя — «добавить». */
+.ev-photos {
+    display: flex;
+    gap: 8px;
+    padding: 11px 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.ev-photos::-webkit-scrollbar { display: none; }
+.ev-thumb {
+    position: relative;
+    flex: 0 0 auto;
+    width: 74px;
+    height: 74px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(var(--sec), 0.06);
+}
+.ev-thumb-img { display: block; width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
+.ev-thumb-del {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    /* Тёмный кружок, а не токен темы: он лежит поверх фотографии, а не поверх фона. */
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.ev-thumb-del:active { opacity: 0.6; }
+.ev-thumb-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--purple);
+    border: 1px dashed rgba(191, 90, 242, 0.5);
+    box-sizing: border-box;
+    cursor: pointer;
+}
+.ev-thumb-add:active { opacity: 0.6; }
+.ev-thumb-add input { display: none; }
+.ev-time { gap: 12px; }
+.ev-step {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: var(--chip);
+    /* Иконки шага рисуются currentColor — без этого они наследуют цвет текста. */
+    color: var(--blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.ev-step:active { opacity: 0.6; }
+.ev-time-value {
+    min-width: 58px;
+    text-align: center;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: var(--chip);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+/* Строка ивента на экране дня */
+.ev-row-icon { background: rgba(191, 90, 242, 0.16); }
+.ev-row-main { min-width: 0; flex: 1; }
+.ev-row-title-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ev-row-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ev-row-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+.secondary-btn.event-btn { color: var(--purple); }
+
+/* Метки ивента в списках дней */
+.dow-line { display: flex; align-items: center; gap: 5px; }
+.ev-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); flex-shrink: 0; }
+.ev-day-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--purple);
+}
+.ev-day-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- «Как пройти» ---------------------------------------------------------- */
+
+.route-address { align-items: center; }
+.route-pin { background: rgba(0, 122, 255, 0.16); border-radius: 10px; width: 34px; height: 34px; }
+.route-address-main { min-width: 0; flex: 1; }
+.route-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
+.route-value {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    margin-top: 2px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+.route-copy {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 160ms ease;
+}
+/* Подтверждение копирования живёт в самой кнопке: модалка на весь экран ради
+   «скопировано» перекрывает то, что человек и хотел увидеть. */
+.route-copy.done { background: rgba(52, 199, 89, 0.16); }
+.route-copy svg { animation: copy-pop 200ms ease-out; }
+@keyframes copy-pop {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+.route-metro { padding: 13px 14px 15px; }
+.route-metro-list { display: flex; flex-direction: column; gap: 11px; margin-top: 10px; }
+.route-metro-row { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
+.route-metro-row img { flex-shrink: 0; display: block; border-radius: 50%; }
+
+.route-door {
+    margin-top: 22px;
+    height: 236px;
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+}
+.route-door img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.route-door.tappable { cursor: pointer; }
+.route-door.tappable:active { opacity: 0.85; }
+
+.route-map-card { margin-top: 7px; overflow: hidden; }
+/* Тайлы позиционируются абсолютно внутри окна фиксированной высоты — мозаика
+   собрана под конкретную точку, поэтому окно не резиновое по высоте. */
+.route-map { position: relative; height: 210px; background: #14181d; overflow: hidden; }
+.route-map img { position: absolute; display: block; }
+.route-pin-mark {
+    position: absolute;
+    left: 185px;
+    top: 105px;
+    transform: translate(-50%, -100%);
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
+}
+.route-map-credit {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.35);
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.route-map-open {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--blue);
+}

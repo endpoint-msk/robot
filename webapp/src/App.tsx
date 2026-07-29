@@ -13,6 +13,7 @@ import { Day } from './screens/Day'
 import { Invite } from './screens/Invite'
 import { Archive } from './screens/Archive'
 import { ArchiveWeek } from './screens/ArchiveWeek'
+import { GuestVisits } from './screens/GuestVisits'
 import { Settings } from './screens/Settings'
 import { MyVisits } from './screens/MyVisits'
 import { Peek } from './screens/Peek'
@@ -22,6 +23,8 @@ import { GuestNote } from './screens/GuestNote'
 import { NewRequest } from './screens/NewRequest'
 import { Rules } from './screens/Rules'
 import { EditRequest } from './screens/EditRequest'
+import { Event } from './screens/Event'
+import { Route } from './screens/Route'
 import { Dev } from './screens/Dev'
 import { DevEdit } from './screens/DevEdit'
 import { Announce } from './screens/Announce'
@@ -32,6 +35,7 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   invite: Invite,
   archive: Archive,
   archiveWeek: ArchiveWeek,
+  guestVisits: GuestVisits,
   settings: Settings,
   myVisits: MyVisits,
   peek: Peek,
@@ -41,6 +45,8 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   rules: Rules,
   newRequest: NewRequest,
   editRequest: EditRequest,
+  event: Event,
+  route: Route,
   dev: Dev,
   devEdit: DevEdit,
   announce: Announce,

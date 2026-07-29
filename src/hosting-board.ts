@@ -6,10 +6,12 @@ import {
     displayName,
     formatDayKey,
     HOSTING_DAYS_AHEAD,
+    isFakeUserId,
     requestsForDay,
     residentsAttendingDay,
     todayKey,
 } from './hosting.js'
+import { eventsForDay } from './events.js'
 import { insideBoardLines } from './presence.js'
 import type { Storage } from './storage.js'
 
@@ -46,12 +48,21 @@ const attendeeLabel = (a: DayAttendee): string =>
         : escapeHtml(displayName(a.name))
 
 /**
+ * Заявки дня без фейков дев-сида: доска висит закреплённой в каждом чате, и отладка
+ * миниаппа не должна ни заводить её, ни накручивать на ней счётчик.
+ */
+const publicRequestsForDay = (storage: Storage, dateKey: string) =>
+    requestsForDay(storage, dateKey).filter((r) => !isFakeUserId(r.guest.userId))
+
+/**
  * В дне есть активность, ради которой заводится доска: подтверждённый визит, отметка
  * резидента «я приду» или (только для сегодня) кто-то отмечен внутри спейса.
  */
 const dayHasActivity = (storage: Storage, dateKey: string, today: string): boolean =>
     residentsAttendingDay(storage, dateKey).length > 0 ||
-    requestsForDay(storage, dateKey).some((r) => r.status === 'approved') ||
+    publicRequestsForDay(storage, dateKey).some((r) => r.status === 'approved') ||
+    // Ивент — сам по себе повод завести доску: он и есть то, ради чего в этот день придут.
+    eventsForDay(storage, dateKey, false).length > 0 ||
     (dateKey === today && Object.keys(storage.get().presence).length > 0)
 
 /** Ближайший день в окне [сегодня; +6] с активностью, или null — активности нет нигде. */
@@ -73,13 +84,27 @@ export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): st
 export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMinutes: number): string => {
     const isToday = dateKey === todayKey(tzOffsetMinutes)
     const attendees = attendeesForDay(storage, dateKey)
-    const requests = requestsForDay(storage, dateKey)
+    const requests = publicRequestsForDay(storage, dateKey)
     const total = requests.length
     const approved = requests.filter((r) => r.status === 'approved').length
 
     const lines: string[] = []
     lines.push(`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> в спейсе`)
     lines.push('')
+    // Ивенты — первым блоком: это главное, что происходит в этот день. Резидентские
+    // (`residentsOnly`) на доску не выносим — доска висит в общем чате.
+    const events = eventsForDay(storage, dateKey, false)
+    if (events.length > 0) {
+        for (const e of events) {
+            // Ивент из пересылки ведёт на исходный пост канала: в анонсе есть вёрстка,
+            // картинки и комментарии, которых на доске быть не может.
+            const title = e.sourceUrl
+                ? `<a href="${escapeHtml(e.sourceUrl)}">${escapeHtml(e.title)}</a>`
+                : `<b>${escapeHtml(e.title)}</b>`
+            lines.push(`📅 ${title} в ${e.time}`)
+        }
+        lines.push('')
+    }
     // Кто физически внутри прямо сейчас — только на доске сегодняшнего дня.
     if (isToday) {
         const inside = insideBoardLines(storage)

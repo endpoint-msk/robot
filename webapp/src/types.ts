@@ -16,6 +16,8 @@ export type RescheduleProposal = {
   time: string
   by: 'resident' | 'guest'
   user: User
+  /** Кому адресовано. null/undefined — предложение из записи, заведённой до появления поля. */
+  to?: User | null
   at: string
 }
 
@@ -70,6 +72,32 @@ export type InviteCandidate = {
 
 export type InviteListResponse = { people: InviteCandidate[] }
 
+/** Ивент спейса: воркшоп, ремонт-кафе, демо-день. Заводит резидент, видят все (если не resOnly). */
+export type SpaceEvent = {
+  id: string
+  dateKey: string
+  time: string
+  title: string
+  description: string
+  /** Гости не увидят такой ивент в «Активности» и на доске. */
+  residentsOnly: boolean
+  /** Афиши в порядке показа — id файлов, каждый грузится через /event-photo.jpg?id=. */
+  photos: string[]
+  /** Пост канала, из которого сделан ивент, — только у заведённых пересылкой. */
+  sourceUrl?: string
+  host: User
+  createdAt: string
+}
+
+/** Заготовка ивента из пересланного в личку поста канала анонсов. */
+export type EventDraft = {
+  userId: number
+  title: string
+  description: string
+  hasPhoto: boolean
+  at: string
+}
+
 export type Day = {
   dateKey: string
   total: number
@@ -77,6 +105,8 @@ export type Day = {
   /** Детали заявок приходят только резидентам и dev-аккаунтам; гостям — undefined. */
   requests?: HostingRequest[]
   attendees: Attendee[]
+  /** Ивенты дня: гостю — только открытые. */
+  events: SpaceEvent[]
 }
 
 export type NotifyPrefs = { enabled: boolean; mode: 'today' | 'all' }
@@ -113,10 +143,17 @@ export type Bootstrap = {
   blocked?: BlockedUser[]
   /** Заметки о гостях — только резидентам; гостю (в т.ч. о нём самом) не приходят. */
   notes?: GuestNote[]
+  /** Заготовка ивента из пересланного поста — только резидентам. null, если её нет. */
+  eventDraft?: EventDraft | null
 }
 
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }
 export type ArchiveResponse = { weeks: ArchiveWeekSummary[] }
+
+/** Человек в поиске по архиву: кто, сколько заявок и когда был в последний раз. */
+export type GuestSummary = { user: User; total: number; approved: number; lastDateKey: string }
+export type GuestSearchResponse = { guests: GuestSummary[] }
+export type GuestRequestsResponse = { user: User; requests: HostingRequest[] }
 
 export type ArchiveWeekDay = { dateKey: string; requests: HostingRequest[] }
 export type ArchiveWeekResponse = { weekStart: string; days: ArchiveWeekDay[] }

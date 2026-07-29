@@ -37,6 +37,13 @@ export const icons = {
       <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
     </svg>
   ),
+  /** Лупа в поле поиска — цвет служебный, как у плейсхолдера. */
+  search: (): ReactElement => (
+    <svg width="15" height="15" viewBox="0 0 18 18">
+      <circle cx="8" cy="8" r="5.4" fill="none" stroke={sec(0.45)} strokeWidth="1.8" />
+      <path d="M12 12l4 4" stroke={sec(0.45)} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
   lock: (): ReactElement => (
     <svg width="13" height="13" viewBox="0 0 18 18">
       <path d="M4 8V6.5a5 5 0 0 1 10 0V8" fill="none" stroke={sec(0.55)} strokeWidth="1.6" />
@@ -119,6 +126,52 @@ export const icons = {
     <svg width={size} height={size} viewBox="0 0 20 20">
       <circle cx="10" cy="10" r="7.2" fill="none" stroke={color} strokeWidth="1.7" />
       <path d="M5 5l10 10" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Булавка на карте — метка адреса. */
+  pin: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M10 18s6-6.1 6-10.2A6 6 0 004 7.8C4 11.9 10 18 10 18z" fill="none" stroke={color} strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="10" cy="7.7" r="2.1" fill={color} />
+    </svg>
+  ),
+  /** Две наложенные рамки — «скопировать». */
+  copy: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 14 14">
+      <rect x="4.5" y="1.5" width="8" height="8" rx="2" fill="none" stroke={color} strokeWidth="1.5" />
+      <path d="M9.5 12.5h-6a2 2 0 01-2-2v-6" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Стрелка наружу — «открыть во внешнем приложении». */
+  external: (color = '#007aff'): ReactElement => (
+    <svg width="17" height="17" viewBox="0 0 18 18">
+      <path d="M3 15L15 3M8 3h7v7" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  /** Заливная булавка поверх карты — крупнее и с белой обводкой, чтобы читалась на тайлах. */
+  mapPin: (): ReactElement => (
+    <svg width="30" height="38" viewBox="0 0 30 38">
+      <path d="M15 37c0-9 11-13.5 11-22A11 11 0 004 15c0 8.5 11 13 11 22z" fill="#007aff" stroke="#fff" strokeWidth="2" />
+      <circle cx="15" cy="14.5" r="4" fill="#fff" />
+    </svg>
+  ),
+  /** Минус в круглой кнопке шага времени — пара к `plusSmall`. */
+  minus: (): ReactElement => (
+    <svg width="14" height="14" viewBox="0 0 14 14">
+      <path d="M2 7h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Календарь — метка ивента. Цвет задаётся вызывающим: у ивентов он фиолетовый. */
+  calendar: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <rect x="2.8" y="3.6" width="12.4" height="11.6" rx="2.6" fill="none" stroke={color} strokeWidth="1.7" />
+      <path d="M2.8 7.4h12.4M6.2 1.8v3M11.8 1.8v3" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Крестик («закрыть заявку») — без кружка, чтобы не путался с `ban`. */
+  xmark: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   ),
   pencil: (): ReactElement => (

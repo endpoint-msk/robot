@@ -1,10 +1,10 @@
 // Строка дня в обзоре недели (резидент) и в неделе архива.
 
-import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { useStore } from '../store'
 import { sec } from '../theme'
-import type { HostingRequest } from '../types'
+import type { Attendee, HostingRequest, SpaceEvent } from '../types'
 import { AvatarStack } from './people'
 
 type DayRowData = {
@@ -12,6 +12,10 @@ type DayRowData = {
   total: number
   approved: number
   requests?: HostingRequest[]
+  /** Публичный «кто придёт»: в обзоре есть всегда, в архиве не приходит вовсе. */
+  attendees?: Attendee[]
+  /** Ивенты дня: в архиве их нет. */
+  events?: SpaceEvent[]
 }
 
 export function DayRow({
@@ -27,34 +31,47 @@ export function DayRow({
 }) {
   const { data } = useStore()
   const isToday = day.dateKey === data!.todayKey
-  const empty = day.total === 0
+  const att = day.attendees ?? []
+  // «Пусто» — только про внешний вид строки. Открываться она должна всё равно: экран дня
+  // это единственное место, где резидент отмечается «я приду», и в тихий день (заявок нет,
+  // никто ещё не отметился) без этого туда было не попасть — то есть первым отметиться
+  // было нельзя в принципе.
+  const empty = day.total === 0 && att.length === 0
   const cls =
-    'row' + (tappable && !empty ? ' tappable' : '') + (isToday ? ' today' : '') + (empty ? ' day-empty' : '')
+    'row' + (tappable ? ' tappable' : '') + (isToday ? ' today' : '') + (empty ? ' day-empty' : '')
 
+  // Точка у дня недели — «в этот день есть ивент». Занимать ею место в строке нельзя:
+  // там уже аватарки и счётчики, а сам ивент виден на экране дня.
+  const hasEvent = (day.events ?? []).length > 0
   const dayCol = (
     <div className="day-col">
-      <div className="dow">{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</div>
+      <div className="dow-line">
+        <div className="dow">{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</div>
+        {hasEvent ? <span className="ev-dot" title="В этот день есть ивент" /> : null}
+      </div>
       <div className="date">{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</div>
     </div>
   )
 
-  if (empty) {
-    return (
-      <div className={cls}>
-        {dayCol}
-        <span className="day-none">Нет заявок</span>
-      </div>
-    )
-  }
-
+  // Заявок нет, но кто-то придёт — показываем людей, а не «нет заявок»: иначе день
+  // с одними отметками резидентов выглядит пустым.
   const guests = (day.requests || []).map((r) => r.guest)
+  const faces = guests.length > 0 ? guests : att
+  const label = day.total > 0 ? requestsWord(day.total) : peopleWord(att.length)
+
   return (
     <div className={cls} onClick={tappable ? onOpen : undefined}>
       {dayCol}
-      {guests.length > 0 ? <AvatarStack users={guests} /> : null}
-      <span className="day-count">{requestsWord(day.total)}</span>
+      {empty ? (
+        <span className="day-none">Нет заявок</span>
+      ) : (
+        <>
+          {faces.length > 0 ? <AvatarStack users={faces} /> : null}
+          <span className="day-count">{label}</span>
+        </>
+      )}
       <div className="row-right">
-        {day.approved > 0 || alwaysApproved ? (
+        {!empty && (day.approved > 0 || alwaysApproved) ? (
           <div className="approved-count">
             {icons.check(14, '#34c759')}
             {String(day.approved)}
