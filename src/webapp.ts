@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -75,6 +75,7 @@ import {
 import { syncHostingBoard } from './hosting-board.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
+import { currentPeriodLabel, periodKeyOf, renderBoardExport } from './fundraiser.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -244,6 +245,8 @@ export type WebappDeps = {
     tzOffsetMinutes: number
     /** GitHub-репо 'owner/name' для чтения релизов в дев-анонсах. */
     githubRepo: string
+    /** Токен табло донатов (BOARD_TOKEN). null — ручка GET /board выключена. */
+    boardToken: string | null
 }
 
 type ApiContext = WebappDeps & {
@@ -1384,6 +1387,74 @@ const serveStatic = async (pathname: string, res: ServerResponse): Promise<void>
     }
 }
 
+// ---------------------------------------------------------------------------
+// GET /board — табло донатов (e-paper на микроконтроллере)
+// ---------------------------------------------------------------------------
+
+/**
+ * Сравнение секретов за постоянное время. Сравниваем не сами строки, а их SHA-256:
+ * `timingSafeEqual` бросает исключение на буферах разной длины, и такая проверка
+ * сливала бы длину токена; у дайджестов длина всегда одна.
+ */
+const secretEquals = (a: string, b: string): boolean =>
+    timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
+
+/** Токен из `Authorization: Bearer <token>` либо из `?token=` — прошивке проще query. */
+const boardTokenOf = (req: IncomingMessage, url: URL): string => {
+    const header = req.headers.authorization ?? ''
+    const bearer = /^Bearer\s+(.+)$/i.exec(header.trim())
+    return bearer?.[1]?.trim() ?? url.searchParams.get('token')?.trim() ?? ''
+}
+
+/** Совпал ли ETag с любым из If-None-Match (список через запятую, возможен префикс W/). */
+const etagMatches = (header: string | undefined, etag: string): boolean =>
+    (header ?? '').split(',').some((raw) => raw.trim().replace(/^W\//, '') === etag)
+
+/**
+ * Отвечает табло текущим сбором.
+ *
+ * Сбор берётся строго по ключу текущего периода и НЕ создаётся, если его ещё нет
+ * (в отличие от `ensureCurrentFundraiser` в handlers.ts): GET не должен писать стейт,
+ * иначе опрос табло каждые несколько минут плодил бы пустые сборы и дисковые записи.
+ *
+ * ETag здесь не про трафик, а про ресурс панели: полное обновление e-paper — пара
+ * секунд мигания, поэтому на неизменившиеся данные отвечаем 304, и прошивка не
+ * перерисовывает экран.
+ */
+const serveBoard = (deps: WebappDeps, req: IncomingMessage, url: URL, res: ServerResponse): void => {
+    if (deps.boardToken === null) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('not found\n')
+        return
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405).end()
+        return
+    }
+    const token = boardTokenOf(req, url)
+    if (token === '' || !secretEquals(token, deps.boardToken)) {
+        res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' }).end('unauthorized\n')
+        return
+    }
+    const state = deps.storage.get()
+    const now = new Date()
+    const fundraiser = state.fundraisers[periodKeyOf(now, state.resetDay)]
+    const body = renderBoardExport(fundraiser, currentPeriodLabel(now, state.resetDay))
+    const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
+    if (etagMatches(req.headers['if-none-match'], etag)) {
+        res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' }).end()
+        return
+    }
+    res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Length': Buffer.byteLength(body, 'utf8'),
+        'Cache-Control': 'no-cache',
+        ETag: etag,
+    })
+    // На HEAD тело не пишем, но Content-Length выше уже объявлен — прошивка может
+    // спросить размер заранее, если решит читать в буфер фиксированной длины.
+    res.end(req.method === 'HEAD' ? undefined : body)
+}
+
 /** Поднимает HTTP-сервер миниаппа. Останавливать через .stop(). */
 export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () => void } => {
     const server = createServer((req, res) => {
@@ -1393,6 +1464,13 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
 
             if (pathname === '/healthz') {
                 res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok')
+                return
+            }
+
+            // Табло донатов. Гейт — статический BOARD_TOKEN, а не initData: у железки
+            // нет Telegram-сессии, подписать initData ей нечем.
+            if (pathname === '/board') {
+                serveBoard(deps, req, url, res)
                 return
             }
 

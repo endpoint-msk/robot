@@ -185,6 +185,78 @@ export const clampPage = (page: number, pages: number): number => {
     return Math.floor(page)
 }
 
+// ---------------------------------------------------------------------------
+// Экспорт для табло (e-paper на микроконтроллере), см. GET /board в webapp.ts
+// ---------------------------------------------------------------------------
+
+/** Сколько строк донатеров уходит на табло. Больше на экран 400×300 не влезает. */
+export const BOARD_LIMIT = 10
+
+/**
+ * Потолок длины ника в БАЙТАХ (не символах): прошивка читает ответ в статический
+ * буфер, поэтому у ответа должен быть предсказуемый максимум. Кириллица в UTF-8 —
+ * два байта на букву, так что 24 байта это 12 русских букв или 24 латинских.
+ */
+export const BOARD_NICK_BYTES = 24
+
+/** Подпись периода, которому принадлежит дата (для табло, когда сбора ещё нет). */
+export const currentPeriodLabel = (now: Date, resetDay: number): string => {
+    const { year, month } = periodAnchorOf(now, resetDay)
+    const disp = displayPeriodOf(year, month, resetDay)
+    return `${monthNameRu(disp.month)} ${disp.year}`
+}
+
+/**
+ * Обрезает ник до BOARD_NICK_BYTES по границе символа. Режем посимвольно, а не
+ * `slice` по байтам: разрубленная пополам кириллическая буква даёт битый UTF-8,
+ * и табло рисует крокозябру вместо последней буквы.
+ */
+const clampNickBytes = (nick: string): string => {
+    if (Buffer.byteLength(nick, 'utf8') <= BOARD_NICK_BYTES) return nick
+    let out = ''
+    for (const ch of nick) {
+        if (Buffer.byteLength(out + ch, 'utf8') > BOARD_NICK_BYTES) break
+        out += ch
+    }
+    return out
+}
+
+/** Ник для табло: без ведущей собаки, без разделителей формата и в пределах лимита. */
+const boardNick = (nick: string): string =>
+    clampNickBytes(escapeNick(nick).replace(/[|\r\n]/g, ' '))
+
+/**
+ * Строит тело ответа для табло: построчный `key=value`, а не JSON.
+ * На микроконтроллере это `strtok` по `\n` и `=` вместо парсера, а вся арифметика
+ * (суммы по нику, сортировка, склейка анонимов) уже сделана здесь.
+ *
+ * `f = undefined` — сбора за текущий период ещё нет (бот создаёт его лениво, первым
+ * `/goals` или `/donate`). Это штатное состояние первых дней периода, а не ошибка:
+ * отдаём `state=none` с подписью периода, чтобы табло написало «сбор не начат», а не
+ * показывало прошлый месяц как текущий.
+ */
+export const renderBoardExport = (f: Fundraiser | undefined, periodLabel: string): string => {
+    const total = f ? totalAmount(f) : 0
+    const goal = f?.goal ?? 0
+    const state = !f ? 'none' : (goal > 0 && total >= goal ? 'reached' : 'open')
+    const board = f ? buildLeaderboard(f) : []
+    const lines = [
+        'v=1',
+        `period=${f ? fundraiserPeriodLabel(f) : periodLabel}`,
+        `title=${f?.title ?? ''}`,
+        `currency=${f?.currency ?? ''}`,
+        `goal=${formatAmount(goal)}`,
+        `total=${formatAmount(total)}`,
+        `state=${state}`,
+        `donors=${board.length}`,
+    ]
+    for (const entry of board.slice(0, BOARD_LIMIT)) {
+        const who = isAnonNick(entry.nick) ? ANON_LABEL : boardNick(entry.nick)
+        lines.push(`d=${who}|${formatAmount(entry.total)}`)
+    }
+    return lines.join('\n') + '\n'
+}
+
 export type RenderResult = {
     /** HTML-разметка сообщения (ники — t.me-ссылки, чтобы не пинговать). Парсить через `html()`. */
     text: string

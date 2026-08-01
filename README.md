@@ -65,6 +65,34 @@
 
 Включается `WEBAPP_URL` — публичный HTTPS-адрес, под которым отдаётся собранный миниапп из `webapp/dist`. Бот поднимает HTTP-сервер на `WEBAPP_HOST:WEBAPP_PORT`, наружу его выставляет реверс-прокси с TLS. Чтобы кнопки из групп открывали миниапп, включи Main Mini App в BotFather (Bot Settings → Configure Mini App) с тем же URL. Авторизация запросов — подпись `initData`.
 
+## Табло донатов (`GET /board`)
+
+Лидерборд текущего сбора для e-paper табло на микроконтроллере. Включается `BOARD_TOKEN`; без него ручка отдаёт 404.
+
+```
+GET /board?token=<BOARD_TOKEN>          # либо Authorization: Bearer <BOARD_TOKEN>
+```
+
+```
+v=1
+period=Август 2026
+title=аренду
+currency=RUB
+goal=228228
+total=2100
+state=open
+donors=17
+d=CageGirl|1000
+d=Анонимно|800
+d=cagegirl|228
+```
+
+Формат — построчный `key=value`, а не JSON: на микроконтроллере это разбор `strtok` вместо парсера. Значение читать до конца строки, разделяя по **первому** `=` (в нике `=` встречается, `|` вычищен). `state` — `none` (сбора за текущий период ещё нет) | `open` | `reached`. `donors` — сколько всего донатеров, строк `d=` при этом не больше десяти. Ник обрезан до 24 байт UTF-8 по границе символа, донаты одного ника сложены, анонимы склеены в одну запись — потолок ответа около 600 байт, так что прошивке хватает статического буфера.
+
+Сбор берётся по ключу текущего периода и не создаётся, если его ещё нет: GET не пишет стейт. `ETag` + `If-None-Match` → `304`; для e-paper это главное, потому что полное обновление панели — пара секунд мигания, и перерисовывать её на неизменившихся данных незачем.
+
+Авторизация здесь — статический токен, а не `initData`: у железки нет Telegram-сессии. Токен считается извлекаемым (плата стоит в спейсе, прошивку снимут по SWD), поэтому за ручкой лежат только ники и суммы — ровно то, что бот и так публикует сообщением в чате.
+
 ## Запуск
 
 ```bash
@@ -77,7 +105,7 @@ npm start                     # npm run dev — watch-режим
 
 Миниапп хостинга — отдельное React + Vite + TypeScript приложение в `webapp/`; сервер бота раздаёт готовую сборку из `webapp/dist`. Для разработки фронта — `npm --prefix webapp run dev` (Vite dev-сервер с прокси `/api`, `/avatar.jpg`, `/visit.ics` на бэкенд). В Docker сборка миниаппа — шаг в `Dockerfile`.
 
-Остальные переменные — в `.env.example`, каждая выключает свою подсистему, если не задана: `PRINTER_URL`/`PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD`, `WEBAPP_URL`/`WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `DEV_USER_IDS`, `DATA_FILE`/`SESSION_FILE`, форвардинг и live-чат.
+Остальные переменные — в `.env.example`, каждая выключает свою подсистему, если не задана: `PRINTER_URL`/`PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD`, `WEBAPP_URL`/`WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `BOARD_TOKEN`, `DEV_USER_IDS`, `DATA_FILE`/`SESSION_FILE`, форвардинг и live-чат.
 
 Стейт — в `DATA_FILE` (по умолчанию `./data.json`), сессия mtcute — в `SESSION_FILE` (по умолчанию `./bot.session`). **В Docker оба пути обязаны лежать в примонтированном томе** — `docker-compose.yaml` задаёт их через `environment`, иначе пересборка образа стирает и стейт, и сессию. Рядом со стейтом бот держит `<DATA_FILE>.bak` и афиши ивентов; битый `data.json` не роняет бота, а отводится в `.corrupt-<время>` с сообщением дев-аккаунтам.
 

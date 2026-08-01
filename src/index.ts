@@ -86,6 +86,9 @@ const main = async () => {
     const hostingTzOffset = parseHostingTzOffset(process.env.HOSTING_TZ_OFFSET_MINUTES)
     // Репо для чтения GitHub-релизов в дев-анонсах (публичное, токен не нужен).
     const githubRepo = process.env.GITHUB_REPO?.trim() || 'endpoint-msk/robot'
+    // Табло донатов (GET /board). Без токена ручка не поднимается вовсе: она отдаёт
+    // лидерборд без Telegram-авторизации, и «забыли задать» не должно означать «открыто всем».
+    const boardToken = process.env.BOARD_TOKEN?.trim() || null
 
     if (allowedChats.size === 0) {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
@@ -182,6 +185,7 @@ const main = async () => {
             devUserIds,
             tzOffsetMinutes: hostingTzOffset,
             githubRepo,
+            boardToken,
         })
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
