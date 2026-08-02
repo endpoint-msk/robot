@@ -21,6 +21,7 @@ import {
     hasAcceptedRules,
     HOSTING_DAYS_AHEAD,
     isBlocked,
+    isFakeUserId,
     isValidDayKey,
     listBlockedUsers,
     listGuestNotes,
@@ -75,7 +76,7 @@ import {
 import { syncHostingBoard } from './hosting-board.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
-import { currentPeriodLabel, periodKeyOf, renderBoardExport } from './fundraiser.js'
+import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest } from './fundraiser.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -1411,6 +1412,20 @@ const etagMatches = (header: string | undefined, etag: string): boolean =>
     (header ?? '').split(',').some((raw) => raw.trim().replace(/^W\//, '') === etag)
 
 /**
+ * Сегодняшние заявки, ждущие ответа резидента, — для нижнего блока табло.
+ *
+ * Только `pending`: у согласованного визита действия не требуется, а смысл блока —
+ * «на это надо ответить». Анонимные заявки и фейки дев-сида не выходят на публичные
+ * поверхности (тот же инвариант, что у `attendeesForDay`), табло — как раз такая.
+ * Цель визита не отдаём: она бывает личной, а на стене висит всё время.
+ */
+const boardRequests = (deps: WebappDeps): BoardRequest[] =>
+    requestsForDay(deps.storage, todayKey(deps.tzOffsetMinutes))
+        .filter((r) => r.status === 'pending' && !r.anon && !isFakeUserId(r.guest.userId))
+        .sort((a, b) => a.time.localeCompare(b.time))
+        .map((r) => ({ time: r.time, name: displayName(r.guest.name) }))
+
+/**
  * Отвечает табло текущим сбором.
  *
  * Сбор берётся строго по ключу текущего периода и НЕ создаётся, если его ещё нет
@@ -1438,7 +1453,7 @@ const serveBoard = (deps: WebappDeps, req: IncomingMessage, url: URL, res: Serve
     const state = deps.storage.get()
     const now = new Date()
     const fundraiser = state.fundraisers[periodKeyOf(now, state.resetDay)]
-    const body = renderBoardExport(fundraiser, currentPeriodLabel(now, state.resetDay))
+    const body = renderBoardExport(fundraiser, currentPeriodLabel(now, state.resetDay), boardRequests(deps))
     const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
     if (etagMatches(req.headers['if-none-match'], etag)) {
         res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' }).end()

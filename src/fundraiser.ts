@@ -189,8 +189,26 @@ export const clampPage = (page: number, pages: number): number => {
 // Экспорт для табло (e-paper на микроконтроллере), см. GET /board в webapp.ts
 // ---------------------------------------------------------------------------
 
-/** Сколько строк донатеров уходит на табло. Больше на экран 400×300 не влезает. */
+/** Сколько строк донатеров уходит на табло, когда сегодня нет непринятых заявок. */
 export const BOARD_LIMIT = 10
+
+/**
+ * Сколько строк донатеров остаётся, когда снизу встал блок заявок.
+ * Вёрстка табло адаптивная: заявки важнее хвоста лидерборда, но и совсем его
+ * прятать нельзя — экран должен оставаться узнаваемым.
+ */
+export const BOARD_LIMIT_WITH_REQUESTS = 3
+
+/** Сколько заявок помещается в блок; остальные схлопываются в счётчик. */
+export const BOARD_REQUEST_LIMIT = 3
+
+/** Сегодняшняя непринятая заявка в том виде, в каком она уходит на табло. */
+export type BoardRequest = {
+    /** 'HH:MM' по поясу спейса. */
+    time: string
+    /** Отображаемое имя гостя. */
+    name: string
+}
 
 /**
  * Потолок длины ника в БАЙТАХ (не символах): прошивка читает ответ в статический
@@ -235,11 +253,18 @@ const boardNick = (nick: string): string =>
  * отдаём `state=none` с подписью периода, чтобы табло написало «сбор не начат», а не
  * показывало прошлый месяц как текущий.
  */
-export const renderBoardExport = (f: Fundraiser | undefined, periodLabel: string): string => {
+export const renderBoardExport = (
+    f: Fundraiser | undefined,
+    periodLabel: string,
+    requests: BoardRequest[] = [],
+): string => {
     const total = f ? totalAmount(f) : 0
     const goal = f?.goal ?? 0
     const state = !f ? 'none' : (goal > 0 && total >= goal ? 'reached' : 'open')
     const board = f ? buildLeaderboard(f) : []
+    // Строк лидерборда тем меньше, чем больше места забрал блок заявок. Решение
+    // принимается здесь, а не в прошивке: так вёрстку можно менять деплоем бота.
+    const donorLines = requests.length > 0 ? BOARD_LIMIT_WITH_REQUESTS : BOARD_LIMIT
     const lines = [
         'v=1',
         `period=${f ? fundraiserPeriodLabel(f) : periodLabel}`,
@@ -249,10 +274,17 @@ export const renderBoardExport = (f: Fundraiser | undefined, periodLabel: string
         `total=${formatAmount(total)}`,
         `state=${state}`,
         `donors=${board.length}`,
+        `waiting=${requests.length}`,
     ]
-    for (const entry of board.slice(0, BOARD_LIMIT)) {
+    for (const entry of board.slice(0, donorLines)) {
         const who = isAnonNick(entry.nick) ? ANON_LABEL : boardNick(entry.nick)
         lines.push(`d=${who}|${formatAmount(entry.total)}`)
+    }
+    // Сортируем здесь, а не полагаемся на вызывающего: порядок строк на табло —
+    // часть формата, и он не должен зависеть от того, кто собирал список.
+    const byTime = [...requests].sort((a, b) => a.time.localeCompare(b.time))
+    for (const r of byTime.slice(0, BOARD_REQUEST_LIMIT)) {
+        lines.push(`r=${r.time}|${boardNick(r.name)}`)
     }
     return lines.join('\n') + '\n'
 }
