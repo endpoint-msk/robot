@@ -60,9 +60,12 @@ export interface ResidentDirectory {
 }
 
 /**
- * Реализация поверх Telegram: резидент = админ/владелец **чата резидентов**
- * (`residentsChatId`), админ-проверка — живой `getChatMember` на каждый вопрос
- * (без кэша, как и раньше).
+ * Реализация поверх Telegram: резидент = **участник чата резидентов**
+ * (`residentsChatId`), кроме ботов. Не админ: админство в Telegram про модерацию,
+ * а состав спейса про членство, и держать их синонимами значит выдавать права
+ * резидента вместе с правом удалять сообщения.
+ *
+ * Проверки живые, без кэша: `getChatMember` на каждый вопрос.
  *
  * `residentsChatId === null` — чат не задан, и мы откатываемся на прежнее правило
  * «админ любого allowlist-чата». Иначе забытая переменная окружения означала бы
@@ -73,9 +76,11 @@ export const createTelegramResidentDirectory = (
     allowedChats: ReadonlySet<number>,
     residentsChatId: number | null,
 ): ResidentDirectory => {
-    /** Где искать резидентов: выделенный чат либо, если он не задан, весь allowlist. */
-    const residentChats: ReadonlySet<number> =
-        residentsChatId !== null ? new Set([residentsChatId]) : allowedChats
+    /**
+     * Потолок на выгрузку состава. Больше 200 участников супергруппы Telegram боту
+     * за проход всё равно не отдаст, но пусть ограничение будет явным.
+     */
+    const MAX_RESIDENTS = 500
     /** Статус участника в чате; null — нет доступа / он там не состоял вовсе. */
     const statusIn = async (chatId: number, userId: number): Promise<ChatMemberStatus | null> => {
         try {
@@ -109,10 +114,15 @@ export const createTelegramResidentDirectory = (
     const isChatAdmin = async (chatId: number, userId: number): Promise<boolean> =>
         isAdminStatus(await statusIn(chatId, userId))
 
-    /** Резидент = админ чата резидентов. Опрашиваем только его, не весь allowlist. */
+    /**
+     * Резидент = участник чата резидентов. Чат не задан — откат на прежнее правило
+     * «админ любого allowlist-чата».
+     */
     const isResident = async (userId: number): Promise<boolean> => {
-        const checks = await Promise.all([...residentChats].map((chatId) => statusIn(chatId, userId)))
-        return checks.some(isAdminStatus)
+        if (residentsChatId === null) {
+            return (await statuses(userId)).some((s) => isAdminStatus(s.status))
+        }
+        return isMemberStatus(await statusIn(residentsChatId, userId))
     }
 
     // Присутствие показываем во всех чатах, где бот работает: резидентство больше не
@@ -140,24 +150,46 @@ export const createTelegramResidentDirectory = (
     const isMember = async (userId: number): Promise<boolean> => (await access(userId)).member
 
     /**
-     * Состав чата резидентов: админы и создатель, без ботов. Живой запрос без кэша,
-     * как и остальные проверки. Дубли (если чатов несколько, то есть при откате на
-     * allowlist) схлопываем по userId — первое вхождение выигрывает.
+     * Состав чата резидентов: все участники, кроме ботов и вышедших.
+     *
+     * Чтобы читать состав, бот должен быть админом этого чата: обычному участнику
+     * Telegram список участников супергруппы не отдаёт. Не смогли прочитать — пишем
+     * в лог и возвращаем что есть: ростер взносов и рассылки переживут неполный
+     * список лучше, чем упавший вызов.
+     *
+     * При откате на allowlist (чат не задан) берём только админов: это прежнее
+     * правило, и оно не должно превращаться в «все участники всех чатов».
      */
     const list = async (): Promise<HostingUser[]> => {
         const out = new Map<number, HostingUser>()
-        for (const chatId of residentChats) {
+        const add = (user: { id: number; type: string; isBot: boolean; username: string | null; displayName: string }): void => {
+            if (user.type !== 'user' || user.isBot) return
+            if (out.has(user.id)) return
+            out.set(user.id, {
+                userId: user.id,
+                username: user.username ?? null,
+                name: displayName(user.displayName),
+            })
+        }
+
+        if (residentsChatId !== null) {
+            try {
+                for await (const m of client.iterChatMembers(residentsChatId, { limit: MAX_RESIDENTS })) {
+                    if (m.status === 'left' || m.status === 'banned') continue
+                    add(m.user)
+                }
+            } catch (err) {
+                console.warn(`[residents] не удалось получить участников чата ${residentsChatId}:`, err)
+            }
+            return [...out.values()]
+        }
+
+        for (const chatId of allowedChats) {
             try {
                 const members = await client.getChatMembers(chatId, { type: 'admins' })
                 for (const m of members) {
                     if (m.status !== 'admin' && m.status !== 'creator') continue
-                    if (m.user.type !== 'user' || m.user.isBot) continue
-                    if (out.has(m.user.id)) continue
-                    out.set(m.user.id, {
-                        userId: m.user.id,
-                        username: m.user.username ?? null,
-                        name: displayName(m.user.displayName),
-                    })
+                    add(m.user)
                 }
             } catch (err) {
                 console.warn(`[residents] не удалось получить админов чата ${chatId}:`, err)

@@ -67,8 +67,8 @@ const main = async () => {
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
     // Канал анонсов: пересланный оттуда пост бот предлагает превратить в ивент.
     const announceChannelId = parseChatId(process.env.ANNOUNCE_CHANNEL_ID)
-    // Чат резидентов: его админы и есть резиденты. Не задан — откат на прежнее правило
-    // «админ любого allowlist-чата», иначе забытая переменная выключила бы полбота.
+    // Чат резидентов: его участники и есть резиденты. Не задан — откат на прежнее
+    // правило «админ любого allowlist-чата», иначе забытая переменная выключила бы полбота.
     const residentsChatId = parseChatId(process.env.RESIDENTS_CHAT_ID)
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
@@ -101,7 +101,7 @@ const main = async () => {
     if (residentsChatId === null) {
         console.warn('[warn] RESIDENTS_CHAT_ID не задан — резидентами считаются админы любого allowlist-чата.')
     } else {
-        console.log(`[residents] резиденты — админы чата ${residentsChatId}`)
+        console.log(`[residents] резиденты — участники чата ${residentsChatId}`)
     }
 
     if ((forwardFrom === null) !== (forwardTo === null)) {
@@ -123,7 +123,7 @@ const main = async () => {
     })
 
     // Единый источник правды «кто резидент/админ». Сейчас поверх Telegram
-    // (админ allowlist-чата); при переходе на Authentik меняется только эта реализация.
+    // (участник чата резидентов); при переходе на Authentik меняется только эта реализация.
     const residents = createTelegramResidentDirectory(tg, allowedChats, residentsChatId)
 
     const dp = Dispatcher.for(tg)
