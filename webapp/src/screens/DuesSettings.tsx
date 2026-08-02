@@ -1,11 +1,10 @@
 // Настройки взносов: включение сбора, день, ставки, реквизиты. Только dev.
-// Чат для списка задаётся переменной окружения DUES_CHAT_ID и тут только упомянут:
-// список «кто не платил» касается только резидентов, выбирать чат на бегу нельзя.
+// В общий чат подсистема не пишет, поэтому настраивать тут нечего кроме денег и дня.
 
 import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
-import { showAlert } from '../modals'
+import { numberPrompt } from '../modals'
 import { useStore } from '../store'
 import { haptic } from '../telegram'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
@@ -37,25 +36,25 @@ export function DuesSettings() {
   }
 
   const askNumber = async (title: string, current: number, field: string) => {
-    const raw = window.prompt(title, String(current))
-    if (raw === null) return
-    const parsed = Number(raw.replace(',', '.').trim())
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      showAlert('Сумма должна быть неотрицательным числом.')
-      return
-    }
-    await save({ [field]: Math.round(parsed) })
+    const picked = await numberPrompt({
+      text: title,
+      initial: current,
+      hint: `Сумма в ${dues.currency}. Ноль освобождает от взноса.`,
+    })
+    if (picked === null) return
+    await save({ [field]: picked })
   }
 
   const askDay = async () => {
-    const raw = window.prompt(`День сбора, число от ${MIN_DAY} до ${MAX_DAY}`, String(dues.day))
-    if (raw === null) return
-    const parsed = Number(raw.trim())
-    if (!Number.isInteger(parsed) || parsed < MIN_DAY || parsed > MAX_DAY) {
-      showAlert(`29, 30 и 31 есть не в каждом месяце, поэтому день сбора от ${MIN_DAY} до ${MAX_DAY}.`)
-      return
-    }
-    await save({ day: parsed })
+    const picked = await numberPrompt({
+      text: 'День сбора',
+      initial: dues.day,
+      min: MIN_DAY,
+      max: MAX_DAY,
+      hint: `Число от ${MIN_DAY} до ${MAX_DAY}: 29, 30 и 31 есть не в каждом месяце.`,
+    })
+    if (picked === null) return
+    await save({ day: picked })
   }
 
   return (
@@ -145,26 +144,6 @@ export function DuesSettings() {
       </div>
       <Footnote>
         Уходят в личку каждому вместе с суммой и стоят в плашке «Мой взнос». Пусто, значит строки про реквизиты нигде нет.
-      </Footnote>
-
-      <SectionTitle>Список в чате</SectionTitle>
-      <div className="card">
-        <div className="row">
-          <div className="row-icon" style={{ background: '#ff9500' }}>
-            {icons.bell()}
-          </div>
-          <span className="row-label">
-            Чат резидентов
-            <span className="row-sublabel">Громкий пин, прошлый список удаляется</span>
-          </span>
-          <div className="row-right">
-            <span className="dues-amount muted mono">DUES_CHAT_ID</span>
-          </div>
-        </div>
-      </div>
-      <Footnote>
-        Чат задаётся переменной окружения, а не тут. Не задан, значит сообщения в чат нет вовсе, остаются личка и этот
-        раздел.
       </Footnote>
 
       <SectionTitle>Уведомления</SectionTitle>

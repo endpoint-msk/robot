@@ -1,23 +1,39 @@
 import type { ChatMemberStatus, TelegramClient } from '@mtcute/node'
+import { displayName } from './hosting.js'
+import type { HostingUser } from './types.js'
 
 /**
  * Директория резидентов — единственный источник правды о том, кто резидент и кто
  * вправе выполнять админ-команды. Сейчас реализована поверх Telegram
- * (резидент = админ/владелец одного из allowlist-чатов), но весь остальной код
- * (handlers/presence/menu) обращается только к этому интерфейсу. Когда придёт
- * Authentik, поменяется лишь реализация ниже — вызывающие места трогать не надо.
+ * (резидент = админ/владелец **отдельного чата резидентов**, `RESIDENTS_CHAT_ID`),
+ * но весь остальной код (handlers/presence/menu/dues) обращается только к этому
+ * интерфейсу. Когда придёт Authentik, поменяется лишь реализация ниже —
+ * вызывающие места трогать не надо.
  */
 export interface ResidentDirectory {
     /** Является ли пользователь резидентом (проходит ли identity-проверку вообще). */
     isResident(userId: number): Promise<boolean>
 
     /**
+     * Все резиденты с именами — состав чата резидентов.
+     *
+     * Живёт здесь, а не в hosting.ts, по тому же принципу, что и остальные вопросы
+     * про резидентство: список плательщиков взносов, адресаты рассылок и кандидаты
+     * «позвать в спейс» должны браться из одного места, иначе смена источника
+     * (Authentik) потребует обхода всех вызывающих.
+     */
+    list(): Promise<HostingUser[]>
+
+    /** Только userId — для рассылок, где имена не нужны. */
+    listIds(): Promise<Set<number>>
+
+    /**
      * Чаты, в которых нужно показывать присутствие этого резидента.
      *
-     * Сейчас это «чаты, где он админ», поэтому вопрос совпадает с identity. С
-     * переходом на Authentik совпадение исчезнет: Authentik не знает про Telegram-чаты,
-     * и «где показывать присутствие» станет отдельным решением (все allowlist-чаты
-     * либо явный маппинг). Метод специально назван по вопросу, а не по механике.
+     * Для резидента это все allowlist-чаты: бот работает в них, и присутствие имеет
+     * смысл показывать везде, где он работает. Для не-резидента — пустой список, и
+     * вызывающие места используют это как гейт «резидент ли». Метод специально
+     * назван по вопросу, а не по механике: с Authentik ответ будет считаться иначе.
      */
     presenceChats(userId: number): Promise<number[]>
 
@@ -44,13 +60,22 @@ export interface ResidentDirectory {
 }
 
 /**
- * Реализация поверх Telegram: резидент = админ/владелец одного из allowlist-чатов,
- * админ-проверка — живой `getChatMember` на каждый вопрос (без кэша, как и раньше).
+ * Реализация поверх Telegram: резидент = админ/владелец **чата резидентов**
+ * (`residentsChatId`), админ-проверка — живой `getChatMember` на каждый вопрос
+ * (без кэша, как и раньше).
+ *
+ * `residentsChatId === null` — чат не задан, и мы откатываемся на прежнее правило
+ * «админ любого allowlist-чата». Иначе забытая переменная окружения означала бы
+ * «резидентов нет вообще», то есть мгновенно выключала бы половину бота.
  */
 export const createTelegramResidentDirectory = (
     client: TelegramClient,
     allowedChats: ReadonlySet<number>,
+    residentsChatId: number | null,
 ): ResidentDirectory => {
+    /** Где искать резидентов: выделенный чат либо, если он не задан, весь allowlist. */
+    const residentChats: ReadonlySet<number> =
+        residentsChatId !== null ? new Set([residentsChatId]) : allowedChats
     /** Статус участника в чате; null — нет доступа / он там не состоял вовсе. */
     const statusIn = async (chatId: number, userId: number): Promise<ChatMemberStatus | null> => {
         try {
@@ -80,23 +105,31 @@ export const createTelegramResidentDirectory = (
         return chats.map((chatId, i) => ({ chatId, status: list[i] ?? null }))
     }
 
+    /** Права на админ-команды в конкретном чате: это про чат, а не про резидентство. */
     const isChatAdmin = async (chatId: number, userId: number): Promise<boolean> =>
         isAdminStatus(await statusIn(chatId, userId))
 
-    const adminChats = async (userId: number): Promise<number[]> =>
-        (await statuses(userId)).filter((s) => isAdminStatus(s.status)).map((s) => s.chatId)
+    /** Резидент = админ чата резидентов. Опрашиваем только его, не весь allowlist. */
+    const isResident = async (userId: number): Promise<boolean> => {
+        const checks = await Promise.all([...residentChats].map((chatId) => statusIn(chatId, userId)))
+        return checks.some(isAdminStatus)
+    }
 
-    const presenceChats = adminChats
-
-    const isResident = async (userId: number): Promise<boolean> => (await adminChats(userId)).length > 0
+    // Присутствие показываем во всех чатах, где бот работает: резидентство больше не
+    // привязано к конкретному чату, а доска и списки живут в allowlist-чатах.
+    const presenceChats = async (userId: number): Promise<number[]> =>
+        (await isResident(userId)) ? [...allowedChats] : []
 
     // Бан хотя бы в одном allowlist-чате = бан везде: blockUser банит сразу во всех,
     // а ручной бан админом в главном чате — такой же «персона нон грата» для спейса.
     const access = async (userId: number): Promise<{ resident: boolean; member: boolean; banned: boolean }> => {
-        const all = await statuses(userId)
+        // Резидентство и членство считаются по разным множествам чатов, поэтому запрос
+        // один, но параллельный: последовательные round-trip'ы висли бы на каждом
+        // запросе миниаппа.
+        const [all, resident] = await Promise.all([statuses(userId), isResident(userId)])
         const banned = all.some((s) => s.status === 'banned')
         return {
-            resident: all.some((s) => isAdminStatus(s.status)),
+            resident,
             // Бан перевешивает членство: забаненный в одном чате мог остаться участником
             // другого, но «своим» он уже не считается.
             member: !banned && all.some((s) => isMemberStatus(s.status)),
@@ -106,5 +139,34 @@ export const createTelegramResidentDirectory = (
 
     const isMember = async (userId: number): Promise<boolean> => (await access(userId)).member
 
-    return { isResident, presenceChats, isChatAdmin, isMember, access }
+    /**
+     * Состав чата резидентов: админы и создатель, без ботов. Живой запрос без кэша,
+     * как и остальные проверки. Дубли (если чатов несколько, то есть при откате на
+     * allowlist) схлопываем по userId — первое вхождение выигрывает.
+     */
+    const list = async (): Promise<HostingUser[]> => {
+        const out = new Map<number, HostingUser>()
+        for (const chatId of residentChats) {
+            try {
+                const members = await client.getChatMembers(chatId, { type: 'admins' })
+                for (const m of members) {
+                    if (m.status !== 'admin' && m.status !== 'creator') continue
+                    if (m.user.type !== 'user' || m.user.isBot) continue
+                    if (out.has(m.user.id)) continue
+                    out.set(m.user.id, {
+                        userId: m.user.id,
+                        username: m.user.username ?? null,
+                        name: displayName(m.user.displayName),
+                    })
+                }
+            } catch (err) {
+                console.warn(`[residents] не удалось получить админов чата ${chatId}:`, err)
+            }
+        }
+        return [...out.values()]
+    }
+
+    const listIds = async (): Promise<Set<number>> => new Set((await list()).map((r) => r.userId))
+
+    return { isResident, list, listIds, presenceChats, isChatAdmin, isMember, access }
 }

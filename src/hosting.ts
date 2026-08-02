@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { BlockedUser, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal } from './types.js'
 
@@ -324,42 +325,6 @@ const hasOtherRequestOnDay = (storage: Storage, guestUserId: number, dateKey: st
 // ---------------------------------------------------------------------------
 
 /**
- * Все резиденты с именами: админы (и создатели) каждого allowlist-чата, кроме ботов.
- * Живой запрос без кэша — как и остальные админ-проверки. Дубли между чатами схлопываем
- * по userId (первое вхождение выигрывает).
- */
-export const listResidents = async (
-    client: TelegramClient,
-    allowedChats: ReadonlySet<number>,
-): Promise<HostingUser[]> => {
-    const out = new Map<number, HostingUser>()
-    for (const chatId of allowedChats) {
-        try {
-            const members = await client.getChatMembers(chatId, { type: 'admins' })
-            for (const m of members) {
-                if (m.status !== 'admin' && m.status !== 'creator') continue
-                if (m.user.type !== 'user' || m.user.isBot) continue
-                if (out.has(m.user.id)) continue
-                out.set(m.user.id, {
-                    userId: m.user.id,
-                    username: m.user.username ?? null,
-                    name: displayName(m.user.displayName),
-                })
-            }
-        } catch (err) {
-            console.warn(`[hosting] не удалось получить админов чата ${chatId}:`, err)
-        }
-    }
-    return [...out.values()]
-}
-
-/** Только userId резидентов — для рассылок, где имена не нужны. */
-export const listResidentIds = async (
-    client: TelegramClient,
-    allowedChats: ReadonlySet<number>,
-): Promise<Set<number>> => new Set((await listResidents(client, allowedChats)).map((r) => r.userId))
-
-/**
  * Гости, которых бот вообще знает: авторы заявок (включая архивные — заявки не чистятся).
  * Заблокированные и фейки дев-сида (отрицательный id) не попадают. Имя берём из самой
  * свежей заявки: человек мог сменить его с прошлого визита.
@@ -436,13 +401,13 @@ export const requestsOfGuest = (storage: Storage, userId: number): HostingReques
 export const notifyResidentsAboutRequest = async (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    directory: ResidentDirectory,
     tzOffsetMinutes: number,
     webappUrl: string,
     request: HostingRequest,
 ): Promise<void> => {
     const isForToday = request.dateKey === todayKey(tzOffsetMinutes)
-    const residents = await listResidentIds(client, allowedChats)
+    const residents = await directory.listIds()
     const lines = [
         `🚪 Новая заявка на визит: <b>${formatDayKey(request.dateKey)}</b> к ${request.time}${isForToday ? ' (сегодня)' : ''}.`,
         `Гость: ${await mentionLabel(client, request.guest)}.`,

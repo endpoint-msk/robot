@@ -199,7 +199,7 @@ export const registerMenuHandlers = (
                 )
                 return
             }
-            await msg.answerText('Этот бот доступен только резидентам (админам подключённого чата).')
+            await msg.answerText('Этот бот доступен только резидентам (админам чата резидентов).')
             return
         }
         await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter, webappUrl) })

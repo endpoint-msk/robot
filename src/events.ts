@@ -9,10 +9,10 @@ import {
     isPastSlot,
     isValidDayKey,
     isValidTime,
-    listResidentIds,
     mentionLabel,
     todayKey,
 } from './hosting.js'
+import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { EventDraft, HostingNotifyPrefs, HostingUser, SpaceEvent } from './types.js'
 
@@ -283,13 +283,13 @@ const NOTIFY_DESCRIPTION_LIMIT = 400
 export const notifyResidentsAboutEvent = async (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    directory: ResidentDirectory,
     tzOffsetMinutes: number,
     webappUrl: string,
     event: SpaceEvent,
 ): Promise<void> => {
     const isForToday = event.dateKey === todayKey(tzOffsetMinutes)
-    const residents = await listResidentIds(client, allowedChats)
+    const residents = await directory.listIds()
     const lines = [
         `Новый ивент: <b>${html.escape(event.title)}</b>`,
         `${formatDayKey(event.dateKey)} к ${event.time}${isForToday ? ' (сегодня)' : ''}.`,

@@ -36,6 +36,9 @@ export function DebtBadge({ missed }: { missed: number }) {
 
 const RATE_LABEL: Record<string, string> = { student: 'СТУДЕНТ', custom: 'СВОЯ' }
 
+/** Ставка 0 — человек освобождён от взноса: ни суммы, ни просрочки, ни строки в счётчике. */
+const isExempt = (row: DuesRow): boolean => row.amount <= 0
+
 function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnapshot; onChanged: () => void }) {
   const left =
     row.status === 'paid' ? (
@@ -51,9 +54,11 @@ function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnaps
       ? `${fmtIsoDay(row.at)}${row.by ? ` · подтвердил ${userLabel(row.by)}` : ''}`
       : row.status === 'claimed' && row.at
         ? `заявил ${fmtIsoDay(row.at)}`
-        : row.missed >= 2
-          ? 'Крайний срок неуплаты'
-          : ''
+        : isExempt(row)
+          ? ''
+          : row.missed >= 2
+            ? 'Крайний срок неуплаты'
+            : ''
 
   const body = (
     <div className="row" onClick={() => push('duesPerson', { userId: row.userId })}>
@@ -61,15 +66,21 @@ function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnaps
       <div className="dues-main">
         <div className="dues-name-line">
           <span className="dues-name">{userLabel(row)}</span>
-          <DebtBadge missed={row.missed} />
-          {row.rate !== 'common' ? <span className="rate-chip">{RATE_LABEL[row.rate]}</span> : null}
+          {isExempt(row) ? null : <DebtBadge missed={row.missed} />}
+          {isExempt(row) ? (
+            <span className="rate-chip">НЕ ПЛАТИТ</span>
+          ) : row.rate !== 'common' ? (
+            <span className="rate-chip">{RATE_LABEL[row.rate]}</span>
+          ) : null}
         </div>
         {sub ? (
           <div className={'dues-sub-line' + (row.status === 'none' && row.missed >= 2 ? ' crit' : '')}>{sub}</div>
         ) : null}
       </div>
       <div className="row-right">
-        <span className={'dues-amount' + (row.status === 'paid' ? ' paid' : '')}>{money(row.amount, snap.currency)}</span>
+        <span className={'dues-amount' + (row.status === 'paid' ? ' paid' : isExempt(row) ? ' muted' : '')}>
+          {isExempt(row) ? 'освобождён' : money(row.amount, snap.currency)}
+        </span>
         {icons.chevron()}
       </div>
     </div>
@@ -148,6 +159,17 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
     } catch {
       showAlert('Не получилось скопировать. Выдели текст вручную.')
     }
+  }
+
+  // Ставка 0 — человек освобождён: плашка остаётся, но без реквизитов и кнопки.
+  if (snap.me.amount <= 0) {
+    return (
+      <div className="my-dues">
+        <div className="my-dues-kicker">Мой взнос</div>
+        <div className="my-dues-sum">Не требуется</div>
+        <div className="my-dues-sub">Ставка обнулена, взнос с тебя не спрашивают.</div>
+      </div>
+    )
   }
 
   const cls = snap.me.status === 'paid' ? 'paid' : snap.me.status === 'claimed' ? 'claimed' : 'unpaid'
@@ -280,7 +302,8 @@ export function DuesScreen() {
     )
   }
 
-  const unpaid = snap.rows.filter((r) => r.status === 'none')
+  const unpaid = snap.rows.filter((r) => r.status === 'none' && !isExempt(r))
+  const exempt = snap.rows.filter((r) => r.status === 'none' && isExempt(r))
   const claimed = snap.rows.filter((r) => r.status === 'claimed')
   const paid = snap.rows.filter((r) => r.status === 'paid')
   // У dev очередь на сверку идёт первой: это его список дел, а не справка.
@@ -309,6 +332,7 @@ export function DuesScreen() {
   } else {
     sections.push(listOf('Не внесли', unpaid), listOf('Ждут подтверждения', claimed), listOf('Внесли', paid))
   }
+  sections.push(listOf('Не платят', exempt))
 
   return (
     <Screen>

@@ -1564,3 +1564,9 @@ body.busy #busy-overlay { display: flex; }
 .period-bar { width: 54px; height: 6px; border-radius: 999px; background: rgba(var(--sec), 0.1); overflow: hidden; flex-shrink: 0; }
 .period-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--green); }
 .period-bar > i.low { background: var(--orange); }
+
+/* Поле ввода числа в модалке (ставка взноса, день сбора). */
+.modal-num-wrap { padding: 0 18px 4px; }
+.modal-num { text-align: center; font-size: 22px; font-weight: 700; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.08); }
+.modal-num-hint { padding: 8px 18px 0; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: center; }
+.modal-btn.disabled { opacity: 0.4; pointer-events: none; }

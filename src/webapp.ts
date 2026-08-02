@@ -482,9 +482,11 @@ const duesSnapshot = (ctx: ApiContext, periodKey?: string) => {
             at: mine?.paidAt ?? mine?.claimedAt ?? null,
         },
         summary: {
-            total: rows.length,
-            paid: paid.length,
-            claimed: rows.filter((r) => r.status === 'claimed').length,
+            // Освобождённые (ставка 0) в счётчик «внесли N из M» не попадают: спрашивать
+            // с них нечего, а в знаменателе они портили бы картину собираемости.
+            total: rows.filter((r) => r.amount > 0).length,
+            paid: paid.filter((r) => r.amount > 0).length,
+            claimed: rows.filter((r) => r.status === 'claimed' && r.amount > 0).length,
             collected: paid.reduce((sum, r) => sum + r.amount, 0),
             expected: rows.reduce((sum, r) => sum + r.amount, 0),
         },
@@ -621,7 +623,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             // Рассылка резидентам — в фоне, чтобы не держать ответ гостю.
-            void notifyResidentsAboutRequest(client, storage, allowedChats, tzOffsetMinutes, config.publicUrl, created.request)
+            void notifyResidentsAboutRequest(client, storage, residents, tzOffsetMinutes, config.publicUrl, created.request)
                 .catch((err) => console.error('[hosting] не удалось разослать уведомления о заявке:', err))
             syncBoard()
             sendJson(res, 200, { request: requestsView([created.request])[0], ...buildBootstrap(ctx) })
@@ -696,7 +698,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'invite.list': {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
-            const people = await listInviteCandidates(client, storage, allowedChats, dateKey, user.userId)
+            const people = await listInviteCandidates(client, storage, residents, dateKey, user.userId)
             // Резиденты сюда попадают живым getChatMembers, а не из стейта, поэтому в
             // реестре показанных их может не быть — иначе аватарки в списке зова отвалятся.
             sendJson(res, 200, { people: people.map(userView) })
@@ -708,7 +710,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const targetId = typeof body.userId === 'number' ? body.userId : 0
-            const candidates = await listInviteCandidates(client, storage, allowedChats, dateKey, user.userId)
+            const candidates = await listInviteCandidates(client, storage, residents, dateKey, user.userId)
             const target = candidates.find((c) => c.userId === targetId)
             if (!target) {
                 sendError(res, 404, 'not_found', 'Этого человека больше нет в списке — обнови экран.')
@@ -897,7 +899,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // ивент второй раз. Её афишу к этому моменту уже забрал syncEventPhotos.
             if (body.fromDraft === true) await clearEventDraft(storage, storage.path(), user.userId)
             // Рассылка резидентам — в фоне, чтобы не держать ответ автору.
-            void notifyResidentsAboutEvent(client, storage, allowedChats, tzOffsetMinutes, config.publicUrl, created.event)
+            void notifyResidentsAboutEvent(client, storage, residents, tzOffsetMinutes, config.publicUrl, created.event)
                 .catch((err) => console.error('[events] не удалось разослать уведомления об ивенте:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
@@ -1348,7 +1350,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             // Ростер освежаем: резидентом могли сделать уже после открытия сбора.
-            await syncDuesRoster(client, storage, allowedChats, period.periodKey)
+            await syncDuesRoster(storage, residents, period.periodKey)
             const claimed = await claimDues(storage, period.periodKey, user.userId)
             if (!claimed.ok) {
                 const messages = {
@@ -1411,7 +1413,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Ставка периода это снимок: пересобираем ростер, иначе в текущем месяце
             // с человека продолжат спрашивать по старой.
             const active = activeDuesPeriod(duesOf(storage))
-            if (active) await syncDuesRoster(client, storage, allowedChats, active.periodKey)
+            if (active) await syncDuesRoster(storage, residents, active.periodKey)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -1442,7 +1444,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Ставки и реквизиты видны в текущем списке — перерисовываем. Первое включение
             // период не открывает: этим занимается шедулер, на ближайшем тике.
             const active = activeDuesPeriod(duesOf(storage))
-            if (active && wasEnabled) await syncDuesRoster(client, storage, allowedChats, active.periodKey)
+            if (active && wasEnabled) await syncDuesRoster(storage, residents, active.periodKey)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }

@@ -5,7 +5,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay } from '../dates'
 import { icons } from '../icons'
-import { showAlert } from '../modals'
+import { numberPrompt } from '../modals'
 import { useParams } from '../store'
 import { haptic } from '../telegram'
 import type { DuesPerson as DuesPersonData, DuesRateKind } from '../types'
@@ -67,14 +67,16 @@ export function DuesPerson() {
     if (kind === data.rate.kind && kind !== 'custom') return
     let amount: number | undefined
     if (kind === 'custom') {
-      const raw = window.prompt('Сумма взноса по договорённости', String(data.rate.amount))
-      if (raw === null) return
-      const parsed = Number(raw.replace(',', '.').trim())
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        showAlert('Сумма должна быть неотрицательным числом.')
-        return
-      }
-      amount = Math.round(parsed)
+      // null — отмена, и ставку не трогаем вовсе. Ноль это осмысленное значение
+      // («не платит»), поэтому отличать его от отмены обязательно.
+      const picked = await numberPrompt({
+        text: 'Своя ставка',
+        initial: data.rate.amount,
+        hint: `Сумма по договорённости, в ${data.currency}. Ноль — освободить от взноса.`,
+        confirmLabel: 'Поставить',
+      })
+      if (picked === null) return
+      amount = picked
     }
     const done = await action('dues.rate', { userId: data.user.userId, kind, ...(amount === undefined ? {} : { amount }) })
     if (done) {
@@ -96,7 +98,7 @@ export function DuesPerson() {
       <BackRow label="Взносы" />
       <Header title={data.user.name} subtitle={data.user.username ? `@${data.user.username}` : 'без ника'} />
 
-      {data.missed > 0 ? (
+      {data.missed > 0 && data.rate.amount > 0 ? (
         <div className="status-card" style={{ background: data.missed >= 2 ? 'rgba(255,59,48,0.1)' : 'rgba(255,149,0,0.1)' }}>
           <div className="status-card-head">
             <div className="status-card-icon" style={{ background: data.missed >= 2 ? 'var(--red)' : 'var(--orange)' }}>

@@ -67,6 +67,9 @@ const main = async () => {
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
     // Канал анонсов: пересланный оттуда пост бот предлагает превратить в ивент.
     const announceChannelId = parseChatId(process.env.ANNOUNCE_CHANNEL_ID)
+    // Чат резидентов: его админы и есть резиденты. Не задан — откат на прежнее правило
+    // «админ любого allowlist-чата», иначе забытая переменная выключила бы полбота.
+    const residentsChatId = parseChatId(process.env.RESIDENTS_CHAT_ID)
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
     const keeneticConfig = parseKeeneticConfig({
@@ -95,6 +98,12 @@ const main = async () => {
         console.warn('[warn] ALLOWED_CHATS пуст — бот не будет реагировать ни в одном чате.')
     }
 
+    if (residentsChatId === null) {
+        console.warn('[warn] RESIDENTS_CHAT_ID не задан — резидентами считаются админы любого allowlist-чата.')
+    } else {
+        console.log(`[residents] резиденты — админы чата ${residentsChatId}`)
+    }
+
     if ((forwardFrom === null) !== (forwardTo === null)) {
         console.warn('[warn] FORWARD_FROM_CHAT и FORWARD_TO_CHAT должны быть заданы вместе — форвардинг отключён.')
     }
@@ -115,7 +124,7 @@ const main = async () => {
 
     // Единый источник правды «кто резидент/админ». Сейчас поверх Telegram
     // (админ allowlist-чата); при переходе на Authentik меняется только эта реализация.
-    const residents = createTelegramResidentDirectory(tg, allowedChats)
+    const residents = createTelegramResidentDirectory(tg, allowedChats, residentsChatId)
 
     const dp = Dispatcher.for(tg)
     // Единый обработчик ошибок: логируем (а console.error форвардит в личку dev'ам)
@@ -159,6 +168,7 @@ const main = async () => {
     registerDuesHandlers(dp, {
         client: tg,
         storage,
+        residents,
         allowedChats,
         tzOffsetMinutes: hostingTzOffset,
         devUserIds,
@@ -297,7 +307,7 @@ const main = async () => {
     // даже если DEV_USER_IDS временно пуст (иначе включённый бэкап тихо перестал бы ходить).
     const backups = startBackupScheduler(tg, storage)
     // Взносы: тик открывает период, когда настал день сбора (и добирает пропущенный за простой).
-    const dues = startDuesScheduler(tg, storage, allowedChats, hostingTzOffset)
+    const dues = startDuesScheduler(tg, storage, residents, hostingTzOffset)
     const presence = startPresenceScheduler(tg, storage, residents)
     // Доска «кто сегодня в спейсе» — часть подсистемы хостинга: только при включённом миниаппе.
     const hostingBoard = webappConfig !== null

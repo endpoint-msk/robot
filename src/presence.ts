@@ -230,7 +230,7 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
-            await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
+            await msg.answerText('Эта команда доступна только резидентам (админам чата резидентов).')
             return
         }
         const arg = msg.command[1]
@@ -346,7 +346,7 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
-            await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
+            await msg.answerText('Эта команда доступна только резидентам (админам чата резидентов).')
             return
         }
         const cur = storage.get().macBindings[String(userId)]
@@ -369,7 +369,7 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
-            await msg.answerText('Эта команда доступна только резидентам (админам подключённого чата).')
+            await msg.answerText('Эта команда доступна только резидентам (админам чата резидентов).')
             return
         }
         const cur = storage.get().macBindings[String(userId)]

@@ -14,7 +14,6 @@ import {
     isBlocked,
     isValidDayKey,
     listKnownGuests,
-    listResidents,
     requestsForDay,
     residentsAttendingDay,
     setResidentAttendance,
@@ -42,7 +41,7 @@ export type InviteCandidate = HostingUser & {
 export const listInviteCandidates = async (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    directory: ResidentDirectory,
     dateKey: string,
     selfId: number,
 ): Promise<InviteCandidate[]> => {
@@ -50,7 +49,7 @@ export const listInviteCandidates = async (
         ...residentsAttendingDay(storage, dateKey).map((a) => a.user.userId),
         ...requestsForDay(storage, dateKey).map((r) => r.guest.userId),
     ])
-    const residents = await listResidents(client, allowedChats)
+    const residents = await directory.list()
     const residentIds = new Set(residents.map((r) => r.userId))
     const toCandidate = (u: HostingUser, resident: boolean): InviteCandidate => ({
         ...u,

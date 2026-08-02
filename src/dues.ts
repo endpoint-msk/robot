@@ -14,7 +14,8 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import { monthNameRu } from './fundraiser.js'
-import { displayName, listResidents } from './hosting.js'
+import { displayName } from './hosting.js'
+import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { DuesMark, DuesMember, DuesPeriod, DuesRate, DuesState } from './types.js'
 
@@ -127,7 +128,12 @@ export const missedPeriods = (dues: DuesState, activeKey: string, userId: number
     const missed: string[] = []
     for (const periodKey of periodKeysOf(dues).filter((k) => k < activeKey).reverse()) {
         const period = dues.periods[periodKey]!
-        if (!period.roster[key]) break
+        const member = period.roster[key]
+        if (!member) break
+        // Нулевая ставка это освобождение от взноса: такой месяц не долг, но и счёт
+        // не обрывает — иначе человек, которого освободили на месяц, «обнулял» бы
+        // накопленную просрочку за предыдущие.
+        if (member.amount <= 0) continue
         if (isPaid(period.marks[key])) break
         missed.push(periodKey)
     }
@@ -147,14 +153,13 @@ export const missedPeriods = (dues: DuesState, activeKey: string, userId: number
  * держится расчёт просрочки.
  */
 export const syncDuesRoster = async (
-    client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    directory: ResidentDirectory,
     periodKey: string,
 ): Promise<void> => {
     let live
     try {
-        live = await listResidents(client, allowedChats)
+        live = await directory.list()
     } catch (err) {
         // Не смогли спросить Telegram: оставляем снимок как есть. Лучше слегка
         // устаревший список, чем пустой.
@@ -284,10 +289,12 @@ const notifyMemberAboutPeriod = async (
     }
 }
 
-/** Рассылка об открытии сбора всем, кто не выключил уведомления. */
+/** Рассылка об открытии сбора всем, кто не выключил уведомления и с кого есть что спрашивать. */
 const notifyPeriodOpened = async (client: TelegramClient, dues: DuesState, period: DuesPeriod): Promise<void> => {
     for (const member of Object.values(period.roster)) {
         if (dues.notifyOff[String(member.userId)]) continue
+        // Ставка 0 — человек освобождён от взноса, напоминать ему не о чем.
+        if (member.amount <= 0) continue
         await notifyMemberAboutPeriod(client, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId))
     }
 }
@@ -330,7 +337,7 @@ export const notifyDevsAboutClaim = async (
 export const openDuesPeriod = async (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    directory: ResidentDirectory,
     periodKey: string,
 ): Promise<void> => {
     const now = new Date()
@@ -338,7 +345,7 @@ export const openDuesPeriod = async (
         if (s.dues.periods[periodKey]) return
         s.dues.periods[periodKey] = { periodKey, postedAt: now.toISOString(), roster: {}, marks: {} }
     })
-    await syncDuesRoster(client, storage, allowedChats, periodKey)
+    await syncDuesRoster(storage, directory, periodKey)
 
     const dues = duesOf(storage)
     const period = dues.periods[periodKey]
@@ -500,8 +507,10 @@ export const buildDuesCsv = (dues: DuesState): string => {
                 cells.push(formatMoney(mark!.amount))
             } else if (mark) {
                 cells.push('заявлено')
+            } else if (!period.roster[id]) {
+                cells.push('')
             } else {
-                cells.push(period.roster[id] ? 'нет' : '')
+                cells.push(period.roster[id]!.amount <= 0 ? 'освобождён' : 'нет')
             }
         }
         rows.push([
@@ -534,6 +543,7 @@ export const buildDuesCsv = (dues: DuesState): string => {
 export type DuesDeps = {
     client: TelegramClient
     storage: Storage
+    residents: ResidentDirectory
     allowedChats: ReadonlySet<number>
     devUserIds: ReadonlySet<number>
     tzOffsetMinutes: number
@@ -541,7 +551,7 @@ export type DuesDeps = {
 
 
 export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
-    const { client, storage, allowedChats, devUserIds, tzOffsetMinutes } = deps
+    const { client, storage, residents, allowedChats, devUserIds, tzOffsetMinutes } = deps
 
     /** Дев в разрешённом месте. Не-девам не отвечаем вовсе, чтобы команда не светилась. */
     const isDevHere = (msg: MessageContext): boolean =>
@@ -573,7 +583,7 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
         const dues = duesOf(storage)
         const latest = periodKeysOf(dues).pop()
         const nextKey = latest === undefined ? duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes) : nextMonthKey(latest)
-        await openDuesPeriod(client, storage, allowedChats, nextKey)
+        await openDuesPeriod(client, storage, residents, nextKey)
         await msg.answerText(`[тест] Открыл период ${duesPeriodLabel(nextKey)}.`)
     })
 
@@ -639,7 +649,7 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
 export const startDuesScheduler = (
     client: TelegramClient,
     storage: Storage,
-    allowedChats: ReadonlySet<number>,
+    directory: ResidentDirectory,
     tzOffsetMinutes: number,
 ): { stop: () => void } => {
     const tick = async () => {
@@ -648,7 +658,7 @@ export const startDuesScheduler = (
         const currentKey = duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes)
         const latest = periodKeysOf(dues).pop()
         if (latest !== undefined && latest >= currentKey) return
-        await openDuesPeriod(client, storage, allowedChats, currentKey)
+        await openDuesPeriod(client, storage, directory, currentKey)
     }
 
     const handle = setInterval(() => {

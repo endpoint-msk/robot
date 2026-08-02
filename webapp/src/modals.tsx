@@ -29,12 +29,22 @@ type RescheduleInput = {
   initialTime: string
   confirmLabel: string
 }
+type NumberInput = {
+  kind: 'number'
+  text: string
+  initial: number
+  /** Подпись под полем: единицы, диапазон, что будет дальше. */
+  hint?: string
+  min: number
+  max: number
+  confirmLabel: string
+}
 type ImageInput = {
   kind: 'image'
   src: string
   alt: string
 }
-type ModalInput = ConfirmInput | TimeInput | RescheduleInput | ImageInput
+type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | ImageInput
 type Modal = ModalInput & { id: number; resolve: (value: any) => void }
 
 let modals: Modal[] = []
@@ -205,6 +215,78 @@ function RescheduleCard({ modal }: { modal: Modal & { kind: 'reschedule' } }) {
 }
 
 /**
+ * Ввод числа: ставка взноса, день сбора. Своя модалка, а не `window.prompt`:
+ * нативный промпт в Telegram Desktop работает, а в клиенте на macOS не открывается
+ * вовсе, и действие молча проваливается. Плюс отмена нативного промпта в вебвью
+ * возвращает пустую строку вместо null, из-за чего «Отмена» ставила ноль.
+ */
+function NumberCard({ modal }: { modal: Modal & { kind: 'number' } }) {
+  const [shown, setShown] = useState(false)
+  const [value, setValue] = useState(String(modal.initial))
+  const inputRef = useRef<HTMLInputElement>(null)
+  const done = useRef(false)
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      setShown(true)
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const close = (result: number | null): void => {
+    if (done.current) return
+    done.current = true
+    setShown(false)
+    modal.resolve(result)
+    setTimeout(() => remove(modal.id), 180)
+  }
+
+  const parsed = Number(value.replace(',', '.').trim())
+  const valid = value.trim() !== '' && Number.isFinite(parsed) && parsed >= modal.min && parsed <= modal.max
+
+  return (
+    <div
+      className={'modal-overlay' + (shown ? ' shown' : '')}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close(null)
+      }}
+    >
+      <div className="modal-card">
+        <div className="modal-text">{modal.text}</div>
+        <div className="modal-num-wrap">
+          <input
+            ref={inputRef}
+            className="text-input modal-num"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={value}
+            onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ''))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && valid) close(Math.round(parsed))
+            }}
+          />
+        </div>
+        {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
+        <div className="modal-actions">
+          <button className="modal-btn" onClick={() => close(null)}>
+            Отмена
+          </button>
+          <button
+            className={'modal-btn primary' + (valid ? '' : ' disabled')}
+            onClick={() => (valid ? close(Math.round(parsed)) : undefined)}
+          >
+            {modal.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Картинка на весь экран. Тап по любому месту закрывает: это просмотрщик, а не диалог,
  * и целиться в крестик на телефоне незачем — он тут только как подсказка, что выход есть.
  */
@@ -243,6 +325,8 @@ export function ModalHost() {
           <ImageCard key={m.id} modal={m} />
         ) : m.kind === 'reschedule' ? (
           <RescheduleCard key={m.id} modal={m} />
+        ) : m.kind === 'number' ? (
+          <NumberCard key={m.id} modal={m} />
         ) : (
           <ModalCard key={m.id} modal={m} />
         ),
@@ -294,4 +378,26 @@ export const reschedulePrompt = (opts: {
     initialDay: opts.initialDay,
     initialTime: opts.initialTime,
     confirmLabel: opts.confirmLabel ?? 'Предложить',
+  })
+
+/**
+ * Ввод числа. null — отмена (именно null, а не 0: разница между «оставить как было»
+ * и «поставить ноль» здесь принципиальная, ноль это освобождение от взноса).
+ */
+export const numberPrompt = (opts: {
+  text: string
+  initial: number
+  hint?: string
+  min?: number
+  max?: number
+  confirmLabel?: string
+}): Promise<number | null> =>
+  open<number | null>({
+    kind: 'number',
+    text: opts.text,
+    initial: opts.initial,
+    hint: opts.hint,
+    min: opts.min ?? 0,
+    max: opts.max ?? 1_000_000,
+    confirmLabel: opts.confirmLabel ?? 'Сохранить',
   })
