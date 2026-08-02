@@ -202,12 +202,25 @@ export const BOARD_LIMIT_WITH_REQUESTS = 3
 /** Сколько заявок помещается в блок; остальные схлопываются в счётчик. */
 export const BOARD_REQUEST_LIMIT = 3
 
-/** Сегодняшняя непринятая заявка в том виде, в каком она уходит на табло. */
+/** Непринятая заявка в том виде, в каком она уходит на табло. */
 export type BoardRequest = {
     /** 'HH:MM' по поясу спейса. */
     time: string
     /** Отображаемое имя гостя. */
     name: string
+}
+
+/** Блок «ждут ответа»: ближайший день с заявками плюс счётчик по всему горизонту. */
+export type BoardRequests = {
+    /** Подпись дня для показа: «сегодня», «завтра» или сокращение вроде «вс». */
+    dayLabel: string
+    /**
+     * Сколько всего заявок ждёт ответа на горизонте хостинга — не только в этот день.
+     * Показываем именно общее число: смысл блока в том, чтобы резидент видел объём
+     * необработанного, а не только ближайшую заявку.
+     */
+    total: number
+    items: BoardRequest[]
 }
 
 /**
@@ -256,7 +269,7 @@ const boardNick = (nick: string): string =>
 export const renderBoardExport = (
     f: Fundraiser | undefined,
     periodLabel: string,
-    requests: BoardRequest[] = [],
+    requests: BoardRequests = { dayLabel: '', total: 0, items: [] },
 ): string => {
     const total = f ? totalAmount(f) : 0
     const goal = f?.goal ?? 0
@@ -264,7 +277,7 @@ export const renderBoardExport = (
     const board = f ? buildLeaderboard(f) : []
     // Строк лидерборда тем меньше, чем больше места забрал блок заявок. Решение
     // принимается здесь, а не в прошивке: так вёрстку можно менять деплоем бота.
-    const donorLines = requests.length > 0 ? BOARD_LIMIT_WITH_REQUESTS : BOARD_LIMIT
+    const donorLines = requests.items.length > 0 ? BOARD_LIMIT_WITH_REQUESTS : BOARD_LIMIT
     const lines = [
         'v=1',
         `period=${f ? fundraiserPeriodLabel(f) : periodLabel}`,
@@ -274,17 +287,20 @@ export const renderBoardExport = (
         `total=${formatAmount(total)}`,
         `state=${state}`,
         `donors=${board.length}`,
-        `waiting=${requests.length}`,
+        `waiting=${requests.total}`,
     ]
     for (const entry of board.slice(0, donorLines)) {
         const who = isAnonNick(entry.nick) ? ANON_LABEL : boardNick(entry.nick)
         lines.push(`d=${who}|${formatAmount(entry.total)}`)
     }
-    // Сортируем здесь, а не полагаемся на вызывающего: порядок строк на табло —
-    // часть формата, и он не должен зависеть от того, кто собирал список.
-    const byTime = [...requests].sort((a, b) => a.time.localeCompare(b.time))
-    for (const r of byTime.slice(0, BOARD_REQUEST_LIMIT)) {
-        lines.push(`r=${r.time}|${boardNick(r.name)}`)
+    if (requests.items.length > 0) {
+        lines.push(`rday=${requests.dayLabel}`)
+        // Сортируем здесь, а не полагаемся на вызывающего: порядок строк на табло —
+        // часть формата, и он не должен зависеть от того, кто собирал список.
+        const byTime = [...requests.items].sort((a, b) => a.time.localeCompare(b.time))
+        for (const r of byTime.slice(0, BOARD_REQUEST_LIMIT)) {
+            lines.push(`r=${r.time}|${boardNick(r.name)}`)
+        }
     }
     return lines.join('\n') + '\n'
 }

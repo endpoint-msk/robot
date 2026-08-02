@@ -76,7 +76,7 @@ import {
 import { syncHostingBoard } from './hosting-board.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
-import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest } from './fundraiser.js'
+import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -1411,19 +1411,50 @@ const boardTokenOf = (req: IncomingMessage, url: URL): string => {
 const etagMatches = (header: string | undefined, etag: string): boolean =>
     (header ?? '').split(',').some((raw) => raw.trim().replace(/^W\//, '') === etag)
 
+const WEEKDAYS_RU = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'] as const
+
 /**
- * Сегодняшние заявки, ждущие ответа резидента, — для нижнего блока табло.
- *
- * Только `pending`: у согласованного визита действия не требуется, а смысл блока —
- * «на это надо ответить». Анонимные заявки и фейки дев-сида не выходят на публичные
- * поверхности (тот же инвариант, что у `attendeesForDay`), табло — как раз такая.
- * Цель визита не отдаём: она бывает личной, а на стене висит всё время.
+ * Подпись дня для табло: «сегодня», «завтра» или сокращённый день недели.
+ * День недели берём из самого ключа 'YYYY-MM-DD' через UTC — ключ уже посчитан в
+ * поясе спейса, и повторный сдвиг сместил бы его на сутки.
  */
-const boardRequests = (deps: WebappDeps): BoardRequest[] =>
-    requestsForDay(deps.storage, todayKey(deps.tzOffsetMinutes))
-        .filter((r) => r.status === 'pending' && !r.anon && !isFakeUserId(r.guest.userId))
-        .sort((a, b) => a.time.localeCompare(b.time))
-        .map((r) => ({ time: r.time, name: displayName(r.guest.name) }))
+const dayLabelFor = (dateKey: string, offset: number): string => {
+    if (offset === 0) return 'сегодня'
+    if (offset === 1) return 'завтра'
+    const [y, m, d] = dateKey.split('-').map(Number)
+    const weekday = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay()
+    return WEEKDAYS_RU[weekday] ?? '?'
+}
+
+/**
+ * Блок «ждут ответа» для табло: ближайший день, где есть непринятые заявки, и общий
+ * счётчик по всему горизонту хостинга.
+ *
+ * Ближайший день, а не строго сегодняшний: отвечать на заявку надо заранее, и до дня
+ * визита блок бы просто не показывался. Счётчик при этом общий — резиденту важен
+ * объём необработанного, а не только ближайшая заявка.
+ *
+ * Только `pending`: у согласованного визита действия не требуется. Анонимные заявки и
+ * фейки дев-сида не выходят на публичные поверхности (тот же инвариант, что у
+ * `attendeesForDay`), табло — как раз такая. Цель визита не отдаём: она бывает личной,
+ * а на стене висит всё время.
+ */
+const boardRequests = (deps: WebappDeps): BoardRequests => {
+    const today = todayKey(deps.tzOffsetMinutes)
+    let nearest: { dayLabel: string; items: BoardRequest[] } | null = null
+    let total = 0
+    for (let offset = 0; offset < HOSTING_DAYS_AHEAD; offset++) {
+        const dateKey = addDaysToKey(today, offset)
+        const items = requestsForDay(deps.storage, dateKey)
+            .filter((r) => r.status === 'pending' && !r.anon && !isFakeUserId(r.guest.userId))
+            .map((r) => ({ time: r.time, name: displayName(r.guest.name) }))
+        total += items.length
+        if (items.length > 0 && nearest === null) {
+            nearest = { dayLabel: dayLabelFor(dateKey, offset), items }
+        }
+    }
+    return { dayLabel: nearest?.dayLabel ?? '', total, items: nearest?.items ?? [] }
+}
 
 /**
  * Отвечает табло текущим сбором.
