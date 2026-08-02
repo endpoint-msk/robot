@@ -3,11 +3,15 @@ import { fmtShortDate, fmtWeekdayDate } from '../dates'
 import { icons } from '../icons'
 import { bump, push, startNewRequest, useStore } from '../store'
 import { sec } from '../theme'
-import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
+import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
 import { BottomBar, DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
 import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
+
+// Публичный чат спейса — константа фронта, как адрес в «Как пройти»: это конкретный
+// чат, а не настройка. openUrl отдаёт t.me клиенту Telegram (openTelegramLink).
+const SPACE_CHAT_URL = 'https://t.me/endpointchat'
 
 function VisitRow({ r }: { r: HostingRequest }) {
   const approved = r.status === 'approved'
@@ -139,6 +143,14 @@ export function MyVisits() {
             {icons.calendar(17, '#fff')}
           </div>
           <span className="row-label">Активность</span>
+          <div className="row-right">{icons.chevron()}</div>
+        </div>
+        <Sep left={54} />
+        <div className="row tappable" onClick={() => openUrl(SPACE_CHAT_URL)}>
+          <div className="row-icon" style={{ background: '#34c759' }}>
+            {icons.chat(17, '#fff')}
+          </div>
+          <span className="row-label">Чат спейса</span>
           <div className="row-right">{icons.chevron()}</div>
         </div>
         <Sep left={54} />

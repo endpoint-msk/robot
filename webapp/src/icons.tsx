@@ -168,6 +168,12 @@ export const icons = {
       <path d="M2.8 7.4h12.4M6.2 1.8v3M11.8 1.8v3" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   ),
+  /** Облачко реплики — вход в чат спейса. */
+  chat: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <path d="M15.2 8.4c0 3.1-2.8 5.6-6.2 5.6-.8 0-1.6-.1-2.3-.4l-3.4 1.1 1.1-2.7A5.3 5.3 0 012.8 8.4C2.8 5.3 5.6 2.8 9 2.8s6.2 2.5 6.2 5.6z" fill="none" stroke={color} strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  ),
   /** Крестик («закрыть заявку») — без кружка, чтобы не путался с `ban`. */
   xmark: (size: number, color: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 20 20">
