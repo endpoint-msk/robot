@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { clampResetDay } from './fundraiser.js'
-import { emptyState, type HostingRequest, type ResidentMacs, type State } from './types.js'
+import { emptyDues, emptyState, type HostingRequest, type ResidentMacs, type State } from './types.js'
 
 /**
  * Приводит macBindings к актуальной схеме (`macs: MacEntry[]`, `anon`).
@@ -97,6 +97,10 @@ export class Storage {
             backups: parsed.backups ?? {},
             events: parsed.events ?? {},
             eventDrafts: parsed.eventDrafts ?? {},
+            // Взносы — вложенный объект, а не словарь: недостающие поля добираем из
+            // дефолта, иначе стейт, записанный до появления очередной настройки,
+            // приезжал бы с undefined там, где код ждёт число.
+            dues: { ...emptyDues(), ...(parsed.dues ?? {}) },
         }
     }
 

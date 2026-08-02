@@ -236,7 +236,7 @@ const requireUserInAllowedChat = async (
 }
 
 /** Прошёл ли пользователь все проверки (чат в allowlist + админ). Если нет - отвечает и возвращает false. */
-const requireChatAdminInAllowedChat = async (
+export const requireChatAdminInAllowedChat = async (
     residents: ResidentDirectory,
     msg: MessageContext,
     allowed: AllowedChats,
@@ -288,6 +288,10 @@ export const registerHandlers = (
                 '/setdesc <текст> - задать описание под сбором',
                 '/setresetday <число 1–29> - день месяца, в который сбор сбрасывается (по умолчанию 1)',
                 '/export [all] - выгрузить донаты в CSV: текущий сбор или все периоды',
+                '',
+                'Резидентские взносы:',
+                'Бот пишет о сборе в личку, кнопка «Я внёс» там же',
+                'Список, история и настройки - в миниаппе, раздел «Взносы»',
                 '',
                 'Что бот присылает в этот чат (админ):',
                 '/goalsmute - вкл/выкл ежедневную автоотправку сбора',

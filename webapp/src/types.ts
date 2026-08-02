@@ -146,6 +146,90 @@ export type Bootstrap = {
   notes?: GuestNote[]
   /** Заготовка ивента из пересланного поста — только резидентам. null, если её нет. */
   eventDraft?: EventDraft | null
+  /** Взносы текущего периода — только резидентам. null: выключены или сборов ещё не было. */
+  dues?: DuesSnapshot | null
+}
+
+/** Статус взноса: не отмечен, заявлен резидентом, подтверждён dev. */
+export type DuesStatus = 'none' | 'claimed' | 'paid'
+
+/** Какая ставка у человека: общая спейса, студенческая или своя по договорённости. */
+export type DuesRateKind = 'common' | 'student' | 'custom'
+
+export type DuesRow = {
+  userId: number
+  username: string | null
+  name: string
+  amount: number
+  status: DuesStatus
+  /** Когда подтвердили либо (для 'claimed') когда заявил. */
+  at: string | null
+  /** Кто подтвердил. null — ещё не подтверждено. */
+  by: { username: string | null; name: string } | null
+  /** Периодов подряд с незакрытым взносом, до текущего. */
+  missed: number
+  rate: DuesRateKind
+}
+
+export type DuesSnapshot = {
+  /** Сбор включён. false видит только dev: ему нужен вход в настройки, чтобы включить обратно. */
+  enabled: boolean
+  /** Пустой, если периодов ещё не было. */
+  periodKey: string
+  periodLabel: string
+  /** false — открыт из истории: отмечать можно, но это уже прошлый месяц. */
+  isCurrent: boolean
+  day: number
+  amount: number
+  studentAmount: number
+  currency: string
+  requisites: string
+  /** Менять отметки и настройки может только dev. */
+  canEdit: boolean
+  /** Свой тумблер DM об открытии сбора. */
+  notify: boolean
+  me: { inRoster: boolean; amount: number; status: DuesStatus; at: string | null }
+  summary: { total: number; paid: number; claimed: number; collected: number; expected: number }
+  rows: DuesRow[]
+}
+
+export type DuesPeriodSummary = {
+  periodKey: string
+  label: string
+  paid: number
+  total: number
+  collected: number
+  expected: number
+}
+
+export type DuesHistory = {
+  periods: DuesPeriodSummary[]
+  collected: number
+  expected: number
+  /** Собираемость за всё время в процентах: доля закрытых взносов. */
+  rate: number
+  currency: string
+}
+
+export type DuesMonth = {
+  periodKey: string
+  label: string
+  amount: number
+  status: DuesStatus
+  at: string | null
+  by: { username: string | null; name: string } | null
+}
+
+export type DuesPerson = {
+  user: User
+  rate: { kind: DuesRateKind; amount: number }
+  amount: number
+  studentAmount: number
+  currency: string
+  canEdit: boolean
+  months: DuesMonth[]
+  missed: number
+  debt: number
 }
 
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }

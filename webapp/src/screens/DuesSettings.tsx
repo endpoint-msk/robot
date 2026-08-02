@@ -1,0 +1,186 @@
+// Настройки взносов: включение сбора, день, ставки, реквизиты. Только dev.
+// Чат для списка задаётся переменной окружения DUES_CHAT_ID и тут только упомянут:
+// список «кто не платил» касается только резидентов, выбирать чат на бегу нельзя.
+
+import { useState } from 'react'
+import { action } from '../api'
+import { icons } from '../icons'
+import { showAlert } from '../modals'
+import { useStore } from '../store'
+import { haptic } from '../telegram'
+import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { Screen } from '../components/Screen'
+import { money } from './Dues'
+
+const MIN_DAY = 1
+const MAX_DAY = 28
+
+export function DuesSettings() {
+  const { data } = useStore()
+  const dues = data!.dues ?? null
+  const [requisites, setRequisites] = useState(dues?.requisites ?? '')
+  const [dirty, setDirty] = useState(false)
+
+  if (!dues) {
+    return (
+      <Screen>
+        <BackRow label="Взносы" />
+        <Header title="Настройки взносов" subtitle="Сбор выключен." />
+      </Screen>
+    )
+  }
+
+  const save = async (patch: Record<string, unknown>) => {
+    const done = await action('dues.settings', patch)
+    if (done) haptic('success')
+    return Boolean(done)
+  }
+
+  const askNumber = async (title: string, current: number, field: string) => {
+    const raw = window.prompt(title, String(current))
+    if (raw === null) return
+    const parsed = Number(raw.replace(',', '.').trim())
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      showAlert('Сумма должна быть неотрицательным числом.')
+      return
+    }
+    await save({ [field]: Math.round(parsed) })
+  }
+
+  const askDay = async () => {
+    const raw = window.prompt(`День сбора, число от ${MIN_DAY} до ${MAX_DAY}`, String(dues.day))
+    if (raw === null) return
+    const parsed = Number(raw.trim())
+    if (!Number.isInteger(parsed) || parsed < MIN_DAY || parsed > MAX_DAY) {
+      showAlert(`29, 30 и 31 есть не в каждом месяце, поэтому день сбора от ${MIN_DAY} до ${MAX_DAY}.`)
+      return
+    }
+    await save({ day: parsed })
+  }
+
+  return (
+    <Screen>
+      <BackRow label="Взносы" />
+      <Header title="Настройки взносов" />
+
+      <div className="card">
+        <div className="row">
+          <div className="row-icon" style={{ background: '#30d158' }}>
+            {icons.rub(17, '#fff')}
+          </div>
+          <span className="row-label">
+            Сбор взносов
+            <span className="row-sublabel">Периоды открываются сами</span>
+          </span>
+          <Switch on={dues.enabled} onToggle={() => void save({ enabled: !dues.enabled })} />
+        </div>
+        <Sep left={54} />
+        <div className="row tappable" onClick={() => void askDay()}>
+          <span className="row-label">День сбора</span>
+          <div className="row-right">
+            <span className="dues-amount">{`${dues.day}-го числа`}</span>
+            {icons.chevron()}
+          </div>
+        </div>
+      </div>
+
+      <SectionTitle>Ставки</SectionTitle>
+      <div className="card">
+        <div className="row tappable" onClick={() => void askNumber('Ставка для всех', dues.amount, 'amount')}>
+          <span className="row-label">Всем</span>
+          <div className="row-right">
+            <span className="dues-amount">{money(dues.amount, dues.currency)}</span>
+            {icons.chevron()}
+          </div>
+        </div>
+        <Sep left={14} />
+        <div className="row tappable" onClick={() => void askNumber('Ставка для студентов', dues.studentAmount, 'studentAmount')}>
+          <span className="row-label">Студентам</span>
+          <div className="row-right">
+            <span className="dues-amount">{money(dues.studentAmount, dues.currency)}</span>
+            {icons.chevron()}
+          </div>
+        </div>
+      </div>
+      <Footnote>
+        Новая ставка действует на текущий и будущие месяцы. Уже подтверждённые суммы не пересчитываются. Своя ставка по
+        договорённости ставится на карточке человека.
+      </Footnote>
+
+      <SectionTitle>Реквизиты</SectionTitle>
+      <div className="card">
+        <div className="row">
+          <textarea
+            className="text-input"
+            rows={3}
+            placeholder="Куда переводить: банк, номер, получатель"
+            value={requisites}
+            onChange={(e) => {
+              setRequisites(e.target.value)
+              setDirty(true)
+            }}
+          />
+        </div>
+        {dirty ? (
+          <div className="inline-form-actions">
+            <button
+              className="small-btn blue"
+              onClick={async () => {
+                if (await save({ requisites })) setDirty(false)
+              }}
+            >
+              Сохранить
+            </button>
+            <button
+              className="small-btn gray"
+              onClick={() => {
+                setRequisites(dues.requisites)
+                setDirty(false)
+              }}
+            >
+              Отмена
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <Footnote>
+        Уходят в личку каждому вместе с суммой и стоят в плашке «Мой взнос». Пусто, значит строки про реквизиты нигде нет.
+      </Footnote>
+
+      <SectionTitle>Список в чате</SectionTitle>
+      <div className="card">
+        <div className="row">
+          <div className="row-icon" style={{ background: '#ff9500' }}>
+            {icons.bell()}
+          </div>
+          <span className="row-label">
+            Чат резидентов
+            <span className="row-sublabel">Громкий пин, прошлый список удаляется</span>
+          </span>
+          <div className="row-right">
+            <span className="dues-amount muted mono">DUES_CHAT_ID</span>
+          </div>
+        </div>
+      </div>
+      <Footnote>
+        Чат задаётся переменной окружения, а не тут. Не задан, значит сообщения в чат нет вовсе, остаются личка и этот
+        раздел.
+      </Footnote>
+
+      <SectionTitle>Уведомления</SectionTitle>
+      <div className="card">
+        <div className="row">
+          <div className="row-icon" style={{ background: '#007aff' }}>
+            {icons.bell()}
+          </div>
+          <span className="row-label">
+            Писать мне об открытии сбора
+            <span className="row-sublabel">В личку, с кнопкой «Я внёс» и просрочкой</span>
+          </span>
+          <Switch on={dues.notify} onToggle={() => void action('dues.notify', { enabled: !dues.notify })} />
+        </div>
+      </div>
+      <Footnote>Тумблер личный: у каждого резидента свой, по умолчанию включён.</Footnote>
+    </Screen>
+  )
+}

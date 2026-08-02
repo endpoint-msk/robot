@@ -121,6 +121,47 @@ export const icons = {
       <path d="M5.5 6.5h5M5.5 9.4h3.2" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   ),
+  /** Рубль — раздел резидентских взносов. */
+  rub: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <path d="M6.6 3.6h3.5a3.1 3.1 0 0 1 0 6.2H6.6V3.6zM6.6 3.6v10.8M4.4 12.2h6" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  /** Треугольник с восклицательным знаком — месяц просрочки. */
+  warnTriangle: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 14 14">
+      <path d="M7 1.9l5.4 9.3H1.6L7 1.9z" fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M7 5.6v2.4M7 9.9h.01" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Восьмиугольник «стоп» — второй месяц просрочки, крайний срок. */
+  stopSign: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 14 14">
+      <path d="M4.9 1.4h4.2l3.5 3.5v4.2l-3.5 3.5H4.9L1.4 9.1V4.9L4.9 1.4z" fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M7 4.4v3M7 9.6h.01" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Ценник — персональная ставка взноса. */
+  tag: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M10.2 2.4H16a1.6 1.6 0 0 1 1.6 1.6v5.8a1.6 1.6 0 0 1-.5 1.1l-6 6a1.6 1.6 0 0 1-2.2 0l-5.4-5.4a1.6 1.6 0 0 1 0-2.2l6-6a1.6 1.6 0 0 1 1.1-.5z" fill="none" stroke={color} strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="13.4" cy="6.6" r="1.3" fill={color} />
+    </svg>
+  ),
+  /** Стрелка назад по дуге — снять отметку. */
+  undo: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M4.5 9.5A5.8 5.8 0 1 1 10 16" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4.4 5.4v4.3h4.3" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  /** Лист со стрелкой вниз — выгрузка таблицы. */
+  doc: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <path d="M4.5 2.6h5.2l4 4v9a1.4 1.4 0 0 1-1.4 1.4H4.5A1.4 1.4 0 0 1 3.1 15.6V4A1.4 1.4 0 0 1 4.5 2.6z" fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9 8.2v4.4M7 10.8l2 1.9 2-1.9" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   /** Запрет («заблокировать») — кружок с косой чертой. */
   ban: (size: number, color: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 20 20">

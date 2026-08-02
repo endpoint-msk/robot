@@ -15,6 +15,10 @@ import { Archive } from './screens/Archive'
 import { ArchiveWeek } from './screens/ArchiveWeek'
 import { GuestVisits } from './screens/GuestVisits'
 import { Settings } from './screens/Settings'
+import { DuesScreen } from './screens/Dues'
+import { DuesPerson } from './screens/DuesPerson'
+import { DuesHistory } from './screens/DuesHistory'
+import { DuesSettings } from './screens/DuesSettings'
 import { MyVisits } from './screens/MyVisits'
 import { Peek } from './screens/Peek'
 import { PeekDay } from './screens/PeekDay'
@@ -37,6 +41,10 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   archiveWeek: ArchiveWeek,
   guestVisits: GuestVisits,
   settings: Settings,
+  dues: DuesScreen,
+  duesPerson: DuesPerson,
+  duesHistory: DuesHistory,
+  duesSettings: DuesSettings,
   myVisits: MyVisits,
   peek: Peek,
   peekDay: PeekDay,

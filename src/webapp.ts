@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { TelegramClient } from '@mtcute/node'
+import { html, InputMedia, type TelegramClient } from '@mtcute/node'
 import {
     acceptReschedule,
     acceptRules,
@@ -74,6 +74,27 @@ import {
     type EventInput,
 } from './events.js'
 import { syncHostingBoard } from './hosting-board.js'
+import {
+    activeDuesPeriod,
+    buildDuesCsv,
+    claimDues,
+    clearDuesMark,
+    confirmDues,
+    duesOf,
+    duesPeriodLabel,
+    duesRows,
+    isPaid,
+    MAX_DUES_DAY,
+    MIN_DUES_DAY,
+    missedPeriods,
+    notifyDevsAboutClaim,
+    periodKeysOf,
+    rateFor,
+    setDuesNotify,
+    setDuesRate,
+    syncDuesRoster,
+    updateDuesSettings,
+} from './dues.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
@@ -386,6 +407,91 @@ const makeFakeGuest = (): HostingUser => {
     }
 }
 
+/**
+ * Снимок взносов за период (по умолчанию активный). null — подсистема выключена или
+ * сборов ещё не было. Отдаётся только резидентам: кто сколько должен, это не витрина.
+ */
+const duesSnapshot = (ctx: ApiContext, periodKey?: string) => {
+    const { storage, user } = ctx
+    const dues = duesOf(storage)
+    const dev = isDevUser(ctx)
+    const period = periodKey ? dues.periods[periodKey] : activeDuesPeriod(dues)
+    // Выключенный сбор (и включённый, но ещё без периодов) для обычного резидента
+    // это пустое место, а dev'у нужен вход в настройки — иначе, выключив сбор, он
+    // остался бы без способа включить его обратно.
+    if ((!dues.enabled || !period) && !dev) return null
+    if (!period) {
+        return {
+            enabled: dues.enabled,
+            periodKey: '',
+            periodLabel: '',
+            isCurrent: true,
+            day: dues.day,
+            amount: dues.amount,
+            studentAmount: dues.studentAmount,
+            currency: dues.currency,
+            requisites: dues.requisites,
+            canEdit: dev,
+            notify: !dues.notifyOff[String(user.userId)],
+            me: { inRoster: false, amount: rateFor(dues, user.userId), status: 'none' as const, at: null },
+            summary: { total: 0, paid: 0, claimed: 0, collected: 0, expected: 0 },
+            rows: [],
+        }
+    }
+    const keys = periodKeysOf(dues)
+    const rows = duesRows(dues, period).map((row) => {
+        const confirmedBy = row.mark?.by !== null && row.mark?.by !== undefined
+            ? period.roster[String(row.mark.by)] ?? null
+            : null
+        discloseUser(row.member.userId)
+        return {
+            userId: row.member.userId,
+            username: row.member.username,
+            name: displayName(row.member.name),
+            amount: row.member.amount,
+            status: (isPaid(row.mark) ? 'paid' : row.mark ? 'claimed' : 'none') as 'paid' | 'claimed' | 'none',
+            at: row.mark?.paidAt ?? row.mark?.claimedAt ?? null,
+            by: confirmedBy ? { username: confirmedBy.username, name: displayName(confirmedBy.name) } : null,
+            missed: row.missed.length,
+            rate: (dues.rates[String(row.member.userId)] === 'student'
+                ? 'student'
+                : typeof dues.rates[String(row.member.userId)] === 'number'
+                    ? 'custom'
+                    : 'common') as 'student' | 'custom' | 'common',
+        }
+    })
+    const paid = rows.filter((r) => r.status === 'paid')
+    const mine = period.marks[String(user.userId)]
+    return {
+        enabled: dues.enabled,
+        periodKey: period.periodKey,
+        periodLabel: duesPeriodLabel(period.periodKey),
+        // Прошлый период открывается из истории: отмечать в нём можно, но подписи другие.
+        isCurrent: period.periodKey === keys[keys.length - 1],
+        day: dues.day,
+        amount: dues.amount,
+        studentAmount: dues.studentAmount,
+        currency: dues.currency,
+        requisites: dues.requisites,
+        canEdit: isDevUser(ctx),
+        notify: !dues.notifyOff[String(user.userId)],
+        me: {
+            inRoster: Boolean(period.roster[String(user.userId)]),
+            amount: period.roster[String(user.userId)]?.amount ?? rateFor(dues, user.userId),
+            status: (isPaid(mine) ? 'paid' : mine ? 'claimed' : 'none') as 'paid' | 'claimed' | 'none',
+            at: mine?.paidAt ?? mine?.claimedAt ?? null,
+        },
+        summary: {
+            total: rows.length,
+            paid: paid.length,
+            claimed: rows.filter((r) => r.status === 'claimed').length,
+            collected: paid.reduce((sum, r) => sum + r.amount, 0),
+            expected: rows.reduce((sum, r) => sum + r.amount, 0),
+        },
+        rows,
+    }
+}
+
 /** Общий снапшот для фронта: 7 дней обзора, свои заявки, настройки (резиденту). */
 const buildBootstrap = (ctx: ApiContext) => {
     const { storage, tzOffsetMinutes, user, resident } = ctx
@@ -446,6 +552,10 @@ const buildBootstrap = (ctx: ApiContext) => {
         // Заготовка ивента из пересланного поста канала: миниапп открывает по ней
         // редактор, если пришёл по кнопке из лички (?draft=1).
         ...(resident ? { eventDraft: eventDraftFor(storage, user.userId) } : {}),
+        // Взносы текущего периода: раздел резидентский, гостю его нет вовсе. Список
+        // короткий (десяток человек), поэтому едет в bootstrap, а не отдельной ручкой —
+        // так все мутации обновляют экран одним ответом, как везде.
+        ...(resident ? { dues: duesSnapshot(ctx) } : {}),
     }
 }
 
@@ -1221,6 +1331,255 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'archive': {
             if (!requireResident()) return
             sendJson(res, 200, { weeks: archiveWeeks(storage, tzOffsetMinutes) })
+            return
+        }
+
+        // --- Резидентские взносы ------------------------------------------------
+        // Читают все резиденты, меняют только dev: отметку ставит человек сам, а
+        // подтверждает её сверяющий с выпиской.
+
+        // Свой взнос: «я внёс». Только за себя и только в текущем периоде.
+        case 'dues.claim': {
+            if (!requireResident()) return
+            const dues = duesOf(storage)
+            const period = activeDuesPeriod(dues)
+            if (!dues.enabled || !period) {
+                sendError(res, 400, 'no_period', 'Сбор сейчас не идёт.')
+                return
+            }
+            // Ростер освежаем: резидентом могли сделать уже после открытия сбора.
+            await syncDuesRoster(client, storage, allowedChats, period.periodKey)
+            const claimed = await claimDues(storage, period.periodKey, user.userId)
+            if (!claimed.ok) {
+                const messages = {
+                    already: 'Взнос за этот месяц уже отмечен.',
+                    not_member: 'Тебя нет в списке плательщиков этого месяца.',
+                    no_period: 'Сбор сейчас не идёт.',
+                    no_mark: 'Отметки нет.',
+                    disabled: 'Взносы выключены.',
+                } as const
+                sendError(res, 400, claimed.error, messages[claimed.error])
+                return
+            }
+            void notifyDevsAboutClaim(client, ctx.devUserIds, duesOf(storage), period.periodKey, claimed.member)
+                .catch((err) => console.error('[dues] не удалось уведомить дева о заявке:', err))
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Подтверждение взноса. Без заявки тоже работает: наличные приносят на месте.
+        case 'dues.confirm':
+        case 'dues.clear': {
+            if (!requireDev()) return
+            const dues = duesOf(storage)
+            const periodKey = typeof body.periodKey === 'string' && body.periodKey ? body.periodKey : activeDuesPeriod(dues)?.periodKey
+            const targetId = Number(body.userId)
+            if (!periodKey || !dues.periods[periodKey] || !Number.isFinite(targetId)) {
+                sendError(res, 400, 'no_period', 'Период не найден.')
+                return
+            }
+            const result = method === 'dues.confirm'
+                ? await confirmDues(storage, periodKey, targetId, user.userId)
+                : await clearDuesMark(storage, periodKey, targetId)
+            if (!result.ok) {
+                sendError(res, 400, result.error, result.error === 'no_mark' ? 'Отметки и так нет.' : 'Человека нет в списке этого месяца.')
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Персональная ставка: общая, студенческая или своя по договорённости.
+        case 'dues.rate': {
+            if (!requireDev()) return
+            const targetId = Number(body.userId)
+            const kind = body.kind
+            if (!Number.isFinite(targetId) || (kind !== 'common' && kind !== 'student' && kind !== 'custom')) {
+                sendError(res, 400, 'bad_request', 'Не понял ставку.')
+                return
+            }
+            if (kind === 'custom') {
+                const amount = Number(body.amount)
+                if (!Number.isFinite(amount) || amount < 0) {
+                    sendError(res, 400, 'bad_amount', 'Сумма должна быть неотрицательным числом.')
+                    return
+                }
+                await setDuesRate(storage, targetId, Math.round(amount))
+            } else {
+                await setDuesRate(storage, targetId, kind === 'student' ? 'student' : null)
+            }
+            // Ставка периода это снимок: пересобираем ростер, иначе в текущем месяце
+            // с человека продолжат спрашивать по старой.
+            const active = activeDuesPeriod(duesOf(storage))
+            if (active) await syncDuesRoster(client, storage, allowedChats, active.periodKey)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'dues.settings': {
+            if (!requireDev()) return
+            const day = body.day === undefined ? undefined : Number(body.day)
+            if (day !== undefined && (!Number.isInteger(day) || day < MIN_DUES_DAY || day > MAX_DUES_DAY)) {
+                sendError(res, 400, 'bad_day', `День сбора это число от ${MIN_DUES_DAY} до ${MAX_DUES_DAY}.`)
+                return
+            }
+            const amount = body.amount === undefined ? undefined : Number(body.amount)
+            const studentAmount = body.studentAmount === undefined ? undefined : Number(body.studentAmount)
+            for (const value of [amount, studentAmount]) {
+                if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+                    sendError(res, 400, 'bad_amount', 'Ставка должна быть неотрицательным числом.')
+                    return
+                }
+            }
+            const wasEnabled = duesOf(storage).enabled
+            await updateDuesSettings(storage, {
+                ...(body.enabled === undefined ? {} : { enabled: body.enabled === true }),
+                ...(day === undefined ? {} : { day }),
+                ...(amount === undefined ? {} : { amount: Math.round(amount) }),
+                ...(studentAmount === undefined ? {} : { studentAmount: Math.round(studentAmount) }),
+                ...(typeof body.requisites === 'string' ? { requisites: body.requisites } : {}),
+            })
+            // Ставки и реквизиты видны в текущем списке — перерисовываем. Первое включение
+            // период не открывает: этим занимается шедулер, на ближайшем тике.
+            const active = activeDuesPeriod(duesOf(storage))
+            if (active && wasEnabled) await syncDuesRoster(client, storage, allowedChats, active.periodKey)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Свой тумблер DM про сбор. Настройка личная, поэтому доступна любому резиденту.
+        case 'dues.notify': {
+            if (!requireResident()) return
+            await setDuesNotify(storage, user.userId, body.enabled === true)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Список за конкретный (обычно прошлый) период — из истории.
+        case 'dues.period': {
+            if (!requireResident()) return
+            const periodKey = typeof body.periodKey === 'string' ? body.periodKey : ''
+            const snapshot = duesSnapshot(ctx, periodKey)
+            if (!snapshot) {
+                sendError(res, 404, 'not_found', 'Такого периода нет.')
+                return
+            }
+            sendJson(res, 200, snapshot)
+            return
+        }
+
+        case 'dues.history': {
+            if (!requireResident()) return
+            const dues = duesOf(storage)
+            const keys = periodKeysOf(dues).reverse()
+            const periods = keys.map((key) => {
+                const period = dues.periods[key]!
+                const marks = Object.values(period.marks).filter((m) => m.status === 'paid')
+                const total = Object.keys(period.roster).length
+                return {
+                    periodKey: key,
+                    label: duesPeriodLabel(key),
+                    paid: marks.length,
+                    total,
+                    collected: marks.reduce((sum, m) => sum + m.amount, 0),
+                    expected: Object.values(period.roster).reduce((sum, m) => sum + m.amount, 0),
+                }
+            })
+            const collected = periods.reduce((sum, p) => sum + p.collected, 0)
+            const expected = periods.reduce((sum, p) => sum + p.expected, 0)
+            sendJson(res, 200, {
+                periods,
+                collected,
+                expected,
+                // Собираемость за всё время: доля закрытых взносов, а не собранных денег —
+                // ставки у людей разные, и по деньгам картина смещалась бы в пользу дорогих.
+                rate: expected > 0 ? Math.round((periods.reduce((s, p) => s + p.paid, 0) /
+                    Math.max(1, periods.reduce((s, p) => s + p.total, 0))) * 100) : 0,
+                currency: dues.currency,
+            })
+            return
+        }
+
+        // Карточка человека: вся его история по месяцам в одном месте.
+        case 'dues.person': {
+            if (!requireResident()) return
+            const dues = duesOf(storage)
+            const targetId = Number(body.userId)
+            const keys = periodKeysOf(dues).reverse()
+            let member = null
+            for (const key of keys) {
+                const found = dues.periods[key]!.roster[String(targetId)]
+                if (found) {
+                    member = found
+                    break
+                }
+            }
+            if (!member) {
+                sendError(res, 404, 'not_found', 'Человека нет ни в одном периоде.')
+                return
+            }
+            discloseUser(member.userId)
+            const activeKey = periodKeysOf(dues).pop() ?? ''
+            const rateValue = dues.rates[String(targetId)]
+            const months = keys
+                .filter((key) => dues.periods[key]!.roster[String(targetId)])
+                .map((key) => {
+                    const period = dues.periods[key]!
+                    const mark = period.marks[String(targetId)]
+                    const confirmedBy = mark?.by !== null && mark?.by !== undefined
+                        ? period.roster[String(mark.by)] ?? null
+                        : null
+                    return {
+                        periodKey: key,
+                        label: duesPeriodLabel(key),
+                        amount: period.roster[String(targetId)]!.amount,
+                        status: (isPaid(mark) ? 'paid' : mark ? 'claimed' : 'none') as 'paid' | 'claimed' | 'none',
+                        at: mark?.paidAt ?? mark?.claimedAt ?? null,
+                        by: confirmedBy ? { username: confirmedBy.username, name: displayName(confirmedBy.name) } : null,
+                    }
+                })
+            const missed = missedPeriods(dues, activeKey, targetId)
+            sendJson(res, 200, {
+                user: { userId: member.userId, username: member.username, name: displayName(member.name) },
+                rate: {
+                    kind: rateValue === 'student' ? 'student' : typeof rateValue === 'number' ? 'custom' : 'common',
+                    amount: rateFor(dues, targetId),
+                },
+                amount: dues.amount,
+                studentAmount: dues.studentAmount,
+                currency: dues.currency,
+                canEdit: isDevUser(ctx),
+                months,
+                missed: missed.length,
+                // Долг с учётом прошлых: сумма незакрытых взносов подряд плюс текущий.
+                debt: [...missed, ...(months[0] && months[0].status !== 'paid' ? [months[0].periodKey] : [])]
+                    .reduce((sum, key) => sum + (dues.periods[key]?.roster[String(targetId)]?.amount ?? 0), 0),
+            })
+            return
+        }
+
+        // Выгрузка: файл уходит в личку от бота, а не скачивается из вебвью — в
+        // Telegram-клиенте скачанный из мини-аппа файл ещё надо суметь найти.
+        case 'dues.export': {
+            if (!requireResident()) return
+            const dues = duesOf(storage)
+            if (periodKeysOf(dues).length === 0) {
+                sendError(res, 400, 'empty', 'Выгружать нечего: сборов ещё не было.')
+                return
+            }
+            // BOM (U+FEFF) — чтобы Excel открыл кириллицу в UTF-8 без «крякозябр» (как в /export).
+            const csv = Buffer.from(String.fromCharCode(0xfeff) + buildDuesCsv(dues), 'utf8')
+            try {
+                await client.sendMedia(user.userId, InputMedia.document(csv, {
+                    fileName: 'dues.csv',
+                    fileMime: 'text/csv',
+                    caption: html(`Взносы за ${periodKeysOf(dues).length} ${periodKeysOf(dues).length === 1 ? 'период' : 'периодов'}.`),
+                }))
+            } catch {
+                sendError(res, 409, 'dm_closed', 'Не могу написать в личку. Открой чат с ботом и нажми /start.')
+                return
+            }
+            sendJson(res, 200, { ok: true })
             return
         }
 

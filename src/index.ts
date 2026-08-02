@@ -20,6 +20,7 @@ import {
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
 import { registerBackupHandlers, startBackupScheduler } from './backup.js'
+import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './dues.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
@@ -153,6 +154,15 @@ const main = async () => {
     } else if (announceChannelId === null) {
         console.warn('[warn] ANNOUNCE_CHANNEL_ID не задан — пересылка постов канала в ивенты отключена.')
     }
+    // Резидентские взносы. Живут в миниаппе и в личке; в боте от них остались только
+    // кнопка «Я внёс» из DM и тестовые дев-команды.
+    registerDuesHandlers(dp, {
+        client: tg,
+        storage,
+        allowedChats,
+        tzOffsetMinutes: hostingTzOffset,
+        devUserIds,
+    })
     // Дев-команды бэкапа стейта: /backup (разово) и /autobackup <интервал> (по расписанию).
     if (devUserIds.size > 0) {
         registerBackupHandlers(dp, { client: tg, storage, devUserIds, allowedChats })
@@ -196,6 +206,9 @@ const main = async () => {
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
+        // Кнопка «Открыть взносы» в личке: в приватном чате web_app-кнопки разрешены,
+        // поэтому deep link тут не нужен.
+        setDuesMiniappUrl(webappConfig.publicUrl)
         // Чек-ин/чек-аут/MAC-отметки пересобирают доску «кто сегодня в спейсе» (присутствие
         // на ней показывается). Без миниаппа доски нет, хук не ставится — остаётся ручной /inside.
         setPresenceChangeHook(() => {
@@ -283,6 +296,8 @@ const main = async () => {
     // Шедулер бэкапов поднимаем всегда: расписания лежат в стейте и переживают рестарт,
     // даже если DEV_USER_IDS временно пуст (иначе включённый бэкап тихо перестал бы ходить).
     const backups = startBackupScheduler(tg, storage)
+    // Взносы: тик открывает период, когда настал день сбора (и добирает пропущенный за простой).
+    const dues = startDuesScheduler(tg, storage, allowedChats, hostingTzOffset)
     const presence = startPresenceScheduler(tg, storage, residents)
     // Доска «кто сегодня в спейсе» — часть подсистемы хостинга: только при включённом миниаппе.
     const hostingBoard = webappConfig !== null
@@ -327,6 +342,7 @@ const main = async () => {
         scheduler.stop()
         dailyPoster.stop()
         backups.stop()
+        dues.stop()
         presence.stop()
         hostingBoard?.stop()
         printerWatcher?.stop()

@@ -1488,3 +1488,79 @@ body.busy #busy-overlay { display: flex; }
     font-weight: 600;
     color: var(--blue);
 }
+
+/* ==========================================================================
+   Резидентские взносы
+   ========================================================================== */
+
+/* Сводка периода: крупная цифра «внесли N из M» и полоса прогресса. */
+.dues-summary { padding: 18px 18px 16px; }
+.dues-figure { display: flex; align-items: baseline; gap: 9px; }
+.dues-figure .df-main { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
+.dues-figure .df-of { font-size: 15px; color: var(--text-2); }
+.dues-figure .df-sum { margin-left: auto; font-size: 17px; font-weight: 700; }
+.dues-bar { height: 8px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 14px; overflow: hidden; display: flex; }
+.dues-bar > i { display: block; height: 100%; background: var(--green); }
+/* Заявленное, но не подтверждённое, идёт той же полосой в другом тоне: видно, сколько
+   ещё предстоит сверить, и полоса не показывает кассу собранной раньше времени. */
+.dues-bar > i.claimed { background: rgba(255, 149, 0, 0.55); }
+.dues-note { margin-top: 11px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
+
+/* Строка человека в списке взносов. */
+.dues-main { min-width: 0; flex: 1; }
+.dues-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dues-name { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dues-sub-line { margin-top: 2px; font-size: 13px; color: var(--text-2); }
+.dues-sub-line.attn { color: var(--orange); font-weight: 600; }
+.dues-sub-line.crit { color: var(--red); font-weight: 600; }
+.dues-amount { font-size: 15px; font-weight: 600; }
+.dues-amount.muted { color: var(--text-3); font-weight: 500; }
+.dues-amount.paid { color: var(--green); }
+
+/* Метка просрочки. Два тона: месяц пропуска оранжевый, два и больше красный, как у
+   свайп-действий (обратимое против крайнего). */
+.debt-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.debt-badge.warn { background: rgba(255, 149, 0, 0.14); color: var(--orange); }
+.debt-badge.crit { background: rgba(255, 59, 48, 0.14); color: var(--red); }
+/* Ставка это не статус, а свойство человека: нейтральный чип, не спорит с меткой просрочки. */
+.rate-chip { padding: 1px 7px; border-radius: 999px; background: var(--chip); color: var(--text-2); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+/* Кружок статуса слева: подтверждено (зелёный) и заявлено (пунктирный контур). */
+.dues-mark { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.dues-mark.ok { background: var(--green); }
+.dues-mark.wait { border: 1.6px dashed var(--orange); }
+
+/* Ответ на чужую заявку: инлайн, а не свайпом — прятать за жест решение по чужому
+   действию нельзя (так же оставлена инлайновой кнопка «Принять слот» в заявках). */
+.dues-verdict { display: flex; gap: 8px; padding: 0 14px 12px 46px; }
+
+/* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
+.my-dues { border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
+.my-dues.unpaid { background: rgba(255, 149, 0, 0.1); box-shadow: none; }
+.my-dues.claimed { background: rgba(var(--sec), 0.06); box-shadow: none; }
+.my-dues.paid { background: var(--ok-bg); box-shadow: var(--ok-shadow); }
+.my-dues-kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.my-dues.paid .my-dues-kicker { color: rgba(var(--ok-sec), 0.7); }
+.my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
+.my-dues.paid .my-dues-sum { color: var(--ok-fg); }
+.my-dues-sub { margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.my-dues.paid .my-dues-sub { color: rgba(var(--ok-sec), 0.75); }
+.my-dues .primary-btn { margin-top: 14px; }
+/* Реквизиты прямо в плашке: перевод делают отсюда, а не идут искать закреп в чате. */
+.my-dues-req { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.06); }
+.mdr-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mdr-copy { flex-shrink: 0; border: 0; background: none; padding: 2px; color: var(--blue); cursor: pointer; }
+
+/* Строка периода в истории: мини-полоса вместо цифр рядом с суммой. */
+.period-bar { width: 54px; height: 6px; border-radius: 999px; background: rgba(var(--sec), 0.1); overflow: hidden; flex-shrink: 0; }
+.period-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--green); }
+.period-bar > i.low { background: var(--orange); }
