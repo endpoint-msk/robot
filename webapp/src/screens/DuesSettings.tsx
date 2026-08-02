@@ -174,8 +174,8 @@ export function DuesSettings() {
             {icons.bell()}
           </div>
           <span className="row-label">
-            Писать мне об открытии сбора
-            <span className="row-sublabel">В личку, с кнопкой «Я внёс» и просрочкой</span>
+            Напоминать о сборе
+            <span className="row-sublabel">В личку, с кнопкой «Я внёс»</span>
           </span>
           <Switch on={dues.notify} onToggle={() => void action('dues.notify', { enabled: !dues.notify })} />
         </div>

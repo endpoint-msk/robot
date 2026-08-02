@@ -272,7 +272,7 @@ const notifyMemberAboutPeriod = async (
         lines.push(`⚠️ Взнос за ${missedMonths(missed)} так и не подтверждён, это месяц просрочки.`)
     }
     lines.push('')
-    lines.push('Перевёл? Нажми «Я внёс», dev сверит с выпиской.')
+    lines.push('Перевёл? Нажми «Я внёс», перевод будет рассмотрен.')
 
     try {
         await client.sendText(member.userId, html(lines.join('<br>')), {

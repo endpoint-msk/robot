@@ -169,7 +169,7 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
               </button>
             </div>
           ) : null}
-          <div className="my-dues-sub">Отметь, когда переведёшь: dev сверит с выпиской и подтвердит.</div>
+          <div className="my-dues-sub">Отметь, когда переведёшь: перевод будет рассмотрен.</div>
           <button className="primary-btn" onClick={() => void claim()}>
             {icons.check(18, '#fff', 2)}
             Я внёс
