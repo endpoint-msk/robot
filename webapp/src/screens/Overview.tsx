@@ -6,11 +6,14 @@ import { DevChips, Header, Sep } from '../components/common'
 import { DayRow } from '../components/DayRow'
 import { Screen } from '../components/Screen'
 
-/** Плашка «взнос не отмечен»: висит, пока свой взнос не закрыт, дальше исчезает. */
+/**
+ * Плашка «взнос не отмечен»: висит, пока свой взнос не закрыт, дальше исчезает.
+ * Нулевая ставка — освобождение: с человека взнос не спрашивают, и напоминать не о чем.
+ */
 function DuesBanner() {
   const { data } = useStore()
   const dues = data!.dues
-  if (!dues || !dues.enabled || !dues.me.inRoster || dues.me.status !== 'none') return null
+  if (!dues || !dues.enabled || !dues.me.inRoster || dues.me.amount <= 0 || dues.me.status !== 'none') return null
   return (
     <div className="write-banner" onClick={() => push('dues')}>
       <div className="wb-icon">{icons.rub(17, '#fff')}</div>
@@ -32,11 +35,13 @@ function DuesRow() {
     ? { text: 'Выключены', color: 'var(--text-3)' }
     : !dues.me.inRoster
       ? { text: '', color: 'var(--text-3)' }
-      : dues.me.status === 'paid'
-        ? { text: 'Внесён', color: 'var(--green)' }
-        : dues.me.status === 'claimed'
-          ? { text: 'Ждёт сверки', color: 'var(--text-2)' }
-          : { text: 'Не внесён', color: 'var(--orange)' }
+      : dues.me.amount <= 0
+        ? { text: 'Не требуется', color: 'var(--text-3)' }
+        : dues.me.status === 'paid'
+          ? { text: 'Внесён', color: 'var(--green)' }
+          : dues.me.status === 'claimed'
+            ? { text: 'Ждёт сверки', color: 'var(--text-2)' }
+            : { text: 'Не внесён', color: 'var(--orange)' }
   return (
     <>
       <div className="row tappable" onClick={() => push('dues')}>
