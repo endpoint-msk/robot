@@ -155,16 +155,6 @@ export function MyVisits() {
         </>
       ) : null}
       <div className="card" style={{ marginTop: 22 }}>
-        {/* Правила гость видит один раз, перед первой заявкой, - а живёт по ним каждый
-            визит. Тут единственное место, где их можно перечитать. */}
-        <div className="row tappable" onClick={() => push('rules', { readonly: true })}>
-          <div className="row-icon" style={{ background: '#8e8e93' }}>
-            {icons.note(17, '#fff')}
-          </div>
-          <span className="row-label">Правила спейса</span>
-          <div className="row-right">{icons.chevron()}</div>
-        </div>
-        <Sep left={54} />
         <div className="row tappable" onClick={() => push('route')}>
           <div className="row-icon" style={{ background: '#007aff' }}>
             {icons.pin(17, '#fff')}

@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
-import { pop, push, useParams, useStore } from '../store'
+import { pop, push, useStore } from '../store'
 import { haptic } from '../telegram'
 import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -17,10 +17,6 @@ const RULES = [
 
 export function Rules() {
   const { data } = useStore()
-  const params = useParams()
-  // Тот же экран открывается из «Моих визитов» просто перечитать - тогда без галочки
-  // и без кнопки: согласие уже дано, спрашивать его второй раз бессмысленно.
-  const readonly = params.readonly === true
   const [agreed, setAgreed] = useState(data!.me.acceptedRules)
 
   const submit = async (): Promise<void> => {
@@ -33,15 +29,10 @@ export function Rules() {
   }
 
   return (
-    <Screen hasBottomBar={!readonly}>
+    <Screen hasBottomBar>
       <BackRow label="Мои визиты" />
-      <Header
-        title="Правила спейса"
-        subtitle={readonly ? 'Вы с ними согласились' : 'Прочитайте перед первой заявкой'}
-      />
-      {readonly ? null : (
-        <div className="rules-intro">Вы собираетесь подать заявку на хостинг в endpoint. Основные правила сообщества:</div>
-      )}
+      <Header title="Правила спейса" subtitle="Прочитайте перед первой заявкой" />
+      <div className="rules-intro">Вы собираетесь подать заявку на хостинг в endpoint. Основные правила сообщества:</div>
       <div className="card">
         {RULES.map((text, i) => (
           <div key={text}>
@@ -53,22 +44,18 @@ export function Rules() {
           </div>
         ))}
       </div>
-      {readonly ? null : (
-        <>
-          <div style={{ height: 22 }} />
-          <div className="card">
-            <div className="row tappable" onClick={() => setAgreed((v) => !v)}>
-              <span className="row-label rule-agree">Я прочитал и согласен с правилами</span>
-              <div className={'checkbox' + (agreed ? ' on' : '')}>{agreed ? icons.check(13, '#fff', 2.6) : null}</div>
-            </div>
-          </div>
-          <BottomBar>
-            <button className="primary-btn" disabled={!agreed} onClick={submit}>
-              Согласиться и продолжить
-            </button>
-          </BottomBar>
-        </>
-      )}
+      <div style={{ height: 22 }} />
+      <div className="card">
+        <div className="row tappable" onClick={() => setAgreed((v) => !v)}>
+          <span className="row-label rule-agree">Я прочитал и согласен с правилами</span>
+          <div className={'checkbox' + (agreed ? ' on' : '')}>{agreed ? icons.check(13, '#fff', 2.6) : null}</div>
+        </div>
+      </div>
+      <BottomBar>
+        <button className="primary-btn" disabled={!agreed} onClick={submit}>
+          Согласиться и продолжить
+        </button>
+      </BottomBar>
     </Screen>
   )
 }
