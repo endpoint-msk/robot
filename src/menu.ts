@@ -2,8 +2,11 @@ import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
 import {
     checkInResident,
+    checkOutResident,
+    isPresenceInvisible,
     macHintFor,
-    removePresence,
+    macLabelSuffix,
+    setPresenceInvisible,
     renderPresenceText,
 } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -23,6 +26,7 @@ const CB_PRESENCE = 'menu:presence'
 const CB_CHECKIN_NICK = 'menu:checkin:nick'
 const CB_CHECKIN_ANON = 'menu:checkin:anon'
 const CB_CHECKOUT = 'menu:checkout'
+const CB_INVISIBLE = 'menu:invisible'
 const CB_MAC = 'menu:mac'
 const CB_PRINTER = 'menu:printer'
 const CB_PRINTER_PREVIEW = 'menu:printer:preview'
@@ -46,23 +50,35 @@ const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean, web
 
 const ROOT_TEXT = 'Главное меню. Выбери раздел:'
 
-/** Раздел «Отметиться / уйти»: кнопки зависят от того, отмечен ли уже резидент. */
+/**
+ * Раздел «Отметиться / уйти»: кнопки зависят от того, отмечен ли уже резидент.
+ *
+ * Переключатель «невидимка» стоит здесь, а не в разделе MAC: человек приходит сюда с
+ * вопросом «видно ли меня», а не «как настроена привязка устройства».
+ */
 const presenceSection = (storage: Storage, userId: number): { text: string; keyboard: ReturnType<typeof BotKeyboard.inline> } => {
     const present = storage.get().presence[String(userId)]
+    const invisible = isPresenceInvisible(storage, userId)
+    const invisibleRow = [BotKeyboard.callback(`${invisible ? '✅' : '☐'} Невидимка`, CB_INVISIBLE)]
+    const invisibleNote = invisible
+        ? '<br><br>Невидимка включена: сам я тебя по устройству в сети не отмечаю. Отметиться кнопкой можно всегда.'
+        : ''
     if (present) {
         return {
-            text: `Ты отмечен как «${present.displayLabel}».${macHintFor(storage, userId)}`,
+            text: `Ты отмечен как «${present.displayLabel}».${invisibleNote}${macHintFor(storage, userId)}`,
             keyboard: BotKeyboard.inline([
                 [BotKeyboard.callback('Уйти / снять отметку', CB_CHECKOUT)],
+                invisibleRow,
                 BACK_ROW,
             ]),
         }
     }
     return {
-        text: `Отметься, чтобы остальные видели, что ты в спейсе.${macHintFor(storage, userId)}`,
+        text: `Отметься, чтобы остальные видели, что ты в спейсе.${invisibleNote}${macHintFor(storage, userId)}`,
         keyboard: BotKeyboard.inline([
             [BotKeyboard.callback('Отметиться с ником', CB_CHECKIN_NICK)],
             [BotKeyboard.callback('Отметиться без ника', CB_CHECKIN_ANON)],
+            invisibleRow,
             BACK_ROW,
         ]),
     }
@@ -75,11 +91,16 @@ const macSection = (storage: Storage, userId: number): string => {
     if (cur && cur.macs.length > 0) {
         lines.push(`Привязано устройств: ${cur.macs.length}.`)
         for (const e of [...cur.macs].sort((a, b) => a.mac.localeCompare(b.mac))) {
-            lines.push(`<code>${e.mac}</code>${e.label ? ` — ${e.label}` : ''}`)
+            lines.push(`<code>${e.mac}</code>${macLabelSuffix(e.label)}`)
         }
         const online = storage.get().presence[String(userId)]?.source === 'mac'
         lines.push('')
         lines.push(online ? 'Сейчас ты отмечен по MAC.' : 'Сейчас авто-отметка не активна.')
+        if (isPresenceInvisible(storage, userId)) {
+            lines.push('Режим «невидимка» включён - авто-отметка не ставится (раздел «Отметиться»).')
+        } else if (cur.suppressedAt) {
+            lines.push('Авто-отметка приостановлена: ты ушёл вручную. Вернётся, когда устройство уйдёт из сети и появится снова.')
+        }
         lines.push('')
         lines.push(`Режим отметки: ${cur.anon ? '«без ника»' : 'с ником'} (сменить — /settings).`)
         lines.push('Добавить устройство — /bindmac, убрать — /unbindmac.')
@@ -148,7 +169,7 @@ const buildPrinterScreen = async (
 > => {
     let status: PrinterStatus
     try {
-        status = await fetchPrinterStatus(printerUrl, printerAuth)
+        status = await fetchPrinterStatus(printerUrl, printerAuth, { withEta: true })
     } catch {
         return {
             kind: 'text',
@@ -268,11 +289,18 @@ export const registerMenuHandlers = (
                 return
             }
             case CB_CHECKOUT: {
-                const present = storage.get().presence[String(userId)]
-                if (present) await removePresence(client, storage, residents, userId, 'manual')
+                const removed = await checkOutResident(client, storage, residents, userId)
                 const section = presenceSection(storage, userId)
                 await replaceScreen(ctx, { kind: 'text', text: section.text, keyboard: section.keyboard })
-                await ctx.answer({ text: present ? 'Снял отметку' : 'Ты и так не отмечен' })
+                await ctx.answer({ text: removed ? 'Снял отметку' : 'Ты и так не отмечен' })
+                return
+            }
+            case CB_INVISIBLE: {
+                const next = !isPresenceInvisible(storage, userId)
+                await setPresenceInvisible(client, storage, residents, userId, next)
+                const section = presenceSection(storage, userId)
+                await replaceScreen(ctx, { kind: 'text', text: section.text, keyboard: section.keyboard })
+                await ctx.answer({ text: next ? 'Невидимка включена' : 'Невидимка выключена' })
                 return
             }
             case CB_MAC: {

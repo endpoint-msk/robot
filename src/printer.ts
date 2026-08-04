@@ -1,6 +1,6 @@
 import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
-import type { AllowedChats } from './handlers.js'
+import { startHeartbeatInterval } from './health.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 
@@ -13,6 +13,10 @@ type PrinterStatus = {
     filename: string
     /** Прогресс печати 0..1, если доступен. */
     progress: number | null
+    /** Сколько секунд уже печатает (`print_stats.print_duration`). null - не отдал. */
+    printDuration: number | null
+    /** Оценка слайсера, сколько секунд займёт печать целиком. null - метаданные не спрашивали или их нет. */
+    estimatedTime: number | null
 }
 
 export type { PrinterStatus }
@@ -88,13 +92,23 @@ const fetchJson = async (url: string, auth: string | null): Promise<unknown> => 
     throw lastErr
 }
 
-/** Запрашивает у Moonraker состояние печати, имя файла и прогресс. */
-export const fetchPrinterStatus = async (baseUrl: string, auth: string | null): Promise<PrinterStatus> => {
+/**
+ * Запрашивает у Moonraker состояние печати, имя файла и прогресс.
+ *
+ * `withEta` дозапрашивает метаданные gcode ради оценки слайсера: отдельный запрос,
+ * поэтому его делают только те вызовы, что рисуют сообщение человеку - поллеру
+ * окончания печати ETA не нужен вовсе.
+ */
+export const fetchPrinterStatus = async (
+    baseUrl: string,
+    auth: string | null,
+    opts: { withEta?: boolean } = {},
+): Promise<PrinterStatus> => {
     const url = `${baseUrl}/printer/objects/query?print_stats&virtual_sdcard&display_status`
     const data = (await fetchJson(url, auth)) as {
         result?: {
             status?: {
-                print_stats?: { state?: string; filename?: string }
+                print_stats?: { state?: string; filename?: string; print_duration?: number }
                 virtual_sdcard?: { progress?: number }
                 display_status?: { progress?: number }
             }
@@ -105,7 +119,29 @@ export const fetchPrinterStatus = async (baseUrl: string, auth: string | null): 
     const filename = status.print_stats?.filename ?? ''
     // virtual_sdcard точнее отражает позицию в файле; display_status — запасной вариант.
     const progress = status.virtual_sdcard?.progress ?? status.display_status?.progress ?? null
-    return { state, filename, progress: typeof progress === 'number' ? progress : null }
+    const printDuration = typeof status.print_stats?.print_duration === 'number' ? status.print_stats.print_duration : null
+    const base: PrinterStatus = {
+        state,
+        filename,
+        progress: typeof progress === 'number' ? progress : null,
+        printDuration,
+        estimatedTime: null,
+    }
+    if (!opts.withEta || !ACTIVE_STATES.has(state) || !filename) return base
+    return { ...base, estimatedTime: await fetchEstimatedTime(baseUrl, filename, auth) }
+}
+
+/** Оценка слайсера в секундах из метаданных gcode. null - Moonraker её не знает. */
+const fetchEstimatedTime = async (baseUrl: string, filename: string, auth: string | null): Promise<number | null> => {
+    try {
+        const metaUrl = `${baseUrl}/server/files/metadata?filename=${encodeURIComponent(filename)}`
+        const meta = (await fetchJson(metaUrl, auth)) as { result?: { estimated_time?: number } }
+        const value = meta.result?.estimated_time
+        return typeof value === 'number' && value > 0 ? value : null
+    } catch {
+        // метаданных нет - просто не покажем ETA
+        return null
+    }
 }
 
 /**
@@ -172,6 +208,45 @@ export const fetchWebcamSnapshot = async (baseUrl: string, auth: string | null):
     }
 }
 
+/**
+ * Смещение пояса спейса для строки «закончит в 19:40». Ставится на старте
+ * (`setPrinterTimezone`), как и остальные такие настройки в проекте: считать время
+ * по локальной зоне процесса нельзя, в контейнере она UTC.
+ */
+let printerTzOffsetMinutes = 180
+
+export const setPrinterTimezone = (offsetMinutes: number): void => {
+    printerTzOffsetMinutes = offsetMinutes
+}
+
+/** «2 ч 10 мин», «18 мин», «меньше минуты». */
+const formatRemaining = (seconds: number): string => {
+    const total = Math.round(seconds / 60)
+    if (total < 1) return 'меньше минуты'
+    const h = Math.floor(total / 60)
+    const m = total % 60
+    if (h === 0) return `${m} мин`
+    return m === 0 ? `${h} ч` : `${h} ч ${m} мин`
+}
+
+/** «19:40» в поясе спейса. */
+const clockAt = (at: Date): string => {
+    const local = new Date(at.getTime() + printerTzOffsetMinutes * 60_000)
+    return `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * Сколько осталось печатать. null - оценки нет либо она уже просрочена.
+ *
+ * Считаем от оценки слайсера минус реально отпечатанное время: доля прогресса по
+ * позиции в файле врёт на переменной высоте слоя, а `print_duration` - это факт.
+ */
+const remainingOf = (status: PrinterStatus): number | null => {
+    if (status.estimatedTime === null || status.printDuration === null) return null
+    const left = status.estimatedTime - status.printDuration
+    return left > 0 ? left : null
+}
+
 /** Собирает текст ответа по статусу принтера. Строки склеиваются через `<br>`, т.к. `html()` схлопывает `\n` в пробел. */
 export const renderStatus = (status: PrinterStatus): string => {
     const human = HUMAN_STATE[status.state] ?? status.state
@@ -181,52 +256,42 @@ export const renderStatus = (status: PrinterStatus): string => {
         if (status.progress !== null) {
             lines.push(`Прогресс: ${Math.round(status.progress * 100)}%`)
         }
+        const left = remainingOf(status)
+        // Без этой строки по процентам не понять, освободится принтер через двадцать
+        // минут или через девять часов - из-за чего и отменяли чужие печати.
+        if (left !== null) {
+            lines.push(`Осталось ~${formatRemaining(left)} · закончит в ${clockAt(new Date(Date.now() + left * 1000))}`)
+        }
     }
     return lines.join('<br>')
 }
-
-const isAllowedChat = (allowed: AllowedChats, chatId: number): boolean => allowed.has(chatId)
 
 /** Личка с ботом. */
 const isPrivateChat = (msg: MessageContext): boolean => msg.chat.type === 'user'
 
 /**
- * Кому доступен принтер в этом чате: в allowlist-группе — её участникам (как и раньше),
- * в личке — только резидентам.
+ * Принтер доступен только резиденту и только в личке.
  *
- * Личка отдельным гейтом потому, что за кнопкой «Камера» живой кадр из помещения
- * спейса. Без проверки его вытягивал любой, кто нашёл бота и написал `/printer`.
+ * За кнопкой «Камера» живой кадр из помещения спейса, а «сейчас печатает Х, осталось
+ * два часа» - это информация о том, кто внутри и чем занят. В группе это видел любой
+ * участник allowlist-чата, включая тех, кто в спейсе ни разу не был: allowlist это
+ * «где бот работает», а не «кто свой». В группах команда теперь молчит.
  */
 const canUsePrinterIn = async (
     residents: ResidentDirectory,
     chatType: string,
-    chatId: number,
-    allowed: AllowedChats,
     userId: number,
-): Promise<boolean> => {
-    if (chatType === 'user') return residents.isResident(userId)
-    return isAllowedChat(allowed, chatId)
-}
+): Promise<boolean> => chatType === 'user' && (await residents.isResident(userId))
 
-/**
- * Пропускаем команду, если это личка резидента ИЛИ allowlist-чат с сообщением от пользователя.
- * В чужих группах — молчим.
- */
+/** Пропускаем команду только в личке резидента. В группах - полное молчание. */
 const canUsePrinter = async (
     residents: ResidentDirectory,
     msg: MessageContext,
-    allowed: AllowedChats,
 ): Promise<boolean> => {
-    if (!isPrivateChat(msg) && !isAllowedChat(allowed, Number(msg.chat.id))) return false
-    if (!msg.sender || msg.sender.type !== 'user') {
-        // В чужих группах молчим, поэтому отвечаем только там, где бот и так говорит.
-        if (!isPrivateChat(msg)) await msg.answerText('Команды доступны только пользователям.')
-        return false
-    }
-    if (await canUsePrinterIn(residents, msg.chat.type, Number(msg.chat.id), allowed, msg.sender.id)) return true
-    if (isPrivateChat(msg)) {
-        await msg.answerText('Статус принтера доступен резидентам спейса.')
-    }
+    if (!isPrivateChat(msg)) return false
+    if (!msg.sender || msg.sender.type !== 'user') return false
+    if (await canUsePrinterIn(residents, msg.chat.type, msg.sender.id)) return true
+    await msg.answerText('Статус принтера доступен резидентам спейса.')
     return false
 }
 
@@ -252,20 +317,19 @@ export const registerPrinterHandlers = (
     deps: {
         client: TelegramClient
         storage: Storage
-        allowedChats: AllowedChats
         residents: ResidentDirectory
         printerUrl: string
         printerAuth: string | null
     },
 ): void => {
-    const { client, storage, allowedChats, residents, printerUrl, printerAuth } = deps
+    const { client, storage, residents, printerUrl, printerAuth } = deps
 
     dp.onNewMessage(filters.command('printer'), async (msg) => {
-        if (!(await canUsePrinter(residents, msg, allowedChats))) return
+        if (!(await canUsePrinter(residents, msg))) return
 
         let status: PrinterStatus
         try {
-            status = await fetchPrinterStatus(printerUrl, printerAuth)
+            status = await fetchPrinterStatus(printerUrl, printerAuth, { withEta: true })
         } catch (err) {
             // warn, а не error: выключенный/недоступный принтер — обычное дело, а console.error
             // форвардится дев-аккаунтам в личку (см. errors.ts) и превращается там в спам.
@@ -297,14 +361,12 @@ export const registerPrinterHandlers = (
     })
 
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
-        // Гейт тот же, что у команды: кадр с камеры и подписка живут в allowlist-чатах
-        // и в личке резидентов. Сообщение с кнопками остаётся в истории навсегда, поэтому
-        // права проверяем на каждый тап, а не только в момент отправки.
+        // Гейт тот же, что у команды: только личка резидента. Сообщение с кнопками
+        // остаётся в истории навсегда, поэтому права проверяем на каждый тап, а не
+        // только в момент отправки.
         // Отписку не гейтим: снявшийся с резидентства должен уметь отписаться.
         if (ctx.dataStr === CB_VIEW_PREVIEW || ctx.dataStr === CB_VIEW_CAMERA || ctx.dataStr === CB_NOTIFY) {
-            const allowedHere = await canUsePrinterIn(
-                residents, ctx.chat.type, Number(ctx.chat.id), allowedChats, ctx.user.id,
-            )
+            const allowedHere = await canUsePrinterIn(residents, ctx.chat.type, ctx.user.id)
             if (!allowedHere) {
                 await ctx.answer({ text: 'Принтер доступен резидентам спейса.', alert: true })
                 return
@@ -316,7 +378,7 @@ export const registerPrinterHandlers = (
 
             let status: PrinterStatus
             try {
-                status = await fetchPrinterStatus(printerUrl, printerAuth)
+                status = await fetchPrinterStatus(printerUrl, printerAuth, { withEta: true })
             } catch {
                 await ctx.answer({ text: 'Принтер сейчас недоступен, попробуй позже.', alert: true })
                 return
@@ -469,11 +531,5 @@ export const startPrinterCompletionWatcher = (
         }
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[printer] watcher tick error:', err))
-    }, 30_000)
-
-    return {
-        stop: () => clearInterval(handle),
-    }
+    return startHeartbeatInterval('printer', 30_000, tick, '[printer] watcher')
 }

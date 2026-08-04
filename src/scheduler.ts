@@ -1,6 +1,7 @@
 import type { TelegramClient } from '@mtcute/node'
 import { periodKeyOf } from './fundraiser.js'
 import { postFundraiserToChat, refreshLastMessageInChat, type AllowedChats } from './handlers.js'
+import { startHeartbeatInterval } from './health.js'
 import type { Storage } from './storage.js'
 
 /**
@@ -32,13 +33,7 @@ export const startMonthlyScheduler = (
         }
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[scheduler] monthly tick error:', err))
-    }, 60_000)
-
-    return {
-        stop: () => clearInterval(handle),
-    }
+    return startHeartbeatInterval('fundraiser-monthly', 60_000, tick, '[scheduler] monthly')
 }
 
 /** Часы по МСК (UTC+3), в которые автоматически постим список донатеров в каждый allowlist-чат. */
@@ -86,11 +81,5 @@ export const startDailyFundraiserPoster = (
         }
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[scheduler] daily tick error:', err))
-    }, 60_000)
-
-    return {
-        stop: () => clearInterval(handle),
-    }
+    return startHeartbeatInterval('fundraiser-daily', 60_000, tick, '[scheduler] daily')
 }

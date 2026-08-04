@@ -14,10 +14,11 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import { monthNameRu } from './fundraiser.js'
+import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { DuesMark, DuesMember, DuesPeriod, DuesRate, DuesState } from './types.js'
+import type { DuesMark, DuesMember, DuesPeriod, DuesRate, DuesState, HostingUser } from './types.js'
 
 export const MIN_DUES_DAY = 1
 /** 29, 30 и 31 есть не в каждом месяце: ограничиваем, чтобы день сбора не «плавал». */
@@ -151,15 +152,23 @@ export const missedPeriods = (dues: DuesState, activeKey: string, userId: number
  * Убираем только неотмеченных: отметка это факт из бухгалтерии, она остаётся в
  * периоде, даже если человек ушёл. Прошлые периоды не трогаем вовсе — на их снимках
  * держится расчёт просрочки.
+ *
+ * И убираем только по полному списку (`complete`): оборванный обход состава отдаёт
+ * часть людей, и вычеркнуть по нему значит потерять плательщиков из уже открытого
+ * периода - а по этому снимку в следующих месяцах считается просрочка. Неполный
+ * список умеет только дописывать.
  */
 export const syncDuesRoster = async (
     storage: Storage,
     directory: ResidentDirectory,
     periodKey: string,
 ): Promise<void> => {
-    let live
+    let live: HostingUser[]
+    let complete: boolean
     try {
-        live = await directory.list()
+        const roster = await directory.list()
+        live = roster.users
+        complete = roster.complete
     } catch (err) {
         // Не смогли спросить Telegram: оставляем снимок как есть. Лучше слегка
         // устаревший список, чем пустой.
@@ -184,6 +193,7 @@ export const syncDuesRoster = async (
                 period.roster[key] = { userId: r.userId, username: r.username, name: r.name, amount }
             }
         }
+        if (!complete) return
         for (const key of Object.keys(period.roster)) {
             if (period.marks[key]) continue
             if (!liveIds.has(Number(key))) delete period.roster[key]
@@ -259,7 +269,7 @@ const notifyMemberAboutPeriod = async (
     member: DuesMember,
     periodKey: string,
     missed: string[],
-): Promise<void> => {
+): Promise<boolean> => {
     const cur = html.escape(dues.currency)
     const lines = [
         `💸 <b>Открыт сбор резидентского взноса за ${duesPeriodLabel(periodKey).toLowerCase()}.</b>`,
@@ -284,18 +294,94 @@ const notifyMemberAboutPeriod = async (
             replyMarkup: claimKeyboard(periodKey),
             disableWebPreview: true,
         })
+        return true
     } catch {
         // Личка закрыта: узнать это заранее нельзя, а сбор из-за одного человека не рушим.
+        return false
     }
 }
 
-/** Рассылка об открытии сбора всем, кто не выключил уведомления и с кого есть что спрашивать. */
-const notifyPeriodOpened = async (client: TelegramClient, dues: DuesState, period: DuesPeriod): Promise<void> => {
+/**
+ * Рассылка об открытии сбора всем, кто не выключил уведомления и с кого есть что спрашивать.
+ *
+ * Недоставленные письма записываем в период (`notifyFailed`) и жалуемся девам: иначе
+ * человек с закрытой личкой выглядит как молчаливый должник, хотя ему просто ничего
+ * не пришло. Повторы - в шедулере (`retryFailedDuesNotifications`).
+ */
+const notifyPeriodOpened = async (
+    client: TelegramClient,
+    storage: Storage,
+    dues: DuesState,
+    period: DuesPeriod,
+): Promise<void> => {
+    const failed: DuesMember[] = []
     for (const member of Object.values(period.roster)) {
         if (dues.notifyOff[String(member.userId)]) continue
         // Ставка 0 — человек освобождён от взноса, напоминать ему не о чем.
         if (member.amount <= 0) continue
-        await notifyMemberAboutPeriod(client, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId))
+        const ok = await notifyMemberAboutPeriod(
+            client, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId),
+        )
+        if (!ok) failed.push(member)
+    }
+    if (failed.length === 0) return
+    const now = new Date().toISOString()
+    await storage.update((s) => {
+        const p = s.dues.periods[period.periodKey]
+        if (!p) return
+        for (const member of failed) p.notifyFailed[String(member.userId)] = now
+    })
+    // console.error форвардится девам в личку (errors.ts) - отдельный канал не нужен.
+    console.error(
+        `[dues] не смог написать про сбор ${period.periodKey}: ${failed.map(plainLabel).join(', ')}. Повторю в течение суток.`,
+    )
+}
+
+/** Сколько ждём между повторами недоставленного DM и как долго вообще повторяем. */
+const NOTIFY_RETRY_INTERVAL_MS = 60 * 60_000
+const NOTIFY_RETRY_WINDOW_MS = 24 * 60 * 60_000
+
+/**
+ * Повторяет недоставленные DM об открытии сбора: человек мог нажать /start уже после
+ * рассылки. Сутки и раз в час - дальше это уже не «не дошло», а «не хочет».
+ */
+export const retryFailedDuesNotifications = async (client: TelegramClient, storage: Storage): Promise<void> => {
+    const dues = duesOf(storage)
+    const period = activeDuesPeriod(dues)
+    if (!period) return
+    const pending = Object.entries(period.notifyFailed ?? {})
+    if (pending.length === 0) return
+    const now = Date.now()
+    const openedAt = Date.parse(period.postedAt)
+    if (Number.isFinite(openedAt) && now - openedAt > NOTIFY_RETRY_WINDOW_MS) {
+        await storage.update((s) => {
+            const p = s.dues.periods[period.periodKey]
+            if (p) p.notifyFailed = {}
+        })
+        return
+    }
+    for (const [key, lastTry] of pending) {
+        const at = Date.parse(lastTry)
+        if (Number.isFinite(at) && now - at < NOTIFY_RETRY_INTERVAL_MS) continue
+        const member = period.roster[key]
+        // Человек мог за это время выключить уведомления или уйти из ростера - повтор
+        // должен уважать те же правила, что и первая рассылка.
+        if (!member || member.amount <= 0 || dues.notifyOff[key]) {
+            await storage.update((s) => {
+                const p = s.dues.periods[period.periodKey]
+                if (p) delete p.notifyFailed[key]
+            })
+            continue
+        }
+        const ok = await notifyMemberAboutPeriod(
+            client, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId),
+        )
+        await storage.update((s) => {
+            const p = s.dues.periods[period.periodKey]
+            if (!p) return
+            if (ok) delete p.notifyFailed[key]
+            else p.notifyFailed[key] = new Date().toISOString()
+        })
     }
 }
 
@@ -341,9 +427,10 @@ export const openDuesPeriod = async (
     periodKey: string,
 ): Promise<void> => {
     const now = new Date()
+    const existed = duesOf(storage).periods[periodKey] !== undefined
     await storage.update((s) => {
         if (s.dues.periods[periodKey]) return
-        s.dues.periods[periodKey] = { periodKey, postedAt: now.toISOString(), roster: {}, marks: {} }
+        s.dues.periods[periodKey] = { periodKey, postedAt: now.toISOString(), roster: {}, marks: {}, notifyFailed: {} }
     })
     await syncDuesRoster(storage, directory, periodKey)
 
@@ -351,8 +438,19 @@ export const openDuesPeriod = async (
     const period = dues.periods[periodKey]
     if (!period) return
 
-    await notifyPeriodOpened(client, dues, period)
+    // Пустой ростер - это не «резидентов нет», а «состав прочитать не удалось» (бот не
+    // админ чата резидентов, флуд-вейт). Запись периода в таком виде откатываем: иначе
+    // шедулер считает месяц закрытым и второй раз его уже не откроет, а сбор так и не
+    // состоится. Только что заведённый - свой, ранее существовавший не трогаем.
+    if (!existed && Object.keys(period.roster).length === 0) {
+        await storage.update((s) => {
+            delete s.dues.periods[periodKey]
+        })
+        console.error(`[dues] период ${periodKey} не открыт: состав резидентов пуст. Бот админ чата резидентов?`)
+        return
+    }
 
+    await notifyPeriodOpened(client, storage, dues, period)
 }
 
 // ---------------------------------------------------------------------------
@@ -655,15 +753,13 @@ export const startDuesScheduler = (
     const tick = async () => {
         const dues = duesOf(storage)
         if (!dues.enabled) return
+        // Повторы недоставленных писем идут независимо от того, пора ли открывать период.
+        await retryFailedDuesNotifications(client, storage)
         const currentKey = duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes)
         const latest = periodKeysOf(dues).pop()
         if (latest !== undefined && latest >= currentKey) return
         await openDuesPeriod(client, storage, directory, currentKey)
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[dues] tick error:', err))
-    }, TICK_INTERVAL_MS)
-
-    return { stop: () => clearInterval(handle) }
+    return startHeartbeatInterval('dues', TICK_INTERVAL_MS, tick, '[dues]')
 }

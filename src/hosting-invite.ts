@@ -49,7 +49,9 @@ export const listInviteCandidates = async (
         ...residentsAttendingDay(storage, dateKey).map((a) => a.user.userId),
         ...requestsForDay(storage, dateKey).map((r) => r.guest.userId),
     ])
-    const residents = await directory.list()
+    // Неполный состав (`complete: false`) тут не беда: зов - ручное действие, список
+    // кандидатов просто окажется короче, а не соврёт про чьи-то права.
+    const residents = (await directory.list()).users
     const residentIds = new Set(residents.map((r) => r.userId))
     const toCandidate = (u: HostingUser, resident: boolean): InviteCandidate => ({
         ...u,

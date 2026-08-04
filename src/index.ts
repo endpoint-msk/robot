@@ -1,15 +1,24 @@
 import 'dotenv/config'
+import { stat } from 'node:fs/promises'
 import { BotCommands, TelegramClient } from '@mtcute/node'
 import { Dispatcher, filters } from '@mtcute/dispatcher'
+import { healthSnapshot } from './health.js'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
 import { registerEventIntake } from './event-intake.js'
 import { registerMenuHandlers } from './menu.js'
-import { normalizePrinterUrl, parsePrinterAuth, registerPrinterHandlers, startPrinterCompletionWatcher } from './printer.js'
+import {
+    normalizePrinterUrl,
+    parsePrinterAuth,
+    registerPrinterHandlers,
+    setPrinterTimezone,
+    startPrinterCompletionWatcher,
+} from './printer.js'
 import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
 import { createTelegramResidentDirectory } from './residents.js'
 import {
+    dropMacPresence,
     registerPresenceHandlers,
     setHostingMiniappLink,
     setHostingReminder,
@@ -175,10 +184,11 @@ const main = async () => {
     })
     // Дев-команды бэкапа стейта: /backup (разово) и /autobackup <интервал> (по расписанию).
     if (devUserIds.size > 0) {
-        registerBackupHandlers(dp, { client: tg, storage, devUserIds, allowedChats })
+        registerBackupHandlers(dp, { client: tg, storage, devUserIds })
     }
     if (printerUrl !== null) {
-        registerPrinterHandlers(dp, { client: tg, storage, allowedChats, residents, printerUrl, printerAuth })
+        setPrinterTimezone(hostingTzOffset)
+        registerPrinterHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth })
         console.log(`[printer] /printer active for ${printerUrl}`)
     } else {
         console.warn('[warn] PRINTER_URL не задан — команда /printer отключена.')
@@ -240,7 +250,9 @@ const main = async () => {
     }
 
     // После логина: форвардить все ошибки (console.error + process-level) в личку dev'ам.
-    installErrorReporting(tg, devUserIds)
+    // Необработанное исключение роняет процесс - но сначала дописав стейт, иначе
+    // подтверждённая пользователю правка ушла бы в никуда.
+    installErrorReporting(tg, devUserIds, () => storage.drain())
     // Жалобы загрузки стейта копятся до этого момента: сама загрузка идёт раньше логина,
     // и console.error там ушёл бы только в докер-лог (см. Storage.takeWarnings).
     for (const w of storage.takeWarnings()) console.error('[storage]', w)
@@ -253,7 +265,6 @@ const main = async () => {
     const adminCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
         BotCommands.cmd('komanda', 'команда'),
-        BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
         BotCommands.cmd('history', 'Прошлые сборы: /history [период]'),
         BotCommands.cmd('goalsmute', 'Вкл/выкл автоотправку сбора в этот чат'),
@@ -268,10 +279,11 @@ const main = async () => {
         BotCommands.cmd('export', 'Выгрузить донаты в CSV (all — за все периоды)'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]
+    // /printer в группах больше нет: он только в личке резидента (за кнопкой «Камера»
+    // живой кадр из помещения, а участник allowlist-чата - ещё не «свой»).
     const memberCommands = [
         BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
         BotCommands.cmd('komanda', 'команда'),
-        BotCommands.cmd('printer', 'Статус 3D-принтера'),
         BotCommands.cmd('goals', 'Показать текущий сбор'),
         BotCommands.cmd('history', 'Прошлые сборы: /history [период]'),
         BotCommands.cmd('help', 'Справка по командам'),
@@ -305,7 +317,7 @@ const main = async () => {
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     // Шедулер бэкапов поднимаем всегда: расписания лежат в стейте и переживают рестарт,
     // даже если DEV_USER_IDS временно пуст (иначе включённый бэкап тихо перестал бы ходить).
-    const backups = startBackupScheduler(tg, storage)
+    const backups = startBackupScheduler(tg, storage, devUserIds)
     // Взносы: тик открывает период, когда настал день сбора (и добирает пропущенный за простой).
     const dues = startDuesScheduler(tg, storage, residents, hostingTzOffset)
     const presence = startPresenceScheduler(tg, storage, residents)
@@ -320,6 +332,38 @@ const main = async () => {
         console.log(`[keenetic] MAC presence poller active for ${keeneticConfig.baseUrl}`)
     } else {
         console.warn('[warn] KEENETIC_URL/LOGIN/PASSWORD не заданы — авто-отметки по MAC отключены.')
+        // Поллера нет, а значит снимать авто-отметки некому: оставшиеся с прошлого запуска
+        // висели бы вечно и показывали людей в пустом спейсе.
+        await dropMacPresence(tg, storage, residents, 'поллер MAC выключен')
+    }
+
+    // Дев-команда: что живо внутри процесса. Наружу (/healthz) уходит только вердикт,
+    // а разбираться «кто именно отвалился» надо здесь.
+    if (devUserIds.size > 0) {
+        dp.onNewMessage(filters.and(filters.chat('user'), filters.command('status')), async (msg) => {
+            if (!msg.sender || msg.sender.type !== 'user') return
+            if (!devUserIds.has(msg.sender.id)) return
+            const health = healthSnapshot()
+            const write = storage.writeHealth()
+            const state = storage.get()
+            let sizeKb = 0
+            try {
+                sizeKb = Math.round((await stat(dataFile)).size / 1024)
+            } catch {
+                // файла ещё нет - не повод молчать про остальное
+            }
+            const ago = (ms: number | null): string => (ms === null ? 'ни разу' : `${Math.round(ms / 1000)} с назад`)
+            const lines = [
+                `Аптайм: ${Math.round(health.uptimeMs / 60_000)} мин`,
+                `Стейт: ${sizeKb} КБ, запись ${write.lastError ? `СБОЙ (${write.lastError})` : 'в порядке'}`,
+                '',
+                'Компоненты:',
+                ...health.components.map((c) => `${c.healthy ? '✅' : '⚠️'} ${c.name} - ${ago(c.ageMs)}${c.note ? ` (${c.note})` : ''}`),
+                '',
+                `Заявок: ${Object.keys(state.hostingRequests).length}, ивентов: ${Object.keys(state.events).length}, внутри: ${Object.keys(state.presence).length}`,
+            ]
+            await msg.answerText(lines.join('\n'))
+        })
     }
 
     // Дев-команда: форсировать опрос Keenetic и пересчёт авто-отметок прямо сейчас.

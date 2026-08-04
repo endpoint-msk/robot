@@ -12,6 +12,7 @@ import {
     todayKey,
 } from './hosting.js'
 import { eventsForDay } from './events.js'
+import { startHeartbeatInterval } from './health.js'
 import { insideBoardLines } from './presence.js'
 import type { Storage } from './storage.js'
 
@@ -288,10 +289,10 @@ export const startHostingBoardScheduler = (
     allowedChats: ReadonlySet<number>,
     tzOffsetMinutes: number,
 ): { stop: () => void } => {
-    const handle = setInterval(() => {
-        void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes).catch((err) =>
-            console.error('[hosting-board] tick error:', err),
-        )
-    }, TICK_INTERVAL_MS)
-    return { stop: () => clearInterval(handle) }
+    return startHeartbeatInterval(
+        'hosting-board',
+        TICK_INTERVAL_MS,
+        () => syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes),
+        '[hosting-board]',
+    )
 }

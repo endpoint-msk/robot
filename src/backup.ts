@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { html, InputMedia, type TelegramClient } from '@mtcute/node'
 import { filters, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
-import type { AllowedChats } from './handlers.js'
+import { startHeartbeatInterval } from './health.js'
 import type { Storage } from './storage.js'
 import type { BackupSchedule, BackupUnit } from './types.js'
 
@@ -89,18 +89,20 @@ export type BackupDeps = {
     client: TelegramClient
     storage: Storage
     devUserIds: Set<number>
-    allowedChats: AllowedChats
 }
 
 /**
- * Дев ли отправитель и можно ли тут отвечать. Личка дева — всегда, группы — только
- * из allowlist: «молчание в чужих чатах» распространяется и на дев-команды.
- * Не-девам не отвечаем вовсе, чтобы команда не светилась.
+ * Дев ли отправитель и в личке ли он. Не-девам и в группах не отвечаем вовсе, чтобы
+ * команда не светилась.
+ *
+ * Только личка: в файле весь стейт - userId, ники, MAC-привязки, присутствие, цели
+ * визитов, заметки о гостях и суммы взносов. Раньше дамп уходил в любой allowlist-чат,
+ * и одна опечатка в командной строке клала всё это в историю группы навсегда.
  */
 const isDevHere = (msg: MessageContext, deps: BackupDeps): boolean => {
     if (!msg.sender || msg.sender.type !== 'user') return false
     if (!deps.devUserIds.has(msg.sender.id)) return false
-    return msg.chat.type === 'user' || deps.allowedChats.has(Number(msg.chat.id))
+    return msg.chat.type === 'user'
 }
 
 const USAGE = [
@@ -189,6 +191,7 @@ export const registerBackupHandlers = (dp: Dispatcher, deps: BackupDeps): void =
 export const startBackupScheduler = (
     client: TelegramClient,
     storage: Storage,
+    devUserIds: ReadonlySet<number>,
 ): { stop: () => void } => {
     const tick = async () => {
         const now = new Date()
@@ -199,6 +202,17 @@ export const startBackupScheduler = (
         })
         for (const b of due) {
             const key = String(b.chatId)
+            // Адресата сверяем на каждом тике, а не только при включении: расписание
+            // живёт в стейте и переживает и смену DEV_USER_IDS, и правку файла руками.
+            // Чат - это личка (chatId === userId дева), и если он больше не дев, весь
+            // стейт продолжал бы уезжать к нему по расписанию.
+            if (!devUserIds.has(b.chatId)) {
+                await storage.update((s) => {
+                    delete s.backups[key]
+                })
+                console.error(`[backup] расписание для чата ${b.chatId} удалено: адресат больше не дев.`)
+                continue
+            }
             try {
                 await client.sendMedia(b.chatId, buildBackupDocument(storage, now, 'Авто-бэкап хранилища'))
                 await storage.update((s) => {
@@ -218,11 +232,5 @@ export const startBackupScheduler = (
         }
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[backup] tick error:', err))
-    }, 60_000)
-
-    return {
-        stop: () => clearInterval(handle),
-    }
+    return startHeartbeatInterval('backup', 60_000, tick, '[backup]')
 }

@@ -263,15 +263,77 @@ export const registerHandlers = (
 ): void => {
     const { client, storage, allowedChats, residents, webappUrl } = deps
 
+    /**
+     * Справка в личке: резиденту - резидентский набор, остальным - что тут вообще можно.
+     *
+     * Наборы разные, потому что в личке нет allowlist-гейта: общий текст рассказывал бы
+     * любому, кто нашёл бота, про присутствие и привязку устройств.
+     */
+    const answerPrivateHelp = async (msg: MessageContext): Promise<void> => {
+        const resident = await residents.isResident(msg.sender!.id)
+        if (!resident) {
+            await msg.answerText(
+                [
+                    'Это бот хакспейса.',
+                    '',
+                    webappUrl
+                        ? 'Хочешь зайти в гости - оставь заявку на визит: выбери день, время и цель, резиденты её увидят и откликнутся.'
+                        : 'Заявки на визит сейчас не принимаются.',
+                    '',
+                    '/start - открыть бота',
+                    '/help - это сообщение',
+                ].join('\n'),
+                {
+                    replyMarkup: webappUrl
+                        ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]])
+                        : undefined,
+                },
+            )
+            return
+        }
+        await msg.answerText(
+            [
+                'Меню резидента:',
+                '/start, /menu - кто в спейсе, отметиться, MAC, принтер, миниапп',
+                '',
+                'Присутствие:',
+                '/inside - кто сейчас в спейсе',
+                'Отметиться, уйти и включить «невидимку» - в меню, раздел «Отметиться»',
+                '',
+                'Авто-отметка по MAC:',
+                '/bindmac <MAC> [имя] - привязать устройство',
+                '/unbindmac [MAC] - отвязать одно устройство или все',
+                '/maclist - свои привязки и текущий статус',
+                '/settings - отмечаться с ником или без',
+                '',
+                '3D-принтер:',
+                '/printer - статус, превью печати и кадр с камеры',
+                '',
+                'Взносы:',
+                'Бот пишет о сборе в личку, кнопка «Я внёс» там же',
+                'Список, история и настройки - в миниаппе, раздел «Взносы»',
+                '',
+                'Хостинг гостей, ивенты и заявки - в миниаппе',
+                '',
+                '/help - это сообщение',
+            ].join('\n'),
+        )
+    }
+
     dp.onNewMessage(filters.command('help'), async (msg) => {
+        // В личке гейта allowlist нет: msg.chat.id там - это userId, и requireUserInAllowedChat
+        // молча отбрасывал команду. Справка в личке - единственный способ узнать про
+        // /bindmac, /maclist и /settings, которых в групповом наборе нет вовсе.
+        if (msg.chat.type === 'user') {
+            if (!msg.sender || msg.sender.type !== 'user') return
+            await answerPrivateHelp(msg)
+            return
+        }
         if (!(await requireUserInAllowedChat(msg, allowedChats))) return
         await msg.answerText(
             [
                 'Присутствие в спейсе:',
                 '/inside - показать список тех, кто сейчас в спейсе',
-                '',
-                '3D-принтер:',
-                '/printer - статус принтера',
                 '',
                 'Сборы донатов:',
                 '/goals - показать текущий сбор (доступно всем участникам)',

@@ -10,6 +10,20 @@ import type { HostingUser } from './types.js'
  * интерфейсу. Когда придёт Authentik, поменяется лишь реализация ниже —
  * вызывающие места трогать не надо.
  */
+/**
+ * Состав резидентов вместе с признаком «список полный».
+ *
+ * `complete: false` - обход состава оборвался (флуд-вейт, бот перестал быть админом
+ * чата резидентов), и в `users` лежит то, что успели собрать. Признак обязателен,
+ * потому что по этому списку синхронизируется ростер взносов: раньше `list()` отдавал
+ * частичный результат неотличимо от полного, и один сбойный запрос вычёркивал людей
+ * из открытого периода - а на этом снимке потом считается просрочка.
+ */
+export type ResidentRoster = {
+    users: HostingUser[]
+    complete: boolean
+}
+
 export interface ResidentDirectory {
     /** Является ли пользователь резидентом (проходит ли identity-проверку вообще). */
     isResident(userId: number): Promise<boolean>
@@ -22,7 +36,7 @@ export interface ResidentDirectory {
      * «позвать в спейс» должны браться из одного места, иначе смена источника
      * (Authentik) потребует обхода всех вызывающих.
      */
-    list(): Promise<HostingUser[]>
+    list(): Promise<ResidentRoster>
 
     /** Только userId — для рассылок, где имена не нужны. */
     listIds(): Promise<Set<number>>
@@ -57,7 +71,40 @@ export interface ResidentDirectory {
      * round-trip'ов в Telegram на каждый запрос миниаппа.
      */
     access(userId: number): Promise<{ resident: boolean; member: boolean; banned: boolean }>
+
+    /**
+     * Сбрасывает закэшированные ответы: про конкретного человека либо про всех.
+     *
+     * Нужен там, где мы сами меняем права и не можем ждать истечения TTL: блокировка
+     * и разблокировка участника. Реализация без кэша делает no-op.
+     */
+    invalidate(userId?: number): void
 }
+
+/**
+ * Сколько живёт ответ Telegram про участие в чате.
+ *
+ * Минута - компромисс: `access()` висит на каждом запросе миниаппа и на каждом тапе
+ * меню, а один запрос - это `getChatMember` по каждому allowlist-чату плюс чат
+ * резидентов, всё через тот же mtcute-клиент, которым бот отвечает в чатах. Без кэша
+ * лента афиш и пара открытых миниаппов упирались во FLOOD_WAIT, а он кладёт бота
+ * целиком. Отставание в минуту допустимо: блокировку мы инвалидируем руками, а
+ * ручной бан в Telegram - редкое событие, и минута задержки его не спасает и не портит.
+ */
+const MEMBER_TTL_MS = 60_000
+/** Состав чата резидентов меняется куда реже, чем спрашивается (рассылки, ростер взносов, «позвать в спейс»). */
+const ROSTER_TTL_MS = 5 * 60_000
+/** С какого размера подчищаем протухшие записи - чтобы Map не рос по числу заглянувших. */
+const SWEEP_AT = 512
+
+/**
+ * Определённый ответ сервера (`USER_NOT_PARTICIPANT`, `CHAT_ADMIN_REQUIRED` и т. п.)
+ * против сетевого сбоя: у RpcError код лежит в `.text`.
+ *
+ * Кэшируем только определённые: иначе одна потеря пакета запирала бы человека снаружи
+ * миниаппа на целую минуту.
+ */
+const isDefiniteError = (err: unknown): boolean => typeof (err as { text?: unknown } | null)?.text === 'string'
 
 /**
  * Реализация поверх Telegram: резидент = **участник чата резидентов**
@@ -81,15 +128,59 @@ export const createTelegramResidentDirectory = (
      * за проход всё равно не отдаст, но пусть ограничение будет явным.
      */
     const MAX_RESIDENTS = 500
+
+    /** Кэш ответов про участие: ключ - `${chatId}#${userId}`. */
+    const statusCache = new Map<string, { status: ChatMemberStatus | null; at: number }>()
+    /** Запросы в полёте: два параллельных вопроса об одном человеке - один round-trip. */
+    const inFlight = new Map<string, Promise<ChatMemberStatus | null>>()
+    let roster: { value: ResidentRoster; at: number } | null = null
+    let rosterInFlight: Promise<ResidentRoster> | null = null
+
+    const sweep = (now: number): void => {
+        if (statusCache.size < SWEEP_AT) return
+        for (const [key, hit] of statusCache) {
+            if (now - hit.at >= MEMBER_TTL_MS) statusCache.delete(key)
+        }
+    }
+
+    const invalidate = (userId?: number): void => {
+        if (userId === undefined) {
+            statusCache.clear()
+            roster = null
+            return
+        }
+        const suffix = `#${userId}`
+        for (const key of statusCache.keys()) {
+            if (key.endsWith(suffix)) statusCache.delete(key)
+        }
+    }
+
     /** Статус участника в чате; null — нет доступа / он там не состоял вовсе. */
     const statusIn = async (chatId: number, userId: number): Promise<ChatMemberStatus | null> => {
-        try {
-            const member = await client.getChatMember({ chatId, userId })
-            return member?.status ?? null
-        } catch {
-            // нет доступа / нет такого пользователя в чате
-            return null
-        }
+        const key = `${chatId}#${userId}`
+        const now = Date.now()
+        const hit = statusCache.get(key)
+        if (hit && now - hit.at < MEMBER_TTL_MS) return hit.status
+        const pending = inFlight.get(key)
+        if (pending) return pending
+
+        const request = (async (): Promise<ChatMemberStatus | null> => {
+            try {
+                const member = await client.getChatMember({ chatId, userId })
+                const status = member?.status ?? null
+                statusCache.set(key, { status, at: Date.now() })
+                return status
+            } catch (err) {
+                // нет доступа / нет такого пользователя в чате
+                if (isDefiniteError(err)) statusCache.set(key, { status: null, at: Date.now() })
+                return null
+            } finally {
+                inFlight.delete(key)
+                sweep(Date.now())
+            }
+        })()
+        inFlight.set(key, request)
+        return request
     }
 
     const isAdminStatus = (status: ChatMemberStatus | null): boolean =>
@@ -160,8 +251,9 @@ export const createTelegramResidentDirectory = (
      * При откате на allowlist (чат не задан) берём только админов: это прежнее
      * правило, и оно не должно превращаться в «все участники всех чатов».
      */
-    const list = async (): Promise<HostingUser[]> => {
+    const fetchRoster = async (): Promise<ResidentRoster> => {
         const out = new Map<number, HostingUser>()
+        let complete = true
         const add = (user: { id: number; type: string; isBot: boolean; username: string | null; displayName: string }): void => {
             if (user.type !== 'user' || user.isBot) return
             if (out.has(user.id)) return
@@ -180,8 +272,9 @@ export const createTelegramResidentDirectory = (
                 }
             } catch (err) {
                 console.warn(`[residents] не удалось получить участников чата ${residentsChatId}:`, err)
+                complete = false
             }
-            return [...out.values()]
+            return { users: [...out.values()], complete }
         }
 
         for (const chatId of allowedChats) {
@@ -193,12 +286,31 @@ export const createTelegramResidentDirectory = (
                 }
             } catch (err) {
                 console.warn(`[residents] не удалось получить админов чата ${chatId}:`, err)
+                complete = false
             }
         }
-        return [...out.values()]
+        return { users: [...out.values()], complete }
     }
 
-    const listIds = async (): Promise<Set<number>> => new Set((await list()).map((r) => r.userId))
+    const list = async (): Promise<ResidentRoster> => {
+        const now = Date.now()
+        if (roster && now - roster.at < ROSTER_TTL_MS) return roster.value
+        if (rosterInFlight) return rosterInFlight
+        rosterInFlight = (async () => {
+            try {
+                const value = await fetchRoster()
+                // Неполный список не закрепляем на пять минут: следующий вызов должен
+                // попробовать снова, иначе один флуд-вейт замораживает урезанный состав.
+                if (value.complete) roster = { value, at: Date.now() }
+                return value
+            } finally {
+                rosterInFlight = null
+            }
+        })()
+        return rosterInFlight
+    }
 
-    return { isResident, list, listIds, presenceChats, isChatAdmin, isMember, access }
+    const listIds = async (): Promise<Set<number>> => new Set((await list()).users.map((r) => r.userId))
+
+    return { isResident, list, listIds, presenceChats, isChatAdmin, isMember, access, invalidate }
 }

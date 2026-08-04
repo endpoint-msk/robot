@@ -1,10 +1,11 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
+import { startHeartbeatInterval } from './health.js'
 import { remindAboutTodayRequests } from './hosting.js'
 import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { ResidentPresence } from './types.js'
+import type { ResidentMacs, ResidentPresence } from './types.js'
 
 /** Период напоминаний резиденту в личку (3 часа). */
 export const PRESENCE_PING_INTERVAL_MS = 3 * 60 * 60 * 1000
@@ -12,6 +13,16 @@ export const PRESENCE_PING_INTERVAL_MS = 3 * 60 * 60 * 1000
 export const PRESENCE_PING_TIMEOUT_MS = 15 * 60 * 1000
 /** Через сколько отсутствия MAC в сети снимаем авто-отметку (10 минут — телефоны «засыпают» в WiFi). */
 export const MAC_ABSENCE_GRACE_MS = 10 * 60 * 1000
+/**
+ * Потолок авто-отметки: дольше 14 часов подряд «в спейсе» по устройству в сети никто
+ * не сидит. Привязанный десктоп держал человека внутри круглосуточно - список врал,
+ * а снять отметку он мог только руками, если вообще замечал.
+ */
+export const MAC_MAX_PRESENCE_MS = 14 * 60 * 60 * 1000
+/** Сколько поллер может молчать, прежде чем авто-отметки считаются протухшими (30 минут). */
+export const MAC_STALE_MS = 30 * 60 * 1000
+/** После скольких неудачных опросов подряд жалуемся девам (console.error → личка). */
+const MAC_FAIL_STREAK = 5
 /** Как часто крутим планировщик. */
 const TICK_INTERVAL_MS = 60 * 1000
 
@@ -91,6 +102,18 @@ const pingKeyboard = () =>
         [BotKeyboard.callback('Уйти', CB_CHECKOUT)],
     ])
 
+/** Максимальная длина имени устройства: длиннее в строку списка всё равно не влезает. */
+export const MAC_LABEL_LIMIT = 50
+
+/**
+ * Хвост строки списка устройств: « - Ноутбук». Метку вводит человек, а вокруг -
+ * HTML-разметка сообщения: без экранирования `/bindmac AA:.. <b` навсегда ломал
+ * /maclist и раздел MAC в меню ошибкой парсинга, и починить это можно было только
+ * отвязав устройство вслепую.
+ */
+export const macLabelSuffix = (label: string): string =>
+    label ? ` - ${html.escape(label.slice(0, MAC_LABEL_LIMIT))}` : ''
+
 /** Подсказка про авто-отметку для тех, у кого ещё не привязан MAC. Пустая строка, если MAC уже есть. */
 export const macHintFor = (storage: Storage, userId: number): string => {
     const cur = storage.get().macBindings[String(userId)]
@@ -162,6 +185,8 @@ export const removePresence = async (
     residents: ResidentDirectory,
     userId: number,
     reason: 'manual' | 'timeout',
+    /** `silent` - не дёргать хук доски: массовое снятие пересобирает её один раз в конце. */
+    opts: { silent?: boolean } = {},
 ): Promise<void> => {
     const present = storage.get().presence[String(userId)]
     if (!present) return
@@ -169,7 +194,7 @@ export const removePresence = async (
         delete s.presence[String(userId)]
     })
 
-    onPresenceChanged?.()
+    if (!opts.silent) onPresenceChanged?.()
 
     if (reason === 'timeout') {
         try {
@@ -178,6 +203,72 @@ export const removePresence = async (
             // личка может быть закрыта — ничего страшного
         }
     }
+}
+
+/**
+ * Подавляет авто-отметку по MAC до момента, когда устройства резидента уйдут из сети.
+ *
+ * Ставится, когда человек снял отметку сам, а его ноутбук всё ещё в Wi-Fi: поллер
+ * возвращал отметку следующим тиком, «Снял отметку» было ложью, и единственным
+ * выходом оставался /unbindmac. Снимается по факту ухода устройства, а не по таймеру:
+ * таймер либо коротко (вернёт отметку тому, кто ушёл), либо длинно (не отметит того,
+ * кто вернулся).
+ */
+const suppressMacPresence = async (storage: Storage, userId: number): Promise<void> => {
+    if (!storage.get().macBindings[String(userId)]) return
+    await storage.update((s) => {
+        const b = s.macBindings[String(userId)]
+        if (b) b.suppressedAt = new Date().toISOString()
+    })
+}
+
+/** Режим «невидимка»: авто-отметка по MAC для этого резидента не ставится. */
+export const isPresenceInvisible = (storage: Storage, userId: number): boolean =>
+    storage.get().presenceInvisible[String(userId)] === true
+
+/**
+ * Переключает «невидимку». Включение снимает висящую авто-отметку - иначе человек
+ * оставался бы в списке до ухода устройства из сети, то есть режим включался бы
+ * с задержкой в неизвестное время. Ручную отметку не трогает: она осознанное действие,
+ * и «невидимка» про автоматику, а не про запрет отмечаться.
+ */
+export const setPresenceInvisible = async (
+    client: TelegramClient,
+    storage: Storage,
+    residents: ResidentDirectory,
+    userId: number,
+    invisible: boolean,
+): Promise<void> => {
+    await storage.update((s) => {
+        if (invisible) s.presenceInvisible[String(userId)] = true
+        else delete s.presenceInvisible[String(userId)]
+    })
+    if (!invisible) return
+    if (storage.get().presence[String(userId)]?.source === 'mac') {
+        await removePresence(client, storage, residents, userId, 'manual')
+    }
+}
+
+/**
+ * Снятие отметки по воле человека («Уйти»). Возвращает false, если отметки и не было.
+ *
+ * Единственная точка выхода для кнопок: она же ставит подавление авто-отметки, если
+ * снимаемая отметка пришла от MAC.
+ */
+export const checkOutResident = async (
+    client: TelegramClient,
+    storage: Storage,
+    residents: ResidentDirectory,
+    userId: number,
+): Promise<boolean> => {
+    const present = storage.get().presence[String(userId)]
+    if (!present) return false
+    // Подавляем независимо от источника снимаемой отметки: ушедший руками с ручной
+    // отметки получил бы авто-отметку от поллера через минуту - тот же обман. Если
+    // устройства в сети уже нет, подавление снимет ближайший тик поллера.
+    await suppressMacPresence(storage, userId)
+    await removePresence(client, storage, residents, userId, 'manual')
+    return true
 }
 
 export const checkInResident = async (
@@ -237,7 +328,7 @@ export const registerPresenceHandlers = (
         if (!arg) {
             const cur = storage.get().macBindings[String(userId)]
             const list = cur && cur.macs.length > 0
-                ? cur.macs.map((e) => `<code>${e.mac}</code>${e.label ? ` — ${e.label}` : ''}`).join('<br>')
+                ? cur.macs.map((e) => `<code>${e.mac}</code>${macLabelSuffix(e.label)}`).join('<br>')
                 : null
             await msg.answerText(
                 html(
@@ -254,7 +345,7 @@ export const registerPresenceHandlers = (
             return
         }
         const mac = normalizeMac(arg)
-        const label = msg.command.slice(2).join(' ').trim()
+        const label = msg.command.slice(2).join(' ').trim().slice(0, MAC_LABEL_LIMIT)
         // MAC уникален: если он уже привязан к другому юзеру — отказываем.
         const owner = Object.values(storage.get().macBindings).find(
             (b) => b.userId !== userId && b.macs.some((e) => e.mac === mac),
@@ -281,6 +372,7 @@ export const registerPresenceHandlers = (
                     username: msg.sender!.username ?? null,
                     macs: [{ mac, label }],
                     anon: false,
+                    suppressedAt: null,
                     updatedAt: now,
                 }
             }
@@ -357,9 +449,14 @@ export const registerPresenceHandlers = (
         const online = storage.get().presence[String(userId)]?.source === 'mac'
         const lines = [`Твои устройства [${cur.macs.length}]:`, '']
         for (const e of [...cur.macs].sort((a, b) => a.mac.localeCompare(b.mac))) {
-            lines.push(`<code>${e.mac}</code>${e.label ? ` — ${e.label}` : ''}`)
+            lines.push(`<code>${e.mac}</code>${macLabelSuffix(e.label)}`)
         }
         lines.push('', online ? 'Сейчас ты отмечен по MAC.' : 'Сейчас авто-отметка не активна.')
+        if (isPresenceInvisible(storage, userId)) {
+            lines.push('Включён режим «невидимка» - авто-отметка не ставится (переключить в меню /start).')
+        } else if (cur.suppressedAt) {
+            lines.push('Авто-отметка приостановлена: ты снял отметку вручную. Вернётся, когда устройство уйдёт из сети и появится снова.')
+        }
         await msg.answerText(html(lines.join('<br>')), { disableWebPreview: true })
     })
 
@@ -430,6 +527,7 @@ export const registerPresenceHandlers = (
 
         if (data === CB_CHECKOUT) {
             const present = storage.get().presence[String(ctx.user.id)]
+            const wasMac = present?.source === 'mac'
             if (!present) {
                 await ctx.answer({ text: 'Ты и так не отмечен.' })
                 try {
@@ -439,11 +537,13 @@ export const registerPresenceHandlers = (
                 } catch {}
                 return
             }
-            await removePresence(client, storage, residents, ctx.user.id, 'manual')
+            await checkOutResident(client, storage, residents, ctx.user.id)
             await ctx.answer({ text: 'Снял отметку' })
             try {
                 await ctx.editMessage({
-                    text: 'Снял отметку. Возвращайся 👋 — нажми /start, когда снова в спейсе.',
+                    text: wasMac
+                        ? 'Снял отметку. Пока твоё устройство в сети спейса, автоматически отмечать не буду - вернусь к этому, когда оно уйдёт и появится снова. Нажми /start, если снова внутри.'
+                        : 'Снял отметку. Возвращайся 👋 - нажми /start, когда снова в спейсе.',
                 })
             } catch {}
             return
@@ -488,10 +588,36 @@ export const startPresenceScheduler = (
         // Пинги и таймауты по каждому отмеченному резиденту
         const presents = Object.values(storage.get().presence)
         for (const p of presents) {
-            // Авто-отметки по MAC живут по присутствию устройства в сети (см. startMacPresencePoller),
-            // их не пингуем и не снимаем по таймауту подтверждения.
-            if (p.source === 'mac') continue
             const lastConfirmed = Date.parse(p.lastConfirmedAt)
+            // Авто-отметки по MAC живут по присутствию устройства в сети (см. startMacPresencePoller),
+            // поэтому обычным пингом раз в 3 часа их не трогаем. Но и вечными они быть не могут:
+            // после MAC_MAX_PRESENCE_MS переспрашиваем ровно так же, как у ручной отметки.
+            if (p.source === 'mac') {
+                if (p.pendingPingAt) {
+                    if (now - Date.parse(p.pendingPingAt) >= PRESENCE_PING_TIMEOUT_MS) {
+                        await suppressMacPresence(storage, p.userId)
+                        await removePresence(client, storage, residents, p.userId, 'timeout')
+                    }
+                } else if (now - lastConfirmed >= MAC_MAX_PRESENCE_MS) {
+                    try {
+                        await client.sendText(
+                            p.userId,
+                            'Ты ещё в спейсе? Отметка держится по твоему устройству в сети уже больше 14 часов - подтверди в течение 15 минут, иначе сниму.',
+                            { replyMarkup: pingKeyboard() },
+                        )
+                        await storage.update((s) => {
+                            const cur = s.presence[String(p.userId)]
+                            if (cur) cur.pendingPingAt = new Date().toISOString()
+                        })
+                    } catch (err) {
+                        // Личка закрыта - подтвердить он не сможет, а отметка врёт уже сутки.
+                        console.warn(`[presence] cannot DM user ${p.userId} about mac ceiling:`, err)
+                        await suppressMacPresence(storage, p.userId)
+                        await removePresence(client, storage, residents, p.userId, 'timeout')
+                    }
+                }
+                continue
+            }
             if (p.pendingPingAt) {
                 const pingedAt = Date.parse(p.pendingPingAt)
                 if (now - pingedAt >= PRESENCE_PING_TIMEOUT_MS) {
@@ -516,11 +642,28 @@ export const startPresenceScheduler = (
         }
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[presence] tick error:', err))
-    }, TICK_INTERVAL_MS)
+    return startHeartbeatInterval('presence', TICK_INTERVAL_MS, tick, '[presence]')
+}
 
-    return { stop: () => clearInterval(handle) }
+/**
+ * Снимает все авто-отметки по MAC разом: данных о сети больше нет, и подтвердить их
+ * нечем. Доску пересобираем один раз в конце - иначе на каждого снятого уходит свой
+ * edit, и чат получает шквал одинаковых правок с MESSAGE_NOT_MODIFIED.
+ */
+export const dropMacPresence = async (
+    client: TelegramClient,
+    storage: Storage,
+    residents: ResidentDirectory,
+    reason: string,
+): Promise<number> => {
+    const stale = Object.values(storage.get().presence).filter((p) => p.source === 'mac')
+    if (stale.length === 0) return 0
+    for (const p of stale) {
+        await removePresence(client, storage, residents, p.userId, 'manual', { silent: true })
+    }
+    onPresenceChanged?.()
+    console.warn(`[keenetic] снял авто-отметок: ${stale.length} (${reason}).`)
+    return stale.length
 }
 
 /**
@@ -532,9 +675,13 @@ const macCheckIn = async (
     client: TelegramClient,
     storage: Storage,
     residents: ResidentDirectory,
-    binding: { userId: number; username: string | null; anon: boolean },
+    binding: ResidentMacs,
     nowIso: string,
 ): Promise<boolean> => {
+    // «Невидимка» и подавление после ручного ухода - оба про «не отмечай меня сам».
+    // Проверяем до всего остального: продлевать чужую отметку тоже не надо.
+    if (isPresenceInvisible(storage, binding.userId)) return false
+    if (binding.suppressedAt) return false
     const existing = storage.get().presence[String(binding.userId)]
     if (existing && existing.source === 'manual') {
         // Резидент отметился руками — авто-логику не вмешиваем, только не даём ей мешать.
@@ -595,6 +742,11 @@ export const startMacPresencePoller = (
     keenetic: KeeneticClient,
     intervalMs: number = TICK_INTERVAL_MS,
 ): { stop: () => void; triggerNow: () => Promise<void> } => {
+    /** Когда последний раз получили данные о сети; от него считается протухание отметок. */
+    let lastSuccessAt = Date.now()
+    let failStreak = 0
+    let reportedDown = false
+
     const tick = async () => {
         const bindings = Object.values(storage.get().macBindings)
         if (bindings.length === 0) return
@@ -603,9 +755,25 @@ export const startMacPresencePoller = (
         try {
             activeMacs = await keenetic.fetchActiveMacs()
         } catch (err) {
+            failStreak++
             console.warn('[keenetic] не удалось получить список устройств:', err)
+            // Один раз на переход, а не каждый тик: console.error уходит девам в личку,
+            // и лежащий роутер превратился бы в сообщение в минуту.
+            if (failStreak >= MAC_FAIL_STREAK && !reportedDown) {
+                reportedDown = true
+                console.error(`[keenetic] роутер не отвечает ${failStreak} опросов подряд - авто-отметки по MAC не обновляются.`)
+            }
+            // Снимает mac-отметки тот же поллер, который сейчас лежит. Без этого доска,
+            // /inside и миниапп часами показывают людей в давно пустом спейсе.
+            if (Date.now() - lastSuccessAt >= MAC_STALE_MS) {
+                await dropMacPresence(client, storage, residents, `данных о сети нет дольше ${Math.round(MAC_STALE_MS / 60_000)} мин`)
+            }
             return
         }
+        if (reportedDown) console.log('[keenetic] опрос сети восстановился')
+        failStreak = 0
+        reportedDown = false
+        lastSuccessAt = Date.now()
 
         const nowIso = new Date().toISOString()
         const now = Date.now()
@@ -619,6 +787,15 @@ export const startMacPresencePoller = (
                 continue
             }
 
+            // Устройств в сети нет - человек ушёл, и подавление ручного ухода своё
+            // отработало: следующее появление снова отметит автоматически.
+            if (binding.suppressedAt) {
+                await storage.update((s) => {
+                    const b = s.macBindings[String(binding.userId)]
+                    if (b) b.suppressedAt = null
+                })
+            }
+
             // MAC офлайн. Снимаем только нашу 'mac'-отметку и только после grace-периода.
             if (present?.source === 'mac') {
                 const lastSeen = present.lastSeenOnlineAt ? Date.parse(present.lastSeenOnlineAt) : 0
@@ -629,9 +806,6 @@ export const startMacPresencePoller = (
         }
     }
 
-    const handle = setInterval(() => {
-        void tick().catch((err) => console.error('[keenetic] poller tick error:', err))
-    }, intervalMs)
-
-    return { stop: () => clearInterval(handle), triggerNow: tick }
+    const timer = startHeartbeatInterval('mac-poller', intervalMs, tick, '[keenetic] poller')
+    return { stop: timer.stop, triggerNow: tick }
 }

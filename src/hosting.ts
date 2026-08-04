@@ -362,6 +362,17 @@ const guestMatches = (user: HostingUser, query: string): boolean =>
  */
 export const searchGuests = (storage: Storage, query: string, limit = 40): GuestSummary[] => {
     const q = query.trim().toLowerCase().replace(/^@/, '')
+    return [...aggregateGuests(storage).values()]
+        .filter((g) => q.length === 0 || guestMatches(g.user, q))
+        .sort((a, b) => b.lastDateKey.localeCompare(a.lastDateKey))
+        .slice(0, limit)
+}
+
+/**
+ * Свод по каждому человеку из заявок: сколько всего, сколько состоялось, когда был
+ * последний раз. Имя и ник берём из самой поздней заявки - человек мог их сменить.
+ */
+const aggregateGuests = (storage: Storage): Map<number, GuestSummary> => {
     const byUser = new Map<number, GuestSummary>()
     for (const r of Object.values(storage.get().hostingRequests)) {
         const seen = byUser.get(r.guest.userId)
@@ -381,10 +392,133 @@ export const searchGuests = (storage: Storage, query: string, limit = 40): Guest
             seen.user = { ...r.guest, name: displayName(r.guest.name) }
         }
     }
-    return [...byUser.values()]
-        .filter((g) => q.length === 0 || guestMatches(g.user, q))
-        .sort((a, b) => b.lastDateKey.localeCompare(a.lastDateKey))
-        .slice(0, limit)
+    return byUser
+}
+
+/** Счётчик визитов человека для строки заявки: какой это по счёту раз. */
+export type GuestVisitStats = {
+    /** Состоявшихся визитов ДО этого дня (заявка текущего дня в счёт не идёт). */
+    past: number
+    /** Когда был в последний раз. Пустая строка - не был ни разу. */
+    lastDateKey: string
+}
+
+/**
+ * Сколько раз человек уже приходил - для чипа «впервые» / «5-й» в строке заявки.
+ *
+ * Считаем только `approved` и только по дням строго раньше сегодняшнего: заявка,
+ * ради которой резидент и смотрит на строку, не должна считать саму себя, а
+ * неподтверждённые - это несостоявшиеся намерения. Отсюда же «past», а не «total»:
+ * цифра в интерфейсе обещает визиты, и обещание должно быть честным.
+ *
+ * Считается разом на весь bootstrap: иначе на каждую строку шёл бы проход по всем
+ * заявкам стейта.
+ */
+export const guestVisitStats = (storage: Storage, todayDateKey: string): Record<string, GuestVisitStats> => {
+    const out: Record<string, GuestVisitStats> = {}
+    for (const r of Object.values(storage.get().hostingRequests)) {
+        if (r.status !== 'approved' || r.dateKey >= todayDateKey) continue
+        const key = String(r.guest.userId)
+        const cur = out[key]
+        if (!cur) {
+            out[key] = { past: 1, lastDateKey: r.dateKey }
+            continue
+        }
+        cur.past += 1
+        if (r.dateKey > cur.lastDateKey) cur.lastDateKey = r.dateKey
+    }
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// «Я на месте»
+// ---------------------------------------------------------------------------
+
+/** За сколько до слота кнопка «Я на месте» появляется и сколько живёт после него. */
+export const ARRIVAL_EARLY_MS = 30 * 60_000
+export const ARRIVAL_LATE_MS = 60 * 60_000
+/** Не чаще одного зова в 5 минут: без этого кнопка превращается в способ дёргать резидентов. */
+export const ARRIVAL_COOLDOWN_MS = 5 * 60_000
+
+/** Начало слота заявки в UTC (dateKey/time заданы в поясе спейса). */
+export const slotStartUtc = (dateKey: string, time: string, tzOffsetMinutes: number): number =>
+    Date.parse(`${dateKey}T${time}:00Z`) - tzOffsetMinutes * 60_000
+
+/** Открыто ли окно «я у двери» для этого визита прямо сейчас. */
+export const arrivalWindowOpen = (
+    request: HostingRequest,
+    tzOffsetMinutes: number,
+    now: number = Date.now(),
+): boolean => {
+    const start = slotStartUtc(request.dateKey, request.time, tzOffsetMinutes)
+    if (!Number.isFinite(start)) return false
+    return now >= start - ARRIVAL_EARLY_MS && now <= start + ARRIVAL_LATE_MS
+}
+
+export type ArrivalError = 'not_yours' | 'not_approved' | 'closed' | 'cooldown'
+
+/**
+ * Гость сообщает, что он у двери.
+ *
+ * Гейты: своя заявка, она подтверждена, окно открыто, прошлый зов не ближе
+ * `ARRIVAL_COOLDOWN_MS`. Не-подтверждённая заявка сюда не попадает намеренно:
+ * звать некого, хоста ещё нет.
+ */
+export const markArrived = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    requestId: string,
+    userId: number,
+): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: ArrivalError }> => {
+    const request = storage.get().hostingRequests[requestId]
+    if (!request || request.guest.userId !== userId) return { ok: false, error: 'not_yours' }
+    if (request.status !== 'approved' || !request.approvedBy) return { ok: false, error: 'not_approved' }
+    const now = Date.now()
+    if (!arrivalWindowOpen(request, tzOffsetMinutes, now)) return { ok: false, error: 'closed' }
+    const last = request.arrivedAt ? Date.parse(request.arrivedAt) : 0
+    if (Number.isFinite(last) && last > 0 && now - last < ARRIVAL_COOLDOWN_MS) return { ok: false, error: 'cooldown' }
+    await storage.update((s) => {
+        const cur = s.hostingRequests[requestId]
+        if (cur) cur.arrivedAt = new Date(now).toISOString()
+    })
+    return { ok: true, request }
+}
+
+/**
+ * DM «гость у двери»: хосту всегда, а если хоста нет внутри - ещё и всем, кто сейчас
+ * отмечен в спейсе. Именно они могут открыть, пока хост едет.
+ *
+ * Гостю в ответ ничего про этот список не говорим (см. `arrived` в webapp.ts): кто
+ * внутри - данные о резидентах, а гость их не видит ни в «Активности» (там «кто
+ * придёт»), ни в `/inside` (он для участников чатов).
+ */
+export const notifyArrival = async (
+    client: TelegramClient,
+    storage: Storage,
+    request: HostingRequest,
+): Promise<void> => {
+    const host = request.approvedBy
+    if (!host) return
+    const guest = await mentionLabel(client, request.guest)
+    const targets = new Set<number>([host.userId])
+    const insideHost = storage.get().presence[String(host.userId)] !== undefined
+    if (!insideHost) {
+        for (const p of Object.values(storage.get().presence)) targets.add(p.userId)
+    }
+    for (const userId of targets) {
+        const forHost = userId === host.userId
+        const lines = forHost
+            ? [`🚪 <b>${guest} у двери</b> - визит к ${request.time}.`]
+            : [
+                `🚪 <b>${guest} у двери</b> - визит к ${request.time}, хостит ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}.`,
+                'Хоста сейчас нет в спейсе - откройте, если вы рядом.',
+            ]
+        try {
+            await client.sendText(userId, html(lines.join('<br>')), { disableWebPreview: true })
+        } catch {
+            // личка закрыта - не повод рушить остальных получателей
+        }
+    }
 }
 
 /** Все заявки человека — от свежих к старым, для карточки гостя в архиве. */
@@ -954,20 +1088,20 @@ export const unblockUser = async (
 // ---------------------------------------------------------------------------
 
 /** Заявка задаёт только начало визита — длительность в календаре берём фиксированную. */
-const ICS_EVENT_HOURS = 2
+export const ICS_EVENT_HOURS = 2
 
-const icsEscape = (s: string): string =>
+export const icsEscape = (s: string): string =>
     s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
 
 /** '2026-07-17T12:00:00.000Z' -> '20260717T120000Z'. */
-const icsStamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+export const icsStamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
 /**
  * Складывание строк по RFC 5545: строка длиннее 75 октетов продолжается на
  * следующей, начинающейся с пробела. Режем по символам, а не по байтам, —
  * иначе многобайтная кириллица развалится пополам.
  */
-const icsFold = (line: string): string => {
+export const icsFold = (line: string): string => {
     const out: string[] = []
     let rest = line
     while (Buffer.byteLength(rest, 'utf8') > 75) {

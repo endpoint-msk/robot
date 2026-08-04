@@ -4,12 +4,18 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
+    displayName,
     formatDayKey,
     HOSTING_DAYS_AHEAD,
+    ICS_EVENT_HOURS,
+    icsEscape,
+    icsFold,
+    icsStamp,
     isPastSlot,
     isValidDayKey,
     isValidTime,
     mentionLabel,
+    slotStartUtc,
     todayKey,
 } from './hosting.js'
 import type { ResidentDirectory } from './residents.js'
@@ -289,7 +295,6 @@ export const notifyResidentsAboutEvent = async (
     event: SpaceEvent,
 ): Promise<void> => {
     const isForToday = event.dateKey === todayKey(tzOffsetMinutes)
-    const residents = await directory.listIds()
     const lines = [
         `Новый ивент: <b>${html.escape(event.title)}</b>`,
         `${formatDayKey(event.dateKey)} к ${event.time}${isForToday ? ' (сегодня)' : ''}.`,
@@ -304,11 +309,27 @@ export const notifyResidentsAboutEvent = async (
         // Переносы внутри описания живут только как <br>: html() схлопывает \n в пробел.
         lines.push('', ...short.split('\n').map((line) => html.escape(line)))
     }
-    const text = lines.join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappUrl)]])
+    await broadcastEventNotice(client, storage, directory, lines.join('<br>'), webappUrl, isForToday, event.host.userId)
+}
 
+/**
+ * Общая рассылка резидентам про ивент: один тумблер (`eventNotify`) и одни правила
+ * на создание, перенос и отмену - иначе человек, выключивший анонсы, всё равно получал
+ * бы про них половину сообщений.
+ */
+const broadcastEventNotice = async (
+    client: TelegramClient,
+    storage: Storage,
+    directory: ResidentDirectory,
+    text: string,
+    webappUrl: string,
+    isForToday: boolean,
+    skipUserId: number,
+): Promise<void> => {
+    const residents = await directory.listIds()
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappUrl)]])
     for (const userId of residents) {
-        if (userId === event.host.userId) continue
+        if (userId === skipUserId) continue
         const prefs = eventNotifyPrefsFor(storage, userId)
         if (!prefs.enabled) continue
         if (prefs.mode === 'today' && !isForToday) continue
@@ -318,6 +339,87 @@ export const notifyResidentsAboutEvent = async (
             // резидент не открывал личку с ботом — молча пропускаем
         }
     }
+}
+
+/**
+ * Ивент для календаря (.ics, RFC 5545) - та же механика, что у визита
+ * (`buildVisitIcs`): DTSTART в UTC из пояса спейса, фиксированная длительность.
+ * Отдаётся по `GET /event.ics`, гейт видимости - там же.
+ */
+export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: Date = new Date()): string => {
+    const startUtc = new Date(slotStartUtc(event.dateKey, event.time, tzOffsetMinutes))
+    const endUtc = new Date(startUtc.getTime() + ICS_EVENT_HOURS * 3600_000)
+    const description: string[] = []
+    if (event.description) description.push(event.description)
+    description.push(
+        `Организатор: ${displayName(event.host.name)}${event.host.username ? ` (@${event.host.username})` : ''}`,
+    )
+    const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//endpoint//events//RU',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'BEGIN:VEVENT',
+        `UID:${event.id}@endpoint-events`,
+        `DTSTAMP:${icsStamp(now)}`,
+        `DTSTART:${icsStamp(startUtc)}`,
+        `DTEND:${icsStamp(endUtc)}`,
+        `SUMMARY:${icsEscape(event.title)}`,
+        `DESCRIPTION:${icsEscape(description.join('\n'))}`,
+        'STATUS:CONFIRMED',
+        'END:VEVENT',
+        'END:VCALENDAR',
+    ]
+    return lines.map(icsFold).join('\r\n') + '\r\n'
+}
+
+/** Слот ивента на момент до правки - чтобы в уведомлении назвать и старое, и новое время. */
+export type EventSlot = { dateKey: string; time: string }
+
+/**
+ * Перенос ивента: DM резидентам со старым и новым слотом.
+ *
+ * Раньше `notifyResidentsAboutEvent` дёргался ровно один раз, при создании: человек
+ * читал анонс в понедельник, приходил в четверг, а ивент к тому моменту уехал на
+ * пятницу - и об этом не знал никто, кроме тех, кто снова открыл миниапп.
+ */
+export const notifyEventMoved = async (
+    client: TelegramClient,
+    storage: Storage,
+    directory: ResidentDirectory,
+    tzOffsetMinutes: number,
+    webappUrl: string,
+    event: SpaceEvent,
+    before: EventSlot,
+): Promise<void> => {
+    if (before.dateKey === event.dateKey && before.time === event.time) return
+    const isForToday = event.dateKey === todayKey(tzOffsetMinutes) || before.dateKey === todayKey(tzOffsetMinutes)
+    const text = [
+        `Ивент перенесён: <b>${html.escape(event.title)}</b>`,
+        `Было ${formatDayKey(before.dateKey)} к ${before.time}.`,
+        `Стало ${formatDayKey(event.dateKey)} к ${event.time}.`,
+    ].join('<br>')
+    await broadcastEventNotice(client, storage, directory, text, webappUrl, isForToday, event.host.userId)
+}
+
+/** Отмена ивента: DM тем же, кому уходил анонс. */
+export const notifyEventCancelled = async (
+    client: TelegramClient,
+    storage: Storage,
+    directory: ResidentDirectory,
+    tzOffsetMinutes: number,
+    webappUrl: string,
+    event: SpaceEvent,
+    byUserId: number,
+): Promise<void> => {
+    const text = [
+        `Ивент отменён: <b>${html.escape(event.title)}</b>`,
+        `${formatDayKey(event.dateKey)} к ${event.time} - не состоится.`,
+    ].join('<br>')
+    await broadcastEventNotice(
+        client, storage, directory, text, webappUrl, event.dateKey === todayKey(tzOffsetMinutes), byUserId,
+    )
 }
 
 // ---------------------------------------------------------------------------

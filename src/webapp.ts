@@ -18,6 +18,7 @@ import {
     deleteHostingRequest,
     displayName,
     editHostingRequest,
+    guestVisitStats,
     hasAcceptedRules,
     HOSTING_DAYS_AHEAD,
     isBlocked,
@@ -25,7 +26,9 @@ import {
     isValidDayKey,
     listBlockedUsers,
     listGuestNotes,
+    markArrived,
     MAX_NOTE_LENGTH,
+    notifyArrival,
     nowTimeKey,
     notifyApproverCancelled,
     notifyGuestApproved,
@@ -51,6 +54,7 @@ import {
 } from './hosting.js'
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
 import {
+    buildEventIcs,
     canEditEvent,
     clearEventDraft,
     createEvent,
@@ -62,6 +66,8 @@ import {
     eventPhotoIds,
     eventsForDay,
     isStagedPhotoOf,
+    notifyEventCancelled,
+    notifyEventMoved,
     notifyResidentsAboutEvent,
     MAX_EVENT_PHOTO_BYTES,
     MAX_EVENT_PHOTOS,
@@ -74,6 +80,7 @@ import {
     type EventInput,
 } from './events.js'
 import { syncHostingBoard } from './hosting-board.js'
+import { healthSnapshot } from './health.js'
 import {
     activeDuesPeriod,
     buildDuesCsv,
@@ -318,6 +325,9 @@ const userView = <T extends { userId: number; name: string }>(u: T): T => {
     return { ...u, name: displayName(u.name) }
 }
 
+/** Сколько прошедших визитов гостя отдаём в «Были раньше»: это напоминание, а не журнал. */
+const MY_PAST_LIMIT = 5
+
 const requestsView = (list: HostingRequest[]) =>
     list.map((r) => ({
         id: r.id,
@@ -330,6 +340,7 @@ const requestsView = (list: HostingRequest[]) =>
         approvedBy: r.approvedBy ? userView(r.approvedBy) : null,
         proposal: r.proposal ? { ...r.proposal, user: userView(r.proposal.user) } : null,
         anon: r.anon === true,
+        arrivedAt: r.arrivedAt ?? null,
     }))
 
 /**
@@ -518,6 +529,12 @@ const buildBootstrap = (ctx: ApiContext) => {
     const myRequests = Object.values(storage.get().hostingRequests)
         .filter((r) => r.guest.userId === user.userId && r.dateKey >= today)
         .sort((a, b) => (a.dateKey === b.dateKey ? a.time.localeCompare(b.time) : a.dateKey.localeCompare(b.dateKey)))
+    // Свои прошедшие визиты: наутро после визита экран гостя иначе пуст - он видел
+    // только заявки с датой ≥ сегодня. Последние MY_PAST_LIMIT, свежие сверху.
+    const myPast = Object.values(storage.get().hostingRequests)
+        .filter((r) => r.guest.userId === user.userId && r.dateKey < today)
+        .sort((a, b) => (a.dateKey === b.dateKey ? b.time.localeCompare(a.time) : b.dateKey.localeCompare(a.dateKey)))
+        .slice(0, MY_PAST_LIMIT)
 
     const binding = storage.get().macBindings[String(user.userId)]
     const settings = resident
@@ -544,7 +561,11 @@ const buildBootstrap = (ctx: ApiContext) => {
         nowTime: nowTimeKey(tzOffsetMinutes),
         days,
         myRequests: requestsView(myRequests),
+        myPast: requestsView(myPast),
         settings,
+        // Какой это по счёту визит человека - резидентская информация: она отвечает на
+        // вопрос «кого я пускаю», а гостю чужая история визитов не полагается.
+        ...(resident ? { guestStats: guestVisitStats(storage, today) } : {}),
         // Заметки о гостях — общая память резидентов, гостю их не показываем (в т.ч.
         // заметку о нём самом). Отдаём разом все: их единицы, а строка заявки с иконкой
         // «есть заметка» встречается и в архиве, который грузится отдельным запросом.
@@ -918,12 +939,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_yours', 'Править ивент может тот, кто его завёл.')
                 return
             }
+            // Слот снимаем ДО правки: `existing` - живая ссылка на объект стейта, после
+            // updateEvent старых значений в ней уже нет (тот же приём, что с proposal).
+            const before = { dateKey: existing.dateKey, time: existing.time }
             const updated = await updateEvent(storage, tzOffsetMinutes, id, eventInputFrom(body))
             if (!updated.ok) {
                 sendError(res, 400, updated.error, EVENT_ERRORS[updated.error])
                 return
             }
             await syncEventPhotos(storage, storage.path(), id, photosFrom(body), user.userId)
+            // Перенос - в фоне и только если слот реально сменился (проверка внутри).
+            void notifyEventMoved(client, storage, residents, tzOffsetMinutes, config.publicUrl, existing, before)
+                .catch((err) => console.error('[events] не удалось разослать перенос ивента:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -941,7 +968,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_yours', 'Удалить ивент может тот, кто его завёл.')
                 return
             }
+            // Снимок до удаления: после deleteEvent объекта в стейте уже нет.
+            const cancelled = { ...existing }
             await deleteEvent(storage, storage.path(), id)
+            void notifyEventCancelled(client, storage, residents, tzOffsetMinutes, config.publicUrl, cancelled, user.userId)
+                .catch((err) => console.error('[events] не удалось разослать отмену ивента:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -975,6 +1006,32 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             void notifyGuestClosed(client, config.publicUrl, request, user)
                 .catch((err) => console.error('[hosting] не удалось уведомить гостя о закрытии заявки:', err))
             syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // «Я на месте»: гость доехал и стоит у двери. Пишем хосту, а если хоста в спейсе
+        // нет - ещё и всем, кто сейчас отмечен внутри: именно они могут открыть.
+        //
+        // В ответ гостю ничего про этот список не сообщаем. Кто физически внутри - данные
+        // о резидентах: в «Активности» гость видит «кто придёт» (планы), а `/inside` открыт
+        // только участникам чатов, так что узнать состав спейса ему больше неоткуда.
+        case 'arrived': {
+            const id = typeof body.id === 'string' ? body.id : ''
+            const marked = await markArrived(storage, tzOffsetMinutes, id, user.userId)
+            if (!marked.ok) {
+                const messages: Record<string, [number, string]> = {
+                    not_yours: [404, 'Заявка не найдена - обнови экран.'],
+                    not_approved: [409, 'Визит ещё не подтверждён - сообщать некому.'],
+                    closed: [409, 'Сообщить о приходе можно за полчаса до визита и час после.'],
+                    cooldown: [429, 'Только что сообщил - резиденты уже знают. Повтори через пару минут.'],
+                }
+                const [status, message] = messages[marked.error] ?? [400, 'Не получилось.']
+                sendError(res, status, marked.error, message)
+                return
+            }
+            void notifyArrival(client, storage, marked.request)
+                .catch((err) => console.error('[hosting] не удалось сообщить о приходе гостя:', err))
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -1172,6 +1229,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             await blockUser(client, storage, allowedChats, request.guest, user)
+            // Ответы про участие кэшируются на минуту - заблокированный столько бы ещё
+            // ходил по API. Права меняем мы сами, значит и кэш сбрасываем сами.
+            residents.invalidate(request.guest.userId)
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -1204,6 +1264,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             await unblockUser(client, storage, allowedChats, targetId)
+            residents.invalidate(targetId)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -1264,6 +1325,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                         username: user.username,
                         macs: [{ mac, label }],
                         anon: false,
+                        suppressedAt: null,
                         updatedAt: now,
                     }
                 }
@@ -1869,8 +1931,16 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             const url = new URL(req.url ?? '/', 'http://localhost')
             const pathname = url.pathname
 
+            // Healthcheck докера. Ручка смотрит наружу без токена, поэтому наружу идёт
+            // только вердикт: имена компонентов и счётчики рассказали бы о внутреннем
+            // устройстве спейса больше, чем нужно. Подробности - дев-команда /status.
             if (pathname === '/healthz') {
-                res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok')
+                const health = healthSnapshot()
+                const ok = health.ok && deps.storage.writeHealth().lastError === null
+                res.writeHead(ok ? 200 : 503, {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Cache-Control': 'no-store',
+                }).end(ok ? 'ok\n' : 'degraded\n')
                 return
             }
 
@@ -1910,6 +1980,38 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     'Content-Disposition': 'attachment; filename="visit.ics"',
                     'Cache-Control': 'no-store',
                 }).end(buildVisitIcs(request, deps.tzOffsetMinutes))
+                return
+            }
+
+            // Ивент в календарь - тот же приём, что у визита: GET вне /api/, initData в
+            // query, подпись и TTL те же. Гейт видимости свой: резидентский ивент гостю
+            // не отдаём и по прямой ссылке (мимо handleApi этот путь не проходит).
+            if (pathname === '/event.ics') {
+                if (req.method !== 'GET') {
+                    res.writeHead(405).end()
+                    return
+                }
+                const user = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
+                if (!user) {
+                    res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
+                        .end('Ссылка устарела - открой миниапп заново.')
+                    return
+                }
+                const access = await deps.residents.access(user.userId)
+                if (isBlocked(deps.storage, user.userId) || access.banned) {
+                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
+                    return
+                }
+                const event = deps.storage.get().events[url.searchParams.get('id') ?? '']
+                if (!event || (event.residentsOnly && !access.resident)) {
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ивент не найден.')
+                    return
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Content-Disposition': 'attachment; filename="event.ics"',
+                    'Cache-Control': 'no-store',
+                }).end(buildEventIcs(event, deps.tzOffsetMinutes))
                 return
             }
 
