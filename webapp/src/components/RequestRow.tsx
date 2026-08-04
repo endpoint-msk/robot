@@ -210,6 +210,20 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
     swipeActions.push({ key: 'block', label: 'Заблокировать', icon: icons.ban(21, '#fff'), tone: 'red', onSelect: () => blockGuest(r) })
   }
 
+  // Какой это по счёту визит: резидент решает «брать ли», не зная, кто перед ним.
+  // Новичка надо встретить и объяснить про дверь, завсегдатая - не переспрашивать.
+  // Цифра считается по состоявшимся визитам ДО сегодня (см. guestVisitStats).
+  // В архиве чипа нет: счёт ведётся на сегодня, и у прошлогодней строки он показал бы
+  // не тот номер, каким визит был тогда.
+  const stats = data.guestStats ? data.guestStats[String(r.guest.userId)] : undefined
+  const visitChip = me.isResident && !archive ? (
+    !stats || stats.past === 0 ? (
+      <span className="visit-chip first">впервые</span>
+    ) : (
+      <span className="visit-chip">{stats.past + 1}-й</span>
+    )
+  ) : null
+
   const top = (
     <div className="req-top">
       <Avatar user={r.guest} className="req-avatar" profile />
@@ -219,6 +233,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           <Profile user={r.guest} className="req-name">
             {r.guest.name}
           </Profile>
+          {visitChip}
           {guestNote ? (
             <button
               className="note-flag"

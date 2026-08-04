@@ -9,9 +9,8 @@ import { icons } from '../icons'
 import { compressImage } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
-import { haptic, openUrl } from '../telegram'
+import { haptic, initData, openUrl, tg } from '../telegram'
 import { pop, setBusy, useParams, useStore } from '../store'
-import { initData } from '../telegram'
 import type { SpaceEvent } from '../types'
 import { BackRow, Header, SectionTitle, Switch } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -244,7 +243,21 @@ export function Event() {
  * Карточка ивента — одна и та же в превью редактора и в «Активности»,
  * чтобы резидент видел ровно то, что увидят остальные.
  */
-export function EventCard({ event, dimTitle = false }: { event: SpaceEvent; dimTitle?: boolean }) {
+/**
+ * Карточка ивента.
+ *
+ * `calendar` - показать «В календарь». В превью редактора её нет: там ивента ещё не
+ * существует, и ссылка вела бы в никуда.
+ */
+export function EventCard({
+  event,
+  dimTitle = false,
+  calendar = false,
+}: {
+  event: SpaceEvent
+  dimTitle?: boolean
+  calendar?: boolean
+}) {
   const photos = event.photos ?? []
   return (
     <div className="event-card">
@@ -271,6 +284,25 @@ export function EventCard({ event, dimTitle = false }: { event: SpaceEvent; dimT
         <button className="ev-source" onClick={() => openUrl(event.sourceUrl!)}>
           {icons.external('#bf5af2')}
           Пост в канале
+        </button>
+      ) : null}
+      {/* .ics отдаёт сервер (GET /event.ics) - та же подписанная ссылка, что у визита. */}
+      {calendar ? (
+        <button
+          className="ev-source"
+          onClick={() => {
+            const url =
+              `${location.origin}/event.ics?id=${encodeURIComponent(event.id)}` +
+              `&initData=${encodeURIComponent(initData())}`
+            try {
+              tg!.openLink(url)
+            } catch {
+              window.open(url, '_blank')
+            }
+          }}
+        >
+          {icons.calendarPlus(15, '#bf5af2')}
+          В календарь
         </button>
       ) : null}
       <div className="ev-host">

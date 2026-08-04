@@ -92,11 +92,11 @@ export const icons = {
       <path d="M6.8 11h8.4" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
-  calendarPlus: (): ReactElement => (
-    <svg width="19" height="19" viewBox="0 0 26 26">
-      <rect x="3.5" y="5" width="19" height="17.5" rx="5" fill="none" stroke="#007aff" strokeWidth="1.9" />
-      <path d="M8.5 2.8v4M17.5 2.8v4M3.5 10h19" stroke="#007aff" strokeWidth="1.9" strokeLinecap="round" />
-      <path d="M9.5 16.5h7M13 13v7" stroke="#007aff" strokeWidth="1.9" strokeLinecap="round" />
+  calendarPlus: (size = 19, color = '#007aff'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 26 26">
+      <rect x="3.5" y="5" width="19" height="17.5" rx="5" fill="none" stroke={color} strokeWidth="1.9" />
+      <path d="M8.5 2.8v4M17.5 2.8v4M3.5 10h19" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M9.5 16.5h7M13 13v7" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   ),
   people: (): ReactElement => (

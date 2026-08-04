@@ -66,6 +66,15 @@ export function NewRequest() {
       </div>
       <div style={{ height: 8 }} />
       <AnonRow anon={anon} onChange={setAnon} />
+      {/* Про кнопку «Я на месте» говорим заранее: в момент, когда гость стоит у двери,
+          читать инструкции поздно, а сама кнопка появится только в день визита. */}
+      <div className="hint-card">
+        <div className="hint-icon">{icons.pin(17, '#34c759')}</div>
+        <div className="hint-text">
+          Когда доберётесь до спейса, откройте свой визит и нажмите «Я на месте» - резиденты
+          поймут, что нужно открыть.
+        </div>
+      </div>
       <BottomBar>
         <button className="primary-btn" disabled={submitting} onClick={submit}>
           Отправить заявку

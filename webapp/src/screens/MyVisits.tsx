@@ -84,13 +84,33 @@ function WriteAccessBanner() {
   )
 }
 
-function VisitList({ list }: { list: HostingRequest[] }) {
+/**
+ * Прошедший визит: та же строка, но приглушённая и без статуса - это архив, а не
+ * состояние, за которым надо следить. Отсюда серая галочка вместо зелёной.
+ */
+function PastVisitRow({ r }: { r: HostingRequest }) {
+  const host = r.approvedBy
+  return (
+    <div className="row tappable" onClick={() => push('visit', { id: r.id })}>
+      <div className="status-square">{icons.check(20, sec(0.4))}</div>
+      <div className="req-main">
+        <div className="req-name past">{fmtWeekdayDate(r.dateKey)}</div>
+        <div className="req-sub">
+          {`к ${r.time}` + (host ? ` · хостил ${userLabel(host)}` : '')}
+        </div>
+      </div>
+      <div className="row-right">{icons.chevron()}</div>
+    </div>
+  )
+}
+
+function VisitList({ list, past = false }: { list: HostingRequest[]; past?: boolean }) {
   return (
     <div className="card">
       {list.map((r, i) => (
         <Fragment key={r.id}>
           {i > 0 ? <Sep left={66} /> : null}
-          <VisitRow r={r} />
+          {past ? <PastVisitRow r={r} /> : <VisitRow r={r} />}
         </Fragment>
       ))}
     </div>
@@ -100,6 +120,7 @@ function VisitList({ list }: { list: HostingRequest[] }) {
 export function MyVisits() {
   const { data } = useStore()
   const my = data!.myRequests
+  const past = data!.myPast ?? []
   const approved = my.filter((r) => r.status === 'approved')
   const pending = my.filter((r) => r.status !== 'approved')
 
@@ -107,7 +128,7 @@ export function MyVisits() {
     <Screen hasBottomBar>
       <Header title="Мои визиты" chip={<DevChips />} />
       <WriteAccessBanner />
-      {my.length === 0 ? (
+      {my.length === 0 && past.length === 0 ? (
         <div className="card">
           <EmptyState
             title="Пока нет заявок"
@@ -127,7 +148,23 @@ export function MyVisits() {
           <VisitList list={pending} />
         </>
       ) : null}
+      {past.length > 0 ? (
+        <>
+          <SectionTitle>Были раньше</SectionTitle>
+          <VisitList list={past} past />
+        </>
+      ) : null}
       <div className="card" style={{ marginTop: 22 }}>
+        {/* Правила гость видит один раз, перед первой заявкой, - а живёт по ним каждый
+            визит. Тут единственное место, где их можно перечитать. */}
+        <div className="row tappable" onClick={() => push('rules', { readonly: true })}>
+          <div className="row-icon" style={{ background: '#8e8e93' }}>
+            {icons.note(17, '#fff')}
+          </div>
+          <span className="row-label">Правила спейса</span>
+          <div className="row-right">{icons.chevron()}</div>
+        </div>
+        <Sep left={54} />
         <div className="row tappable" onClick={() => push('route')}>
           <div className="row-icon" style={{ background: '#007aff' }}>
             {icons.pin(17, '#fff')}

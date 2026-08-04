@@ -12,10 +12,26 @@ import { BackRow, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
 
+/** Сколько минут прошло с ISO-метки. Считаем по абсолютному времени - пояс не нужен. */
+function minutesSince(iso: string): number {
+  const at = Date.parse(iso)
+  if (!Number.isFinite(at)) return Number.POSITIVE_INFINITY
+  return Math.floor((Date.now() - at) / 60_000)
+}
+
+/** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
+function minuteOfDay(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm)
+  return m ? Number(m[1]) * 60 + Number(m[2]) : -1
+}
+
 export function Visit() {
   const params = useParams()
   const { data } = useStore()
-  const r = data!.myRequests.find((x) => x.id === params.id)
+  const past = data!.myPast ?? []
+  // Прошедший визит открывается из «Были раньше» - тот же экран, только читать.
+  const r = data!.myRequests.find((x) => x.id === params.id) ?? past.find((x) => x.id === params.id)
+  const isPast = Boolean(r && past.some((x) => x.id === r.id))
   // Заявку могли отменить/она протухла — возвращаемся к списку.
   useEffect(() => {
     if (!r) pop()
@@ -162,21 +178,62 @@ export function Visit() {
     )
   }
 
+  // «Я на месте»: окно - за полчаса до слота и час после (сервер проверяет то же).
+  // Считаем в поясе спейса: `todayKey`/`nowTime` приходят из bootstrap, локальные часы
+  // устройства тут не при чём.
+  const slotMin = minuteOfDay(r.time)
+  const nowMin = minuteOfDay(data!.nowTime)
+  const arrivalOpen =
+    approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
+  const sinceArrival = r.arrivedAt ? minutesSince(r.arrivedAt) : null
+  // Пока не прошёл антиспам, вместо кнопки - подтверждение: жать второй раз бесполезно.
+  const justArrived = sinceArrival !== null && sinceArrival < 5
+
+  const arrivalCard = !arrivalOpen ? null : justArrived ? (
+    <div className="arrival-card done">
+      <div className="arrival-icon done">{icons.check(17, '#34c759', 2.2)}</div>
+      <div style={{ minWidth: 0 }}>
+        <div className="arrival-title">{sinceArrival === 0 ? 'Сообщил только что' : `Сообщил ${sinceArrival} мин назад`}</div>
+        <div className="arrival-sub">Открывают. Если долго нет - нажмите ещё раз через пару минут</div>
+      </div>
+    </div>
+  ) : (
+    <div className="arrival-card">
+      <div className="arrival-head">
+        <div className="arrival-icon">{icons.pin(19, '#34c759')}</div>
+        <div style={{ minWidth: 0 }}>
+          <div className="arrival-title">Уже у двери?</div>
+          <div className="arrival-sub">Скажу тем, кто сейчас в спейсе</div>
+        </div>
+      </div>
+      <button
+        className="arrival-btn"
+        onClick={async () => {
+          const done = await action('arrived', { id: r.id })
+          if (done) haptic('success')
+        }}
+      >
+        {sinceArrival === null ? 'Я на месте' : 'Сообщить ещё раз'}
+      </button>
+    </div>
+  )
+
   return (
     <Screen>
       <BackRow label="Мои визиты" />
       <Header title={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]} subtitle={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} />
-      {statusCard}
-      {proposalCard}
+      {arrivalCard}
+      {isPast ? null : statusCard}
+      {isPast ? null : proposalCard}
       {/* Правка доступна, пока визит не одобрен: сервер тоже это проверяет. */}
-      {!approved ? (
+      {!approved && !isPast ? (
         <button className="secondary-btn" style={{ marginTop: 12 }} onClick={() => push('editRequest', { id: r.id })}>
           {icons.pencil()}
           Изменить день или время
         </button>
       ) : null}
       {/* У подтверждённого визита можно попросить перенести день или время. */}
-      {approved && !p ? (
+      {approved && !p && !isPast ? (
         <button
           className="secondary-btn"
           style={{ marginTop: 12 }}
@@ -216,6 +273,7 @@ export function Visit() {
           </div>
         ) : null}
       </div>
+      {isPast ? null : (
       <button
         className="secondary-btn"
         onClick={() => {
@@ -234,7 +292,9 @@ export function Visit() {
         {icons.calendarPlus()}
         Добавить в календарь
       </button>
+      )}
       <div style={{ height: 22 }} />
+      {isPast ? null : (
       <button
         className="destructive-btn"
         onClick={async () => {
@@ -254,6 +314,7 @@ export function Visit() {
       >
         Отменить заявку
       </button>
+      )}
     </Screen>
   )
 }

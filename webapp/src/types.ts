@@ -34,7 +34,12 @@ export type HostingRequest = {
   approvedBy: User | null
   proposal: RescheduleProposal | null
   anon: boolean
+  /** Когда гость нажал «Я на месте». null - не нажимал. */
+  arrivedAt?: string | null
 }
+
+/** Сколько раз человек уже приходил - чип в строке заявки. Только резидентам. */
+export type GuestVisitStats = { past: number; lastDateKey: string }
 
 export type BlockedUser = {
   userId: number
@@ -136,6 +141,10 @@ export type Bootstrap = {
   nowTime: string
   days: Day[]
   myRequests: HostingRequest[]
+  /** Свои прошедшие визиты, свежие сверху (последние 5): «Были раньше» в «Моих визитах». */
+  myPast: HostingRequest[]
+  /** Ключ - userId гостя. Только резидентам: чужая история визитов гостю не полагается. */
+  guestStats?: Record<string, GuestVisitStats>
   /** null у гостя: уведомления и MAC — только резидентам. */
   settings: Settings | null
   /** create/edit возвращают ещё и саму созданную/изменённую заявку. */

@@ -1570,3 +1570,82 @@ body.busy #busy-overlay { display: flex; }
 .modal-num { text-align: center; font-size: 22px; font-weight: 700; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.08); }
 .modal-num-hint { padding: 8px 18px 0; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: center; }
 .modal-btn.disabled { opacity: 0.4; pointer-events: none; }
+
+/* Какой это по счёту визит гостя - пилюля рядом с именем в строке заявки.
+   «Впервые» акцентная: это единственный случай, когда резиденту надо действовать
+   иначе (встретить, объяснить про дверь). Завсегдатай нейтральный, чтобы цифры не
+   рябили в каждой строке. */
+.visit-chip {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(var(--sec), 0.1);
+    color: var(--text-2);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.5;
+}
+.visit-chip.first { background: rgba(0, 122, 255, 0.16); color: var(--blue); }
+
+/* Прошедший визит в «Были раньше»: дата приглушена - это архив, а не то, за чем следят. */
+.req-name.past { color: var(--text-2); }
+
+/* «Я на месте»: блок живёт только в окне вокруг слота, поэтому он и первый на экране -
+   в этот момент человек стоит у двери, и всё остальное подождёт. */
+.arrival-card {
+    padding: 16px;
+    border-radius: 22px;
+    background: rgba(52, 199, 89, 0.12);
+    box-shadow: inset 0 0 0 1.5px rgba(52, 199, 89, 0.4);
+    margin-bottom: 12px;
+}
+.arrival-card.done {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+}
+.arrival-head { display: flex; align-items: center; gap: 10px; }
+.arrival-icon {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 11px;
+    background: rgba(52, 199, 89, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.arrival-icon.done { width: 32px; height: 32px; border-radius: 10px; background: rgba(52, 199, 89, 0.16); }
+.arrival-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.arrival-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+.arrival-btn {
+    width: 100%;
+    margin-top: 12px;
+    min-height: 48px;
+    border: none;
+    border-radius: 15px;
+    background: var(--green);
+    color: #fff;
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.arrival-btn:active { opacity: 0.8; }
+
+/* Подсказка-плашка в форме заявки: про кнопку «Я на месте» надо сказать заранее -
+   у двери читать инструкции поздно. */
+.hint-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(52, 199, 89, 0.1);
+}
+.hint-icon { flex-shrink: 0; display: flex; align-items: center; }
+.hint-text { font-size: 13px; line-height: 1.45; color: var(--text-2); }
