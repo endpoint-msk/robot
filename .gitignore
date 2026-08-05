@@ -9,3 +9,12 @@ bot.session
 bot.session-*
 *.log
 .DS_Store
+
+# Синк дизайн-системы в claude.ai/design (см. .design-sync/config.json).
+# Коммитятся только входы синка: config.json, NOTES.md, conventions.md, previews/.
+webapp/dist-ds/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

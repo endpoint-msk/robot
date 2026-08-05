@@ -1,0 +1,25 @@
+{
+  "projectId": "bd914cf0-e212-4ea4-88a7-7d5946621728",
+  "shape": "package",
+  "pkg": "endpoint-robot-webapp",
+  "globalName": "EndpointDS",
+  "buildCmd": "npm --prefix webapp run build:ds",
+  "entry": "./webapp/src/ds.ts",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "src/app.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "runtimeFontPrefixes": ["SF Pro", "SF Mono"],
+  "extraEntries": ["../.design-sync/preview-provider.tsx"],
+  "provider": { "component": "DsPreview" },
+  "overrides": {
+    "BottomBar": { "cardMode": "single", "primaryStory": "PrimaryAction", "viewport": "390x420" },
+    "RequestRow": { "cardMode": "column" },
+    "RequestsCard": { "cardMode": "column" }
+  },
+  "componentSrcMap": {
+    "ApiError": null,
+    "ModalHost": null,
+    "EventPoster": null
+  }
+}

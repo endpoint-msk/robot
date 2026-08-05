@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Telegram Mini App хостинга (React + Vite)",
+  "types": "dist-ds/ds.d.ts",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:ds": "tsc -p tsconfig.ds.json",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
