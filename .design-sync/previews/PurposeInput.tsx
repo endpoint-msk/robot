@@ -3,7 +3,6 @@ import { PurposeInput, Sep } from 'endpoint-robot-webapp'
 // Поле прозрачное и без рамки — его рамка это карточка вокруг (.card > .kv-block),
 // ровно так оно стоит в форме заявки.
 
-/** Пустое: плейсхолдер говорит, что цель визита необязательна. */
 export const Empty = () => (
   <div className="card">
     <div className="row" style={{ padding: '6px 14px' }}>
@@ -17,7 +16,6 @@ export const Empty = () => (
   </div>
 )
 
-/** Заполненное: поле растёт под текст, потолок — 300 символов. */
 export const Filled = () => (
   <div className="card">
     <div className="kv-block">
@@ -29,7 +27,6 @@ export const Filled = () => (
   </div>
 )
 
-/** Свой плейсхолдер — то же поле собирает описание ивента. */
 export const CustomPlaceholder = () => (
   <div className="card">
     <div className="kv-block">

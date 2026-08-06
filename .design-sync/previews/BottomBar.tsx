@@ -4,7 +4,6 @@ import { BottomBar } from 'endpoint-robot-webapp'
 // вьюпорта. Над ней в каждой ячейке — кусок экрана: одна панель без контента
 // не показывает, зачем ей градиент под кнопкой.
 
-/** Главное действие экрана — синяя кнопка во всю ширину. */
 export const PrimaryAction = () => (
   <>
     <div className="card" style={{ marginBottom: 96 }}>
@@ -21,7 +20,6 @@ export const PrimaryAction = () => (
   </>
 )
 
-/** С подсказкой под кнопкой: одна строка о том, что произойдёт после нажатия. */
 export const WithHint = () => (
   <>
     <div className="card" style={{ marginBottom: 96 }}>
@@ -36,7 +34,6 @@ export const WithHint = () => (
   </>
 )
 
-/** Деструктивное действие — светлая карточка с красным текстом, не синяя кнопка. */
 export const Destructive = () => (
   <>
     <div className="card" style={{ marginBottom: 96 }}>

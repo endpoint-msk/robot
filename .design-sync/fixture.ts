@@ -37,7 +37,6 @@ export const misha: User = { userId: 9001, username: 'mixa', name: 'Миша К�
 export const anya: User = { userId: 9002, username: null, name: 'Аня Соколова' }
 export const zhenya: User = { userId: 9003, username: 'zhenya_p', name: 'Женя Петров' }
 
-/** Ничья заявка: гость ждёт, любой резидент может захостить. */
 export const pendingRequest: HostingRequest = {
   id: 'req-1',
   dateKey: TODAY,
@@ -51,7 +50,6 @@ export const pendingRequest: HostingRequest = {
   anon: false,
 }
 
-/** Подтверждённый визит: справа пилл того, кто захостил. */
 export const approvedRequest: HostingRequest = {
   id: 'req-2',
   dateKey: TODAY,
@@ -65,7 +63,6 @@ export const approvedRequest: HostingRequest = {
   anon: false,
 }
 
-/** Гость предложил другое время — резиденту-адресату видна кнопка «Принять». */
 export const proposedByGuestRequest: HostingRequest = {
   id: 'req-3',
   dateKey: TODAY,
@@ -86,7 +83,6 @@ export const proposedByGuestRequest: HostingRequest = {
   anon: false,
 }
 
-/** Предложение резидента: ждём ответа гостя, кнопки «Принять» нет. */
 export const proposedByResidentRequest: HostingRequest = {
   id: 'req-4',
   dateKey: DAY_KEYS[1],
@@ -107,7 +103,6 @@ export const proposedByResidentRequest: HostingRequest = {
   anon: true,
 }
 
-/** Своя заявка гостя — для экранов «Мои визиты». */
 export const myRequest: HostingRequest = {
   id: 'req-5',
   dateKey: DAY_KEYS[2],
@@ -178,7 +173,6 @@ export const days: Day[] = [
   { dateKey: DAY_KEYS[6], total: 0, approved: 0, requests: [], attendees: [], events: [] },
 ]
 
-/** Снимок, каким его видит резидент: у него есть детали заявок, заметки и счётчики визитов. */
 export const dsFixture: Bootstrap = {
   me: { id: me.userId, username: me.username, name: me.name, isResident: true, isDev: true, acceptedRules: true },
   todayKey: TODAY,

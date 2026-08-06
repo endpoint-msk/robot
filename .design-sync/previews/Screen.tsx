@@ -1,6 +1,5 @@
 import { Header, Screen } from 'endpoint-robot-webapp'
 
-/** Обёртка экрана: отступы по краям и анимация входа при навигации. */
 export const WithContent = () => (
   <Screen>
     <Header title="Настройки" />
@@ -13,7 +12,6 @@ export const WithContent = () => (
   </Screen>
 )
 
-/** hasBottomBar — снизу оставляется место под закреплённую панель с кнопкой. */
 export const WithBottomBar = () => (
   <Screen hasBottomBar>
     <Header title="Новая заявка" />

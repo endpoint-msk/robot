@@ -1,9 +1,7 @@
 import { ReadonlyBadge } from 'endpoint-robot-webapp'
 
-/** Плашка архива: замок + «только просмотр». Ставится под заголовком экрана. */
 export const Default = () => <ReadonlyBadge />
 
-/** На своём месте: между заголовком недели и карточкой с заявками. */
 export const OnArchiveScreen = () => (
   <>
     <div className="header">

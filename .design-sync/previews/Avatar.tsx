@@ -4,7 +4,6 @@ import { anya, dasha, misha } from '../fixture'
 // Размер аватарки задаёт контекст, а не сам компонент: у `.avatar` есть форма и
 // градиент, но нет ширины. Поэтому все ячейки — реальные обвязки из миниаппа.
 
-/** Строка заявки: 40px (класс .req-avatar), тап ведёт в профиль по нику. */
 export const InRequestRow = () => (
   <div className="card">
     <div className="row">
@@ -17,7 +16,6 @@ export const InRequestRow = () => (
   </div>
 )
 
-/** Пилл «одобрил»: 20px внутри .pill. */
 export const InPill = () => (
   <div className="card">
     <div className="row">
@@ -35,7 +33,6 @@ export const InPill = () => (
   </div>
 )
 
-/** Палитра: цвет считается по userId, поэтому у человека он всегда один и тот же. */
 export const Gradients = () => (
   <div style={{ display: 'flex', gap: 8 }}>
     <Avatar user={misha} className="req-avatar" />

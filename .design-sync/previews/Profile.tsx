@@ -1,7 +1,6 @@
 import { Avatar, Profile } from 'endpoint-robot-webapp'
 import { anya, misha } from '../fixture'
 
-/** С ником: строка тапается и ведёт в профиль Telegram (t.me/@ник). */
 export const Tappable = () => (
   <div className="card">
     <div className="row">
@@ -16,7 +15,6 @@ export const Tappable = () => (
   </div>
 )
 
-/** Без ника ссылки не существует — обёртка не тапается и выглядит обычным текстом. */
 export const NotTappable = () => (
   <div className="card">
     <div className="row">

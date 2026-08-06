@@ -1,13 +1,11 @@
 import { EmptyState, icons } from 'endpoint-robot-webapp'
 
-/** Пусто внутри карточки — заголовок и объяснение, что делать. */
 export const WithText = () => (
   <div className="card">
     <EmptyState title="Заявок нет" text="Гости оставляют их в миниаппе, за день-два до визита." />
   </div>
 )
 
-/** С иконкой: она задаёт тон — календарь для дня, коробка для архива. */
 export const WithIcon = () => (
   <div className="card">
     <EmptyState
@@ -18,7 +16,6 @@ export const WithIcon = () => (
   </div>
 )
 
-/** Только заголовок — когда объяснять нечего. */
 export const TitleOnly = () => (
   <div className="card">
     <EmptyState title="Пока никого" />

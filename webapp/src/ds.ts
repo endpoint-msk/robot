@@ -30,15 +30,12 @@ export { RequestRow, RequestsCard } from './components/RequestRow'
 export { AttendeeRow, AttendeesCard } from './components/attendees'
 export { EventCard, EventPoster } from './screens/Event'
 
-// Модалки — императивный API (Promise) + хост очереди в портал.
 export { ModalHost, showAlert, showImage, confirmDialog, timePrompt, reschedulePrompt, numberPrompt } from './modals'
 
-// Часть компонентов (RequestRow, DayRow, DevChips) читает снимок бэкенда прямо из
-// стора, а не из пропсов — без него они падают. Наружу отдаём только запись снимка
-// и чтение: навигация и загрузка данных остаются делом приложения.
+// RequestRow, DayRow и DevChips читают снимок бэкенда из стора, а не из пропсов:
+// без посева они падают. Навигация и загрузка данных наружу не отдаются.
 export { setData, useStore, getState } from './store'
 
-// Иконки, тема и текстовые хелперы: без них компоненты не собрать 1:1 с миниаппом.
 export { icons } from './icons'
 export { THEMES, applyTheme, resolveTheme, resolvedTheme, systemTheme, sec } from './theme'
 export { linkedText } from './linkify'

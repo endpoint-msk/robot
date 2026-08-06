@@ -1,6 +1,5 @@
 import { Switch } from 'endpoint-robot-webapp'
 
-/** Ряд настройки — то место, где свитч и живёт (см. AnonRow, экран настроек). */
 export const InRow = () => (
   <div className="card">
     <div className="row">

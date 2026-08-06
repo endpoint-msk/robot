@@ -1,7 +1,6 @@
 import { Avatar, Sep } from 'endpoint-robot-webapp'
 import { anya, misha } from '../fixture'
 
-/** Разделитель во всю ширину — между простыми рядами. */
 export const FullWidth = () => (
   <div className="card">
     <div className="row">
@@ -14,7 +13,6 @@ export const FullWidth = () => (
   </div>
 )
 
-/** С отступом слева: линия начинается под текстом, а не под аватаркой (left={66}). */
 export const Inset = () => (
   <div className="card">
     <div className="row">

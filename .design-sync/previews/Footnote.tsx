@@ -1,6 +1,5 @@
 import { Footnote } from 'endpoint-robot-webapp'
 
-/** Сноска под карточкой: иконка «i» + пояснение мелким вторичным текстом. */
 export const UnderCard = () => (
   <>
     <div className="card">
@@ -15,7 +14,6 @@ export const UnderCard = () => (
   </>
 )
 
-/** Длинная сноска: переносится по строкам, иконка остаётся сверху. */
 export const Long = () => (
   <Footnote>
     Кнопка «Я на месте» появится на экране визита за полчаса до времени и будет жить час после.

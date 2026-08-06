@@ -1,10 +1,9 @@
 import { Avatar, SwipeRow, icons } from 'endpoint-robot-webapp'
 import { misha } from '../fixture'
 
-/**
- * Строка заявки с четырьмя действиями. В покое видно только строку: панель
- * действий выезжает жестом влево (палец, зажатая мышь или трекпад).
- */
+// В покое видно только строку: панель действий выезжает жестом влево (палец,
+// зажатая мышь или трекпад), поэтому на статичной карточке её нет.
+
 export const RequestActions = () => (
   <div className="card">
     <SwipeRow
@@ -29,7 +28,6 @@ export const RequestActions = () => (
   </div>
 )
 
-/** Одно действие — панель уже, но жест тот же. */
 export const SingleAction = () => (
   <div className="card">
     <SwipeRow actions={[{ key: 'note', label: 'Заметка', icon: icons.note(21, '#fff'), tone: 'neutral', onSelect: () => {} }]}>
