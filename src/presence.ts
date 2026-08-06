@@ -3,6 +3,7 @@ import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher 
 import { startHeartbeatInterval } from './health.js'
 import { remindAboutTodayRequests } from './hosting.js'
 import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
+import { closePresenceSession, markRouterGap } from './presence-log.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { ResidentMacs, ResidentPresence } from './types.js'
@@ -184,12 +185,17 @@ export const removePresence = async (
     storage: Storage,
     residents: ResidentDirectory,
     userId: number,
-    reason: 'manual' | 'timeout',
+    /** 'manual' - ушёл сам либо устройство пропало из сети; 'stale' - роутер замолчал. */
+    reason: 'manual' | 'timeout' | 'stale',
     /** `silent` - не дёргать хук доски: массовое снятие пересобирает её один раз в конце. */
     opts: { silent?: boolean } = {},
 ): Promise<void> => {
     const present = storage.get().presence[String(userId)]
     if (!present) return
+    // Журнал пишем до удаления: в `present` лежит начало визита, а после снятия
+    // отметки восстанавливать его будет неоткуда. Единственная точка выхода на все
+    // способы ухода — поэтому история не зависит от того, каким путём сняли отметку.
+    await closePresenceSession(storage, present, reason === 'manual' ? 'checkout' : reason)
     await storage.update((s) => {
         delete s.presence[String(userId)]
     })
@@ -659,7 +665,7 @@ export const dropMacPresence = async (
     const stale = Object.values(storage.get().presence).filter((p) => p.source === 'mac')
     if (stale.length === 0) return 0
     for (const p of stale) {
-        await removePresence(client, storage, residents, p.userId, 'manual', { silent: true })
+        await removePresence(client, storage, residents, p.userId, 'stale', { silent: true })
     }
     onPresenceChanged?.()
     console.warn(`[keenetic] снял авто-отметок: ${stale.length} (${reason}).`)
@@ -763,6 +769,9 @@ export const startMacPresencePoller = (
                 reportedDown = true
                 console.error(`[keenetic] роутер не отвечает ${failStreak} опросов подряд - авто-отметки по MAC не обновляются.`)
             }
+            // Про это время мы ничего не знаем — помечаем провал в журнале, иначе в
+            // статистике «роутер лежал» будет неотличимо от «в спейсе никого не было».
+            await markRouterGap(storage, lastSuccessAt, Date.now())
             // Снимает mac-отметки тот же поллер, который сейчас лежит. Без этого доска,
             // /inside и миниапп часами показывают людей в давно пустом спейсе.
             if (Date.now() - lastSuccessAt >= MAC_STALE_MS) {

@@ -104,6 +104,8 @@ import {
 } from './dues.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
+import { isPresenceLogged, setPresenceNoLog } from './presence-log.js'
+import { buildStatsDay, buildStatsDays, buildStatsOverview, buildStatsPerson, type StatsPeriod } from './stats.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -403,6 +405,9 @@ const eventInputFrom = (body: Record<string, unknown>): EventInput => ({
 /** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
 const isDevUser = (ctx: ApiContext): boolean => ctx.devUserIds.has(ctx.user.userId)
 
+const statsPeriodOf = (raw: unknown): StatsPeriod =>
+    raw === 'month' || raw === 'all' ? raw : 'quarter'
+
 /**
  * Фейковый гость для дев-заявок. userId отрицательный — так он гарантированно не
  * столкнётся с реальным Telegram-id (те всегда положительные), а рассылка/уведомления
@@ -544,6 +549,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             macs: binding ? [...binding.macs].sort((a, b) => a.mac.localeCompare(b.mac)) : [],
             macAnon: binding?.anon ?? false,
             macPresenceActive: storage.get().presence[String(user.userId)]?.source === 'mac',
+            logVisits: isPresenceLogged(storage, user.userId),
         }
         : null
 
@@ -1288,6 +1294,52 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             await storage.update((s) => {
                 s.eventNotify[String(user.userId)] = { enabled, mode }
             })
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // --- Журнал присутствия ---------------------------------------------
+        // Всё это резидентское и только резидентское: «кто когда был в спейсе» за
+        // полгода — данные о людях, а не витрина. Гейт стоит на каждой ручке.
+
+        case 'stats.overview': {
+            if (!requireResident()) return
+            sendJson(res, 200, await buildStatsOverview(storage, tzOffsetMinutes, statsPeriodOf(body.period), user.userId))
+            return
+        }
+
+        case 'stats.days': {
+            if (!requireResident()) return
+            sendJson(res, 200, await buildStatsDays(storage, tzOffsetMinutes))
+            return
+        }
+
+        case 'stats.day': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            if (!isValidDayKey(dateKey)) {
+                sendError(res, 400, 'bad_date', 'Непонятный день.')
+                return
+            }
+            sendJson(res, 200, await buildStatsDay(storage, tzOffsetMinutes, dateKey))
+            return
+        }
+
+        case 'stats.person': {
+            if (!requireResident()) return
+            const userId = typeof body.userId === 'number' ? body.userId : 0
+            if (!Number.isFinite(userId) || userId === 0) {
+                sendError(res, 400, 'bad_user', 'Непонятно, о ком спрашиваешь.')
+                return
+            }
+            sendJson(res, 200, await buildStatsPerson(storage, tzOffsetMinutes, userId, statsPeriodOf(body.period)))
+            return
+        }
+
+        // Отказ от журнала: отметки продолжают работать, история не пишется.
+        case 'presence.log': {
+            if (!requireResident()) return
+            await setPresenceNoLog(storage, user.userId, body.enabled !== true)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }

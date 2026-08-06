@@ -808,6 +808,7 @@ body {
 
 .day-chips { display: flex; gap: 6px; margin-bottom: 8px; }
 .day-chip {
+    position: relative;
     flex: 1;
     min-width: 0;
     min-height: 66px;
@@ -835,8 +836,31 @@ body {
 .day-chip.selected .dc-counts { color: rgba(255, 255, 255, 0.85); }
 .day-chip.selected .dc-approved { color: #fff; }
 .day-chip.selected .dc-dash { color: rgba(255, 255, 255, 0.6); }
+/* Точка «в этот день ивент»: фиолетовый — тон подсистемы ивентов. Абсолютная,
+   чтобы не двигать содержимое чипа: без ивента высота строк та же. */
+.day-chip .dc-event {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--purple);
+}
+.day-chip.selected .dc-event { background: #fff; }
 
-.chips-legend { display: flex; align-items: center; gap: 6px; margin: 0 6px 22px; font-size: 12px; color: rgba(var(--sec), 0.5); }
+/* Строка на пояснение: при переносе внутри одной строки маркер отрывался от
+   своего текста и висел в конце предыдущей. */
+.chips-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 6px 22px;
+    font-size: 12px;
+    color: rgba(var(--sec), 0.5);
+}
+.chips-legend .cl-row { display: flex; align-items: center; gap: 6px; }
+.chips-legend .legend-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--purple); }
 
 /* --- Поля формы --- */
 
@@ -1649,3 +1673,232 @@ body.busy #busy-overlay { display: flex; }
 }
 .hint-icon { flex-shrink: 0; display: flex; align-items: center; }
 .hint-text { font-size: 13px; line-height: 1.45; color: var(--text-2); }
+
+/* --- Журнал присутствия: статистика --- */
+
+/* Переключатель окна (месяц / 3 месяца / всё время) — сегмент-контрол iOS. */
+.segmented {
+    display: flex;
+    gap: 3px;
+    padding: 2px;
+    margin: 0 0 18px;
+    border-radius: 10px;
+    background: var(--chip);
+}
+.seg {
+    flex: 1;
+    text-align: center;
+    padding: 7px 0;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-2);
+    cursor: pointer;
+}
+.seg.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
+
+.stats-card { padding: 16px 16px 14px; margin-bottom: 18px; }
+.stats-card-title { font-size: 17px; font-weight: 700; margin: 0 2px 13px; }
+.stats-figure { display: flex; align-items: baseline; gap: 9px; }
+.sf-main { font-size: 40px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+.sf-main.sf-mid { font-size: 28px; letter-spacing: -0.5px; }
+.sf-of { font-size: 15px; line-height: 1.3; color: var(--text-2); }
+.stats-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.stats-card .sep { margin: 14px 0 12px; }
+
+/* Полоса текущего окна относительно максимума пары «сейчас / раньше».
+   Прошлый период — строкой текста под ней, отдельной полосы у него нет. */
+.compare-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(var(--sec), 0.1);
+    margin-top: 16px;
+    overflow: hidden;
+}
+.compare-bar i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--blue);
+    transition: width 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.stats-pair { display: flex; gap: 24px; }
+.sp-num { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.sp-label { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+
+/* Тепловая карта 7×12: строка — день недели, колонка — двухчасовой интервал. */
+.heat { display: flex; flex-direction: column; gap: 2px; }
+.heat-row { display: flex; gap: 2px; align-items: center; }
+.heat-dow { width: 22px; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--text-3); }
+.heat-cell { flex: 1; aspect-ratio: 1; border-radius: 4px; }
+.heat-hours { margin-top: 4px; }
+.heat-hour { flex: 1; text-align: center; font-size: 9px; color: var(--text-3); }
+.heat-legend { display: flex; align-items: center; gap: 8px; margin: 13px 2px 0; font-size: 12px; color: var(--text-3); }
+.heat-scale { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; }
+.heat-scale i { width: 10px; height: 10px; border-radius: 3px; }
+.heat-swatch { width: 10px; height: 10px; flex-shrink: 0; border-radius: 3px; }
+
+/* Часы по месяцам: значение показывается только у выбранного столбика. */
+/* Отступ сверху — место для подписи над самым высоким столбиком. */
+.bars { display: flex; align-items: flex-end; gap: 5px; margin-top: 18px; }
+.bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.bar-val {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--blue);
+    white-space: nowrap;
+}
+.bar-track { position: relative; width: 100%; height: 92px; display: flex; align-items: flex-end; }
+.bar-track i { display: block; width: 100%; border-radius: 5px; }
+.bar-label { font-size: 11px; color: var(--text-3); }
+.bar-label.on { font-weight: 700; color: var(--text); }
+
+/* Заглушка аватарки: буква на градиенте по userId (фото людей журнал не тянет). */
+.avatar-ini {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.avatar-ini.small { width: 22px; height: 22px; font-size: 10px; }
+.avatar-ini.big { width: 54px; height: 54px; font-size: 22px; }
+
+.person-cell { flex: 1; min-width: 0; }
+.person-top { display: flex; align-items: baseline; gap: 10px; }
+.person-name { font-size: 16px; }
+.person-hours { margin-left: auto; font-size: 15px; font-weight: 600; }
+.share-bar { height: 4px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 7px; overflow: hidden; }
+.share-bar i { display: block; height: 100%; border-radius: 999px; background: var(--blue); }
+
+.person-head { display: flex; align-items: center; gap: 13px; margin: 8px 4px 18px; }
+.person-head-text { min-width: 0; }
+.person-head-text .title { font-size: 30px; }
+
+/* Таймлайн дня: строка на человека, полоска — интервал присутствия. */
+.tl-ticks { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 4px; }
+/* Строка подписей — та же ширина, но без рельса и без обрезки: крайние отметки
+   вынесены за границы дорожки на половину своей ширины. */
+.tl-ticks .tl-track { height: 12px; background: none; overflow: visible; }
+.tl-ticks span { position: absolute; top: 0; font-size: 9px; color: var(--text-3); transform: translateX(-50%); }
+.tl-name { width: 84px; flex-shrink: 0; display: flex; align-items: center; gap: 7px; min-width: 0; }
+.tl-name span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-row { display: flex; gap: 10px; align-items: center; padding: 4px 0; cursor: pointer; }
+/* Дорожка — это шкала суток целиком, поэтому фон у неё есть всегда, даже если
+   человек был внутри полчаса. Сетка часов делает её читаемой: без неё пустой
+   рельс с точкой выглядит как артефакт вёрстки. */
+.tl-track { flex: 1; position: relative; height: 16px; border-radius: 8px; background: rgba(var(--sec), 0.07); overflow: hidden; }
+.tl-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(var(--sec), 0.14); }
+/* min-width: короткий визит на суточной шкале вырождается в точку — оставляем
+   ему различимую капсулу, иначе строка читается как пустая. */
+.tl-bar { position: absolute; top: 2px; bottom: 2px; min-width: 9px; border-radius: 999px; background: var(--blue); }
+/* Авто-отметка по MAC: тот же тон, но штриховкой — её границы менее точны. */
+.tl-bar.mac { background: repeating-linear-gradient(115deg, #0a84ff 0 3px, rgba(10, 132, 255, 0.62) 3px 6px); }
+.tl-legend { display: flex; align-items: center; gap: 14px; margin: 12px 2px 0; font-size: 11px; color: var(--text-3); }
+.tl-legend span { display: flex; align-items: center; gap: 6px; }
+.tl-swatch { width: 14px; height: 8px; border-radius: 999px; background: var(--blue); }
+.tl-swatch.mac { background: repeating-linear-gradient(115deg, #0a84ff 0 3px, rgba(10, 132, 255, 0.62) 3px 6px); }
+
+/* Плитка даты в списках журнала. */
+.date-tile {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: var(--chip);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.dt-num { font-size: 15px; font-weight: 700; line-height: 1; }
+.dt-sub { font-size: 9px; color: var(--text-3); }
+
+/* Четыре показателя человека сеткой 2×2. */
+.stats-quad { margin-bottom: 18px; }
+.sq-row { display: flex; }
+.sq-cell { flex: 1; min-width: 0; padding: 15px 16px; }
+.sq-vsep { width: 0.5px; background: var(--sep); margin: 12px 0; }
+.sq-num { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
+.sq-num.small { font-size: 19px; font-weight: 700; line-height: 1.1; }
+.sq-label { font-size: 13px; color: var(--text-2); margin-top: 4px; }
+
+/* Точки визитов: 12 недель по столбцам, дни недели по строкам. */
+.dots { display: flex; gap: 2px; }
+.dots-labels { width: 22px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
+.dots-labels div { flex: 1; display: flex; align-items: center; font-size: 10px; font-weight: 600; color: var(--text-3); }
+.dots-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    grid-template-rows: repeat(7, 1fr);
+    grid-auto-flow: column;
+    gap: 2px;
+}
+.dot { aspect-ratio: 1; border-radius: 4px; }
+
+/* --- Анимации разделов статистики --- */
+
+/* Раскрытие до height: auto. Единственный способ анимировать его без замеров в
+   JS; движки без поддержки 0fr отбрасывают декларацию и просто показывают блок. */
+.collapsible {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.collapsible.open { grid-template-rows: 1fr; }
+.collapsible-inner { overflow: hidden; }
+
+.month-group { margin-bottom: 12px; }
+.chev { display: flex; transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+.chev.open { transform: rotate(90deg); }
+
+/* Бегунок сегмент-контрола: отдельный слой под подписями. */
+.segmented { position: relative; }
+.seg-thumb {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: calc((100% - 4px) / 3);
+    border-radius: 8px;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.seg { position: relative; z-index: 1; transition: color 0.18s ease, font-weight 0.18s ease; }
+.seg.on { background: none; box-shadow: none; }
+
+/* Смена окна: цифры меняются все разом, поэтому блок проявляется целиком. */
+.stats-body { animation: stats-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes stats-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Столбик месяца и его подпись переезжают, а не перещёлкиваются. */
+.bar-track i { transition: height 0.3s cubic-bezier(0.32, 0.72, 0, 1), background 0.2s ease; }
+.bar-val { animation: bar-val-in 0.2s ease; }
+@keyframes bar-val-in {
+    from { opacity: 0; transform: translate(-50%, 4px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+.share-bar i { transition: width 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+    .collapsible,
+    .seg-thumb,
+    .bar-track i,
+    .share-bar i,
+    .compare-bar i,
+    .chev { transition: none; }
+    .stats-body, .bar-val { animation: none; }
+}

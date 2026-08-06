@@ -34,6 +34,7 @@ import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.j
 import { Storage } from './storage.js'
 import { installErrorReporting } from './errors.js'
 import { parseHostingTzOffset } from './hosting.js'
+import { setPresenceLogTz } from './presence-log.js'
 import { parseWebappConfig, startWebappServer } from './webapp.js'
 
 const required = (name: string): string => {
@@ -97,6 +98,9 @@ const main = async () => {
         host: process.env.WEBAPP_HOST,
     })
     const hostingTzOffset = parseHostingTzOffset(process.env.HOSTING_TZ_OFFSET_MINUTES)
+    // Журнал присутствия нарезает сутки по поясу спейса — как и хостинг. Ставим до
+    // логина: снятие отметки может случиться на первой же минуте работы.
+    setPresenceLogTz(hostingTzOffset)
     // Репо для чтения GitHub-релизов в дев-анонсах (публичное, токен не нужен).
     const githubRepo = process.env.GITHUB_REPO?.trim() || 'endpoint-msk/robot'
     // Табло донатов (GET /board). Без токена ручка не поднимается вовсе: она отдаёт

@@ -90,6 +90,14 @@ export function Overview() {
           <div className="row-right">{icons.chevron()}</div>
         </div>
         <Sep left={54} />
+        <div className="row tappable" onClick={() => push('stats')}>
+          <div className="row-icon" style={{ background: '#0a84ff' }}>
+            {icons.chart()}
+          </div>
+          <span className="row-label">Статистика</span>
+          <div className="row-right">{icons.chevron()}</div>
+        </div>
+        <Sep left={54} />
         <DuesRow />
         <div className="row tappable" onClick={() => push('settings')}>
           <div className="row-icon" style={{ background: '#8e8e93' }}>

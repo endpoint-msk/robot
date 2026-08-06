@@ -50,8 +50,15 @@ export function NewRequest() {
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={day} onSelect={selectDay} />
       <div className="chips-legend">
-        {icons.check(12, '#34c759', 2.2)}
-        число заявок и уже одобренных в этот день
+        <span className="cl-row">
+          {icons.check(12, '#34c759', 2.2)}
+          число заявок и уже одобренных в этот день
+        </span>
+        {days.some((d) => d.events.length > 0) ? (
+          <span className="cl-row">
+            <i className="legend-dot" />в этот день ивент
+          </span>
+        ) : null}
       </div>
       <SectionTitle>Детали</SectionTitle>
       <div className="card">

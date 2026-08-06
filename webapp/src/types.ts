@@ -123,6 +123,95 @@ export type Settings = {
   macs: MacEntry[]
   macAnon: boolean
   macPresenceActive: boolean
+  /** Журнал присутствия ведётся: выключено — визиты не пишутся и в статистике человека нет. */
+  logVisits: boolean
+}
+
+// --- Журнал присутствия (src/stats.ts) -------------------------------------
+
+export type StatsPeriod = 'month' | 'quarter' | 'all'
+
+/** Ячейка тепловой карты: среднее число людей внутри. noData — роутер молчал. */
+export type StatsHeatCell = { v: number; noData: boolean }
+
+export type StatsTopPerson = {
+  userId: number
+  label: string
+  username: string | null
+  minutes: number
+  visits: number
+}
+
+export type StatsOverview = {
+  period: StatsPeriod
+  periodLabel: string
+  /** Минуты, когда внутри был хоть кто-то. Не путать с manMinutes (человекоминуты). */
+  openMinutes: number
+  manMinutes: number
+  avgInside: number
+  prevOpenMinutes: number | null
+  heat: { max: number; rows: { dow: number; cells: StatsHeatCell[] }[] }
+  months: { key: string; label: string; minutes: number }[]
+  top: StatsTopPerson[]
+  daysCount: number
+  myMinutes: number
+  hasData: boolean
+}
+
+export type StatsDayRow = {
+  userId: number
+  label: string
+  username: string | null
+  /** Минуты от полуночи в поясе спейса. */
+  fromMin: number
+  toMin: number
+  source: 'manual' | 'mac'
+}
+
+export type StatsDayView = {
+  dateKey: string
+  openMinutes: number
+  manMinutes: number
+  peak: number
+  from: string
+  to: string
+  people: number
+  rows: StatsDayRow[]
+  gaps: number[]
+}
+
+export type StatsDaySummary = {
+  dateKey: string
+  openMinutes: number
+  from: string
+  to: string
+  people: number
+  peak: number
+}
+
+export type StatsDaysView = { days: StatsDaySummary[] }
+
+export type StatsPersonVisit = {
+  dateKey: string
+  from: string
+  to: string
+  minutes: number
+  source: 'manual' | 'mac'
+}
+
+export type StatsPersonView = {
+  user: { userId: number; label: string; username: string | null }
+  period: StatsPeriod
+  periodLabel: string
+  visits: number
+  minutes: number
+  avgMinutes: number
+  favArrival: string
+  firstDateKey: string
+  /** 12 недель × 7 дней, минуты; порядок — по столбцам-неделям. */
+  dots: number[]
+  dotsFrom: string
+  lastVisits: StatsPersonVisit[]
 }
 
 export type Me = {

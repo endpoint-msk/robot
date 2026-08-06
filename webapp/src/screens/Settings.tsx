@@ -255,6 +255,20 @@ export function Settings() {
         спейса — иначе адрес будет меняться. Команды /bindmac, /unbindmac и /settings в боте работают как раньше и
         синхронизированы с этим списком.
       </Footnote>
+      <SectionTitle>Журнал присутствия</SectionTitle>
+      <div className="card">
+        <div className="row">
+          <span className="row-label">
+            Не вести историю моих визитов
+            <span className="row-sublabel">Отметки продолжат работать, но в статистике вас не будет</span>
+          </span>
+          <Switch on={!s.logVisits} onToggle={() => void action('presence.log', { enabled: !s.logVisits })} />
+        </div>
+      </div>
+      <Footnote>
+        Журнал нужен статистике спейса: сколько часов он работал и когда сюда приходят. Уже записанные визиты остаются —
+        выключение останавливает запись новых.
+      </Footnote>
     </Screen>
   )
 }

@@ -27,6 +27,11 @@ export const icons = {
       <path d="M9 5v4.2l2.6 1.6" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  chart: (size = 17, color = '#fff'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <path d="M3 15V9.4M7.6 15V4.2M12.2 15v-7M16 15H2" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
   plus: (): ReactElement => (
     <svg width="18" height="18" viewBox="0 0 18 18">
       <path d="M9 3v12M3 9h12" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />

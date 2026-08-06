@@ -66,6 +66,11 @@ export function DayChips({
         >
           <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
           <span className="dc-num">{String(dayNum(d.dateKey))}</span>
+          {/* Ивент дня — точкой в углу. Гостю сюда приезжают только открытые
+              ивенты (сервер фильтрует residentsOnly), так что метка честная. */}
+          {d.events.length > 0 ? (
+            <i className="dc-event" title={d.events.map((e) => e.title).join(', ')} />
+          ) : null}
           {showCounts ? (
             d.total > 0 ? (
               <div className="dc-counts">

@@ -133,6 +133,10 @@ export class Storage {
             // дефолта, иначе стейт, записанный до появления очередной настройки,
             // приезжал бы с undefined там, где код ждёт число.
             dues: normalizeDues(parsed.dues),
+            presenceNoLog: parsed.presenceNoLog ?? {},
+            // Вложенный объект, как и dues: пустой словарь дней, а не undefined, иначе
+            // первый же расчёт статистики на стейте из прошлой версии споткнётся.
+            presenceStats: { days: parsed.presenceStats?.days ?? {} },
         }
     }
 
