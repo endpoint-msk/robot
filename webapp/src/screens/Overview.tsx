@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 import { fmtRange, requestsWord } from '../dates'
+import { money } from '../format'
 import { icons } from '../icons'
 import { push, useStore } from '../store'
 import { DevChips, Header, Sep } from '../components/common'
@@ -15,14 +16,14 @@ function DuesBanner() {
   const dues = data!.dues
   if (!dues || !dues.enabled || !dues.me.inRoster || dues.me.amount <= 0 || dues.me.status !== 'none') return null
   return (
-    <div className="write-banner" onClick={() => push('dues')}>
+    <button type="button" className="write-banner" onClick={() => push('dues')}>
       <div className="wb-icon">{icons.rub(17, '#fff')}</div>
       <div className="wb-text">
-        <div className="wb-title">{`Взнос за ${dues.periodLabel.split(' ')[0]?.toLowerCase()}, ${dues.me.amount} ${dues.currency}`}</div>
+        <div className="wb-title">{`Взнос за ${dues.periodLabel.split(' ')[0]?.toLowerCase()}, ${money(dues.me.amount, dues.currency)}`}</div>
         <div className="wb-sub">Ещё не отмечен</div>
       </div>
       {icons.chevron()}
-    </div>
+    </button>
   )
 }
 
@@ -44,8 +45,8 @@ function DuesRow() {
             : { text: 'Не внесён', color: 'var(--orange)' }
   return (
     <>
-      <div className="row tappable" onClick={() => push('dues')}>
-        <div className="row-icon" style={{ background: '#30d158' }}>
+      <button type="button" className="row tappable" onClick={() => push('dues')}>
+        <div className="row-icon" style={{ background: 'var(--green)' }}>
           {icons.rub(17, '#fff')}
         </div>
         <span className="row-label">Взносы</span>
@@ -55,7 +56,7 @@ function DuesRow() {
           </span>
           {icons.chevron()}
         </div>
-      </div>
+      </button>
       <Sep left={54} />
     </>
   )
@@ -82,30 +83,30 @@ export function Overview() {
       </div>
       <div style={{ height: 22 }} />
       <div className="card">
-        <div className="row tappable" onClick={() => push('archive')}>
-          <div className="row-icon" style={{ background: '#5856d6' }}>
+        <button type="button" className="row tappable" onClick={() => push('archive')}>
+          <div className="row-icon" style={{ background: 'var(--indigo)' }}>
             {icons.archiveBox()}
           </div>
           <span className="row-label">Архив</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
         <Sep left={54} />
-        <div className="row tappable" onClick={() => push('stats')}>
-          <div className="row-icon" style={{ background: '#0a84ff' }}>
+        <button type="button" className="row tappable" onClick={() => push('stats')}>
+          <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.chart()}
           </div>
           <span className="row-label">Статистика</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
         <Sep left={54} />
         <DuesRow />
-        <div className="row tappable" onClick={() => push('settings')}>
-          <div className="row-icon" style={{ background: '#8e8e93' }}>
+        <button type="button" className="row tappable" onClick={() => push('settings')}>
+          <div className="row-icon" style={{ background: 'var(--gray)' }}>
             {icons.gear()}
           </div>
           <span className="row-label">Настройки</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
       </div>
     </Screen>
   )

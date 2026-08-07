@@ -182,7 +182,7 @@ function RescheduleCard({ modal }: { modal: Modal & { kind: 'reschedule' } }) {
     if (!time) return
     // Прошедший слот «на сегодня» — оставляем модалку открытой, поверх кладём alert.
     if (isPastForToday(day, time)) {
-      showAlert('Это время уже прошло — выбери время позже текущего.')
+      showAlert('Это время уже прошло — выберите время позже текущего.')
       return
     }
     close({ dateKey: day, time })

@@ -46,10 +46,16 @@ export function Rules() {
       </div>
       <div style={{ height: 22 }} />
       <div className="card">
-        <div className="row tappable" onClick={() => setAgreed((v) => !v)}>
+        <button
+          type="button"
+          className="row tappable"
+          role="checkbox"
+          aria-checked={agreed}
+          onClick={() => setAgreed((v) => !v)}
+        >
           <span className="row-label rule-agree">Я прочитал и согласен с правилами</span>
           <div className={'checkbox' + (agreed ? ' on' : '')}>{agreed ? icons.check(13, '#fff', 2.6) : null}</div>
-        </div>
+        </button>
       </div>
       <BottomBar>
         <button className="primary-btn" disabled={!agreed} onClick={submit}>

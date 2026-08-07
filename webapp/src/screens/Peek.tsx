@@ -34,7 +34,8 @@ function PeekDayRow({ day }: { day: Day }) {
   return (
     // day-stack — только когда строк внутри две: у неё своя вертикальная подложка,
     // чтобы зазоры над надписью, между ней и аватарками и под ними были равны.
-    <div
+    <button
+      type="button"
       className={cls + (first && att.length > 0 ? ' day-stack' : '')}
       onClick={() => push('peekDay', { dateKey: day.dateKey })}
     >
@@ -57,7 +58,7 @@ function PeekDayRow({ day }: { day: Day }) {
         ) : null}
       </div>
       <div className="row-right">{icons.chevron(isToday ? sec(0.4) : undefined)}</div>
-    </div>
+    </button>
   )
 }
 

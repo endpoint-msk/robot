@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { action, api } from '../api'
 import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
@@ -13,17 +13,65 @@ import { RemindCard } from '../components/forms'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
 
-/** Сколько минут прошло с ISO-метки. Считаем по абсолютному времени - пояс не нужен. */
-function minutesSince(iso: string): number {
-  const at = Date.parse(iso)
-  if (!Number.isFinite(at)) return Number.POSITIVE_INFINITY
-  return Math.floor((Date.now() - at) / 60_000)
-}
-
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
 function minuteOfDay(hhmm: string): number {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm)
   return m ? Number(m[1]) * 60 + Number(m[2]) : -1
+}
+
+/** Антиспам повторного «Я на месте». Столько же держит сервер (ARRIVAL_COOLDOWN_MS). */
+const ARRIVAL_COOLDOWN_MS = 5 * 60_000
+
+/** 'M:SS' — обратный отсчёт до следующего нажатия. */
+const countdown = (ms: number): string => {
+  const total = Math.ceil(ms / 1000)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/**
+ * «Я на месте»: гость у двери жмёт кнопку, DM уходит хосту и тем, кто внутри.
+ * Отдельный компонент из-за секундного таймера - он нужен только пока карточка на
+ * экране, а отсчёт до следующего нажатия должен идти сам: bootstrap за это время не
+ * перезапрашивается, и без тика кнопка так и осталась бы выключенной.
+ */
+function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const at = arrivedAt ? Date.parse(arrivedAt) : NaN
+  const sent = Number.isFinite(at)
+  const left = sent ? at + ARRIVAL_COOLDOWN_MS - now : 0
+  const waiting = left > 0
+  const mins = sent ? Math.max(0, Math.floor((now - at) / 60_000)) : 0
+
+  return (
+    <div className="arrival-card">
+      <div className="arrival-head">
+        <div className="arrival-icon">{sent ? icons.check(19, '#34c759', 2.2) : icons.pin(19, '#34c759')}</div>
+        <div style={{ minWidth: 0 }}>
+          <div className="arrival-title">
+            {!sent ? 'Уже у двери?' : mins === 0 ? 'Сообщили только что' : `Сообщили ${mins} мин назад`}
+          </div>
+          <div className="arrival-sub">
+            {sent ? 'Открывают. Если никто не вышел, сообщите ещё раз' : 'Скажу тем, кто сейчас в спейсе'}
+          </div>
+        </div>
+      </div>
+      <button
+        className="arrival-btn"
+        disabled={waiting}
+        onClick={async () => {
+          const done = await action('arrived', { id })
+          if (done) haptic('success')
+        }}
+      >
+        {waiting ? `Сообщить ещё раз можно через ${countdown(left)}` : sent ? 'Сообщить ещё раз' : 'Я на месте'}
+      </button>
+    </div>
+  )
 }
 
 export function Visit() {
@@ -186,44 +234,12 @@ export function Visit() {
   const nowMin = minuteOfDay(data!.nowTime)
   const arrivalOpen =
     approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
-  const sinceArrival = r.arrivedAt ? minutesSince(r.arrivedAt) : null
-  // Пока не прошёл антиспам, вместо кнопки - подтверждение: жать второй раз бесполезно.
-  const justArrived = sinceArrival !== null && sinceArrival < 5
-
-  const arrivalCard = !arrivalOpen ? null : justArrived ? (
-    <div className="arrival-card done">
-      <div className="arrival-icon done">{icons.check(17, '#34c759', 2.2)}</div>
-      <div style={{ minWidth: 0 }}>
-        <div className="arrival-title">{sinceArrival === 0 ? 'Сообщил только что' : `Сообщил ${sinceArrival} мин назад`}</div>
-        <div className="arrival-sub">Открывают. Если долго нет - нажмите ещё раз через пару минут</div>
-      </div>
-    </div>
-  ) : (
-    <div className="arrival-card">
-      <div className="arrival-head">
-        <div className="arrival-icon">{icons.pin(19, '#34c759')}</div>
-        <div style={{ minWidth: 0 }}>
-          <div className="arrival-title">Уже у двери?</div>
-          <div className="arrival-sub">Скажу тем, кто сейчас в спейсе</div>
-        </div>
-      </div>
-      <button
-        className="arrival-btn"
-        onClick={async () => {
-          const done = await action('arrived', { id: r.id })
-          if (done) haptic('success')
-        }}
-      >
-        {sinceArrival === null ? 'Я на месте' : 'Сообщить ещё раз'}
-      </button>
-    </div>
-  )
 
   return (
     <Screen>
       <BackRow label="Мои визиты" />
       <Header title={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]} subtitle={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} />
-      {arrivalCard}
+      {arrivalOpen ? <ArrivalCard id={r.id} arrivedAt={r.arrivedAt} /> : null}
       {isPast ? null : statusCard}
       {isPast ? null : proposalCard}
       {/* Правка доступна, пока визит не одобрен: сервер тоже это проверяет. */}
@@ -315,7 +331,11 @@ export function Visit() {
       <button
         className="destructive-btn"
         onClick={async () => {
-          const ok = await confirmDialog('Отменить заявку на визит?', { confirmLabel: 'Отменить', destructive: true })
+          const ok = await confirmDialog('Отменить заявку на визит?', {
+            confirmLabel: 'Отменить заявку',
+            cancelLabel: 'Оставить',
+            destructive: true,
+          })
           if (!ok) return
           setBusy(true)
           try {

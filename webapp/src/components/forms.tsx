@@ -252,7 +252,7 @@ export function RemindCard({
                 под карточкой: третий раз повторять его в подзаголовке незачем. */}
             {active || sent ? null : <span className="row-sublabel">Бот напишет в личку перед визитом</span>}
           </span>
-          <Switch on={active} onToggle={toggle} />
+          <Switch on={active} onToggle={toggle} label="Напомнить о визите" />
         </div>
         {active ? (
           <>
@@ -289,7 +289,7 @@ export function AnonRow({ anon, onChange }: { anon: boolean; onChange: (v: boole
           Прийти анонимно
           <span className="row-sublabel">Другие гости не увидят вас в списке</span>
         </span>
-        <Switch on={anon} onToggle={() => onChange(!anon)} />
+        <Switch on={anon} onToggle={() => onChange(!anon)} label="Прийти анонимно" />
       </div>
     </div>
   )

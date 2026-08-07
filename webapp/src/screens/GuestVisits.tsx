@@ -5,15 +5,17 @@
 // Строки свои, а не RequestsCard: там главное — гость и время внутри одного дня, а
 // здесь гость один на весь экран и главное — дата.
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment } from 'react'
 import { api } from '../api'
-import { dayNum, fmtShortDate, MONTHS_ABBR, monthIdx, requestsWord } from '../dates'
+import { dayNum, fmtShortDate, MONTHS_ABBR, monthIdx, plural, requestsWord } from '../dates'
 import { icons } from '../icons'
+import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
 import { sec } from '../theme'
 import type { GuestRequestsResponse, HostingRequest, User } from '../types'
-import { BackRow, EmptyState, Header, ReadonlyBadge, Sep, SectionTitle, SpinnerCenter } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Header, ReadonlyBadge, Sep, SectionTitle } from '../components/common'
 import { Screen } from '../components/Screen'
+import { SkRows } from '../components/skeleton'
 
 function VisitRow({ r }: { r: HostingRequest }) {
   const approved = r.status === 'approved'
@@ -36,60 +38,41 @@ function VisitRow({ r }: { r: HostingRequest }) {
   )
 }
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'ok'; user: User; requests: HostingRequest[] }
-  | { status: 'error'; message: string }
-
 export function GuestVisits() {
   const params = useParams()
   const { data } = useStore()
   const userId = params.userId as number
   // Пока грузятся заявки, шапку рисуем по данным из строки поиска — экран не мигает пустым.
   const preset = params.user as User | undefined
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
+  const guest = useRemote(() => api<GuestRequestsResponse>('guest.requests', { userId }), [userId])
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async (): Promise<void> => {
-      try {
-        const res = await api<GuestRequestsResponse>('guest.requests', { userId })
-        if (!cancelled) setState({ status: 'ok', user: res.user, requests: res.requests })
-      } catch (err) {
-        if (!cancelled) setState({ status: 'error', message: (err as Error).message })
-      }
-    }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [userId])
-
-  const user = state.status === 'ok' ? state.user : preset
+  const user = guest.data ? guest.data.user : preset
   const note = (data!.notes || []).find((n) => n.userId === userId) || null
   let sub = '…'
   let body
 
-  if (state.status === 'loading') {
-    body = <SpinnerCenter />
-  } else if (state.status === 'error') {
+  if (guest.error) {
+    body = <ErrorState onRetry={guest.reload} />
+  } else if (!guest.data) {
+    // Шапка и заметка уже настоящие — под скелетом только список заявок.
     body = (
-      <div className="card">
-        <EmptyState title="Не получилось загрузить" text={state.message} />
+      <div aria-busy="true" aria-label="Загружаем заявки гостя">
+        <SkRows count={4} avatar />
       </div>
     )
-  } else if (state.requests.length === 0) {
+  } else if (guest.data.requests.length === 0) {
     body = (
       <div className="card">
         <EmptyState title="Заявок нет" text="Все заявки этого человека уже удалены." />
       </div>
     )
   } else {
-    const approved = state.requests.filter((r) => r.status === 'approved').length
-    sub = `${requestsWord(state.requests.length)} · ${approved} состоялось`
+    const requests = guest.data.requests
+    const approved = requests.filter((r) => r.status === 'approved').length
+    sub = `${requestsWord(requests.length)} · ${approved} ${plural(approved, 'состоялась', 'состоялись', 'состоялось')}`
     body = (
       <div className="card">
-        {state.requests.map((r, i) => (
+        {requests.map((r, i) => (
           <Fragment key={r.id}>
             {i > 0 ? <Sep left={70} /> : null}
             <VisitRow r={r} />
@@ -109,13 +92,17 @@ export function GuestVisits() {
         <>
           <SectionTitle>Заметка</SectionTitle>
           <div className="card">
-            <div className="row tappable" onClick={() => push('guestNote', { guest: user, backLabel: 'Гость' })}>
+            <button
+              type="button"
+              className="row tappable"
+              onClick={() => push('guestNote', { guest: user, backLabel: 'Гость' })}
+            >
               <div className="row-icon" style={{ background: 'rgba(var(--sec), 0.12)' }}>
                 {icons.note(17, sec(0.6))}
               </div>
               <span className="row-label">{note ? note.text : 'Заметки пока нет'}</span>
               <div className="row-right">{icons.chevron()}</div>
-            </div>
+            </button>
           </div>
         </>
       ) : null}

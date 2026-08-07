@@ -34,7 +34,7 @@ export function Day() {
 
   return (
     <Screen>
-      <BackRow label={archive ? 'Неделя' : 'Обзор'} />
+      <BackRow label={archive ? 'Неделя' : 'Ближайшие дни'} />
       <Header
         title={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]}
         subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)} · ${requestsWord(requests.length)}`}
@@ -58,13 +58,15 @@ export function Day() {
           Позвать в спейс
         </button>
       ) : null}
-      {/* Ивенты дня: список с переходом в редактор, а если ивентов нет — кнопка «создать». */}
+      {/* Ивенты дня: список с переходом в редактор + строка «ещё» в конце той же карточки.
+          Ивентов на день может быть сколько угодно, поэтому вход в редактор нужен и тогда,
+          когда список уже не пуст. */}
       {!archive && events.length > 0 ? (
         <div className="card" style={{ marginTop: 20 }}>
           {events.map((ev, i) => (
             <Fragment key={ev.id}>
               {i > 0 ? <Sep left={62} /> : null}
-              <div className="row tappable" onClick={() => push('event', { event: ev })}>
+              <button type="button" className="row tappable" onClick={() => push('event', { event: ev })}>
                 <div className="row-icon ev-row-icon">{icons.calendar(17, '#bf5af2')}</div>
                 <div className="ev-row-main">
                   <div className="ev-row-title-line">
@@ -74,9 +76,18 @@ export function Day() {
                   <div className="ev-row-sub">{`в ${ev.time} · ${ev.host.username ? '@' + ev.host.username : ev.host.name}`}</div>
                 </div>
                 <div className="row-right">{icons.chevron()}</div>
-              </div>
+              </button>
             </Fragment>
           ))}
+          <Sep left={62} />
+          <button
+            type="button"
+            className="row tappable ev-add-row"
+            onClick={() => push('event', { dateKey: params.dateKey })}
+          >
+            <div className="row-icon ev-row-icon">{icons.plusSmall()}</div>
+            <span className="ev-add-label">Ещё ивент</span>
+          </button>
         </div>
       ) : null}
       {!archive && events.length === 0 ? (

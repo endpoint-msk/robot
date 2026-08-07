@@ -28,11 +28,11 @@ export function EditRequest() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажи время прихода.')
+      showAlert('Укажите время прихода.')
       return
     }
     if (isPastForToday(day, time)) {
-      showAlert('Это время уже прошло — выбери время позже текущего.')
+      showAlert('Это время уже прошло — выберите время позже текущего.')
       return
     }
     const done = await action('edit', {

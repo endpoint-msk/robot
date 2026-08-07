@@ -6,12 +6,21 @@ import { initData } from './telegram'
 import { showAlert } from './modals'
 import { ApiError, type Bootstrap } from './types'
 
+/** Сбой сети — такая же ошибка приложения, как и отказ сервера: без этого наружу
+    летел техтекст браузера («Failed to fetch») и попадал прямо в алерт. */
+const NETWORK_ERROR = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.'
+
 export async function api<T = any>(method: string, params?: Record<string, unknown>): Promise<T> {
-  const res = await fetch('/api/' + method, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initData: initData(), ...(params ?? {}) }),
-  })
+  let res: Response
+  try {
+    res = await fetch('/api/' + method, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData: initData(), ...(params ?? {}) }),
+    })
+  } catch {
+    throw new ApiError(NETWORK_ERROR, 'network')
+  }
   let data: any = {}
   try {
     data = await res.json()
@@ -19,7 +28,7 @@ export async function api<T = any>(method: string, params?: Record<string, unkno
     /* не-JSON — ниже упадём в generic */
   }
   if (!res.ok) {
-    throw new ApiError(data?.message || 'Что-то пошло не так. Попробуй ещё раз.', data?.error)
+    throw new ApiError(data?.message || 'Что-то пошло не так. Попробуйте ещё раз.', data?.error)
   }
   return data as T
 }
@@ -30,11 +39,16 @@ export async function api<T = any>(method: string, params?: Record<string, unkno
  * ивентом (до сохранения картинка ничьей и не привязана).
  */
 export async function uploadEventPhoto(blob: Blob): Promise<string> {
-  const res = await fetch('/event-photo.jpg?initData=' + encodeURIComponent(initData()), {
-    method: 'POST',
-    headers: { 'Content-Type': 'image/jpeg' },
-    body: blob,
-  })
+  let res: Response
+  try {
+    res = await fetch('/event-photo.jpg?initData=' + encodeURIComponent(initData()), {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob,
+    })
+  } catch {
+    throw new ApiError(NETWORK_ERROR, 'network')
+  }
   let data: any = {}
   try {
     data = await res.json()
@@ -42,7 +56,7 @@ export async function uploadEventPhoto(blob: Blob): Promise<string> {
     /* не-JSON — ниже упадём в generic */
   }
   if (!res.ok) {
-    throw new ApiError(data?.message || 'Не получилось загрузить фото. Попробуй ещё раз.', data?.error)
+    throw new ApiError(data?.message || 'Не получилось загрузить фото. Попробуйте ещё раз.', data?.error)
   }
   return String(data.id)
 }

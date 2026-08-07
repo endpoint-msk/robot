@@ -14,11 +14,13 @@ import {
   yearOf,
 } from '../dates'
 import { icons } from '../icons'
+import { useRemote } from '../remote'
 import { push, useStore } from '../store'
 import type { ArchiveResponse, ArchiveWeekSummary, GuestSearchResponse, GuestSummary } from '../types'
-import { BackRow, EmptyState, Header, Sep, SectionTitle, SpinnerCenter } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
+import { SkBlock, SkRows } from '../components/skeleton'
 
 function weeksAgoLabel(weekStart: string, todayKey: string): string {
   const currentMonday = addDays(todayKey, -weekdayIdx(todayKey))
@@ -51,7 +53,11 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
               return (
                 <Fragment key={week.weekStart}>
                   {i > 0 ? <Sep left={70} /> : null}
-                  <div className="row tappable" onClick={() => push('archiveWeek', { weekStart: week.weekStart })}>
+                  <button
+                    type="button"
+                    className="row tappable"
+                    onClick={() => push('archiveWeek', { weekStart: week.weekStart })}
+                  >
                     {/* Плитка-календарь: число старта + месяц. Диапазон целиком стоит
                         в заголовке справа, а «20 / –26» в две строки читалось как минус. */}
                     <div className="week-square">
@@ -70,7 +76,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                       <span className="count-muted">{`/ ${week.total}`}</span>
                       {icons.chevron()}
                     </div>
-                  </div>
+                  </button>
                 </Fragment>
               )
             })}
@@ -82,12 +88,55 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
 }
 
 /**
+ * Каркас списка недель: месяцы группами, в строке плитка-календарь и диапазон дат.
+ * Плитка собрана из SkBlock, а не взята кружком из SkRows: людей в этом списке нет,
+ * и круглый аватар обещал бы не тот экран.
+ */
+function ArchiveSkeleton() {
+  const group = (key: string, count: number, from: number) => (
+    <Fragment key={key}>
+      <SectionTitle>
+        <SkBlock w={92} h={11} />
+      </SectionTitle>
+      <div className="card sk-list" style={{ marginBottom: 22 }}>
+        {Array.from({ length: count }, (_, i) => (
+          <div className="sk-row" key={i} style={{ animationDelay: `${(from + i) * 90}ms` }}>
+            <SkBlock w={42} h={42} style={{ borderRadius: 12, flexShrink: 0 }} />
+            <div className="sk-lines">
+              <SkBlock w={`${58 - (i % 3) * 8}%`} h={13} />
+              <SkBlock w={`${38 - (i % 3) * 5}%`} h={11} />
+            </div>
+            <SkBlock w={44} h={13} style={{ marginLeft: 'auto' }} />
+          </div>
+        ))}
+      </div>
+    </Fragment>
+  )
+  return (
+    <div aria-busy="true" aria-label="Загружаем архив недель">
+      {group('a', 4, 0)}
+      {group('b', 3, 4)}
+    </div>
+  )
+}
+
+/**
  * Поиск по людям поверх архива: недели отвечают на «что было в тот вторник», а этот
  * вход — на «кто такой N и сколько раз он у нас был». Пустой запрос отдаёт всех, кто
  * когда-либо оставлял заявку, от свежих визитов к старым.
  */
 function GuestSearch({ query, guests }: { query: string; guests: GuestSummary[] | null }) {
-  if (guests === null) return <SpinnerCenter />
+  // Скелет тут короткий: это блок результатов внутри экрана, а не сам экран, и
+  // на весь его рост он читался бы как загрузка всего архива заново.
+  if (guests === null)
+    return (
+      <div aria-busy="true" aria-label="Ищем людей">
+        <SectionTitle>
+          <SkBlock w={72} h={11} />
+        </SectionTitle>
+        <SkRows count={3} avatar tail />
+      </div>
+    )
   if (guests.length === 0)
     return (
       <div className="card">
@@ -101,7 +150,8 @@ function GuestSearch({ query, guests }: { query: string; guests: GuestSummary[] 
         {guests.map((g, i) => (
           <Fragment key={g.user.userId}>
             {i > 0 ? <Sep left={66} /> : null}
-            <div
+            <button
+              type="button"
               className="row tappable"
               onClick={() => push('guestVisits', { userId: g.user.userId, user: g.user })}
             >
@@ -122,7 +172,7 @@ function GuestSearch({ query, guests }: { query: string; guests: GuestSummary[] 
                 <span className="count-muted">{`/ ${g.total}`}</span>
                 {icons.chevron()}
               </div>
-            </div>
+            </button>
           </Fragment>
         ))}
       </div>
@@ -130,67 +180,39 @@ function GuestSearch({ query, guests }: { query: string; guests: GuestSummary[] 
   )
 }
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'ok'; weeks: ArchiveWeekSummary[] }
-  | { status: 'error'; message: string }
-
 export function Archive() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [query, setQuery] = useState('')
-  const [guests, setGuests] = useState<GuestSummary[] | null>(null)
+  const [debounced, setDebounced] = useState('')
   const searching = query.trim().length > 0
-
-  useEffect(() => {
-    let cancelled = false
-    api<ArchiveResponse>('archive')
-      .then(({ weeks }) => {
-        if (!cancelled) setState({ status: 'ok', weeks })
-      })
-      .catch((err) => {
-        if (!cancelled) setState({ status: 'error', message: (err as Error).message })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const weeks = useRemote(async () => (await api<ArchiveResponse>('archive')).weeks, [])
 
   // Запрос уходит с задержкой: иначе каждый набранный символ — отдельный round-trip.
   useEffect(() => {
     if (!searching) {
-      setGuests(null)
+      setDebounced('')
       return
     }
-    let cancelled = false
-    const timer = window.setTimeout(async () => {
-      try {
-        const data = await api<GuestSearchResponse>('guests.search', { query })
-        if (!cancelled) setGuests(data.guests)
-      } catch {
-        if (!cancelled) setGuests([])
-      }
-    }, 250)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
+    const timer = window.setTimeout(() => setDebounced(query), 250)
+    return () => window.clearTimeout(timer)
   }, [query, searching])
 
+  const found = useRemote<GuestSummary[] | null>(
+    async () => (debounced ? (await api<GuestSearchResponse>('guests.search', { query: debounced })).guests : null),
+    [debounced],
+  )
+
   let body
-  if (state.status === 'loading') body = <SpinnerCenter />
-  else if (state.status === 'error')
-    body = (
-      <div className="card">
-        <EmptyState title="Не получилось загрузить" text={state.message} />
-      </div>
-    )
-  else if (state.weeks.length === 0)
+  if (weeks.error) body = <ErrorState onRetry={weeks.reload} />
+  else if (!weeks.data) body = <ArchiveSkeleton />
+  else if (weeks.data.length === 0)
     body = (
       <div className="card">
         <EmptyState title="Архив пуст" text="Здесь появятся недели с заявками." />
       </div>
     )
-  else body = <ArchiveList weeks={state.weeks} />
+  else body = <ArchiveList weeks={weeks.data} />
+
+  const search = found.error ? <ErrorState onRetry={found.reload} /> : <GuestSearch query={query} guests={found.data} />
 
   return (
     <Screen>
@@ -205,12 +227,12 @@ export function Archive() {
           onChange={(e) => setQuery(e.target.value)}
         />
         {query ? (
-          <button className="search-clear" aria-label="Очистить" onClick={() => setQuery('')}>
+          <button type="button" className="search-clear" aria-label="Очистить" onClick={() => setQuery('')}>
             {icons.xmark(11, '#fff')}
           </button>
         ) : null}
       </div>
-      {searching ? <GuestSearch query={query} guests={guests} /> : body}
+      {searching ? search : body}
     </Screen>
   )
 }

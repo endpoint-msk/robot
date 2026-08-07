@@ -11,13 +11,13 @@ import { Screen } from '../components/Screen'
 function ThemeSection() {
   const { theme } = useStore()
   const row = (label: string, sublabel: string | null, value: ThemeChoice): ReactNode => (
-    <div className="row tappable" onClick={() => { if (theme !== value) setTheme(value) }}>
+    <button type="button" className="row tappable" onClick={() => { if (theme !== value) setTheme(value) }}>
       <span className="row-label">
         {label}
         {sublabel ? <span className="row-sublabel">{sublabel}</span> : null}
       </span>
       <div className="radio-check">{theme === value ? icons.check(16, '#007aff', 2.2) : null}</div>
-    </div>
+    </button>
   )
   return (
     <>
@@ -53,7 +53,8 @@ function NotifyCard({
   allSublabel: string
 }) {
   const radioRow = (label: string, sublabel: string, mode: 'today' | 'all'): ReactNode => (
-    <div
+    <button
+      type="button"
       className="row tappable"
       onClick={() => {
         if (prefs.mode !== mode) void action(method, { enabled: prefs.enabled, mode })
@@ -64,7 +65,7 @@ function NotifyCard({
         <span className="row-sublabel">{sublabel}</span>
       </span>
       <div className="radio-check">{prefs.mode === mode ? icons.check(16, '#007aff', 2.2) : null}</div>
-    </div>
+    </button>
   )
   return (
     <div className="card">
@@ -73,7 +74,11 @@ function NotifyCard({
           {icons.bell()}
         </div>
         <span className="row-label">{title}</span>
-        <Switch on={prefs.enabled} onToggle={() => void action(method, { enabled: !prefs.enabled, mode: prefs.mode })} />
+        <Switch
+          label={title}
+          on={prefs.enabled}
+          onToggle={() => void action(method, { enabled: !prefs.enabled, mode: prefs.mode })}
+        />
       </div>
       <Sep left={54} />
       <div className={prefs.enabled ? undefined : 'rows-disabled'}>
@@ -111,7 +116,7 @@ function MacCard({ s }: { s: SettingsData }) {
               onClick={async () => {
                 const ok = await confirmDialog(
                   `Убрать ${m.label ? '«' + m.label + '» ' : ''}${m.mac}? Авто-отметка по этому устройству перестанет работать.`,
-                  { confirmLabel: 'Убрать', destructive: true },
+                  { confirmLabel: 'Убрать устройство', cancelLabel: 'Оставить', destructive: true },
                 )
                 if (ok) void action('mac.remove', { mac: m.mac })
               }}
@@ -123,10 +128,10 @@ function MacCard({ s }: { s: SettingsData }) {
       ))}
       {s.macs.length > 0 ? <Sep left={14} /> : null}
       {!showForm ? (
-        <div className="row tappable" onClick={() => setShowForm(true)}>
+        <button type="button" className="row tappable" onClick={() => setShowForm(true)}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
           <span className="add-row-label">Добавить устройство</span>
-        </div>
+        </button>
       ) : (
         <>
           <Sep left={14} />
@@ -201,7 +206,7 @@ export function Settings() {
 
   return (
     <Screen>
-      <BackRow label="Обзор" />
+      <BackRow label="Ближайшие дни" />
       <Header title="Настройки" />
       <ThemeSection />
       <SectionTitle>Уведомления о заявках</SectionTitle>
@@ -209,7 +214,7 @@ export function Settings() {
         prefs={s.notify}
         method="notify"
         title="Новые заявки"
-        color="#ff9500"
+        color="var(--orange)"
         todaySublabel="Заявки на текущий день"
         allLabel="Все заявки"
         allSublabel="На любой день"
@@ -220,7 +225,7 @@ export function Settings() {
         prefs={s.eventNotify}
         method="notify.events"
         title="Новые ивенты"
-        color="#bf5af2"
+        color="var(--purple)"
         todaySublabel="Ивенты на текущий день"
         allLabel="Все ивенты"
         allSublabel="На любой день"
@@ -229,13 +234,13 @@ export function Settings() {
       <SectionTitle>Авто-отметка по MAC</SectionTitle>
       <div className="card" style={{ marginBottom: 8 }}>
         <div className="row">
-          <div className="row-icon" style={{ background: '#007aff' }}>
+          <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.wifi()}
           </div>
           <span className="row-label">
             Мои устройства
             <span className="row-sublabel">
-              {s.macPresenceActive ? 'Сейчас ты отмечен по MAC' : 'Авто-отметка сейчас не активна'}
+              {s.macPresenceActive ? 'Сейчас вы отмечены по MAC' : 'Авто-отметка сейчас не активна'}
             </span>
           </span>
         </div>
@@ -247,11 +252,15 @@ export function Settings() {
             Отмечаться без ника
             <span className="row-sublabel">В списке будет «Без ника»</span>
           </span>
-          <Switch on={s.macAnon} onToggle={() => void action('mac.anon', { anon: !s.macAnon })} />
+          <Switch
+            label="Отмечаться без ника"
+            on={s.macAnon}
+            onToggle={() => void action('mac.anon', { anon: !s.macAnon })}
+          />
         </div>
       </div>
       <Footnote>
-        Пока устройство в сети спейса, бот сам ставит отметку «внутри». Выключи ротацию (рандомизацию) MAC для Wi-Fi
+        Пока устройство в сети спейса, бот сам ставит отметку «внутри». Выключите ротацию (рандомизацию) MAC для Wi-Fi
         спейса — иначе адрес будет меняться. Команды /bindmac, /unbindmac и /settings в боте работают как раньше и
         синхронизированы с этим списком.
       </Footnote>
@@ -262,7 +271,11 @@ export function Settings() {
             Не вести историю моих визитов
             <span className="row-sublabel">Отметки продолжат работать, но в статистике вас не будет</span>
           </span>
-          <Switch on={!s.logVisits} onToggle={() => void action('presence.log', { enabled: !s.logVisits })} />
+          <Switch
+            label="Не вести историю моих визитов"
+            on={!s.logVisits}
+            onToggle={() => void action('presence.log', { enabled: !s.logVisits })}
+          />
         </div>
       </div>
       <Footnote>

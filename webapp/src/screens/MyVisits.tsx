@@ -48,14 +48,18 @@ function VisitRow({ r }: { r: HostingRequest }) {
     )
 
   return (
-    <div className={'row tappable' + (needsAnswer ? ' needs-action' : '')} onClick={() => push('visit', { id: r.id })}>
+    <button
+      type="button"
+      className={'row tappable' + (needsAnswer ? ' needs-action' : '')}
+      onClick={() => push('visit', { id: r.id })}
+    >
       {iconSquare}
       <div className="req-main">
         <div className="req-name">{fmtWeekdayDate(r.dateKey)}</div>
         <div className={'req-sub' + (needsAnswer ? ' attn' : '')}>{subText}</div>
       </div>
       {right}
-    </div>
+    </button>
   )
 }
 
@@ -64,7 +68,8 @@ function VisitRow({ r }: { r: HostingRequest }) {
 function WriteAccessBanner() {
   if (botCanWrite()) return null
   return (
-    <div
+    <button
+      type="button"
       className="write-banner"
       onClick={async () => {
         const ok = await requestWriteAccess()
@@ -80,7 +85,7 @@ function WriteAccessBanner() {
         <div className="wb-sub">Разрешите, чтобы получать ответы на заявки</div>
       </div>
       {icons.chevron()}
-    </div>
+    </button>
   )
 }
 
@@ -91,7 +96,7 @@ function WriteAccessBanner() {
 function PastVisitRow({ r }: { r: HostingRequest }) {
   const host = r.approvedBy
   return (
-    <div className="row tappable" onClick={() => push('visit', { id: r.id })}>
+    <button type="button" className="row tappable" onClick={() => push('visit', { id: r.id })}>
       <div className="status-square">{icons.check(20, sec(0.4))}</div>
       <div className="req-main">
         <div className="req-name past">{fmtWeekdayDate(r.dateKey)}</div>
@@ -100,7 +105,7 @@ function PastVisitRow({ r }: { r: HostingRequest }) {
         </div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
-    </div>
+    </button>
   )
 }
 
@@ -132,7 +137,7 @@ export function MyVisits() {
         <div className="card">
           <EmptyState
             title="Пока нет заявок"
-            text="Выбери день и время визита — резиденты увидят заявку и откликнутся."
+            text="Выберите день и время визита — резиденты увидят заявку и откликнутся."
           />
         </div>
       ) : null}
@@ -155,39 +160,39 @@ export function MyVisits() {
         </>
       ) : null}
       <div className="card" style={{ marginTop: 22 }}>
-        <div className="row tappable" onClick={() => push('route')}>
-          <div className="row-icon" style={{ background: '#007aff' }}>
+        <button type="button" className="row tappable" onClick={() => push('route')}>
+          <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.pin(17, '#fff')}
           </div>
           <span className="row-label">Как пройти</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
         <Sep left={54} />
-        <div className="row tappable" onClick={() => push('peek')}>
+        <button type="button" className="row tappable" onClick={() => push('peek')}>
           {/* Календарь и фиолетовый — те же, что у ивентов: за этой строкой не только
               список людей, но и то, что в спейсе происходит. */}
-          <div className="row-icon" style={{ background: '#bf5af2' }}>
+          <div className="row-icon" style={{ background: 'var(--purple)' }}>
             {icons.calendar(17, '#fff')}
           </div>
           <span className="row-label">Активность</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
         <Sep left={54} />
-        <div className="row tappable" onClick={() => openUrl(SPACE_CHAT_URL)}>
-          <div className="row-icon" style={{ background: '#34c759' }}>
+        <button type="button" className="row tappable" onClick={() => openUrl(SPACE_CHAT_URL)}>
+          <div className="row-icon" style={{ background: 'var(--green)' }}>
             {icons.chat(17, '#fff')}
           </div>
           <span className="row-label">Чат спейса</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
         <Sep left={54} />
-        <div className="row tappable" onClick={() => push('settings')}>
-          <div className="row-icon" style={{ background: '#8e8e93' }}>
+        <button type="button" className="row tappable" onClick={() => push('settings')}>
+          <div className="row-icon" style={{ background: 'var(--gray)' }}>
             {icons.gear()}
           </div>
           <span className="row-label">Настройки</span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
       </div>
       <BottomBar>
         <button className="primary-btn" onClick={startNewRequest}>

@@ -2,26 +2,24 @@
 // тот же для текущего сбора (данные из bootstrap) и для прошлого, открытого из
 // истории (грузится ручкой dues.period) — форма ответа у них общая.
 
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { action, api } from '../api'
-import { fmtIsoDay } from '../dates'
+import { fmtIsoDay, monthsWord } from '../dates'
+import { money } from '../format'
 import { icons } from '../icons'
 import { showAlert } from '../modals'
+import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { DuesRow, DuesSnapshot } from '../types'
-import { BackRow, EmptyState, Footnote, Header, SectionTitle, Sep, SpinnerCenter } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
 import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
+import { SkBlock, SkRows } from '../components/skeleton'
 import { SwipeRow, type SwipeAction } from '../components/SwipeRow'
 
-/** `2222 ₽` с тонким пробелом в тысячах: в столбце сумм неразделённые тысячи не читаются. */
-export const money = (n: number, currency: string): string =>
-  `${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} ${currency}`
-
 /** «месяц» / «2 месяца»: подпись к просрочке. */
-export const debtWord = (missed: number): string =>
-  missed >= 2 ? `${missed} ${missed >= 5 ? 'месяцев' : 'месяца'}` : 'месяц'
+export const debtWord = (missed: number): string => (missed >= 2 ? monthsWord(missed) : 'месяц')
 
 export function DebtBadge({ missed }: { missed: number }) {
   if (missed <= 0) return null
@@ -61,7 +59,7 @@ function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnaps
             : ''
 
   const body = (
-    <div className="row" onClick={() => push('duesPerson', { userId: row.userId })}>
+    <button type="button" className="row" onClick={() => push('duesPerson', { userId: row.userId })}>
       {left}
       <div className="dues-main">
         <div className="dues-name-line">
@@ -83,7 +81,7 @@ function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnaps
         </span>
         {icons.chevron()}
       </div>
-    </div>
+    </button>
   )
 
   if (!snap.canEdit) return body
@@ -157,7 +155,7 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
       haptic('success')
       setTimeout(() => setCopied(false), 1600)
     } catch {
-      showAlert('Не получилось скопировать. Выдели текст вручную.')
+      showAlert('Не получилось скопировать. Выделите текст вручную.')
     }
   }
 
@@ -167,19 +165,22 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
       <div className="my-dues">
         <div className="my-dues-kicker">Мой взнос</div>
         <div className="my-dues-sum">Не требуется</div>
-        <div className="my-dues-sub">Ставка обнулена, взнос с тебя не спрашивают.</div>
+        <div className="my-dues-sub">Ставка обнулена, взнос с вас не спрашивают.</div>
       </div>
     )
   }
 
-  const cls = snap.me.status === 'paid' ? 'paid' : snap.me.status === 'claimed' ? 'claimed' : 'unpaid'
+  // Взнос подтверждён — плашки нет вовсе. Она существует ради действия («Я внёс»)
+  // и реквизитов; закрытый взнос действия не требует, а «внесён» и так написано
+  // в строке «Взносы» на главной и в составе периода.
+  if (snap.me.status === 'paid') return null
+
+  const cls = snap.me.status === 'claimed' ? 'claimed' : 'unpaid'
   return (
     <div className={'my-dues ' + cls}>
       <div className="my-dues-kicker">Мой взнос</div>
       <div className="my-dues-sum">{money(snap.me.amount, snap.currency)}</div>
-      {snap.me.status === 'paid' ? (
-        <div className="my-dues-sub">Внесён{snap.me.at ? ` ${fmtIsoDay(snap.me.at)}` : ''}</div>
-      ) : snap.me.status === 'claimed' ? (
+      {snap.me.status === 'claimed' ? (
         <div className="my-dues-sub">Отмечен{snap.me.at ? ` ${fmtIsoDay(snap.me.at)}` : ''}, ждёт сверки с выпиской</div>
       ) : (
         <>
@@ -191,7 +192,7 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
               </button>
             </div>
           ) : null}
-          <div className="my-dues-sub">Отметь, когда переведёшь: перевод будет рассмотрен.</div>
+          <div className="my-dues-sub">Отметьте, когда переведёте: перевод будет рассмотрен.</div>
           <button className="primary-btn" onClick={() => void claim()}>
             {icons.check(18, '#fff', 2)}
             Я внёс
@@ -238,44 +239,79 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
   )
 }
 
+/**
+ * Каркас прошлого периода: своя плашка, сводка, состав людьми с суммой справа.
+ * Заголовки секций идут полосой, а не текстом: какие из них будут и с какими
+ * счётчиками, известно только из ответа.
+ */
+function DuesSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Загружаем период взносов">
+      <div className="my-dues">
+        <SkBlock w={74} h={11} />
+        <SkBlock w={148} h={30} style={{ display: 'block', marginTop: 6 }} />
+        <SkBlock w="62%" h={14} style={{ display: 'block', marginTop: 6 }} />
+      </div>
+      <div className="card dues-summary">
+        <div className="dues-figure">
+          <SkBlock w={42} h={32} />
+          <SkBlock w={136} h={15} />
+          <SkBlock w={76} h={17} style={{ marginLeft: 'auto' }} />
+        </div>
+        <SkBlock h={8} style={{ display: 'block', marginTop: 14 }} />
+        <SkBlock w="58%" h={14} style={{ display: 'block', marginTop: 11 }} />
+      </div>
+      <SectionTitle>
+        <SkBlock w={124} h={11} />
+      </SectionTitle>
+      <SkRows count={3} avatar tail />
+      <SectionTitle>
+        <SkBlock w={92} h={11} />
+      </SectionTitle>
+      <SkRows count={6} avatar tail />
+    </div>
+  )
+}
+
 export function DuesScreen() {
   const { data } = useStore()
   const params = useParams()
   const periodKey: string | undefined = params.periodKey
   // Прошлый период приезжает отдельной ручкой: в bootstrap лежит только текущий.
-  const [past, setPast] = useState<DuesSnapshot | null>(null)
-  const [loading, setLoading] = useState(Boolean(periodKey))
-  const [tick, setTick] = useState(0)
+  // Хук зовётся всегда (правило хуков), а без periodKey отдаёт null сразу — поэтому
+  // его состояния снаружи смотрим только на экране прошлого периода.
+  const remote = useRemote<DuesSnapshot | null>(
+    async () => (periodKey ? await api<DuesSnapshot>('dues.period', { periodKey }) : null),
+    [periodKey],
+  )
+  const back = periodKey ? 'История' : 'Ближайшие дни'
 
-  useEffect(() => {
-    if (!periodKey) return
-    let alive = true
-    void (async () => {
-      try {
-        const snap = await api<DuesSnapshot>('dues.period', { periodKey })
-        if (alive) setPast(snap)
-      } catch {
-        if (alive) setPast(null)
-      } finally {
-        if (alive) setLoading(false)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [periodKey, tick])
-
-  const snap = periodKey ? past : data!.dues ?? null
+  const snap = periodKey ? remote.data : data!.dues ?? null
   // Мутация возвращает свежий bootstrap; для прошлого периода его мало — перезапрашиваем.
   const onChanged = () => {
-    if (periodKey) setTick((n) => n + 1)
+    if (periodKey) remote.reload()
   }
 
-  if (loading) {
+  // Скелет только на первой загрузке: перезапрос после отметки должен обновлять
+  // список на месте, а не подменять экран.
+  if (periodKey && remote.loading && !remote.data) {
     return (
       <Screen>
-        <BackRow label="Назад" />
-        <SpinnerCenter />
+        <BackRow label={back} />
+        {/* Заголовок известен заранее, подпись с названием периода — нет. */}
+        <Header title="Взносы" subtitle={<SkBlock w={168} h={14} />} />
+        <DuesSkeleton />
+      </Screen>
+    )
+  }
+  // Упавший запрос — не «сбор выключен»: про настройки спейса экран в этот момент
+  // ничего не знает.
+  if (periodKey && remote.error) {
+    return (
+      <Screen>
+        <BackRow label={back} />
+        <Header title="Взносы" />
+        <ErrorState onRetry={remote.reload} />
       </Screen>
     )
   }
@@ -285,7 +321,7 @@ export function DuesScreen() {
   if (!snap || !snap.periodKey) {
     return (
       <Screen>
-        <BackRow label="Обзор" />
+        <BackRow label={back} />
         <Header title="Взносы" />
         <div className="card">
           <EmptyState
@@ -299,13 +335,13 @@ export function DuesScreen() {
         </div>
         {snap?.canEdit ? (
           <div className="card" style={{ marginTop: 22 }}>
-            <div className="row tappable" onClick={() => push('duesSettings')}>
-              <div className="row-icon" style={{ background: '#ff9500' }}>
+            <button type="button" className="row tappable" onClick={() => push('duesSettings')}>
+              <div className="row-icon" style={{ background: 'var(--orange)' }}>
                 {icons.gear()}
               </div>
               <span className="row-label">Настройки взносов</span>
               <div className="row-right">{icons.chevron()}</div>
-            </div>
+            </button>
           </div>
         ) : null}
       </Screen>
@@ -346,7 +382,7 @@ export function DuesScreen() {
 
   return (
     <Screen>
-      <BackRow label={periodKey ? 'История' : 'Обзор'} />
+      <BackRow label={back} />
       <Header
         title="Взносы"
         subtitle={`${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`}
@@ -356,23 +392,23 @@ export function DuesScreen() {
       {sections}
       {!periodKey ? (
         <div className="card" style={{ marginTop: 22 }}>
-          <div className="row tappable" onClick={() => push('duesHistory')}>
-            <div className="row-icon" style={{ background: '#8e8e93' }}>
+          <button type="button" className="row tappable" onClick={() => push('duesHistory')}>
+            <div className="row-icon" style={{ background: 'var(--gray)' }}>
               {icons.archiveBox()}
             </div>
             <span className="row-label">История и статистика</span>
             <div className="row-right">{icons.chevron()}</div>
-          </div>
+          </button>
           {snap.canEdit ? (
             <>
               <Sep left={54} />
-              <div className="row tappable" onClick={() => push('duesSettings')}>
-                <div className="row-icon" style={{ background: '#ff9500' }}>
+              <button type="button" className="row tappable" onClick={() => push('duesSettings')}>
+                <div className="row-icon" style={{ background: 'var(--orange)' }}>
                   {icons.gear()}
                 </div>
                 <span className="row-label">Настройки взносов</span>
                 <div className="row-right">{icons.chevron()}</div>
-              </div>
+              </button>
             </>
           ) : null}
         </div>

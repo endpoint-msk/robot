@@ -4,7 +4,7 @@
 
 import { useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
-import { fmtDayMonth, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { compressImage } from '../image'
 import { linkedText } from '../linkify'
@@ -12,7 +12,8 @@ import { confirmDialog, showAlert, showImage } from '../modals'
 import { haptic, initData, openUrl, tg } from '../telegram'
 import { pop, setBusy, useParams, useStore } from '../store'
 import type { SpaceEvent } from '../types'
-import { BackRow, Header, SectionTitle, Switch } from '../components/common'
+import { BackRow, Footnote, Header, SectionTitle, Switch } from '../components/common'
+import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Screen } from '../components/Screen'
 
 const MAX_TITLE = 120
@@ -21,14 +22,16 @@ const MAX_DESCRIPTION = 2000
 const MAX_PHOTOS = 6
 /** Шаг стрелок времени: получасовой, как в афишах («в 19:00», «в 19:30»). */
 const STEP_MINUTES = 30
+/** Последний слот суток: заворачивать стрелку через полночь нельзя — это сменило бы день. */
+const LAST_SLOT_MINUTES = 23 * 60 + 30
 
-const stepTime = (time: string, deltaSteps: number): string => {
+const toMinutes = (time: string): number => {
   const [h, m] = time.split(':')
-  const total = (Number(h) || 0) * 60 + (Number(m) || 0) + deltaSteps * STEP_MINUTES
-  // Заворачиваем по суткам, чтобы стрелки не упирались в 00:00 и 23:30.
-  const wrapped = ((total % 1440) + 1440) % 1440
-  return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`
+  return (Number(h) || 0) * 60 + (Number(m) || 0)
 }
+
+const fromMinutes = (total: number): string =>
+  `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 
 /**
  * Афиша: у ивента — по его id, у заготовки — по ключу владельца. Тап открывает её на
@@ -58,17 +61,58 @@ export function Event() {
   // Заготовка из пересланного поста: текст уже вставлен, афиша лежит под ключом владельца.
   const draft = params.fromDraft ? data!.eventDraft || null : null
 
+  // Экран дня открывает редактор уже на своём дне; из заготовки дня нет — берём ближайший.
+  const initialDay = existing?.dateKey ?? (params.dateKey as string | undefined) ?? days[0]!.dateKey
+
   const [title, setTitle] = useState(existing?.title ?? draft?.title ?? '')
   const [description, setDescription] = useState(existing?.description ?? draft?.description ?? '')
-  // Экран дня открывает редактор уже на своём дне; из заготовки дня нет — берём ближайший.
-  const [dateKey, setDateKey] = useState(existing?.dateKey ?? (params.dateKey as string | undefined) ?? days[0]!.dateKey)
-  const [time, setTime] = useState(existing?.time ?? '19:00')
+  const [dateKey, setDateKey] = useState(initialDay)
+  // Фиксированные «19:00» на сегодня к восьми вечера уже прошли — стартуем с ближайшего
+  // слота, как форма заявки (defaultTimeFor).
+  const [time, setTime] = useState(existing?.time ?? defaultTimeFor(initialDay))
   const [residentsOnly, setResidentsOnly] = useState(existing?.residentsOnly ?? false)
 
   // Афиши — список id файлов: у заготовки это её картинка, у нового ивента список
   // копится заливкой (файл лежит на сервере ничей, пока ивент не сохранён).
   const [photos, setPhotos] = useState<string[]>(existing?.photos ?? (draft?.hasPhoto ? [`draft-${data!.me.id}`] : []))
   const canSave = title.trim().length > 0
+
+  // Правку и удаление сервер отдаёт автору либо деву (canEditEvent) — чужой ивент
+  // открывается на чтение, иначе резидент правил бы его до отказа сервера.
+  if (existing && existing.host.userId !== data!.me.id && !data!.me.isDev) {
+    return (
+      <Screen>
+        <BackRow label={params.backLabel || 'День'} />
+        <Header
+          title={existing.title}
+          subtitle={`${fmtShortDate(existing.dateKey)} · в ${existing.time}`}
+        />
+        <EventCard event={existing} calendar />
+        <Footnote>Править ивент может только тот, кто его создал.</Footnote>
+      </Screen>
+    )
+  }
+
+  // Прошедший слот запрещаем только новому ивенту: идущий всё ещё нужно уметь поправить
+  // (сервер думает так же, см. canEditEvent).
+  const guardPast = !existing
+  const pastSlot = isPastForToday(dateKey, time)
+
+  const selectDay = (next: string): void => {
+    setDateKey(next)
+    // Переключились на сегодня, а выбранное время уже прошло — подтягиваем ближайшее.
+    if (guardPast && isPastForToday(next, time)) setTime(defaultTimeFor(next))
+  }
+
+  const canStep = (deltaSteps: number): boolean => {
+    const next = toMinutes(time) + deltaSteps * STEP_MINUTES
+    if (next < 0 || next > LAST_SLOT_MINUTES) return false
+    return !guardPast || !isPastForToday(dateKey, fromMinutes(next))
+  }
+
+  const step = (deltaSteps: number): void => {
+    if (canStep(deltaSteps)) setTime(fromMinutes(toMinutes(time) + deltaSteps * STEP_MINUTES))
+  }
 
   const addPhotos = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
     const picked = Array.from(e.target.files ?? [])
@@ -105,7 +149,8 @@ export function Event() {
   const remove = async (): Promise<void> => {
     if (!existing) return
     const ok = await confirmDialog(`Удалить ивент «${existing.title}»?`, {
-      confirmLabel: 'Удалить',
+      confirmLabel: 'Удалить ивент',
+      cancelLabel: 'Оставить',
       destructive: true,
     })
     if (!ok) return
@@ -169,7 +214,7 @@ export function Event() {
           {photos.length < MAX_PHOTOS ? (
             <label className="ev-thumb ev-thumb-add" title="Добавить фото">
               {icons.plusSmall()}
-              <input type="file" accept="image/*" multiple onChange={addPhotos} />
+              <input type="file" accept="image/*" multiple aria-label="Добавить фото" onChange={addPhotos} />
             </label>
           ) : null}
         </div>
@@ -181,7 +226,7 @@ export function Event() {
           <button
             key={d.dateKey}
             className={'day-chip' + (d.dateKey === dateKey ? ' selected' : '')}
-            onClick={() => setDateKey(d.dateKey)}
+            onClick={() => selectDay(d.dateKey)}
           >
             <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
             <span className="dc-num">{fmtDayMonth(d.dateKey).split(' ')[0]}</span>
@@ -192,11 +237,11 @@ export function Event() {
         <div className="row">
           <span className="row-label">Начало в</span>
           <div className="row-right ev-time">
-            <button className="ev-step" aria-label="Раньше" onClick={() => setTime(stepTime(time, -1))}>
+            <button className="ev-step" aria-label="Раньше" disabled={!canStep(-1)} onClick={() => step(-1)}>
               {icons.minus()}
             </button>
             <span className="ev-time-value">{time}</span>
-            <button className="ev-step" aria-label="Позже" onClick={() => setTime(stepTime(time, 1))}>
+            <button className="ev-step" aria-label="Позже" disabled={!canStep(1)} onClick={() => step(1)}>
               {icons.plusSmall()}
             </button>
           </div>
@@ -207,9 +252,12 @@ export function Event() {
             Только резидентам
             <span className="row-sublabel">Гости не увидят ивент в «Активности»</span>
           </span>
-          <Switch on={residentsOnly} onToggle={() => setResidentsOnly(!residentsOnly)} />
+          <Switch on={residentsOnly} onToggle={() => setResidentsOnly(!residentsOnly)} label="Только резидентам" />
         </div>
       </div>
+      {guardPast && dateKey === data!.todayKey ? (
+        <Footnote>{`Сегодня ивент можно поставить не раньше ${data!.nowTime}: анонсировать то, что уже началось, некому.`}</Footnote>
+      ) : null}
 
       <SectionTitle>{`Превью · ${residentsOnly ? 'резиденты' : 'все'}`}</SectionTitle>
       <EventCard
@@ -232,7 +280,12 @@ export function Event() {
           Удалить ивент
         </button>
       ) : null}
-      <button className="primary-btn" style={{ marginTop: 22 }} disabled={!canSave} onClick={save}>
+      <button
+        className="primary-btn"
+        style={{ marginTop: 22 }}
+        disabled={!canSave || (guardPast && pastSlot)}
+        onClick={save}
+      >
         {existing ? 'Сохранить' : 'Опубликовать'}
       </button>
     </Screen>

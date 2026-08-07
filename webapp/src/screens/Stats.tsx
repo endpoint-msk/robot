@@ -1,15 +1,27 @@
 // Статистика присутствия: сколько спейс работал, когда здесь людно, кто его держит
 // открытым. Раздел резидентский целиком — сервер проверяет это на каждой ручке.
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { api } from '../api'
-import { WEEKDAYS_SHORT } from '../dates'
+import { plural, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
+import { useRemote } from '../remote'
 import { push, useStore } from '../store'
-import { gradientFor, heatCell, heatLevel, heatSlot, heatValue, hoursNum, hoursWord, initialOf } from '../stats'
+import {
+  gradientFor,
+  heatCell,
+  heatLevel,
+  heatSlot,
+  heatValue,
+  hoursNum,
+  hoursNumWord,
+  hoursWord,
+  initialOf,
+} from '../stats'
 import type { StatsOverview, StatsPeriod } from '../types'
-import { BackRow, EmptyState, Header, SectionTitle, Sep, SpinnerCenter } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
+import { SkBars, SkBlock, SkCard, SkFigure, SkGrid } from '../components/skeleton'
 
 const PERIODS: { key: StatsPeriod; label: string }[] = [
   { key: 'month', label: 'Месяц' },
@@ -17,8 +29,14 @@ const PERIODS: { key: StatsPeriod; label: string }[] = [
   { key: 'all', label: 'Всё время' },
 ]
 
+/** Колонок в тепловой карте: сутки двухчасовыми интервалами. */
+const BUCKETS = 12
+
 /** Подписи под колонками карты: каждая вторая, иначе цифры сливаются. */
-const HOUR_LABELS = Array.from({ length: 12 }, (_, i) => (i % 2 === 0 ? String(i * 2).padStart(2, '0') : ''))
+const HOUR_LABELS = Array.from({ length: BUCKETS }, (_, i) => (i % 2 === 0 ? String(i * 2).padStart(2, '0') : ''))
+
+/** Столбиков в скелете графика месяцев — столько же, сколько отдаёт ручка. */
+const SK_BARS = 9
 
 const TOP_PREVIEW = 5
 
@@ -128,7 +146,13 @@ function MonthBars({ data }: { data: StatsOverview }) {
             // Подпись всегда одна: пик — пока выбора нет, дальше только выбранный.
             const labelled = active || (!picked && m.key === peak.key && m.minutes > 0)
             return (
-              <div className="bar-col" key={m.key} onClick={() => setPicked(m.key)}>
+              <button
+                type="button"
+                className="bar-col"
+                key={m.key}
+                aria-pressed={active}
+                onClick={() => setPicked(m.key)}
+              >
                 <div className="bar-track">
                   {/* Подпись висит над своим столбиком, а не на общей высоте: иначе
                       у низкого месяца между цифрой и столбиком провал в полкарточки. */}
@@ -142,7 +166,7 @@ function MonthBars({ data }: { data: StatsOverview }) {
                   <i style={{ height: `${height}%`, background: active ? 'var(--heat-5)' : 'var(--heat-3)' }} />
                 </div>
                 <div className={'bar-label' + (active ? ' on' : '')}>{m.label}</div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -151,30 +175,36 @@ function MonthBars({ data }: { data: StatsOverview }) {
   )
 }
 
+/**
+ * Скелет экрана: сводка, карта и график месяцев — тот же каркас, что у данных.
+ * Волна по диагонали карты и по столбикам заодно показывает, что запрос ещё жив.
+ */
+function StatsSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Загружаем статистику">
+      <div className="card stats-card">
+        <SkFigure />
+        <SkBlock h={6} style={{ display: 'block', marginTop: 18 }} />
+        <SkBlock w="70%" style={{ display: 'block', marginTop: 16 }} />
+      </div>
+      <SkCard title="Когда здесь людно">
+        <SkGrid rows={7} cols={BUCKETS} gutter />
+      </SkCard>
+      <SkCard title="Часы по месяцам">
+        <SkBars count={SK_BARS} />
+      </SkCard>
+    </div>
+  )
+}
+
 export function Stats() {
   const { data: boot } = useStore()
   const [period, setPeriod] = useState<StatsPeriod>('month')
-  const [data, setData] = useState<StatsOverview | null>(null)
-  const [loading, setLoading] = useState(true)
   const [allPeople, setAllPeople] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    setLoading(true)
-    void (async () => {
-      try {
-        const overview = await api<StatsOverview>('stats.overview', { period })
-        if (alive) setData(overview)
-      } catch {
-        if (alive) setData(null)
-      } finally {
-        if (alive) setLoading(false)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [period])
+  const { data, error, loading, reload } = useRemote(
+    () => api<StatsOverview>('stats.overview', { period }),
+    [period],
+  )
 
   // Бегунок едет отдельным слоем: анимировать фон у трёх независимых кнопок
   // нечем — переключение читалось бы как мгновенная перекраска.
@@ -182,26 +212,46 @@ export function Stats() {
     <div className="segmented">
       <i className="seg-thumb" style={{ transform: `translateX(${PERIODS.findIndex((p) => p.key === period) * 100}%)` }} />
       {PERIODS.map((p) => (
-        <div
+        <button
+          type="button"
           key={p.key}
           className={'seg' + (p.key === period ? ' on' : '')}
+          aria-pressed={p.key === period}
           onClick={() => {
             if (p.key !== period) setPeriod(p.key)
           }}
         >
           {p.label}
-        </div>
+        </button>
       ))}
     </div>
   )
 
+  // Переключатель периода остаётся на экране во всех состояниях: из упавшего
+  // запроса иначе не выбраться, кроме как закрыв экран, а соседнее окно вполне
+  // может прогрузиться.
+  const chrome = (subtitle: string) => (
+    <>
+      <BackRow label="Ближайшие дни" />
+      <Header title="Статистика" subtitle={subtitle} />
+      {segmented}
+    </>
+  )
+
+  if (error) {
+    return (
+      <Screen>
+        {chrome('Журнал присутствия')}
+        <ErrorState onRetry={reload} />
+      </Screen>
+    )
+  }
+
   if (loading && !data) {
     return (
       <Screen>
-        <BackRow label="Ближайшие дни" />
-        <Header title="Статистика" />
-        {segmented}
-        <SpinnerCenter />
+        {chrome('Журнал присутствия')}
+        <StatsSkeleton />
       </Screen>
     )
   }
@@ -209,9 +259,7 @@ export function Stats() {
   if (!data || !data.hasData) {
     return (
       <Screen>
-        <BackRow label="Ближайшие дни" />
-        <Header title="Статистика" subtitle="Журнал присутствия" />
-        {segmented}
+        {chrome('Журнал присутствия')}
         <div className="card">
           <EmptyState
             title="Пока нечего показать"
@@ -229,10 +277,19 @@ export function Stats() {
   const rest = data.top.slice(TOP_PREVIEW)
   const topMax = data.top[0]?.minutes ?? 1
 
+  const avgShown = String(data.avgInside).replace('.', ',')
+  const avgWord = Number.isInteger(data.avgInside)
+    ? plural(data.avgInside, 'человек', 'человека', 'человек')
+    : 'человека'
+
   const personRow = (p: StatsOverview['top'][number], i: number, max: number) => (
     <Fragment key={p.userId}>
       {i > 0 ? <Sep left={60} /> : null}
-      <div className="row tappable" onClick={() => push('statsPerson', { userId: p.userId, backLabel: 'Статистика' })}>
+      <button
+        type="button"
+        className="row tappable"
+        onClick={() => push('statsPerson', { userId: p.userId, backLabel: 'Статистика' })}
+      >
         <div className="avatar-ini" style={{ background: gradientFor(p.userId) }}>
           {initialOf(p.label)}
         </div>
@@ -246,15 +303,13 @@ export function Stats() {
           </div>
         </div>
         {icons.chevron()}
-      </div>
+      </button>
     </Fragment>
   )
 
   return (
     <Screen>
-      <BackRow label="Ближайшие дни" />
-      <Header title="Статистика" subtitle={`${data.periodLabel} · журнал присутствия`} />
-      {segmented}
+      {chrome(`${data.periodLabel} · журнал присутствия`)}
 
       {/* key по периоду: смена окна меняет все цифры разом, и без ремаунта с
           проявлением экран просто дёргается новыми числами. */}
@@ -262,7 +317,7 @@ export function Stats() {
       <div className="card stats-card">
         <div className="stats-figure">
           <span className="sf-main">{hoursNum(data.openMinutes)}</span>
-          <span className="sf-of">часов спейс был открыт</span>
+          <span className="sf-of">{`${hoursNumWord(data.openMinutes)} спейс был открыт`}</span>
         </div>
         {prev !== null ? (
           <>
@@ -274,13 +329,13 @@ export function Stats() {
             <div className="stats-note">
               {Math.abs(deltaMinutes) < 30
                 ? 'Столько же, сколько периодом раньше'
-                : `${deltaMinutes > 0 ? 'На' : 'На'} ${hoursWord(Math.abs(deltaMinutes))} ${deltaMinutes > 0 ? 'больше' : 'меньше'}, чем периодом раньше`}
+                : `На ${hoursWord(Math.abs(deltaMinutes))} ${deltaMinutes > 0 ? 'больше' : 'меньше'}, чем периодом раньше`}
             </div>
           </>
         ) : null}
         <Sep />
         <div className="stats-note">
-          {`Человекочасов ${hoursNum(data.manMinutes)}, в среднем ${String(data.avgInside).replace('.', ',')} человека внутри`}
+          {`Человекочасов ${hoursNum(data.manMinutes)}, в среднем ${avgShown} ${avgWord} внутри`}
         </div>
       </div>
 
@@ -301,20 +356,20 @@ export function Stats() {
         {!allPeople && rest.length > 0 ? (
           <>
             <Sep left={14} />
-            <div className="row tappable" onClick={() => setAllPeople(true)}>
+            <button type="button" className="row tappable" onClick={() => setAllPeople(true)}>
               <span className="row-label" style={{ color: 'var(--blue)' }}>
                 {`Показать всех (${data.top.length})`}
               </span>
               <div className="row-right">{icons.chevron()}</div>
-            </div>
+            </button>
           </>
         ) : null}
       </div>
 
       <div style={{ height: 18 }} />
       <div className="card">
-        <div className="row tappable" onClick={() => push('statsDays')}>
-          <div className="row-icon" style={{ background: '#5856d6' }}>
+        <button type="button" className="row tappable" onClick={() => push('statsDays')}>
+          <div className="row-icon" style={{ background: 'var(--indigo)' }}>
             {icons.calendar(16, '#fff')}
           </div>
           <span className="row-label">История по дням</span>
@@ -324,13 +379,14 @@ export function Stats() {
             </span>
             {icons.chevron()}
           </div>
-        </div>
+        </button>
         <Sep left={54} />
-        <div
+        <button
+          type="button"
           className="row tappable"
           onClick={() => push('statsPerson', { userId: boot!.me.id, backLabel: 'Статистика' })}
         >
-          <div className="row-icon" style={{ background: '#007aff' }}>
+          <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.people()}
           </div>
           <span className="row-label">Мои визиты</span>
@@ -340,7 +396,7 @@ export function Stats() {
             </span>
             {icons.chevron()}
           </div>
-        </div>
+        </button>
       </div>
       </div>
     </Screen>

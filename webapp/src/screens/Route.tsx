@@ -61,7 +61,7 @@ export function Route() {
       <Header title="Как пройти" />
 
       <div className="card">
-        <div className="row tappable route-address" onClick={copyAddress}>
+        <button type="button" className="row tappable route-address" onClick={copyAddress}>
           <div className="row-icon route-pin">{icons.pin(18, '#007aff')}</div>
           <div className="route-address-main">
             <div className="route-label">Адрес</div>
@@ -72,7 +72,7 @@ export function Route() {
               {copied ? icons.check(15, '#34c759', 2.6) : icons.copy(15, '#007aff')}
             </div>
           </div>
-        </div>
+        </button>
         <div className="sep" style={{ marginLeft: 60 }} />
         <div className="route-metro">
           <div className="route-label">Метро</div>
@@ -101,13 +101,13 @@ export function Route() {
           <div className="route-pin-mark">{icons.mapPin()}</div>
           <div className="route-map-credit">© OpenStreetMap · CARTO</div>
         </div>
-        <div className="row tappable" onClick={() => openUrl(MAPS_URL)}>
+        <button type="button" className="row tappable" onClick={() => openUrl(MAPS_URL)}>
           <span className="route-map-open">
             {icons.external()}
             Открыть в картах
           </span>
           <div className="row-right">{icons.chevron()}</div>
-        </div>
+        </button>
       </div>
 
       <Footnote>По прибытию свяжитесь с резидентом, который вас хостит.</Footnote>

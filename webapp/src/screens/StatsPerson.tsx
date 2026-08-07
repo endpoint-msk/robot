@@ -1,7 +1,7 @@
 // Карточка человека в журнале: сколько бывает, когда приходит, последние визиты.
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment } from 'react'
 import { action, api } from '../api'
 import {
   addDays,
@@ -11,19 +11,43 @@ import {
   MONTHS_ABBR,
   MONTHS_NOM,
   monthIdx,
+  plural,
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
 import { icons } from '../icons'
 import { datePrompt } from '../modals'
+import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
-import { fmtDuration, gradientFor, heatLevel, hoursNum, initialOf } from '../stats'
+import { fmtDuration, gradientFor, heatLevel, hoursNum, hoursNumWord, initialOf } from '../stats'
 import { haptic } from '../telegram'
 import type { StatsPersonView } from '../types'
-import { BackRow, EmptyState, Footnote, SpinnerCenter } from '../components/common'
+import { BackRow, ErrorState, Footnote } from '../components/common'
 import { Screen } from '../components/Screen'
+import { SkBlock, SkCard, SkGrid, SkQuad, SkRows } from '../components/skeleton'
 
 const DOT_WEEKS = 12
+
+/** Скелет карточки: шапка, четыре показателя, сетка визитов и список последних. */
+function PersonSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Загружаем карточку резидента">
+      <div className="person-head">
+        <SkBlock w={54} h={54} style={{ borderRadius: '50%' }} />
+        <div className="person-head-text">
+          <SkBlock w={172} h={26} />
+          <SkBlock w={136} h={14} style={{ display: 'block', marginTop: 8 }} />
+        </div>
+      </div>
+      <SkQuad />
+      <SkCard title="Когда приходит">
+        <SkGrid rows={7} cols={DOT_WEEKS} />
+      </SkCard>
+      <div className="section-title">Последние визиты</div>
+      <SkRows count={4} avatar />
+    </div>
+  )
+}
 
 /**
  * «Резидент с 12 марта» — дата первого визита в журнале, а не вступления в чат:
@@ -41,43 +65,27 @@ const since = (sinceKey: string): string => {
 export function StatsPerson() {
   const { userId, backLabel } = useParams() as { userId: number; backLabel?: string }
   const { data: boot } = useStore()
-  const [data, setData] = useState<StatsPersonView | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [tick, setTick] = useState(0)
-
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const person = await api<StatsPersonView>('stats.person', { userId, period: 'quarter' })
-        if (alive) setData(person)
-      } catch {
-        if (alive) setData(null)
-      } finally {
-        if (alive) setLoading(false)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [userId, tick])
+  const { data, error, reload } = useRemote(
+    () => api<StatsPersonView>('stats.person', { userId, period: 'quarter' }),
+    [userId],
+  )
 
   const back = <BackRow label={backLabel ?? 'Статистика'} />
-  if (loading) {
+  if (error) {
     return (
       <Screen>
         {back}
-        <SpinnerCenter />
+        <ErrorState onRetry={reload} />
       </Screen>
     )
   }
+  // Данных нет только пока идёт первый запрос: `reload` из «Резидент с» держит
+  // прошлый ответ на экране, чтобы карточка не мигала спиннером после правки.
   if (!data) {
     return (
       <Screen>
         {back}
-        <div className="card">
-          <EmptyState title="Не получилось загрузить" />
-        </div>
+        <PersonSkeleton />
       </Screen>
     )
   }
@@ -89,7 +97,7 @@ export function StatsPerson() {
     const done = await action('stats.residentSince', { userId, dateKey: dateKey ?? '' })
     if (done) {
       haptic('success')
-      setTick((n) => n + 1)
+      reload()
     }
   }
 
@@ -140,12 +148,12 @@ export function StatsPerson() {
         <div className="sq-row">
           <div className="sq-cell">
             <div className="sq-num">{data.visits}</div>
-            <div className="sq-label">визитов за 3 месяца</div>
+            <div className="sq-label">{`${plural(data.visits, 'визит', 'визита', 'визитов')} за 3 месяца`}</div>
           </div>
           <div className="sq-vsep" />
           <div className="sq-cell">
             <div className="sq-num">{hoursNum(data.minutes)}</div>
-            <div className="sq-label">часов внутри</div>
+            <div className="sq-label">{`${hoursNumWord(data.minutes)} внутри`}</div>
           </div>
         </div>
         <div className="sep" style={{ margin: '0 16px' }} />
@@ -208,7 +216,8 @@ export function StatsPerson() {
             {data.lastVisits.map((v, i) => (
               <Fragment key={`${v.dateKey}-${v.from}`}>
                 {i > 0 ? <div className="sep" style={{ marginLeft: 68 }} /> : null}
-                <div
+                <button
+                  type="button"
                   className="row tappable"
                   onClick={() => push('statsDay', { dateKey: v.dateKey, backLabel: 'Назад' })}
                 >
@@ -223,7 +232,7 @@ export function StatsPerson() {
                     </span>
                   </span>
                   <div className="row-right">{icons.chevron()}</div>
-                </div>
+                </button>
               </Fragment>
             ))}
           </div>
@@ -238,7 +247,7 @@ export function StatsPerson() {
         <>
           <div className="section-title">Резидент с</div>
           <div className="card">
-            <div className="row tappable" onClick={() => void askSince()}>
+            <button type="button" className="row tappable" onClick={() => void askSince()}>
               <span className="row-label">
                 Дата
                 <span className="row-sublabel">
@@ -251,15 +260,15 @@ export function StatsPerson() {
                 </span>
                 {icons.chevron()}
               </div>
-            </div>
+            </button>
             {data.manualSince ? (
               <>
                 <div className="sep" style={{ marginLeft: 14 }} />
-                <div className="row tappable" onClick={() => void setSince(null)}>
+                <button type="button" className="row tappable" onClick={() => void setSince(null)}>
                   <span className="row-label" style={{ color: 'var(--blue)' }}>
                     Считать по журналу
                   </span>
-                </div>
+                </button>
               </>
             ) : null}
           </div>

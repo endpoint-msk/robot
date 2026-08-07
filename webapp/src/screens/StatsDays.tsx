@@ -5,11 +5,13 @@ import { Fragment, useEffect, useState } from 'react'
 import { api } from '../api'
 import { dayNum, MONTHS_NOM, monthIdx, peopleWord, plural, WEEKDAYS_SHORT, weekdayIdx, yearOf } from '../dates'
 import { icons } from '../icons'
+import { useRemote } from '../remote'
 import { push } from '../store'
 import { fmtDuration, hoursNum } from '../stats'
 import type { StatsDaySummary, StatsDaysView } from '../types'
-import { BackRow, EmptyState, Header, Sep, SpinnerCenter } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
+import { SkRows } from '../components/skeleton'
 
 type Group = { key: string; title: string; days: StatsDaySummary[]; minutes: number }
 
@@ -33,37 +35,53 @@ const groupByMonth = (days: StatsDaySummary[]): Group[] => {
   return out
 }
 
+/**
+ * Скелет повторяет свёрнутый список: свежий месяц раскрыт днями, остальные —
+ * одной строкой. Дни с плиткой даты, поэтому у них кружок-заглушка слева.
+ */
+function DaysSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Загружаем историю по дням">
+      <div className="card month-group">
+        <SkRows count={1} card={false} />
+        <SkRows count={5} avatar card={false} />
+      </div>
+      <div className="card month-group">
+        <SkRows count={1} card={false} />
+      </div>
+      <div className="card month-group">
+        <SkRows count={1} card={false} />
+      </div>
+    </div>
+  )
+}
+
 export function StatsDays() {
-  const [data, setData] = useState<StatsDaysView | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data, error, loading, reload } = useRemote(() => api<StatsDaysView>('stats.days'), [])
   const [open, setOpen] = useState<string[]>([])
 
+  // Раскрыт свежий месяц: за ним приходят чаще всего. Выбор ведёт за данными, а не
+  // делается в момент загрузки: после «Повторить» список приезжает заново.
+  const freshMonth = data?.days[0]?.dateKey.slice(0, 7)
   useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const days = await api<StatsDaysView>('stats.days')
-        if (!alive) return
-        setData(days)
-        // Раскрыт свежий месяц: за ним приходят чаще всего.
-        const first = days.days[0]?.dateKey.slice(0, 7)
-        if (first) setOpen([first])
-      } catch {
-        if (alive) setData(null)
-      } finally {
-        if (alive) setLoading(false)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [])
+    if (freshMonth) setOpen([freshMonth])
+  }, [freshMonth])
 
-  if (loading) {
+  if (error) {
     return (
       <Screen>
         <BackRow label="Статистика" />
-        <SpinnerCenter />
+        <Header title="История по дням" />
+        <ErrorState onRetry={reload} />
+      </Screen>
+    )
+  }
+  if (loading && !data) {
+    return (
+      <Screen>
+        <BackRow label="Статистика" />
+        <Header title="История по дням" />
+        <DaysSkeleton />
       </Screen>
     )
   }
@@ -94,7 +112,7 @@ export function StatsDays() {
         const isOpen = open.includes(group.key)
         return (
           <div className="card month-group" key={group.key}>
-            <div className="row tappable" onClick={() => toggle(group.key)}>
+            <button type="button" className="row tappable" onClick={() => toggle(group.key)} aria-expanded={isOpen}>
               <span className="row-label">
                 {group.title}
                 <span className="row-sublabel">
@@ -104,13 +122,14 @@ export function StatsDays() {
               <div className="row-right">
                 <span className={'chev' + (isOpen ? ' open' : '')}>{icons.chevron()}</span>
               </div>
-            </div>
+            </button>
             <div className={'collapsible' + (isOpen ? ' open' : '')}>
               <div className="collapsible-inner">
                 {group.days.map((day) => (
                   <Fragment key={day.dateKey}>
                     <Sep left={14} />
-                    <div
+                    <button
+                      type="button"
                       className="row tappable"
                       onClick={() => push('statsDay', { dateKey: day.dateKey, backLabel: 'История по дням' })}
                     >
@@ -125,7 +144,7 @@ export function StatsDays() {
                         </span>
                       </span>
                       <div className="row-right">{icons.chevron()}</div>
-                    </div>
+                    </button>
                   </Fragment>
                 ))}
               </div>

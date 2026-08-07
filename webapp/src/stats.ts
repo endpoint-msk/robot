@@ -11,6 +11,17 @@ export const hoursNum = (minutes: number): string => {
   return (Math.round(hours * 10) / 10).toString().replace('.', ',')
 }
 
+/**
+ * Слово к крупной цифре из `hoursNum`. Дробное число требует родительного падежа
+ * единственного числа («7,5 часа»), целое склоняется обычным правилом. Считаем по
+ * той же строке, что и показываем: иначе округление 6,98 → «7» разошлось бы со
+ * словом, посчитанным по исходным минутам.
+ */
+export const hoursNumWord = (minutes: number): string => {
+  const shown = Number(hoursNum(minutes).replace(',', '.'))
+  return Number.isInteger(shown) ? plural(shown, 'час', 'часа', 'часов') : 'часа'
+}
+
 export const hoursWord = (minutes: number): string => {
   const n = Math.round(minutes / 60)
   return `${n} ${plural(n, 'час', 'часа', 'часов')}`

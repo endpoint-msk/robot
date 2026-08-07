@@ -55,3 +55,7 @@ export function plural(n: number, one: string, few: string, many: string): strin
 
 export const requestsWord = (n: number): string => `${n} ${plural(n, 'заявка', 'заявки', 'заявок')}`
 export const peopleWord = (n: number): string => `${n} ${plural(n, 'человек', 'человека', 'человек')}`
+export const visitsWord = (n: number): string => `${n} ${plural(n, 'визит', 'визита', 'визитов')}`
+export const monthsWord = (n: number): string => `${n} ${plural(n, 'месяц', 'месяца', 'месяцев')}`
+export const periodsWord = (n: number): string => `${n} ${plural(n, 'период', 'периода', 'периодов')}`
+export const duesWord = (n: number): string => `${n} ${plural(n, 'взнос', 'взноса', 'взносов')}`

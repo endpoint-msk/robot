@@ -35,6 +35,7 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
     }
     const ok = await confirmDialog(`Разослать анонс в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}?`, {
       confirmLabel: 'Разослать',
+      cancelLabel: 'Не рассылать',
     })
     if (!ok) return
     setBusy(true)

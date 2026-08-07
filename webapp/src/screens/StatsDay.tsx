@@ -1,14 +1,15 @@
 // Один день журнала: сколько спейс был открыт и кто когда внутри был.
 // Таймлайн строится по сырым сессиям, поэтому доступен, пока живут месячные файлы.
 
-import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { fmtWeekdayDate } from '../dates'
+import { fmtWeekdayDate, plural } from '../dates'
+import { useRemote } from '../remote'
 import { push, useParams } from '../store'
 import { fmtDuration, fmtMinutes, gradientFor, initialOf } from '../stats'
 import type { StatsDayView } from '../types'
-import { BackRow, EmptyState, Footnote, Header, SpinnerCenter } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
 import { Screen } from '../components/Screen'
+import { SkBlock, SkCard } from '../components/skeleton'
 
 /**
  * Сколько делений подписываем на шкале. Дорожка делит строку с ником и колонкой
@@ -31,35 +32,93 @@ const rangeOf = (data: StatsDayView): { start: number; end: number } => {
   return { start, end }
 }
 
+/**
+ * Полосы скелета: отступ слева и длина в процентах дорожки. Одинаковые интервалы
+ * во всех строках читаются как готовая таблица, а не как ожидание.
+ */
+const SK_BARS = [
+  { left: 6, width: 52 },
+  { left: 24, width: 34 },
+  { left: 2, width: 71 },
+  { left: 41, width: 26 },
+  { left: 15, width: 45 },
+]
+
+/** Скелет: итог дня и таймлайн — те же две карточки, что и с данными. */
+function DaySkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Загружаем день">
+      <div className="card stats-card">
+        <SkBlock w={132} h={28} />
+        <SkBlock w="52%" style={{ display: 'block', marginTop: 12 }} />
+        <div className="sep" style={{ margin: '14px 0 12px' }} />
+        <div className="stats-pair">
+          <div>
+            <SkBlock w={30} h={22} />
+            <SkBlock w={118} h={13} style={{ display: 'block', marginTop: 5 }} />
+          </div>
+          <div>
+            <SkBlock w={30} h={22} />
+            <SkBlock w={102} h={13} style={{ display: 'block', marginTop: 5 }} />
+          </div>
+        </div>
+      </div>
+
+      <SkCard title="Кто когда был">
+        {/* Строка подписей пустая: место под ось держим, а часы выдумывать нечем — они
+            считаются по самим визитам. */}
+        <div className="tl-ticks">
+          <div className="tl-name" />
+          <div className="tl-track" />
+          <div className="tl-when" />
+        </div>
+        {SK_BARS.map((bar, i) => {
+          const delay = { animationDelay: `${i * 90}ms` }
+          return (
+            <div className="tl-row" key={i}>
+              <div className="tl-name">
+                <SkBlock w={22} h={22} style={{ ...delay, borderRadius: '50%' }} />
+                <SkBlock w={`${58 - (i % 3) * 11}%`} h={11} style={delay} />
+              </div>
+              <div className="tl-track">
+                <SkBlock
+                  w={`${bar.width}%`}
+                  h={12}
+                  style={{ ...delay, display: 'block', marginTop: 2, marginLeft: `${bar.left}%` }}
+                />
+              </div>
+              <div className="tl-when">
+                <SkBlock w={44} h={9} style={delay} />
+              </div>
+            </div>
+          )
+        })}
+      </SkCard>
+    </div>
+  )
+}
+
 export function StatsDay() {
   const { dateKey, backLabel } = useParams() as { dateKey: string; backLabel?: string }
-  const [data, setData] = useState<StatsDayView | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const day = await api<StatsDayView>('stats.day', { dateKey })
-        if (alive) setData(day)
-      } catch {
-        if (alive) setData(null)
-      } finally {
-        if (alive) setLoading(false)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [dateKey])
+  const { data, error, loading, reload } = useRemote(() => api<StatsDayView>('stats.day', { dateKey }), [dateKey])
 
   const back = <BackRow label={backLabel ?? 'История по дням'} />
 
-  if (loading) {
+  if (error) {
     return (
       <Screen>
         {back}
-        <SpinnerCenter />
+        <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
+        <ErrorState onRetry={reload} />
+      </Screen>
+    )
+  }
+  if (loading && !data) {
+    return (
+      <Screen>
+        {back}
+        <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
+        <DaySkeleton />
       </Screen>
     )
   }
@@ -96,7 +155,7 @@ export function StatsDay() {
         <div className="stats-pair">
           <div>
             <div className="sp-num">{data.people}</div>
-            <div className="sp-label">человек за день</div>
+            <div className="sp-label">{`${plural(data.people, 'человек', 'человека', 'человек')} за день`}</div>
           </div>
           <div>
             <div className="sp-num">{data.peak}</div>
@@ -129,7 +188,8 @@ export function StatsDay() {
           <div className="tl-when" />
         </div>
         {data.rows.map((r, i) => (
-          <div
+          <button
+            type="button"
             className="tl-row"
             key={`${r.userId}-${i}`}
             onClick={() => push('statsPerson', { userId: r.userId, backLabel: 'Назад' })}
@@ -152,7 +212,7 @@ export function StatsDay() {
             {/* Интервал отдельной колонкой, а не под ником: в вебвью нет hover, и
                 через нативный title время визита было не прочитать вовсе. */}
             <div className="tl-when">{`${fmtMinutes(r.fromMin)}–${fmtMinutes(r.toMin)}`}</div>
-          </div>
+          </button>
         ))}
         <div className="tl-legend">
           <span>

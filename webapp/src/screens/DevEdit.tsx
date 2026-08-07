@@ -25,7 +25,7 @@ export function DevEdit() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажи время прихода.')
+      showAlert('Укажите время прихода.')
       return
     }
     const res = await action('dev.update', { id: r.id, dateKey: selected, time, purpose })

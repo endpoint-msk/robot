@@ -74,7 +74,7 @@ async function closeRequest(r: HostingRequest): Promise<void> {
     approved
       ? `Закрыть подтверждённый визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`
       : `Закрыть заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`,
-    { confirmLabel: 'Закрыть', destructive: true },
+    { confirmLabel: 'Закрыть заявку', cancelLabel: 'Оставить', destructive: true },
   )
   if (!ok) return
   const done = await action('close', { id: r.id })
@@ -85,7 +85,7 @@ async function closeRequest(r: HostingRequest): Promise<void> {
 async function blockGuest(r: HostingRequest): Promise<void> {
   const ok = await confirmDialog(
     `Заблокировать ${r.guest.name}? Бот забанит его во всех чатах, удалит его заявки и закроет ему миниапп.`,
-    { confirmLabel: 'Заблокировать', destructive: true },
+    { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true },
   )
   if (!ok) return
   const done = await action('block', { id: r.id })
@@ -115,7 +115,10 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       <div
         className="pill mine"
         onClick={async () => {
-          const ok = await confirmDialog(`Отменить хостинг? Заявка ${r.guest.name} снова будет ждать ответа.`)
+          const ok = await confirmDialog(`Отменить хостинг? Заявка ${r.guest.name} снова будет ждать ответа.`, {
+            confirmLabel: 'Отменить хостинг',
+            cancelLabel: 'Оставить',
+          })
           if (!ok) return
           const done = await action('unapprove', { id: r.id })
           if (done) haptic('warning')
@@ -149,6 +152,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         onClick={async () => {
           const ok = await confirmDialog(
             `Захостить: ${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}, ${fmtShortDate(r.dateKey)} к ${r.time}?`,
+            { confirmLabel: 'Захостить', cancelLabel: 'Не сейчас' },
           )
           if (!ok) return
           const done = await action('approve', { id: r.id })
@@ -251,7 +255,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         <div className="req-sub split">
           {r.guest.username ? <span className="req-sub-nick">@{r.guest.username}</span> : null}
           <span className="req-sub-fixed">
-            {(r.guest.username ? ' · ' : '') + 'к ' + r.time + (r.anon ? ' · инкогнито' : '')}
+            {(r.guest.username ? ' · ' : '') + 'к ' + r.time + (r.anon ? ' · анонимно' : '')}
           </span>
         </div>
         {r.purpose ? <PurposeBlock text={r.purpose} /> : null}

@@ -20,7 +20,7 @@ export function Dev() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажи время прихода.')
+      showAlert('Укажите время прихода.')
       return
     }
     const res = await action('dev.seed', { dateKey: selected, time, purpose })
@@ -40,13 +40,13 @@ export function Dev() {
       <Header title="Dev" subtitle="Тестовые данные - резиденты не будут уведомлены" />
       <SectionTitle>Рассылка</SectionTitle>
       <div className="card">
-        <div className="row tappable" onClick={() => push('announce')}>
+        <button type="button" className="row tappable" onClick={() => push('announce')}>
           <span className="row-label">
             Анонс новой версии
             <span className="row-sublabel">Разослать обновление или объявление в чаты</span>
           </span>
           {icons.chevron()}
-        </div>
+        </button>
       </div>
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={selected} onSelect={setSelected} />
@@ -71,7 +71,7 @@ export function Dev() {
       <SectionTitle>Все заявки</SectionTitle>
       <div className="card">
         {all.length === 0 ? (
-          <EmptyState title="Заявок нет" text="Создай фейковую — появится здесь." />
+          <EmptyState title="Заявок нет" text="Создайте фейковую — появится здесь." />
         ) : (
           all.map((r, i) => (
             <Fragment key={r.id}>
@@ -89,7 +89,8 @@ export function Dev() {
                   onClick={async (e) => {
                     e.stopPropagation() // иначе откроется правка
                     const ok = await confirmDialog(`Удалить заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)}?`, {
-                      confirmLabel: 'Удалить',
+                      confirmLabel: 'Удалить заявку',
+                      cancelLabel: 'Оставить',
                       destructive: true,
                     })
                     if (ok) {
@@ -127,6 +128,7 @@ export function Dev() {
                   onClick={async () => {
                     const ok = await confirmDialog(`Разблокировать ${b.name}? Бот снимет бан во всех чатах.`, {
                       confirmLabel: 'Разблокировать',
+                      cancelLabel: 'Оставить блокировку',
                     })
                     if (ok) {
                       const res = await action('unblock', { userId: b.userId })

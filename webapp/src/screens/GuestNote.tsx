@@ -66,7 +66,8 @@ export function GuestNote() {
             className="destructive-btn"
             onClick={async () => {
               const ok = await confirmDialog(`Удалить заметку о ${guest.name}?`, {
-                confirmLabel: 'Удалить',
+                confirmLabel: 'Удалить заметку',
+                cancelLabel: 'Оставить',
                 destructive: true,
               })
               if (ok) await save('')

@@ -27,10 +27,10 @@ export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?:
 
 export function BackRow({ label }: { label: string }) {
   return (
-    <div className="back-row" onClick={pop}>
+    <button type="button" className="back-row" onClick={pop}>
       {icons.back()}
       {label}
-    </div>
+    </button>
   )
 }
 
@@ -40,6 +40,25 @@ export function EmptyState({ title, text, icon }: { title: string; text?: string
       {icon ? <div className="es-icon">{icon}</div> : null}
       <div className="es-title">{title}</div>
       {text ? <div className="es-text">{text}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * Ошибка загрузки — своё состояние, а не пустой список: «данных нет» и «запрос не
+ * дошёл» это разные утверждения, и второе экран делать не вправе. Кнопка нужна
+ * потому, что иначе повторить попытку можно только закрыв и открыв экран.
+ */
+export function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="card">
+      <div className="empty-state">
+        <div className="es-title">Не удалось загрузить</div>
+        <div className="es-text">Проверьте связь и попробуйте ещё раз.</div>
+        <button type="button" className="retry-btn" onClick={onRetry}>
+          Повторить
+        </button>
+      </div>
     </div>
   )
 }
@@ -64,8 +83,19 @@ export const ReadonlyBadge = () => (
   </div>
 )
 
-export function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return <button className={'switch' + (on ? ' on' : '')} role="switch" aria-checked={on} onClick={onToggle} />
+/** `label` обязателен: у тумблера нет ни текста, ни иконки, и без имени он
+    озвучивается как «переключатель, включён» и ничего больше. */
+export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      className={'switch' + (on ? ' on' : '')}
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={onToggle}
+    />
+  )
 }
 
 export function BottomBar({ children }: { children: ReactNode }) {
@@ -82,14 +112,14 @@ export function DevChips() {
   const other = perspective === 'resident' ? 'guest' : 'resident'
   return (
     <div className="dev-chips">
-      <div className="dev-chip" onClick={() => setPerspective(other)}>
+      <button type="button" className="dev-chip" onClick={() => setPerspective(other)}>
         {icons.eye()}
         {other === 'guest' ? 'Как гость' : 'Как резидент'}
-      </div>
-      <div className="dev-chip" onClick={() => push('dev')}>
+      </button>
+      <button type="button" className="dev-chip" onClick={() => push('dev')}>
         {'🛠'}
         {'Dev'}
-      </div>
+      </button>
     </div>
   )
 }

@@ -15,7 +15,8 @@
     /* rgb-тройка вторичного цвета: из неё собираются все полупрозрачные оттенки. */
     --sec: 60, 60, 67;
     --chip: #f2f2f7;
-    --today: rgba(0, 122, 255, 0.06);
+    --seg-thumb: #ffffff;
+    --today: rgba(0, 122, 255, 0.05);
     --overlay: rgba(0, 0, 0, 0.35);
     --busy: rgba(242, 242, 247, 0.45);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -42,7 +43,20 @@
     /* Нейтральное действие свайпа (заметка): рядом с синим и красным нужен третий
        тон, иначе соседние кнопки сливаются в одну полосу. */
     --gray: #8e8e93;
+    /* Разделы, которые не действие и не статус (архив): шестой тон палитры. */
+    --indigo: #5856d6;
+    /* Строка ждёт действия. Отдельный токен по той же причине, что и --today:
+       фиксированная альфа, читаемая на белой карточке, на #1c1c1e пропадает. */
+    --attn: rgba(0, 122, 255, 0.11);
+    --attn-strong: rgba(0, 122, 255, 0.18);
+    --warn-bg: rgba(255, 149, 0, 0.1);
+    --ok-soft-bg: rgba(52, 199, 89, 0.1);
+    --ok-soft-strong: rgba(52, 199, 89, 0.12);
+    --ev-bg: rgba(191, 90, 242, 0.1);
     --radius-card: 22px;
+    /* Радиус кнопки. Раньше у полноширинных кнопок одного экрана было три разных
+       значения (15, 16 и 22), и разница читалась как сбой вёрстки, а не иерархия. */
+    --radius-btn: 16px;
 
     /* Марки графиков — свой синий, а не --blue: акцент интерфейса одинаков в обеих
        темах, а заливка на чёрной карточке должна быть светлее, чем на белой. */
@@ -67,7 +81,8 @@
     --text: #ffffff;
     --sec: 235, 235, 245;
     --chip: #2c2c2e;
-    --today: rgba(0, 122, 255, 0.22);
+    --seg-thumb: #48484a;
+    --today: rgba(0, 122, 255, 0.10);
     --overlay: rgba(0, 0, 0, 0.5);
     --busy: rgba(0, 0, 0, 0.45);
     /* На чёрном фоне тень не читается — карточки разделяет сам цвет. */
@@ -82,6 +97,12 @@
     --ok-shadow: none;
 
     --gray: #636366;
+    --attn: rgba(0, 122, 255, 0.24);
+    --attn-strong: rgba(0, 122, 255, 0.34);
+    --warn-bg: #4a3416;
+    --ok-soft-bg: #1b3826;
+    --ok-soft-strong: #1e412b;
+    --ev-bg: #3b2848;
 
     --chart-blue: #0a84ff;
     --axis-ink: #a8a8ad;
@@ -101,6 +122,62 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* Строки списков и шапки — настоящие <button>: роль, фокус и Enter достаются от
+   браузера. Здесь снимается только оформление кнопки по умолчанию, вид элемента
+   задаётся его собственным классом ниже. */
+/* :where() обнуляет вес селектора — сброс весит как один тег и уступает любому
+   правилу самого класса. Без этого он оказывался специфичнее (0-1-1 против 0-1-0)
+   и молча перебивал их: баннер терял свой фон и становился прозрачным, кнопка
+   «назад» растягивалась во всю ширину, у сегмента текст уезжал влево. */
+button:where(.row, .back-row, .write-banner, .rule-row, .tl-row, .seg, .bar-col) {
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+    text-align: left;
+}
+
+/* Клавиатурный фокус. В вебвью Telegram клавиатуры нет, поэтому :focus-visible
+   там не срабатывает вовсе, а в браузере обводка обязана быть. */
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* --- Зона тапа ---------------------------------------------------------------
+   HIG требует 44px, но иконки и пилюли нарисованы под свою строку: сделать
+   «Захостить» кнопкой в 44px значит вырастить каждую строку заявки на 22px, а
+   флажок заметки такого размера раздвинет имя гостя. Поэтому растёт не сам
+   элемент, а прозрачный слой поверх него — соседи не двигаются, вид не меняется.
+   Горизонтальный вылет везде не больше зазора до соседа, чтобы слой не воровал
+   его тапы. Там, где элементы делят ряд (.seg), так нельзя: растёт сам элемент. */
+.note-flag, .host-btn, .search-clear, .remove-btn, .purpose-toggle,
+.link-btn, .mdr-copy, .route-copy { position: relative; }
+.note-flag::after,
+.host-btn::after,
+.search-clear::after,
+.remove-btn::after,
+.purpose-toggle::after,
+.link-btn::after,
+.mdr-copy::after,
+.route-copy::after,
+.lightbox-close::after,
+.ev-thumb-del::before { content: ""; position: absolute; }
+
+.note-flag::after { inset: -15px -4px; }
+.host-btn::after { inset: -7px -8px; }
+.search-clear::after { inset: -13px -6px; }
+.remove-btn::after { inset: -8px -4px; }
+.purpose-toggle::after { inset: -13px -3px; }
+.link-btn::after { inset: -12px -4px; }
+.mdr-copy::after { inset: -12px -5px; }
+.route-copy::after { inset: -5px; }
+.lightbox-close::after { inset: -6px; }
+/* Крестик афиши лежит в плитке с overflow: hidden — за её край слой не выйдет,
+   поэтому 40px вместо 44. */
+.ev-thumb-del::before { inset: -10px; }
 
 html, body {
     margin: 0;
@@ -187,6 +264,8 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    border: none;
+    font-family: inherit;
     padding: 6px 11px;
     border-radius: 999px;
     background: rgba(0, 122, 255, 0.1);
@@ -301,7 +380,7 @@ body {
     margin-top: 18px;
     padding: 0 14px;
     border: none;
-    border-radius: 16px;
+    border-radius: var(--radius-btn);
     background: var(--card);
     box-shadow: var(--shadow-card);
     font-family: inherit;
@@ -694,7 +773,7 @@ body {
 .chip-btn {
     flex-shrink: 0;
     padding: 0 16px;
-    border-radius: 16px;
+    border-radius: var(--radius-btn);
     border: none;
     background: var(--chip);
     font-family: inherit;
@@ -735,7 +814,7 @@ body {
     margin: 0 0 10px;
     padding: 0 14px;
     border: none;
-    border-radius: 16px;
+    border-radius: var(--radius-btn);
     background: var(--card);
     box-shadow: var(--shadow-card);
     font-family: inherit;
@@ -761,8 +840,8 @@ body {
 }
 .status-square.ok { background: rgba(52, 199, 89, 0.14); }
 /* Визит ждёт ответа гостя на предложенное резидентом время — акцентная подсветка строки. */
-.status-square.attn { background: rgba(0, 122, 255, 0.16); }
-.row.needs-action { background: rgba(0, 122, 255, 0.06); }
+.status-square.attn { background: var(--attn-strong); }
+.row.needs-action { background: var(--attn); }
 .req-sub.attn { color: var(--text); font-weight: 600; }
 
 /* --- Зелёная карточка статуса (визит подтверждён) --- */
@@ -1027,7 +1106,7 @@ body {
 .primary-btn {
     width: 100%;
     min-height: 50px;
-    border-radius: 16px;
+    border-radius: var(--radius-btn);
     background: var(--blue);
     display: flex;
     align-items: center;
@@ -1049,7 +1128,7 @@ body {
     min-height: 50px;
     border: none;
     background: var(--card);
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-btn);
     box-shadow: var(--shadow-card);
     font-family: inherit;
     font-size: 17px;
@@ -1145,6 +1224,9 @@ body {
 .radio-check { margin-left: auto; flex-shrink: 0; width: 22px; display: flex; justify-content: center; }
 .rows-disabled { opacity: 0.45; pointer-events: none; }
 
+/* Баннер «нужно твоё действие» (взнос не отмечен, бот не может писать в личку) —
+   тот же тёплый тон, что у плашки взноса. На подложке карточки он не отличался от
+   рядовой строки списка, хотя это единственное на экране, что просит действия. */
 .write-banner {
     display: flex;
     align-items: center;
@@ -1152,8 +1234,8 @@ body {
     padding: 12px 14px;
     margin-bottom: 16px;
     border-radius: var(--radius-card);
-    background: var(--card);
-    box-shadow: var(--shadow-card);
+    background: var(--warn-bg);
+    box-shadow: none;
     cursor: pointer;
 }
 .write-banner:active { opacity: 0.6; }
@@ -1162,7 +1244,7 @@ body {
     height: 32px;
     flex-shrink: 0;
     border-radius: 8px;
-    background: #ff9500;
+    background: var(--orange);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1213,6 +1295,21 @@ body {
 .empty-state .es-title { font-size: 16px; font-weight: 600; }
 .empty-state .es-text { font-size: 14px; color: var(--text-2); margin-top: 4px; line-height: 1.45; }
 
+.retry-btn {
+    min-height: 44px;
+    margin-top: 13px;
+    padding: 0 20px;
+    border: none;
+    border-radius: 12px;
+    background: rgba(0, 122, 255, 0.12);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--blue);
+    cursor: pointer;
+}
+.retry-btn:active { opacity: 0.6; }
+
 .center-screen {
     min-height: 92vh;
     display: flex;
@@ -1253,7 +1350,7 @@ body.busy #busy-overlay { display: flex; }
    одобрением, красный блокировкой. Ивент ничем из этого не является. */
 
 .event-card {
-    background: rgba(191, 90, 242, 0.10);
+    background: var(--ev-bg);
     border-radius: var(--radius-card);
     padding: 18px 18px 16px;
     margin-bottom: 18px;
@@ -1414,6 +1511,7 @@ body.busy #busy-overlay { display: flex; }
     cursor: pointer;
 }
 .ev-step:active { opacity: 0.6; }
+.ev-step:disabled { opacity: 0.35; cursor: default; }
 .ev-time-value {
     min-width: 58px;
     text-align: center;
@@ -1439,10 +1537,13 @@ body.busy #busy-overlay { display: flex; }
 }
 .ev-row-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 .secondary-btn.event-btn { color: var(--purple); }
+/* Добавление второго ивента строкой в той же карточке — как «Добавить устройство»
+   в настройках. Отдельной кнопкой под карточкой оно читалось бы как «создать
+   вместо», а не «ещё один». */
+.ev-add-row { color: var(--purple); }
+.ev-add-label { font-size: 16px; color: var(--purple); }
 
-/* Метки ивента в списках дней */
-.dow-line { display: flex; align-items: center; gap: 5px; }
-.ev-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); flex-shrink: 0; }
+/* Метка ивента в строке дня */
 .ev-day-label {
     display: flex;
     align-items: center;
@@ -1609,15 +1710,11 @@ body.busy #busy-overlay { display: flex; }
 
 /* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
 .my-dues { border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
-.my-dues.unpaid { background: rgba(255, 149, 0, 0.1); box-shadow: none; }
-.my-dues.claimed { background: rgba(var(--sec), 0.06); box-shadow: none; }
-.my-dues.paid { background: var(--ok-bg); box-shadow: var(--ok-shadow); }
+.my-dues.unpaid { background: var(--warn-bg); box-shadow: none; }
+.my-dues.claimed { background: var(--card); box-shadow: var(--shadow-card); }
 .my-dues-kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
-.my-dues.paid .my-dues-kicker { color: rgba(var(--ok-sec), 0.7); }
 .my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
-.my-dues.paid .my-dues-sum { color: var(--ok-fg); }
 .my-dues-sub { margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
-.my-dues.paid .my-dues-sub { color: rgba(var(--ok-sec), 0.75); }
 .my-dues .primary-btn { margin-top: 14px; }
 /* Реквизиты прямо в плашке: перевод делают отсюда, а не идут искать закреп в чате. */
 .my-dues-req { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.06); }
@@ -1661,17 +1758,9 @@ body.busy #busy-overlay { display: flex; }
 .arrival-card {
     padding: 16px;
     border-radius: 22px;
-    background: rgba(52, 199, 89, 0.12);
+    background: var(--ok-soft-strong);
     box-shadow: inset 0 0 0 1.5px rgba(52, 199, 89, 0.4);
     margin-bottom: 12px;
-}
-.arrival-card.done {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 13px 16px;
-    background: var(--card);
-    box-shadow: var(--shadow-card);
 }
 .arrival-head { display: flex; align-items: center; gap: 10px; }
 .arrival-icon {
@@ -1684,7 +1773,6 @@ body.busy #busy-overlay { display: flex; }
     align-items: center;
     justify-content: center;
 }
-.arrival-icon.done { width: 32px; height: 32px; border-radius: 10px; background: rgba(52, 199, 89, 0.16); }
 .arrival-title { font-size: 16px; font-weight: 700; color: var(--text); }
 .arrival-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 .arrival-btn {
@@ -1692,7 +1780,7 @@ body.busy #busy-overlay { display: flex; }
     margin-top: 12px;
     min-height: 48px;
     border: none;
-    border-radius: 15px;
+    border-radius: var(--radius-btn);
     background: var(--green);
     color: #fff;
     font-family: inherit;
@@ -1701,6 +1789,9 @@ body.busy #busy-overlay { display: flex; }
     cursor: pointer;
 }
 .arrival-btn:active { opacity: 0.8; }
+/* Пока идёт антиспам, кнопка остаётся на месте с обратным отсчётом: прятать её
+   значит оставить на экране текст «сообщите ещё раз» и нечем это сделать. */
+.arrival-btn:disabled { opacity: 0.45; cursor: default; }
 
 /* Подсказка-плашка в форме заявки: про кнопку «Я на месте» надо сказать заранее -
    у двери читать инструкции поздно. */
@@ -1711,7 +1802,7 @@ body.busy #busy-overlay { display: flex; }
     margin-top: 12px;
     padding: 12px 14px;
     border-radius: 16px;
-    background: rgba(52, 199, 89, 0.1);
+    background: var(--ok-soft-bg);
 }
 .hint-icon { flex-shrink: 0; display: flex; align-items: center; }
 .hint-text { font-size: 13px; line-height: 1.45; color: var(--text-2); }
@@ -1746,7 +1837,6 @@ body.busy #busy-overlay { display: flex; }
 /* Переключатель окна (месяц / 3 месяца / всё время) — сегмент-контрол iOS. */
 .segmented {
     display: flex;
-    gap: 3px;
     padding: 2px;
     margin: 0 0 18px;
     border-radius: 10px;
@@ -1755,13 +1845,15 @@ body.busy #busy-overlay { display: flex; }
 .seg {
     flex: 1;
     text-align: center;
-    padding: 7px 0;
+    /* 13px даёт 44px высоты вместе со строкой: сегменты делят ряд, и прозрачный
+       слой поверх у соседей перекрывался бы. */
+    padding: 13px 0;
     border-radius: 8px;
     font-size: 13px;
     color: var(--text-2);
     cursor: pointer;
 }
-.seg.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
+.seg.on { color: var(--text); font-weight: 600; }
 
 .stats-card { padding: 16px 16px 14px; margin-bottom: 18px; }
 .stats-card-title { font-size: 17px; font-weight: 700; margin: 0 2px 13px; }
@@ -2007,6 +2099,95 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     color: var(--axis-ink);
 }
 
+/* --- Скелеты загрузки ---------------------------------------------------------
+   Загрузка показывается тем же каркасом, что и данные, поэтому после ответа
+   сервера ничего не прыгает. Волна нужна не для красоты — она отличает «ещё
+   грузится» от «застряло»: статичный серый макет через пару секунд читается
+   как поломка. Разметка — components/skeleton.tsx. */
+
+/* Прямоугольник-заглушка под цифру или строку: по нему бежит блик.
+
+   Подложка и блик — два разных слоя. Раньше блик был самим фоном, и на границе
+   цикла позиция прыгала из одной точки в другую: было видно, как анимация
+   отматывается назад. Теперь блик уезжает за оба края (крайние кадры — чистая
+   подложка), поэтому стык петли не виден, а ход равномерный: ease-in-out
+   притормаживал ровно у этого стыка и только подчёркивал его. */
+.sk-block {
+    display: inline-block;
+    border-radius: 7px;
+    background-color: rgba(var(--sec), 0.09);
+    background-image: linear-gradient(
+        100deg,
+        transparent 35%,
+        rgba(var(--sec), 0.13) 50%,
+        transparent 65%
+    );
+    /* Полотно вдвое шире блока: при 200% крайние позиции выносят блик целиком
+       за пределы блока — на них он и не виден. */
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: sk-sweep 1.6s linear infinite;
+}
+@keyframes sk-sweep {
+    from { background-position: 200% 0; }
+    to { background-position: -100% 0; }
+}
+
+.sk-figure { display: flex; align-items: baseline; gap: 10px; }
+
+/* Клетка карты. Цвет — ступень шкалы, а не серый: волна сразу говорит, какого
+   рода блок грузится. Задержка приходит инлайном из суммы координат, поэтому
+   гребень идёт по диагонали. */
+.sk-cell {
+    background: var(--heat-3);
+    opacity: 0.16;
+    animation: sk-glow 1.7s ease-in-out infinite;
+}
+@keyframes sk-glow {
+    0%, 100% { opacity: 0.16; }
+    45% { opacity: 1; }
+}
+
+/* Столбики месяцев: высота ходит волной, ряд читается как бегущая строка. */
+.sk-bars { display: flex; align-items: flex-end; gap: 5px; height: 92px; margin-top: 18px; }
+.sk-col {
+    flex: 1;
+    min-width: 0;
+    height: 24%;
+    border-radius: 4px 4px 0 0;
+    background: var(--heat-3);
+    opacity: 0.55;
+    animation: sk-wave 1.5s ease-in-out infinite;
+}
+@keyframes sk-wave {
+    0%, 100% { height: 24%; opacity: 0.4; }
+    50% { height: 88%; opacity: 0.85; }
+}
+
+/* Без движения скелет всё равно должен читаться как каркас, а не как данные:
+   гасим анимацию, но оставляем блокам разную высоту. */
+@media (prefers-reduced-motion: reduce) {
+    .sk-block, .sk-cell, .sk-col, .sk-row { animation: none; }
+    .sk-cell { opacity: 0.35; }
+    .sk-col { height: 56%; }
+}
+
+/* Строка списка: размеры один в один с .row, иначе после загрузки список дёрнется.
+   Задержка приходит инлайном по номеру строки — волна идёт сверху вниз, как её и
+   читают. Наследуется дочерними .sk-block: своей анимации у строки нет. */
+.sk-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 11px 14px;
+}
+.sk-row + .sk-row { border-top: 0.5px solid var(--sep); }
+.sk-row .sk-block { animation-delay: inherit; }
+.sk-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
+.sk-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sk-list { overflow: hidden; }
+
 /* --- Анимации разделов статистики --- */
 
 /* Раскрытие до height: auto. Единственный способ анимировать его без замеров в
@@ -2032,12 +2213,11 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     left: 2px;
     width: calc((100% - 4px) / 3);
     border-radius: 8px;
-    background: var(--card);
+    background: var(--seg-thumb);
     box-shadow: var(--shadow-card);
     transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .seg { position: relative; z-index: 1; transition: color 0.18s ease, font-weight 0.18s ease; }
-.seg.on { background: none; box-shadow: none; }
 
 /* Смена окна: цифры меняются все разом, поэтому блок проявляется целиком. */
 .stats-body { animation: stats-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }

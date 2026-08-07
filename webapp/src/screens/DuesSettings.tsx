@@ -3,13 +3,13 @@
 
 import { useState } from 'react'
 import { action } from '../api'
+import { money } from '../format'
 import { icons } from '../icons'
 import { numberPrompt } from '../modals'
 import { useStore } from '../store'
 import { haptic } from '../telegram'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { Screen } from '../components/Screen'
-import { money } from './Dues'
 
 const MIN_DAY = 1
 const MAX_DAY = 28
@@ -64,42 +64,46 @@ export function DuesSettings() {
 
       <div className="card">
         <div className="row">
-          <div className="row-icon" style={{ background: '#30d158' }}>
+          <div className="row-icon" style={{ background: 'var(--green)' }}>
             {icons.rub(17, '#fff')}
           </div>
           <span className="row-label">
             Сбор взносов
             <span className="row-sublabel">Периоды открываются сами</span>
           </span>
-          <Switch on={dues.enabled} onToggle={() => void save({ enabled: !dues.enabled })} />
+          <Switch label="Сбор взносов" on={dues.enabled} onToggle={() => void save({ enabled: !dues.enabled })} />
         </div>
         <Sep left={54} />
-        <div className="row tappable" onClick={() => void askDay()}>
+        <button type="button" className="row tappable" onClick={() => void askDay()}>
           <span className="row-label">День сбора</span>
           <div className="row-right">
             <span className="dues-amount">{`${dues.day}-го числа`}</span>
             {icons.chevron()}
           </div>
-        </div>
+        </button>
       </div>
 
       <SectionTitle>Ставки</SectionTitle>
       <div className="card">
-        <div className="row tappable" onClick={() => void askNumber('Ставка для всех', dues.amount, 'amount')}>
+        <button type="button" className="row tappable" onClick={() => void askNumber('Ставка для всех', dues.amount, 'amount')}>
           <span className="row-label">Всем</span>
           <div className="row-right">
             <span className="dues-amount">{money(dues.amount, dues.currency)}</span>
             {icons.chevron()}
           </div>
-        </div>
+        </button>
         <Sep left={14} />
-        <div className="row tappable" onClick={() => void askNumber('Ставка для студентов', dues.studentAmount, 'studentAmount')}>
+        <button
+          type="button"
+          className="row tappable"
+          onClick={() => void askNumber('Ставка для студентов', dues.studentAmount, 'studentAmount')}
+        >
           <span className="row-label">Студентам</span>
           <div className="row-right">
             <span className="dues-amount">{money(dues.studentAmount, dues.currency)}</span>
             {icons.chevron()}
           </div>
-        </div>
+        </button>
       </div>
       <Footnote>
         Новая ставка действует на текущий и будущие месяцы. Уже подтверждённые суммы не пересчитываются. Своя ставка по
@@ -149,14 +153,18 @@ export function DuesSettings() {
       <SectionTitle>Уведомления</SectionTitle>
       <div className="card">
         <div className="row">
-          <div className="row-icon" style={{ background: '#007aff' }}>
+          <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.bell()}
           </div>
           <span className="row-label">
             Напоминать о сборе
             <span className="row-sublabel">В личку, с кнопкой «Я внёс»</span>
           </span>
-          <Switch on={dues.notify} onToggle={() => void action('dues.notify', { enabled: !dues.notify })} />
+          <Switch
+            label="Напоминать о сборе"
+            on={dues.notify}
+            onToggle={() => void action('dues.notify', { enabled: !dues.notify })}
+          />
         </div>
       </div>
       <Footnote>Тумблер личный: у каждого резидента свой, по умолчанию включён.</Footnote>
