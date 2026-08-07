@@ -4,9 +4,9 @@ import { icons } from '../icons'
 import { showAlert } from '../modals'
 import { resetRoot, setBusy, setData, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
-import type { Bootstrap } from '../types'
+import type { Bootstrap, ReminderChoice } from '../types'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
-import { AnonRow, DayChips, isPastForToday, PurposeInput, useDayTime } from '../components/forms'
+import { AnonRow, DayChips, isPastForToday, PurposeInput, RemindCard, reminderFor, useDayTime } from '../components/forms'
 import { Screen } from '../components/Screen'
 
 export function NewRequest() {
@@ -15,6 +15,9 @@ export function NewRequest() {
   const { day, time, min, selectDay, onTimeChange } = useDayTime(days[0]!.dateKey, null)
   const [purpose, setPurpose] = useState('')
   const [anon, setAnon] = useState(false)
+  // Напоминание предлагается включённым: выключенное по умолчанию им бы почти никто
+  // не воспользовался, а именно оно и уменьшает «забыл про заявку».
+  const [remind, setRemind] = useState<ReminderChoice | null>('h2')
   const [submitting, setSubmitting] = useState(false)
 
   const submit = async (): Promise<void> => {
@@ -32,7 +35,7 @@ export function NewRequest() {
       // Если гость открыл миниапп из чата без /start, бот не сможет прислать ему ответ
       // резидента в личку — до создания заявки просим доступ нативной плашкой Telegram.
       if (!botCanWrite()) await requestWriteAccess()
-      setData(await api<Bootstrap>('create', { dateKey: day, time, purpose, anon }))
+      setData(await api<Bootstrap>('create', { dateKey: day, time, purpose, anon, remind: reminderFor(day, time, remind) }))
       haptic('success')
       resetRoot()
     } catch (err) {
@@ -71,6 +74,8 @@ export function NewRequest() {
           <PurposeInput value={purpose} onChange={setPurpose} />
         </div>
       </div>
+      <div style={{ height: 8 }} />
+      <RemindCard dateKey={day} time={time} choice={remind} onChange={setRemind} />
       <div style={{ height: 8 }} />
       <AnonRow anon={anon} onChange={setAnon} />
       {/* Про кнопку «Я на месте» говорим заранее: в момент, когда гость стоит у двери,

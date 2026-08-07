@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { BlockedUser, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal } from './types.js'
+import type { BlockedUser, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal, VisitReminder } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -75,7 +75,7 @@ export const isPastSlot = (dateKey: string, time: string, offsetMinutes: number)
 export const createHostingRequest = async (
     storage: Storage,
     tzOffsetMinutes: number,
-    input: { guest: HostingUser; dateKey: string; time: string; purpose: string; anon?: boolean },
+    input: { guest: HostingUser; dateKey: string; time: string; purpose: string; anon?: boolean; remind?: VisitReminder | null },
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: CreateRequestError }> => {
     const today = todayKey(tzOffsetMinutes)
     const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
@@ -101,6 +101,7 @@ export const createHostingRequest = async (
         approvedBy: null,
         approvedAt: null,
         proposal: null,
+        remind: input.remind ?? null,
     }
     await storage.update((s) => {
         s.hostingRequests[request.id] = request
@@ -121,7 +122,7 @@ export const editHostingRequest = async (
     tzOffsetMinutes: number,
     id: string,
     guestUserId: number,
-    patch: { dateKey: string; time: string; purpose: string; anon: boolean },
+    patch: { dateKey: string; time: string; purpose: string; anon: boolean; remind?: VisitReminder | null },
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: EditRequestError }> => {
     const existing = storage.get().hostingRequests[id]
     if (!existing || existing.guest.userId !== guestUserId) return { ok: false, error: 'not_found' }
@@ -147,6 +148,7 @@ export const editHostingRequest = async (
         r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
         r.anon = patch.anon
         r.proposal = null
+        if (patch.remind !== undefined) r.remind = patch.remind
     })
     return { ok: true, request: storage.get().hostingRequests[id]! }
 }
@@ -832,9 +834,11 @@ export const updateHostingRequest = async (
     await storage.update((s) => {
         const r = s.hostingRequests[id]
         if (!r) return
+        const moved = r.dateKey !== patch.dateKey || r.time !== patch.time
         r.dateKey = patch.dateKey
         r.time = patch.time
         r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
+        if (moved && r.remind) r.remind.sentAt = null
     })
     return { ok: true, request: storage.get().hostingRequests[id]! }
 }
@@ -927,9 +931,12 @@ export const acceptReschedule = async (
     await storage.update((s) => {
         const r = s.hostingRequests[id]
         if (r?.proposal) {
+            const moved = r.dateKey !== r.proposal.dateKey || r.time !== r.proposal.time
             r.dateKey = r.proposal.dateKey
             r.time = r.proposal.time
             r.proposal = null
+            // Визит уехал на другой слот — напоминание должно уйти заново.
+            if (moved && r.remind) r.remind.sentAt = null
         }
     })
     return { ok: true, request: storage.get().hostingRequests[id]!, proposal }

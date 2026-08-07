@@ -23,6 +23,12 @@ export type RescheduleProposal = {
 
 export type RequestStatus = 'pending' | 'approved'
 
+/** За сколько до визита напомнить: за 30 минут, час, два, утром того же дня, вечером накануне. */
+export type ReminderChoice = 'm30' | 'h1' | 'h2' | 'morning' | 'evening'
+
+/** Напоминание о визите. null — гость его не просил. sentAt — уже отправлено. */
+export type VisitReminder = { choice: ReminderChoice; sentAt: string | null }
+
 export type HostingRequest = {
   id: string
   dateKey: string
@@ -36,6 +42,8 @@ export type HostingRequest = {
   anon: boolean
   /** Когда гость нажал «Я на месте». null - не нажимал. */
   arrivedAt?: string | null
+  /** Напоминание о визите. Приходит только в своих заявках: чужое напоминание не наше дело. */
+  remind?: VisitReminder | null
 }
 
 /** Сколько раз человек уже приходил - чип в строке заявки. Только резидентам. */

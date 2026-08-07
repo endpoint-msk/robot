@@ -1677,6 +1677,31 @@ body.busy #busy-overlay { display: flex; }
 .hint-icon { flex-shrink: 0; display: flex; align-items: center; }
 .hint-text { font-size: 13px; line-height: 1.45; color: var(--text-2); }
 
+/* --- Напоминание о визите --- */
+
+/* Настройка недоступна: срок уже не успевает либо напоминание отправлено. */
+.card.remind-locked { opacity: 0.5; }
+.card.remind-locked .switch { pointer-events: none; }
+
+.remind-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px 14px 13px; }
+.remind-chip {
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: none;
+    background: var(--chip);
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+}
+.remind-chip.selected { background: var(--blue); color: #fff; font-weight: 700; }
+/* Неподходящий срок не прячем, а зачёркиваем: иначе набор чипов молча меняется
+   при каждом сдвиге времени, и непонятно, куда делся вариант. */
+.remind-chip.off { color: var(--text-3); text-decoration: line-through; cursor: default; }
+
+.remind-caption { font-size: 13px; line-height: 1.45; color: var(--text-2); margin: 8px 18px 0; }
+
 /* --- Журнал присутствия: статистика --- */
 
 /* Переключатель окна (месяц / 3 месяца / всё время) — сегмент-контрол iOS. */

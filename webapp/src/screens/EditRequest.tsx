@@ -4,8 +4,9 @@ import { showAlert } from '../modals'
 import { icons } from '../icons'
 import { pop, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
+import type { ReminderChoice } from '../types'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
-import { AnonRow, DayChips, isPastForToday, PurposeInput, useDayTime } from '../components/forms'
+import { AnonRow, DayChips, isPastForToday, PurposeInput, RemindCard, reminderFor, useDayTime } from '../components/forms'
 import { Screen } from '../components/Screen'
 
 export function EditRequest() {
@@ -18,6 +19,7 @@ export function EditRequest() {
   const { day, time, min, selectDay, onTimeChange } = useDayTime(r ? r.dateKey : days[0]!.dateKey, r ? r.time : null)
   const [purpose, setPurpose] = useState(r ? r.purpose : '')
   const [anon, setAnon] = useState(r ? r.anon : false)
+  const [remind, setRemind] = useState<ReminderChoice | null>(r?.remind?.choice ?? null)
 
   useEffect(() => {
     if (!r) pop()
@@ -33,7 +35,14 @@ export function EditRequest() {
       showAlert('Это время уже прошло — выбери время позже текущего.')
       return
     }
-    const done = await action('edit', { id: r.id, dateKey: day, time, purpose, anon })
+    const done = await action('edit', {
+      id: r.id,
+      dateKey: day,
+      time,
+      purpose,
+      anon,
+      remind: reminderFor(day, time, remind),
+    })
     if (done) {
       haptic('success')
       pop()
@@ -68,6 +77,8 @@ export function EditRequest() {
           <PurposeInput value={purpose} onChange={setPurpose} />
         </div>
       </div>
+      <div style={{ height: 8 }} />
+      <RemindCard dateKey={day} time={time} choice={remind} onChange={setRemind} sentAt={r.remind?.sentAt} />
       <div style={{ height: 8 }} />
       <AnonRow anon={anon} onChange={setAnon} />
       <BottomBar>

@@ -28,6 +28,7 @@ import {
 } from './presence.js'
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
+import { registerVisitReminderHandlers, startVisitReminderScheduler } from './visit-reminder.js'
 import { registerBackupHandlers, startBackupScheduler } from './backup.js'
 import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './dues.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
@@ -160,6 +161,8 @@ const main = async () => {
     // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
     if (webappConfig !== null) {
         registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
+        // Кнопки «Буду» / «Не смогу» под напоминанием о визите.
+        registerVisitReminderHandlers(dp, { client: tg, storage, allowedChats, tzOffsetMinutes: hostingTzOffset })
     }
     // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
     // поэтому без WEBAPP_URL приёмник бесполезен.
@@ -329,6 +332,11 @@ const main = async () => {
     const hostingBoard = webappConfig !== null
         ? startHostingBoardScheduler(tg, storage, allowedChats, hostingTzOffset)
         : null
+    // Напоминания гостям о своих визитах: заявки заводятся только в миниаппе, без него
+    // напоминать не о чем.
+    const visitReminders = webappConfig !== null
+        ? startVisitReminderScheduler(tg, storage, hostingTzOffset, webappConfig.publicUrl)
+        : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
@@ -403,6 +411,7 @@ const main = async () => {
         dues.stop()
         presence.stop()
         hostingBoard?.stop()
+        visitReminders?.stop()
         printerWatcher?.stop()
         macPoller?.stop()
         webappServer?.stop()

@@ -53,6 +53,7 @@ import {
     weekStartOf,
 } from './hosting.js'
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
+import { isReminderChoice, mergeReminder, reminderFits, setVisitReminder } from './visit-reminder.js'
 import {
     buildEventIcs,
     canEditEvent,
@@ -330,7 +331,12 @@ const userView = <T extends { userId: number; name: string }>(u: T): T => {
 /** Сколько прошедших визитов гостя отдаём в «Были раньше»: это напоминание, а не журнал. */
 const MY_PAST_LIMIT = 5
 
-const requestsView = (list: HostingRequest[]) =>
+/**
+ * Заявки для фронта. `viewerId` — кому мы их показываем: напоминание о визите это
+ * личная настройка гостя, и в резидентских списках (дни, архив, карточка гостя) ему
+ * делать нечего, поэтому поле едет только в своих заявках.
+ */
+const requestsView = (list: HostingRequest[], viewerId?: number) =>
     list.map((r) => ({
         id: r.id,
         dateKey: r.dateKey,
@@ -343,6 +349,7 @@ const requestsView = (list: HostingRequest[]) =>
         proposal: r.proposal ? { ...r.proposal, user: userView(r.proposal.user) } : null,
         anon: r.anon === true,
         arrivedAt: r.arrivedAt ?? null,
+        ...(viewerId !== undefined && r.guest.userId === viewerId ? { remind: r.remind ?? null } : {}),
     }))
 
 /**
@@ -566,8 +573,8 @@ const buildBootstrap = (ctx: ApiContext) => {
         todayKey: today,
         nowTime: nowTimeKey(tzOffsetMinutes),
         days,
-        myRequests: requestsView(myRequests),
-        myPast: requestsView(myPast),
+        myRequests: requestsView(myRequests, user.userId),
+        myPast: requestsView(myPast, user.userId),
         settings,
         // Какой это по счёту визит человека - резидентская информация: она отвечает на
         // вопрос «кого я пускаю», а гостю чужая история визитов не полагается.
@@ -638,7 +645,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const time = typeof body.time === 'string' ? body.time : ''
             const purpose = typeof body.purpose === 'string' ? body.purpose : ''
             const anon = body.anon === true
-            const created = await createHostingRequest(storage, tzOffsetMinutes, { guest: user, dateKey, time, purpose, anon })
+            // Срок, который к моменту отправки уже не успевает (гость держал форму открытой),
+            // молча гасим: отказывать в самой заявке из-за необязательного напоминания нельзя.
+            const remind = isReminderChoice(body.remind) && reminderFits(dateKey, time, body.remind, tzOffsetMinutes)
+                ? mergeReminder(null, body.remind, true)
+                : null
+            const created = await createHostingRequest(storage, tzOffsetMinutes, { guest: user, dateKey, time, purpose, anon, remind })
             if (!created.ok) {
                 const messages = {
                     bad_date: 'Выбери день в пределах ближайшей недели.',
@@ -653,7 +665,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             void notifyResidentsAboutRequest(client, storage, residents, tzOffsetMinutes, config.publicUrl, created.request)
                 .catch((err) => console.error('[hosting] не удалось разослать уведомления о заявке:', err))
             syncBoard()
-            sendJson(res, 200, { request: requestsView([created.request])[0], ...buildBootstrap(ctx) })
+            sendJson(res, 200, { request: requestsView([created.request], user.userId)[0], ...buildBootstrap(ctx) })
             return
         }
 
@@ -678,7 +690,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     residentId: request.proposal.user.userId,
                 }
                 : null
-            const edited = await editHostingRequest(storage, tzOffsetMinutes, request.id, user.userId, { dateKey, time, purpose, anon })
+            // Слот сравниваем до правки: от этого зависит, переживёт ли её отметка
+            // «напоминание уже отправлено» (см. mergeReminder).
+            const slotChanged = dateKey !== request.dateKey || time !== request.time
+            const choice = isReminderChoice(body.remind) && reminderFits(dateKey, time, body.remind, tzOffsetMinutes)
+                ? body.remind
+                : null
+            const remind = mergeReminder(request.remind, choice, slotChanged)
+            const edited = await editHostingRequest(storage, tzOffsetMinutes, request.id, user.userId, { dateKey, time, purpose, anon, remind })
             if (!edited.ok) {
                 const messages = {
                     not_found: 'Заявка не найдена — возможно, её уже отменили.',
@@ -702,7 +721,32 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 void notify.catch((err) => console.error('[hosting] не удалось уведомить резидента о правке заявки:', err))
             }
             syncBoard()
-            sendJson(res, 200, { request: requestsView([edited.request])[0], ...buildBootstrap(ctx) })
+            sendJson(res, 200, { request: requestsView([edited.request], user.userId)[0], ...buildBootstrap(ctx) })
+            return
+        }
+
+        // Напоминание о своём визите: включить, поменять срок или выключить уже после
+        // создания заявки. Стоит отдельным глаголом, потому что менять его можно и у
+        // подтверждённого визита, а правка заявки (`edit`) доступна только пока она pending.
+        case 'remind.set': {
+            const raw = body.choice
+            const choice = raw === null || raw === 'off' ? null : isReminderChoice(raw) ? raw : undefined
+            if (choice === undefined) {
+                sendError(res, 400, 'bad_choice', 'Не понял, за сколько напомнить.')
+                return
+            }
+            const result = await setVisitReminder(storage, tzOffsetMinutes, typeof body.id === 'string' ? body.id : '', user.userId, choice)
+            if (!result.ok) {
+                const messages = {
+                    not_found: [404, 'Заявка не найдена — возможно, её уже отменили.'],
+                    not_yours: [403, 'Напоминание можно настроить только по своей заявке.'],
+                    too_late: [400, 'До визита осталось меньше этого срока — напоминание не успеет.'],
+                } as const
+                const [status, message] = messages[result.error]
+                sendError(res, status, result.error, message)
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
             return
         }
 

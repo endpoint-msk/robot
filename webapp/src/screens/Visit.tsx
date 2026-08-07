@@ -9,6 +9,7 @@ import { sec } from '../theme'
 import { haptic, initData, tg } from '../telegram'
 import type { Bootstrap } from '../types'
 import { BackRow, Header, Sep, SectionTitle } from '../components/common'
+import { RemindCard } from '../components/forms'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
 
@@ -273,6 +274,22 @@ export function Visit() {
           </div>
         ) : null}
       </div>
+      {/* Напоминание правится и после создания заявки — в том числе у подтверждённого
+          визита, где сама заявка уже не редактируется. */}
+      {isPast ? null : (
+        <div style={{ marginTop: 22 }}>
+          <RemindCard
+            dateKey={r.dateKey}
+            time={r.time}
+            choice={r.remind?.choice ?? null}
+            sentAt={r.remind?.sentAt}
+            onChange={async (choice) => {
+              const done = await action('remind.set', { id: r.id, choice: choice ?? 'off' })
+              if (done) haptic('success')
+            }}
+          />
+        </div>
+      )}
       {isPast ? null : (
       <button
         className="secondary-btn"
