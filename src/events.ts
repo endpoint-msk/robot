@@ -383,6 +383,9 @@ export type EventSlot = { dateKey: string; time: string }
  * Раньше `notifyResidentsAboutEvent` дёргался ровно один раз, при создании: человек
  * читал анонс в понедельник, приходил в четверг, а ивент к тому моменту уехал на
  * пятницу - и об этом не знал никто, кроме тех, кто снова открыл миниапп.
+ *
+ * `byUserId` - кто двигал, а не автор ивента: чужой ивент правит и дев, и тогда автору
+ * знать о переносе нужнее всех.
  */
 export const notifyEventMoved = async (
     client: TelegramClient,
@@ -392,6 +395,7 @@ export const notifyEventMoved = async (
     webappUrl: string,
     event: SpaceEvent,
     before: EventSlot,
+    byUserId: number,
 ): Promise<void> => {
     if (before.dateKey === event.dateKey && before.time === event.time) return
     const isForToday = event.dateKey === todayKey(tzOffsetMinutes) || before.dateKey === todayKey(tzOffsetMinutes)
@@ -400,7 +404,7 @@ export const notifyEventMoved = async (
         `Было ${formatDayKey(before.dateKey)} к ${before.time}.`,
         `Стало ${formatDayKey(event.dateKey)} к ${event.time}.`,
     ].join('<br>')
-    await broadcastEventNotice(client, storage, directory, text, webappUrl, isForToday, event.host.userId)
+    await broadcastEventNotice(client, storage, directory, text, webappUrl, isForToday, byUserId)
 }
 
 /** Отмена ивента: DM тем же, кому уходил анонс. */

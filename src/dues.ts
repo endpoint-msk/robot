@@ -205,7 +205,7 @@ export const syncDuesRoster = async (
 // Форматирование
 // ---------------------------------------------------------------------------
 
-const plural = (n: number, forms: [string, string, string]): string => {
+export const plural = (n: number, forms: [string, string, string]): string => {
     const tail = n % 10
     const teen = n % 100
     if (tail === 1 && teen !== 11) return forms[0]

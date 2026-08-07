@@ -148,7 +148,7 @@ export const notifyVisitReminder = async (
     const lines = host
         ? [
             `🔔 Напоминаю: визит в спейс <b>${when} к ${request.time}</b>.`,
-            `Вас хостит ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}.`,
+            `Вас хостит ${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}.`,
             'У двери откройте свой визит и нажмите «Я на месте».',
         ]
         : [

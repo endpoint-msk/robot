@@ -512,7 +512,7 @@ export const notifyArrival = async (
         const lines = forHost
             ? [`🚪 <b>${guest} у двери</b> - визит к ${request.time}.`]
             : [
-                `🚪 <b>${guest} у двери</b> - визит к ${request.time}, хостит ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}.`,
+                `🚪 <b>${guest} у двери</b> - визит к ${request.time}, хостит ${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}.`,
                 'Хоста сейчас нет в спейсе - откройте, если вы рядом.',
             ]
         try {
@@ -688,7 +688,7 @@ export const notifyGuestReschedule = async (
     const p = request.proposal
     if (!p) return
     const who = await mentionLabel(client, p.user)
-    const text = `🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Открой «Мои визиты», чтобы принять или предложить свой вариант.`
+    const text = `🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Откройте «Мои визиты», чтобы принять или предложить свой вариант.`
     try {
         await client.sendText(request.guest.userId, html(text), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]),

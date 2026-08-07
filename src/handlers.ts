@@ -4,6 +4,7 @@ import {
     buildDonationsCsv,
     buildLeaderboard,
     createFundraiser,
+    formatMoney,
     fundraiserPeriodLabel,
     isAnonNick,
     ANON_LABEL,
@@ -568,7 +569,7 @@ export const registerHandlers = (
             })
         })
         const who = parsed.nick === '' ? ANON_LABEL : `@${parsed.nick}`
-        await msg.answerText(`Добавил: ${who} - ${parsed.amount}${f.currency}.`)
+        await msg.answerText(`Добавил: ${who} - ${formatMoney(parsed.amount, f.currency)}.`)
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 
@@ -588,7 +589,7 @@ export const registerHandlers = (
         await storage.update(() => {
             f.goal = value
         })
-        await msg.answerText(value > 0 ? `Цель установлена: ${value}${f.currency}.` : 'Цель снята.')
+        await msg.answerText(value > 0 ? `Цель установлена: ${formatMoney(value, f.currency)}.` : 'Цель снята.')
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })
 
@@ -688,7 +689,7 @@ export const registerHandlers = (
                 )
             })
             const who = isAnon ? ANON_LABEL : `@${entry.nick}`
-            await msg.answerText(`Удалил все донаты ${who} (всего ${total}${f.currency}).`)
+            await msg.answerText(`Удалил все донаты ${who} (всего ${formatMoney(total, f.currency)}).`)
         } else {
             const wantedNick = spec.nick.toLowerCase()
             const idx = f.donations.findIndex((d) => {
@@ -704,7 +705,7 @@ export const registerHandlers = (
             await storage.update(() => {
                 f.donations.splice(idx, 1)
             })
-            await msg.answerText(`Удалил: @${removed.nick} - ${removed.amount}${f.currency}.`)
+            await msg.answerText(`Удалил: @${removed.nick} - ${formatMoney(removed.amount, f.currency)}.`)
         }
         await refreshLastMessageInChat(client, storage, Number(msg.chat.id))
     })

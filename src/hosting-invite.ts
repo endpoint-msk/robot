@@ -98,7 +98,7 @@ export const sendHostingInvite = async (
     const isResident = await residents.isResident(target.userId)
     const text = isResident
         ? `👋 ${who} зовёт тебя в спейс: <b>${when}</b>.`
-        : `👋 ${who} зовёт тебя в спейс: <b>${when}</b>.<br>Оставь заявку на визит — резиденты увидят её и подтвердят.`
+        : `👋 ${who} зовёт вас в спейс: <b>${when}</b>.<br>Оставьте заявку на визит — резиденты увидят её и подтвердят.`
     const keyboard = BotKeyboard.inline(
         isResident
             ? [

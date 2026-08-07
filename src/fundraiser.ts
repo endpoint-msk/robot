@@ -112,9 +112,30 @@ export const renderProgressBar = (current: number, goal: number): string => {
     return `${left}${percent}%${right}`
 }
 
+/**
+ * Голое число без разделителей. Это формат протокола табло (`renderBoardExport`) и
+ * столбца CSV — прошивка и Excel парсят его как есть, поэтому пробелы и знак валюты
+ * сюда добавлять нельзя. Всё, что читает человек, идёт через `formatMoney`.
+ */
 const formatAmount = (n: number): string => {
     if (Number.isInteger(n)) return n.toString()
     return n.toFixed(2)
+}
+
+/** Коды, у которых есть привычный знак. Незнакомый код печатаем как есть. */
+const CURRENCY_SYMBOLS: Record<string, string> = { RUB: '₽', USD: '$', EUR: '€' }
+
+const currencySymbol = (currency: string): string => {
+    const code = currency.trim()
+    return CURRENCY_SYMBOLS[code.toUpperCase()] ?? code
+}
+
+/** Сумма для чтения человеком: «10 000 ₽». */
+export const formatMoney = (amount: number, currency: string): string => {
+    const [int = '0', frac] = formatAmount(Math.abs(amount)).split('.')
+    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+    const symbol = currencySymbol(currency)
+    return `${amount < 0 ? '-' : ''}${grouped}${frac ? `,${frac}` : ''}${symbol ? ` ${symbol}` : ''}`
 }
 
 const escapeNick = (raw: string): string => raw.trim().replace(/^@+/, '')
@@ -351,11 +372,11 @@ export const renderFundraiser = (
             const place = i + 1
             const medal = i < MEDAL_EMOJI.length ? `${MEDAL_EMOJI[i]} ` : ''
             const who = isAnonNick(entry.nick) ? ANON_LABEL : nickLink(entry.nick)
-            lines.push(`${medal}${place}. ${who} — ${formatAmount(entry.total)}${f.currency}`)
+            lines.push(`${medal}${place}. ${who} — ${formatMoney(entry.total, f.currency)}`)
         }
         lines.push('')
-        const goalSuffix = f.goal > 0 ? ` из ${formatAmount(f.goal)}${f.currency}` : ''
-        lines.push(`Итого: ${formatAmount(total)}${f.currency}${goalSuffix}`)
+        const goalSuffix = f.goal > 0 ? ` из ${formatMoney(f.goal, f.currency)}` : ''
+        lines.push(`Итого: ${formatMoney(total, f.currency)}${goalSuffix}`)
         if (pages > 1) {
             lines.push(`Страница ${page}/${pages}`)
         }
@@ -395,9 +416,9 @@ export const renderHistoryList = (past: Fundraiser[], truncated = false): string
     const lines = ['История сборов:', '']
     for (const f of past) {
         const total = totalAmount(f)
-        const goalSuffix = f.goal > 0 ? ` из ${formatAmount(f.goal)}${f.currency}` : ''
+        const goalSuffix = f.goal > 0 ? ` из ${formatMoney(f.goal, f.currency)}` : ''
         const done = f.goal > 0 && total >= f.goal ? ' ✅' : ''
-        lines.push(`${fundraiserPeriodLabel(f)} — ${formatAmount(total)}${f.currency}${goalSuffix}${done}`)
+        lines.push(`${fundraiserPeriodLabel(f)} — ${formatMoney(total, f.currency)}${goalSuffix}${done}`)
     }
     lines.push('')
     // Текст уходит через html(): угловые скобки в подсказке дали бы «тег», поэтому пример без них.

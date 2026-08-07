@@ -215,7 +215,7 @@ export const registerMenuHandlers = (
             // Гостям меню резидента не показываем, но даём оставить заявку на визит через миниапп.
             if (webappUrl) {
                 await msg.answerText(
-                    'Привет! Это бот хакспейса. Хочешь зайти в гости — оставь заявку на визит, резиденты увидят её и откликнутся.',
+                    'Привет! Это бот хакспейса. Хотите зайти в гости — оставьте заявку на визит, резиденты увидят её и откликнутся.',
                     { replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]]) },
                 )
                 return
@@ -280,7 +280,10 @@ export const registerMenuHandlers = (
                     data === CB_CHECKIN_NICK ? 'nick' : 'anon',
                 )
                 if (res.chats.length === 0) {
-                    await ctx.answer({ text: 'Ты не админ ни в одном из подключённых чатов.', alert: true })
+                    await ctx.answer({
+                        text: 'Отметиться могут только резиденты. Если ты резидент, напиши в чат спейса, тебя добавят.',
+                        alert: true,
+                    })
                     return
                 }
                 const section = presenceSection(storage, userId)

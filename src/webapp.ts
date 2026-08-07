@@ -9,6 +9,7 @@ import {
     acceptRules,
     addDaysToKey,
     archiveWeeks,
+    ARRIVAL_COOLDOWN_MS,
     attendeesForDay,
     blockUser,
     buildVisitIcs,
@@ -97,6 +98,7 @@ import {
     missedPeriods,
     notifyDevsAboutClaim,
     periodKeysOf,
+    plural,
     rateFor,
     setDuesNotify,
     setDuesRate,
@@ -225,6 +227,10 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
 /** Ошибка API с человекочитаемым (русским) текстом — фронт показывает message как есть. */
 const sendError = (res: ServerResponse, status: number, error: string, message: string): void =>
     sendJson(res, status, { error, message })
+
+/** Срок антиспама «Я на месте» словами: хардкод в тексте разъехался бы с ARRIVAL_COOLDOWN_MS. */
+const ARRIVAL_COOLDOWN_MINUTES = Math.round(ARRIVAL_COOLDOWN_MS / 60_000)
+const ARRIVAL_COOLDOWN_LABEL = `${ARRIVAL_COOLDOWN_MINUTES} ${plural(ARRIVAL_COOLDOWN_MINUTES, ['минуту', 'минуты', 'минут'])}`
 
 const readBody = (req: IncomingMessage): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -394,9 +400,9 @@ const proposalSides = (
 const eventView = (e: SpaceEvent) => ({ ...e, photos: eventPhotoIds(e), host: userView(e.host) })
 
 const EVENT_ERRORS: Record<EventError, string> = {
-    not_found: 'Ивент не найден — обнови экран.',
-    bad_date: 'Выбери день в пределах ближайшей недели.',
-    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+    not_found: 'Ивент не найден — обновите экран.',
+    bad_date: 'Выберите день в пределах ближайшей недели.',
+    bad_time: 'Укажите время в формате ЧЧ:ММ.',
     past_time: 'Это время уже прошло.',
     bad_title: 'Без названия ивент не понять — впиши его.',
     not_yours: 'Править ивент может тот, кто его завёл.',
@@ -660,10 +666,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const created = await createHostingRequest(storage, tzOffsetMinutes, { guest: user, dateKey, time, purpose, anon, remind })
             if (!created.ok) {
                 const messages = {
-                    bad_date: 'Выбери день в пределах ближайшей недели.',
-                    bad_time: 'Укажи время прихода в формате ЧЧ:ММ.',
+                    bad_date: 'Выберите день в пределах ближайшей недели.',
+                    bad_time: 'Укажите время прихода в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
-                    duplicate: 'У тебя уже есть заявка на этот день.',
+                    duplicate: 'У вас уже есть заявка на этот день.',
                 } as const
                 sendError(res, 400, created.error, messages[created.error])
                 return
@@ -709,10 +715,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 const messages = {
                     not_found: 'Заявка не найдена — возможно, её уже отменили.',
                     not_pending: 'Заявку уже одобрили — измени её через отмену и новую заявку.',
-                    bad_date: 'Выбери день в пределах ближайшей недели.',
-                    bad_time: 'Укажи время прихода в формате ЧЧ:ММ.',
+                    bad_date: 'Выберите день в пределах ближайшей недели.',
+                    bad_time: 'Укажите время прихода в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
-                    duplicate: 'У тебя уже есть заявка на этот день.',
+                    duplicate: 'У вас уже есть заявка на этот день.',
                 } as const
                 const status = edited.error === 'not_found' ? 404 : edited.error === 'not_pending' ? 409 : 400
                 sendError(res, status, edited.error, messages[edited.error])
@@ -764,7 +770,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const coming = body.coming === true
             const result = await setResidentAttendance(storage, tzOffsetMinutes, dateKey, user, coming)
             if (!result.ok) {
-                sendError(res, 400, result.error, 'Выбери день в пределах ближайшей недели.')
+                sendError(res, 400, result.error, 'Выберите день в пределах ближайшей недели.')
                 return
             }
             syncBoard()
@@ -791,7 +797,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const candidates = await listInviteCandidates(client, storage, residents, dateKey, user.userId)
             const target = candidates.find((c) => c.userId === targetId)
             if (!target) {
-                sendError(res, 404, 'not_found', 'Этого человека больше нет в списке — обнови экран.')
+                sendError(res, 404, 'not_found', 'Этого человека больше нет в списке — обновите экран.')
                 return
             }
             const sent = await sendHostingInvite(
@@ -828,8 +834,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             })
             if (!created.ok) {
                 const messages = {
-                    bad_date: 'Выбери день в пределах ближайшей недели.',
-                    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    bad_date: 'Выберите день в пределах ближайшей недели.',
+                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло.',
                     duplicate: 'У этого фейкового гостя уже есть заявка на день.',
                 } as const
@@ -852,8 +858,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const updated = await updateHostingRequest(storage, tzOffsetMinutes, id, { dateKey, time, purpose })
             if (!updated.ok) {
                 const messages = {
-                    bad_date: 'Выбери день в пределах ближайшей недели.',
-                    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    bad_date: 'Выберите день в пределах ближайшей недели.',
+                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     not_found: 'Заявка не найдена — возможно, её уже удалили.',
                 } as const
                 sendError(res, updated.error === 'not_found' ? 404 : 400, updated.error, messages[updated.error])
@@ -989,7 +995,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const existing = storage.get().events[id]
             if (!existing) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обнови экран.')
+                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
             }
             if (!canEditEvent(existing, user.userId, isDevUser(ctx))) {
@@ -1006,7 +1012,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             await syncEventPhotos(storage, storage.path(), id, photosFrom(body), user.userId)
             // Перенос - в фоне и только если слот реально сменился (проверка внутри).
-            void notifyEventMoved(client, storage, residents, tzOffsetMinutes, config.publicUrl, existing, before)
+            void notifyEventMoved(client, storage, residents, tzOffsetMinutes, config.publicUrl, existing, before, user.userId)
                 .catch((err) => console.error('[events] не удалось разослать перенос ивента:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
@@ -1018,7 +1024,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const existing = storage.get().events[id]
             if (!existing) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обнови экран.')
+                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
             }
             if (!canEditEvent(existing, user.userId, isDevUser(ctx))) {
@@ -1078,10 +1084,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const marked = await markArrived(storage, tzOffsetMinutes, id, user.userId)
             if (!marked.ok) {
                 const messages: Record<string, [number, string]> = {
-                    not_yours: [404, 'Заявка не найдена - обнови экран.'],
+                    not_yours: [404, 'Заявка не найдена - обновите экран.'],
                     not_approved: [409, 'Визит ещё не подтверждён - сообщать некому.'],
                     closed: [409, 'Сообщить о приходе можно за полчаса до визита и час после.'],
-                    cooldown: [429, 'Только что сообщил - резиденты уже знают. Повтори через пару минут.'],
+                    cooldown: [429, `Резиденты уже знают. Сообщить ещё раз можно через ${ARRIVAL_COOLDOWN_LABEL} после первого сигнала.`],
                 }
                 const [status, message] = messages[marked.error] ?? [400, 'Не получилось.']
                 sendError(res, status, marked.error, message)
@@ -1166,8 +1172,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!result.ok) {
                 const messages = {
                     not_found: 'Заявка не найдена — возможно, её уже отменили.',
-                    bad_date: 'Выбери день в пределах ближайшей недели.',
-                    bad_time: 'Укажи время в формате ЧЧ:ММ.',
+                    bad_date: 'Выберите день в пределах ближайшей недели.',
+                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У гостя уже есть заявка на этот день.',
                 } as const
@@ -1432,7 +1438,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             if (storage.get().macBindings[String(user.userId)]?.macs.some((e) => e.mac === mac)) {
-                sendError(res, 409, 'duplicate', 'Этот MAC уже привязан к тебе.')
+                sendError(res, 409, 'duplicate', 'Этот MAC уже привязан к вам.')
                 return
             }
             await storage.update((s) => {
@@ -1463,7 +1469,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const mac = normalizeMac(rawMac)
             const cur = storage.get().macBindings[String(user.userId)]
             if (!cur || !cur.macs.some((e) => e.mac === mac)) {
-                sendError(res, 404, 'not_found', 'Такой MAC к тебе не привязан.')
+                sendError(res, 404, 'not_found', 'Такой MAC к вам не привязан.')
                 return
             }
             let leftEmpty = false
@@ -1489,7 +1495,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const anon = body.anon === true
             if (!storage.get().macBindings[String(user.userId)]) {
-                sendError(res, 400, 'no_macs', 'Сначала привяжи хотя бы один MAC.')
+                sendError(res, 400, 'no_macs', 'Сначала привяжите хотя бы один MAC.')
                 return
             }
             await storage.update((s) => {
@@ -1760,10 +1766,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 await client.sendMedia(user.userId, InputMedia.document(csv, {
                     fileName: 'dues.csv',
                     fileMime: 'text/csv',
-                    caption: html(`Взносы за ${periodKeysOf(dues).length} ${periodKeysOf(dues).length === 1 ? 'период' : 'периодов'}.`),
+                    caption: html(
+                        `Взносы за ${periodKeysOf(dues).length} ${plural(periodKeysOf(dues).length, ['период', 'периода', 'периодов'])}.`,
+                    ),
                 }))
             } catch {
-                sendError(res, 409, 'dm_closed', 'Не могу написать в личку. Открой чат с ботом и нажми /start.')
+                sendError(res, 409, 'dm_closed', 'Не могу написать в личку. Откройте чат с ботом и нажмите /start.')
                 return
             }
             sendJson(res, 200, { ok: true })
@@ -2170,7 +2178,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                         return
                     }
                     if (!isJpeg(bytes)) {
-                        sendError(res, 400, 'bad_image', 'Не получилось прочитать картинку — попробуй другую.')
+                        sendError(res, 400, 'bad_image', 'Не получилось прочитать картинку — попробуйте другую.')
                         return
                     }
                     const photoId = stagedPhotoId(viewer.userId)
@@ -2274,7 +2282,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 const initData = typeof body.initData === 'string' ? body.initData : ''
                 const user = validateInitData(initData, deps.botToken)
                 if (!user) {
-                    sendError(res, 401, 'bad_init_data', 'Открой миниапп заново — сессия устарела.')
+                    sendError(res, 401, 'bad_init_data', 'Откройте миниапп заново — сессия устарела.')
                     return
                 }
                 // Заблокированный участник не имеет доступа к миниаппу — глухой отказ.

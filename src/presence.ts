@@ -538,7 +538,7 @@ export const registerPresenceHandlers = (
                 await ctx.answer({ text: 'Ты и так не отмечен.' })
                 try {
                     await ctx.editMessage({
-                        text: 'Ты не отмечен. Нажми /start чтобы отметиться.',
+                        text: 'Ты не отмечен. Нажми /start, чтобы отметиться.',
                     })
                 } catch {}
                 return
