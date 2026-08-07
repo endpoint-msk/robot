@@ -74,7 +74,7 @@ Bootstrap     = { me: { id; username; name; isResident; isDev; acceptedRules }
 ## Где смотреть правду
 
 `styles.css` и его `@import "./_ds_bundle.css"` — это целиком стили миниаппа
-(61 КБ, все классы выше). Читай их перед тем, как стилизовать что-то своё.
+(76 КБ, все классы выше). Читай их перед тем, как стилизовать что-то своё.
 Пропсы и назначение компонента — в `components/general/<Name>/<Name>.d.ts` и
 `<Name>.prompt.md`.
 

@@ -13,7 +13,7 @@
   "extraEntries": ["../.design-sync/preview-provider.tsx"],
   "provider": { "component": "DsPreview" },
   "overrides": {
-    "BottomBar": { "cardMode": "single", "primaryStory": "PrimaryAction", "viewport": "390x420" },
+    "BottomBar": { "cardMode": "single", "primaryStory": "PrimaryAction", "viewport": "390x300" },
     "RequestRow": { "cardMode": "column" },
     "RequestsCard": { "cardMode": "column" }
   },

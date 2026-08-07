@@ -191,6 +191,7 @@ export const dsFixture: Bootstrap = {
     macs: [{ mac: 'a4:83:e7:11:22:33', label: 'ноут' }],
     macAnon: false,
     macPresenceActive: true,
+    logVisits: true,
   },
   notes: [guestNote],
 }
