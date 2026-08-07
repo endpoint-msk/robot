@@ -29,7 +29,7 @@ export const setHostingBoardLink = (link: string | null): void => {
     hostingBoardLink = link
 }
 
-const boardMarkup = () =>
+export const boardMarkup = () =>
     hostingBoardLink
         ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', hostingBoardLink)]])
         : undefined

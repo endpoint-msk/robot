@@ -27,6 +27,7 @@ import {
     startPresenceScheduler,
 } from './presence.js'
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
+import { registerInlineHandlers, setInlineMiniappLink } from './inline.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
 import { registerVisitReminderHandlers, startVisitReminderScheduler } from './visit-reminder.js'
 import { registerBackupHandlers, startBackupScheduler } from './backup.js'
@@ -163,6 +164,8 @@ const main = async () => {
         registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
         // Кнопки «Буду» / «Не смогу» под напоминанием о визите.
         registerVisitReminderHandlers(dp, { client: tg, storage, allowedChats, tzOffsetMinutes: hostingTzOffset })
+        // Инлайн резидента: доска спейса и ничьи заявки — отправкой в любой чат.
+        registerInlineHandlers(dp, { storage, residents, tzOffsetMinutes: hostingTzOffset })
     }
     // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
     // поэтому без WEBAPP_URL приёмник бесполезен.
@@ -230,6 +233,7 @@ const main = async () => {
             const deepLink = `https://t.me/${self.username}?startapp=hosting`
             setHostingMiniappLink(deepLink)
             setHostingBoardLink(deepLink)
+            setInlineMiniappLink(deepLink)
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
