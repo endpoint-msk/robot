@@ -95,6 +95,8 @@ export type StatsPersonView = {
     favArrival: string
     /** Первый визит в журнале ('YYYY-MM-DD'). Пусто — визитов не было. */
     firstDateKey: string
+    /** Дата вступления, выставленная руками. Пусто — считаем по журналу. */
+    manualSince: string
     /** 12 недель × 7 дней, минуты. Порядок — по столбцам-неделям, как в сетке. */
     dots: number[]
     dotsFrom: string
@@ -401,6 +403,7 @@ export const buildStatsPerson = async (
         avgMinutes: inWindow.length > 0 ? Math.round(minutes / inWindow.length) : 0,
         favArrival,
         firstDateKey: allKeys[0] ?? '',
+        manualSince: storage.get().residentSince[String(userId)] ?? '',
         dots,
         dotsFrom,
         lastVisits: [...visits]
@@ -414,4 +417,12 @@ export const buildStatsPerson = async (
                 source: v.source,
             })),
     }
+}
+
+/** Ручная дата «резидент с». null — снять и снова считать по первому визиту. */
+export const setResidentSince = async (storage: Storage, userId: number, dateKey: string | null): Promise<void> => {
+    await storage.update((s) => {
+        if (dateKey) s.residentSince[String(userId)] = dateKey
+        else delete s.residentSince[String(userId)]
+    })
 }

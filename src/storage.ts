@@ -137,6 +137,7 @@ export class Storage {
             // Вложенный объект, как и dues: пустой словарь дней, а не undefined, иначе
             // первый же расчёт статистики на стейте из прошлой версии споткнётся.
             presenceStats: { days: parsed.presenceStats?.days ?? {} },
+            residentSince: parsed.residentSince ?? {},
         }
     }
 

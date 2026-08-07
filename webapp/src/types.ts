@@ -216,6 +216,8 @@ export type StatsPersonView = {
   avgMinutes: number
   favArrival: string
   firstDateKey: string
+  /** Дата вступления, выставленная руками (dev). Пусто — считаем по первому визиту. */
+  manualSince: string
   /** 12 недель × 7 дней, минуты; порядок — по столбцам-неделям. */
   dots: number[]
   dotsFrom: string

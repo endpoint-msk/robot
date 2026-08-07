@@ -103,6 +103,16 @@ export type State = {
     presenceNoLog: Record<string, true>
     /** Агрегаты журнала присутствия. Сырые сессии лежат файлами (см. presence-log.ts). */
     presenceStats: PresenceStats
+    /**
+     * Дата вступления в резиденты, выставленная руками (dev). Ключ - userId,
+     * значение - 'YYYY-MM-DD'.
+     *
+     * По умолчанию «резидент с» берётся из первого визита в журнале, а он начался
+     * позже самого спейса: у всех, кто пришёл до журнала, дата врёт. Telegram даты
+     * вступления в чат для обычных участников не отдаёт вовсе, поэтому единственный
+     * способ её поправить - руками.
+     */
+    residentSince: Record<string, string>
 }
 
 /**
@@ -570,6 +580,7 @@ export const emptyState = (): State => ({
     dues: emptyDues(),
     presenceNoLog: {},
     presenceStats: { days: {} },
+    residentSince: {},
 })
 
 /** Дефолт взносов: подсистема выключена, ставки хакерспейса, сбор 1-го числа. */

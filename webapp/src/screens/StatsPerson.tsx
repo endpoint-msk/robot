@@ -2,7 +2,7 @@
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
 import { Fragment, useEffect, useState } from 'react'
-import { api } from '../api'
+import { action, api } from '../api'
 import {
   addDays,
   dayNum,
@@ -15,8 +15,10 @@ import {
   yearOf,
 } from '../dates'
 import { icons } from '../icons'
+import { datePrompt } from '../modals'
 import { push, useParams, useStore } from '../store'
 import { fmtDuration, gradientFor, heatLevel, hoursNum, initialOf } from '../stats'
+import { haptic } from '../telegram'
 import type { StatsPersonView } from '../types'
 import { BackRow, EmptyState, Footnote, SpinnerCenter } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -25,13 +27,15 @@ const DOT_WEEKS = 12
 
 /**
  * «Резидент с 12 марта» — дата первого визита в журнале, а не вступления в чат:
- * даты вступления Telegram для обычных участников не отдаёт вовсе.
+ * даты вступления Telegram для обычных участников не отдаёт вовсе. Тех, кто пришёл
+ * в спейс раньше журнала, дата врёт — поэтому dev может выставить её руками
+ * (`manualSince`), и тогда она перебивает расчёт.
  */
-const since = (firstDateKey: string): string => {
-  if (!firstDateKey) return 'Визитов в журнале пока нет'
-  const year = yearOf(firstDateKey)
+const since = (sinceKey: string): string => {
+  if (!sinceKey) return 'Визитов в журнале пока нет'
+  const year = yearOf(sinceKey)
   const now = new Date().getUTCFullYear()
-  return `Резидент с ${fmtDayMonth(firstDateKey)}${year === now ? '' : ` ${year}`}`
+  return `Резидент с ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`
 }
 
 export function StatsPerson() {
@@ -39,6 +43,7 @@ export function StatsPerson() {
   const { data: boot } = useStore()
   const [data, setData] = useState<StatsPersonView | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -55,7 +60,7 @@ export function StatsPerson() {
     return () => {
       alive = false
     }
-  }, [userId])
+  }, [userId, tick])
 
   const back = <BackRow label={backLabel ?? 'Статистика'} />
   if (loading) {
@@ -78,6 +83,25 @@ export function StatsPerson() {
   }
 
   const isMe = boot!.me.id === userId
+  const sinceKey = data.manualSince || data.firstDateKey
+
+  const setSince = async (dateKey: string | null) => {
+    const done = await action('stats.residentSince', { userId, dateKey: dateKey ?? '' })
+    if (done) {
+      haptic('success')
+      setTick((n) => n + 1)
+    }
+  }
+
+  const askSince = async () => {
+    const picked = await datePrompt({
+      text: 'Резидент с',
+      initial: sinceKey || boot!.todayKey,
+      max: boot!.todayKey,
+    })
+    if (picked) await setSince(picked)
+  }
+
   const dotMax = Math.max(...data.dots, 1)
   // Столбец — неделя, строка — день недели: как в сетке дизайна (grid-auto-flow: column).
   const dotCells = Array.from({ length: DOT_WEEKS * 7 }, (_, i) => data.dots[i] ?? 0)
@@ -108,7 +132,7 @@ export function StatsPerson() {
         </div>
         <div className="person-head-text">
           <div className="title">{isMe ? 'Мои визиты' : data.user.label}</div>
-          <div className="subtitle">{since(data.firstDateKey)}</div>
+          <div className="subtitle">{since(sinceKey)}</div>
         </div>
       </div>
 
@@ -208,6 +232,42 @@ export function StatsPerson() {
 
       {isMe && boot!.settings && !boot!.settings.logVisits ? (
         <Footnote>Журнал ваших визитов выключен в настройках, поэтому новые визиты сюда не попадают.</Footnote>
+      ) : null}
+
+      {boot!.me.isDev ? (
+        <>
+          <div className="section-title">Резидент с</div>
+          <div className="card">
+            <div className="row tappable" onClick={() => void askSince()}>
+              <span className="row-label">
+                Дата
+                <span className="row-sublabel">
+                  {data.manualSince ? 'выставлено вручную' : 'первый визит в журнале'}
+                </span>
+              </span>
+              <div className="row-right">
+                <span className={'row-value' + (sinceKey ? '' : ' muted')}>
+                  {sinceKey ? `${fmtDayMonth(sinceKey)} ${yearOf(sinceKey)}` : '—'}
+                </span>
+                {icons.chevron()}
+              </div>
+            </div>
+            {data.manualSince ? (
+              <>
+                <div className="sep" style={{ marginLeft: 14 }} />
+                <div className="row tappable" onClick={() => void setSince(null)}>
+                  <span className="row-label" style={{ color: 'var(--blue)' }}>
+                    Считать по журналу
+                  </span>
+                </div>
+              </>
+            ) : null}
+          </div>
+          <Footnote>
+            По умолчанию берётся первый визит в журнале. Ручная дата нужна тем, кто пришёл в спейс раньше, чем появился
+            журнал.
+          </Footnote>
+        </>
       ) : null}
     </Screen>
   )

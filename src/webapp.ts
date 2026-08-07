@@ -106,7 +106,14 @@ import {
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { isPresenceLogged, setPresenceNoLog } from './presence-log.js'
-import { buildStatsDay, buildStatsDays, buildStatsOverview, buildStatsPerson, type StatsPeriod } from './stats.js'
+import {
+    buildStatsDay,
+    buildStatsDays,
+    buildStatsOverview,
+    buildStatsPerson,
+    setResidentSince,
+    type StatsPeriod,
+} from './stats.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -1377,6 +1384,26 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             sendJson(res, 200, await buildStatsPerson(storage, tzOffsetMinutes, userId, statsPeriodOf(body.period)))
+            return
+        }
+
+        // Ручная дата «резидент с» — только dev: она ничего не считает, а объявляет,
+        // и правка чужой карточки задним числом это не то, что раздают всем резидентам.
+        case 'stats.residentSince': {
+            if (!requireDev()) return
+            const userId = typeof body.userId === 'number' ? body.userId : 0
+            if (!Number.isFinite(userId) || userId === 0) {
+                sendError(res, 400, 'bad_user', 'Непонятно, о ком речь.')
+                return
+            }
+            const raw = typeof body.dateKey === 'string' ? body.dateKey : ''
+            // Пусто — сброс к расчёту по журналу; дата из будущего это опечатка.
+            if (raw && (!isValidDayKey(raw) || raw > todayKey(tzOffsetMinutes))) {
+                sendError(res, 400, 'bad_date', 'Дата должна быть сегодняшней или прошедшей.')
+                return
+            }
+            await setResidentSince(storage, userId, raw || null)
+            sendJson(res, 200, buildBootstrap(ctx))
             return
         }
 

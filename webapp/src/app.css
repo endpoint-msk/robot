@@ -1573,6 +1573,10 @@ body.busy #busy-overlay { display: flex; }
 .dues-sub-line { margin-top: 2px; font-size: 13px; color: var(--text-2); }
 .dues-sub-line.attn { color: var(--orange); font-weight: 600; }
 .dues-sub-line.crit { color: var(--red); font-weight: 600; }
+/* Значение справа в строке-настройке, перед шевроном. */
+.row-value { font-size: 15px; font-weight: 600; }
+.row-value.muted { color: var(--text-3); font-weight: 500; }
+
 .dues-amount { font-size: 15px; font-weight: 600; }
 .dues-amount.muted { color: var(--text-3); font-weight: 500; }
 .dues-amount.paid { color: var(--green); }

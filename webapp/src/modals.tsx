@@ -39,12 +39,20 @@ type NumberInput = {
   max: number
   confirmLabel: string
 }
+type DateInput = {
+  kind: 'date'
+  text: string
+  initial: string
+  /** Потолок выбора ('YYYY-MM-DD'). Пусто — без ограничения. */
+  max?: string
+  confirmLabel: string
+}
 type ImageInput = {
   kind: 'image'
   src: string
   alt: string
 }
-type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | ImageInput
+type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | DateInput | ImageInput
 type Modal = ModalInput & { id: number; resolve: (value: any) => void }
 
 let modals: Modal[] = []
@@ -286,6 +294,61 @@ function NumberCard({ modal }: { modal: Modal & { kind: 'number' } }) {
   )
 }
 
+/** Выбор даты: та же карточка, что у ввода числа, но с нативным date-инпутом. */
+function DateCard({ modal }: { modal: Modal & { kind: 'date' } }) {
+  const [shown, setShown] = useState(false)
+  const [value, setValue] = useState(modal.initial)
+  const done = useRef(false)
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const close = (result: string | null): void => {
+    if (done.current) return
+    done.current = true
+    setShown(false)
+    modal.resolve(result)
+    setTimeout(() => remove(modal.id), 180)
+  }
+
+  const valid = value !== '' && (!modal.max || value <= modal.max)
+
+  return (
+    <div
+      className={'modal-overlay' + (shown ? ' shown' : '')}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close(null)
+      }}
+    >
+      <div className="modal-card">
+        <div className="modal-text">{modal.text}</div>
+        <div className="modal-time-wrap">
+          <input
+            className="time-input modal-time"
+            type="date"
+            value={value}
+            max={modal.max}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn" onClick={() => close(null)}>
+            Отмена
+          </button>
+          <button
+            className={'modal-btn primary' + (valid ? '' : ' disabled')}
+            onClick={() => (valid ? close(value) : undefined)}
+          >
+            {modal.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Картинка на весь экран. Тап по любому месту закрывает: это просмотрщик, а не диалог,
  * и целиться в крестик на телефоне незачем — он тут только как подсказка, что выход есть.
@@ -327,6 +390,8 @@ export function ModalHost() {
           <RescheduleCard key={m.id} modal={m} />
         ) : m.kind === 'number' ? (
           <NumberCard key={m.id} modal={m} />
+        ) : m.kind === 'date' ? (
+          <DateCard key={m.id} modal={m} />
         ) : (
           <ModalCard key={m.id} modal={m} />
         ),
@@ -400,4 +465,19 @@ export const numberPrompt = (opts: {
     min: opts.min ?? 0,
     max: opts.max ?? 1_000_000,
     confirmLabel: opts.confirmLabel ?? 'Сохранить',
+  })
+
+/** Выбор даты ('YYYY-MM-DD'). null — отмена. */
+export const datePrompt = (opts: {
+  text: string
+  initial: string
+  max?: string
+  confirmLabel?: string
+}): Promise<string | null> =>
+  open<string | null>({
+    kind: 'date',
+    text: opts.text,
+    initial: opts.initial,
+    max: opts.max,
+    confirmLabel: opts.confirmLabel ?? 'Поставить',
   })
