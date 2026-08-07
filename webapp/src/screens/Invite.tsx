@@ -109,7 +109,7 @@ export function Invite() {
   const [query, setQuery] = useState('')
   const [invited, setInvited] = useState<Set<number>>(new Set())
   const [busyId, setBusyId] = useState<number | null>(null)
-  const { data, error, reload } = useRemote(
+  const { data, error, pending, reload } = useRemote(
     async () => (await api<InviteListResponse>('invite.list', { dateKey })).people,
     [dateKey],
   )
@@ -129,7 +129,7 @@ export function Invite() {
 
   let body
   if (error) body = <ErrorState onRetry={reload} />
-  else if (!data) body = <InviteSkeleton />
+  else if (!data) body = pending ? <InviteSkeleton /> : null
   else {
     const q = query.trim().toLowerCase()
     const match = (p: InviteCandidate): boolean =>

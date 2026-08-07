@@ -43,7 +43,7 @@ export function ArchiveWeek() {
   const params = useParams()
   const weekStart = params.weekStart as string
   const weekEnd = addDays(weekStart, 6)
-  const { data, error, reload } = useRemote(
+  const { data, error, pending, reload } = useRemote(
     async () => (await api<ArchiveWeekResponse>('archive.week', { weekStart })).days,
     [weekStart],
   )
@@ -53,7 +53,7 @@ export function ArchiveWeek() {
   if (error) {
     body = <ErrorState onRetry={reload} />
   } else if (!data) {
-    body = <WeekSkeleton />
+    body = pending ? <WeekSkeleton /> : null
   } else {
     const all = data.flatMap((d) => d.requests)
     const approvedCount = all.filter((r) => r.status === 'approved').length

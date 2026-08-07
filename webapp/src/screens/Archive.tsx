@@ -125,10 +125,19 @@ function ArchiveSkeleton() {
  * вход — на «кто такой N и сколько раз он у нас был». Пустой запрос отдаёт всех, кто
  * когда-либо оставлял заявку, от свежих визитов к старым.
  */
-function GuestSearch({ query, guests }: { query: string; guests: GuestSummary[] | null }) {
+function GuestSearch({
+  query,
+  guests,
+  pending,
+}: {
+  query: string
+  guests: GuestSummary[] | null
+  pending: boolean
+}) {
   // Скелет тут короткий: это блок результатов внутри экрана, а не сам экран, и
   // на весь его рост он читался бы как загрузка всего архива заново.
-  if (guests === null)
+  if (guests === null) {
+    if (!pending) return null
     return (
       <div aria-busy="true" aria-label="Ищем людей">
         <SectionTitle>
@@ -137,6 +146,7 @@ function GuestSearch({ query, guests }: { query: string; guests: GuestSummary[] 
         <SkRows count={3} avatar tail />
       </div>
     )
+  }
   if (guests.length === 0)
     return (
       <div className="card">
@@ -203,7 +213,7 @@ export function Archive() {
 
   let body
   if (weeks.error) body = <ErrorState onRetry={weeks.reload} />
-  else if (!weeks.data) body = <ArchiveSkeleton />
+  else if (!weeks.data) body = weeks.pending ? <ArchiveSkeleton /> : null
   else if (weeks.data.length === 0)
     body = (
       <div className="card">
@@ -212,11 +222,11 @@ export function Archive() {
     )
   else body = <ArchiveList weeks={weeks.data} />
 
-  const search = found.error ? <ErrorState onRetry={found.reload} /> : <GuestSearch query={query} guests={found.data} />
+  const search = found.error ? <ErrorState onRetry={found.reload} /> : <GuestSearch query={query} guests={found.data} pending={found.pending} />
 
   return (
     <Screen>
-      <BackRow label="Обзор" />
+      <BackRow label="Ближайшие дни" />
       <Header title="Архив" />
       <div className="search-field">
         {icons.search()}

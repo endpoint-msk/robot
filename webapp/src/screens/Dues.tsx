@@ -300,7 +300,7 @@ export function DuesScreen() {
         <BackRow label={back} />
         {/* Заголовок известен заранее, подпись с названием периода — нет. */}
         <Header title="Взносы" subtitle={<SkBlock w={168} h={14} />} />
-        <DuesSkeleton />
+        {remote.pending ? <DuesSkeleton /> : null}
       </Screen>
     )
   }

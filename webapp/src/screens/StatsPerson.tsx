@@ -65,7 +65,7 @@ const since = (sinceKey: string): string => {
 export function StatsPerson() {
   const { userId, backLabel } = useParams() as { userId: number; backLabel?: string }
   const { data: boot } = useStore()
-  const { data, error, reload } = useRemote(
+  const { data, error, pending, reload } = useRemote(
     () => api<StatsPersonView>('stats.person', { userId, period: 'quarter' }),
     [userId],
   )
@@ -85,7 +85,7 @@ export function StatsPerson() {
     return (
       <Screen>
         {back}
-        <PersonSkeleton />
+        {pending ? <PersonSkeleton /> : null}
       </Screen>
     )
   }

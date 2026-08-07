@@ -55,11 +55,11 @@ export function GuestVisits() {
     body = <ErrorState onRetry={guest.reload} />
   } else if (!guest.data) {
     // Шапка и заметка уже настоящие — под скелетом только список заявок.
-    body = (
+    body = guest.pending ? (
       <div aria-busy="true" aria-label="Загружаем заявки гостя">
         <SkRows count={4} avatar />
       </div>
-    )
+    ) : null
   } else if (guest.data.requests.length === 0) {
     body = (
       <div className="card">

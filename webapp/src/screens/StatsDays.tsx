@@ -57,7 +57,7 @@ function DaysSkeleton() {
 }
 
 export function StatsDays() {
-  const { data, error, loading, reload } = useRemote(() => api<StatsDaysView>('stats.days'), [])
+  const { data, error, loading, pending, reload } = useRemote(() => api<StatsDaysView>('stats.days'), [])
   const [open, setOpen] = useState<string[]>([])
 
   // Раскрыт свежий месяц: за ним приходят чаще всего. Выбор ведёт за данными, а не
@@ -81,7 +81,7 @@ export function StatsDays() {
       <Screen>
         <BackRow label="Статистика" />
         <Header title="История по дням" />
-        <DaysSkeleton />
+        {pending ? <DaysSkeleton /> : null}
       </Screen>
     )
   }

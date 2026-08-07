@@ -34,7 +34,7 @@ function HistorySkeleton() {
 }
 
 export function DuesHistory() {
-  const { data, error, loading, reload } = useRemote(() => api<DuesHistoryData>('dues.history'), [])
+  const { data, error, loading, pending, reload } = useRemote(() => api<DuesHistoryData>('dues.history'), [])
 
   const exportCsv = async () => {
     setBusy(true)
@@ -55,7 +55,7 @@ export function DuesHistory() {
         <BackRow label="Взносы" />
         {/* Подпись считается по периодам, поэтому под ней полоса, а не текст. */}
         <Header title="История" subtitle={<SkBlock w={196} h={14} />} />
-        <HistorySkeleton />
+        {pending ? <HistorySkeleton /> : null}
       </Screen>
     )
   }

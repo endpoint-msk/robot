@@ -201,7 +201,7 @@ export function Stats() {
   const { data: boot } = useStore()
   const [period, setPeriod] = useState<StatsPeriod>('month')
   const [allPeople, setAllPeople] = useState(false)
-  const { data, error, loading, reload } = useRemote(
+  const { data, error, loading, pending, reload } = useRemote(
     () => api<StatsOverview>('stats.overview', { period }),
     [period],
   )
@@ -251,7 +251,7 @@ export function Stats() {
     return (
       <Screen>
         {chrome('Журнал присутствия')}
-        <StatsSkeleton />
+        {pending ? <StatsSkeleton /> : null}
       </Screen>
     )
   }

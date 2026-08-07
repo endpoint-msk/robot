@@ -100,7 +100,10 @@ function DaySkeleton() {
 
 export function StatsDay() {
   const { dateKey, backLabel } = useParams() as { dateKey: string; backLabel?: string }
-  const { data, error, loading, reload } = useRemote(() => api<StatsDayView>('stats.day', { dateKey }), [dateKey])
+  const { data, error, loading, pending, reload } = useRemote(
+    () => api<StatsDayView>('stats.day', { dateKey }),
+    [dateKey],
+  )
 
   const back = <BackRow label={backLabel ?? 'История по дням'} />
 
@@ -118,7 +121,7 @@ export function StatsDay() {
       <Screen>
         {back}
         <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
-        <DaySkeleton />
+        {pending ? <DaySkeleton /> : null}
       </Screen>
     )
   }

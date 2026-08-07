@@ -54,7 +54,7 @@ function PersonSkeleton() {
 
 export function DuesPerson() {
   const { userId } = useParams()
-  const { data, error, loading, reload } = useRemote<DuesPersonData | null>(async () => {
+  const { data, error, loading, pending, reload } = useRemote<DuesPersonData | null>(async () => {
     try {
       return await api<DuesPersonData>('dues.person', { userId })
     } catch (err) {
@@ -73,7 +73,7 @@ export function DuesPerson() {
         <BackRow label="Взносы" />
         {/* Шапка тут целиком из ответа: в экран приходит только userId. */}
         <Header title={<SkBlock w={186} h={30} />} subtitle={<SkBlock w={108} h={14} />} />
-        <PersonSkeleton />
+        {pending ? <PersonSkeleton /> : null}
       </Screen>
     )
   }
