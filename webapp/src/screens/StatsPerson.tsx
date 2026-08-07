@@ -3,10 +3,20 @@
 
 import { Fragment, useEffect, useState } from 'react'
 import { api } from '../api'
-import { dayNum, fmtDayMonth, MONTHS_ABBR, monthIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
+import {
+  addDays,
+  dayNum,
+  fmtDayMonth,
+  keyToDate,
+  MONTHS_ABBR,
+  MONTHS_NOM,
+  monthIdx,
+  WEEKDAYS_SHORT,
+  yearOf,
+} from '../dates'
 import { icons } from '../icons'
 import { push, useParams, useStore } from '../store'
-import { fmtDuration, gradientFor, heatBg, hoursNum, initialOf } from '../stats'
+import { fmtDuration, gradientFor, heatLevel, hoursNum, initialOf } from '../stats'
 import type { StatsPersonView } from '../types'
 import { BackRow, EmptyState, Footnote, SpinnerCenter } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -71,6 +81,23 @@ export function StatsPerson() {
   const dotMax = Math.max(...data.dots, 1)
   // Столбец — неделя, строка — день недели: как в сетке дизайна (grid-auto-flow: column).
   const dotCells = Array.from({ length: DOT_WEEKS * 7 }, (_, i) => data.dots[i] ?? 0)
+  // Дни после сегодняшнего в сетку не попадают: «ещё не наступило» и «не приходил» —
+  // разные вещи, а рисовались они одинаково пустой клеткой.
+  const todayIndex = Math.round((keyToDate(boot!.todayKey).getTime() - keyToDate(data.dotsFrom).getTime()) / 86_400_000)
+  // Подпись месяца над колонкой, в которой он начинается: без неё сетка показывает
+  // ритм, но не отвечает, когда это было. Берём середину недели — месяц, которому
+  // принадлежит большая её часть.
+  const monthLabels = (() => {
+    const seen = new Set<number>()
+    return Array.from({ length: DOT_WEEKS }, (_, w) => {
+      const month = monthIdx(addDays(data.dotsFrom, w * 7 + 3))
+      if (seen.has(month)) return ''
+      seen.add(month)
+      // Именительный падеж: MONTHS_ABBR держит «мая» под плитку «5 мая», а на оси
+      // нужен «май».
+      return MONTHS_NOM[month]?.slice(0, 3).toLowerCase() ?? ''
+    })
+  })()
 
   return (
     <Screen>
@@ -113,6 +140,11 @@ export function StatsPerson() {
 
       <div className="card stats-card">
         <div className="stats-card-title">Когда приходит</div>
+        <div className="dots-months">
+          {monthLabels.map((label, i) => (
+            <div key={i}>{label}</div>
+          ))}
+        </div>
         <div className="dots">
           <div className="dots-labels">
             {WEEKDAYS_SHORT.map((d) => (
@@ -120,17 +152,25 @@ export function StatsPerson() {
             ))}
           </div>
           <div className="dots-grid">
-            {dotCells.map((v, i) => (
-              <div key={i} className="dot" style={{ background: heatBg(v, dotMax) }} />
-            ))}
+            {dotCells.map((v, i) => {
+              if (i > todayIndex) return <div key={i} className="dot future" />
+              const level = heatLevel(v, dotMax)
+              return (
+                <div
+                  key={i}
+                  className={'dot' + (level === 0 ? ' zero' : '')}
+                  style={level > 0 ? { background: `var(--heat-${level})` } : undefined}
+                />
+              )
+            })}
           </div>
         </div>
         <div className="heat-legend">
           <span>Последние 12 недель</span>
           <div className="heat-scale">
             <span>меньше</span>
-            {[0.2, 0.4, 0.6, 0.8, 1].map((k) => (
-              <i key={k} style={{ background: heatBg(k, 1) }} />
+            {[1, 2, 3, 4, 5].map((level) => (
+              <i key={level} style={{ background: `var(--heat-${level})` }} />
             ))}
             <span>больше</span>
           </div>

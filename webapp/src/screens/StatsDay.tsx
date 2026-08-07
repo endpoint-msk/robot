@@ -10,8 +10,12 @@ import type { StatsDayView } from '../types'
 import { BackRow, EmptyState, Footnote, Header, SpinnerCenter } from '../components/common'
 import { Screen } from '../components/Screen'
 
-/** Сколько делений подписываем на шкале: больше — цифры сливаются на 360px. */
-const MAX_TICKS = 7
+/**
+ * Сколько делений подписываем на шкале. Дорожка делит строку с ником и колонкой
+ * времени, на 390px ей достаётся около 150px — семь подписей по 28px там просто
+ * слипались в сплошную строку цифр.
+ */
+const MAX_TICKS = 3
 
 /** Окно таймлайна: от начала первого визита до конца последнего, по целым часам. */
 const rangeOf = (data: StatsDayView): { start: number; end: number } => {
@@ -106,12 +110,23 @@ export function StatsDay() {
         <div className="tl-ticks">
           <div className="tl-name" />
           <div className="tl-track">
-            {ticks.map((t) => (
-              <span key={t} style={{ left: `${pct(t)}%` }}>
+            {ticks.map((t, i) => (
+              <span
+                key={t}
+                style={{
+                  left: `${pct(t)}%`,
+                  // Крайние подписи прижаты к концам дорожки, а не отцентрованы по
+                  // делению: иначе первая заезжает под колонку имени, а последняя
+                  // вылезает за карточку.
+                  ...(i === 0 ? { transform: 'none' } : {}),
+                  ...(i === ticks.length - 1 ? { transform: 'translateX(-100%)' } : {}),
+                }}
+              >
                 {fmtMinutes(t)}
               </span>
             ))}
           </div>
+          <div className="tl-when" />
         </div>
         {data.rows.map((r, i) => (
           <div
@@ -132,9 +147,11 @@ export function StatsDay() {
               <i
                 className={'tl-bar' + (r.source === 'mac' ? ' mac' : '')}
                 style={{ left: `${pct(r.fromMin)}%`, width: `${Math.max(1.5, pct(r.toMin) - pct(r.fromMin))}%` }}
-                title={`${fmtMinutes(r.fromMin)} – ${fmtMinutes(r.toMin)}`}
               />
             </div>
+            {/* Интервал отдельной колонкой, а не под ником: в вебвью нет hover, и
+                через нативный title время визита было не прочитать вовсе. */}
+            <div className="tl-when">{`${fmtMinutes(r.fromMin)}–${fmtMinutes(r.toMin)}`}</div>
           </div>
         ))}
         <div className="tl-legend">

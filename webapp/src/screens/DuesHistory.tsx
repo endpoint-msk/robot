@@ -104,7 +104,9 @@ export function DuesHistory() {
                 </span>
                 <div className="row-right">
                   <div className="period-bar">
-                    <i className={pct < 100 ? 'low' : undefined} style={{ width: `${pct}%` }} />
+                    {/* Недобор красит только закрытые периоды: в текущем сбор ещё идёт,
+                        и оранжевый там означал бы «тревога» на ровном месте. */}
+                    <i className={i > 0 && pct < 100 ? 'low' : undefined} style={{ width: `${pct}%` }} />
                   </div>
                   <span className="dues-amount">{money(p.collected, data.currency)}</span>
                   {icons.chevron()}

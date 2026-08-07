@@ -217,12 +217,22 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
         <i style={{ width: `${pct(paid)}%` }} />
         {claimed > 0 ? <i className="claimed" style={{ width: `${pct(claimed)}%` }} /> : null}
       </div>
+      {/* Подписи сегментов, а не только их цвет: зелёный и оранжевый под протанопией
+          почти совпадают, и полоса без них читается одним куском. */}
+      {claimed > 0 ? (
+        <div className="dues-split">
+          <span>
+            <i style={{ background: 'var(--green)' }} />
+            {`подтверждено ${paid}`}
+          </span>
+          <span>
+            <i style={{ background: 'var(--orange)' }} />
+            {`ждут сверки ${claimed}`}
+          </span>
+        </div>
+      ) : null}
       <div className="dues-note">
-        {claimed > 0
-          ? `Ещё ${claimed} ${claimed === 1 ? 'заявил' : 'заявили'} о переводе, ждут сверки`
-          : left > 0
-            ? `Осталось собрать ${money(left, snap.currency)}`
-            : 'Собрано полностью'}
+        {left > 0 ? `Осталось собрать ${money(left, snap.currency)}` : 'Собрано полностью'}
       </div>
     </div>
   )

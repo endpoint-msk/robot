@@ -43,6 +43,21 @@
        тон, иначе соседние кнопки сливаются в одну полосу. */
     --gray: #8e8e93;
     --radius-card: 22px;
+
+    /* Марки графиков — свой синий, а не --blue: акцент интерфейса одинаков в обеих
+       темах, а заливка на чёрной карточке должна быть светлее, чем на белой. */
+    --chart-blue: #007aff;
+    /* Подписи осей. --text-3 (2.4:1 на белом) годится для сетки, но не для цифр,
+       которые читают. */
+    --axis-ink: #6c6c70;
+    /* Ступени тепловой карты: один тон, монотонная светлота, шаг по OKLCH >= 0.06.
+       Не альфа поверх карточки — она даёт разную шкалу на разных фонах и сажает
+       нижнюю ступень на светлоту пустой ячейки. */
+    --heat-1: #b7d3f6;
+    --heat-2: #86b6ef;
+    --heat-3: #5598e7;
+    --heat-4: #2a78d6;
+    --heat-5: #1c5cab;
 }
 
 :root[data-theme="dark"] {
@@ -67,6 +82,15 @@
     --ok-shadow: none;
 
     --gray: #636366;
+
+    --chart-blue: #0a84ff;
+    --axis-ink: #a8a8ad;
+    /* Тёмные ступени — не инверсия светлых, а свои: «людно» здесь означает ярче. */
+    --heat-1: #184f95;
+    --heat-2: #256abf;
+    --heat-3: #3987e5;
+    --heat-4: #6da7ec;
+    --heat-5: #9ec5f4;
 }
 
 :root {
@@ -1526,11 +1550,20 @@ body.busy #busy-overlay { display: flex; }
 .dues-figure .df-main { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
 .dues-figure .df-of { font-size: 15px; color: var(--text-2); }
 .dues-figure .df-sum { margin-left: auto; font-size: 17px; font-weight: 700; }
-.dues-bar { height: 8px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 14px; overflow: hidden; display: flex; }
+/* gap: сегменты нельзя ставить встык. Зелёный и оранжевый расходятся под
+   протанопией всего на ΔE 5.7 — стык двух заливок для такого читателя исчезает,
+   и полоса выглядит одним куском. Зазор цветом подложки и есть различитель. */
+.dues-bar { height: 8px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 14px; overflow: hidden; display: flex; gap: 2px; }
 .dues-bar > i { display: block; height: 100%; background: var(--green); }
+.dues-bar > i:first-child { border-radius: 999px 0 0 999px; }
 /* Заявленное, но не подтверждённое, идёт той же полосой в другом тоне: видно, сколько
    ещё предстоит сверить, и полоса не показывает кассу собранной раньше времени. */
-.dues-bar > i.claimed { background: rgba(255, 149, 0, 0.55); }
+.dues-bar > i.claimed { background: var(--orange); }
+/* Подписи под полосой: у сегментов ниже 3:1 к подложке значение должно читаться
+   каким-то ещё каналом, кроме цвета. */
+.dues-split { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 9px; font-size: 12px; color: var(--text-2); }
+.dues-split span { display: flex; align-items: center; gap: 5px; }
+.dues-split i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .dues-note { margin-top: 11px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
 
 /* Строка человека в списке взносов. */
@@ -1590,6 +1623,8 @@ body.busy #busy-overlay { display: flex; }
 /* Строка периода в истории: мини-полоса вместо цифр рядом с суммой. */
 .period-bar { width: 54px; height: 6px; border-radius: 999px; background: rgba(var(--sec), 0.1); overflow: hidden; flex-shrink: 0; }
 .period-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--green); }
+/* Оранжевый — статусный тон «внимание», а не «не ровно сто». Недобор красит только
+   закрытые периоды: у текущего сбор ещё идёт, и тревожить там нечем. */
 .period-bar > i.low { background: var(--orange); }
 
 /* Поле ввода числа в модалке (ставка взноса, день сбора). */
@@ -1746,7 +1781,7 @@ body.busy #busy-overlay { display: flex; }
     display: block;
     height: 100%;
     border-radius: 999px;
-    background: var(--blue);
+    background: var(--chart-blue);
     transition: width 0.32s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -1757,18 +1792,76 @@ body.busy #busy-overlay { display: flex; }
 /* Тепловая карта 7×12: строка — день недели, колонка — двухчасовой интервал. */
 .heat { display: flex; flex-direction: column; gap: 2px; }
 .heat-row { display: flex; gap: 2px; align-items: center; }
-.heat-dow { width: 22px; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--text-3); }
-.heat-cell { flex: 1; aspect-ratio: 1; border-radius: 4px; }
+.heat-dow { width: 22px; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--axis-ink); }
+.heat-cell { flex: 1; aspect-ratio: 1; border-radius: 4px; padding: 0; border: 0; background: none; }
+/* Никого не было — пустая клетка с контуром, а не самая светлая ступень шкалы. */
+.heat-cell.zero { box-shadow: inset 0 0 0 1px var(--sep); }
+/* Данных нет — штриховка: провал опроса роутера это не «спейс стоял пустой».
+   Стопы с полупиксельным перекрытием, а не встык: на резкой границе диагональ
+   ложится по-разному на пиксельную сетку, и соседние линии выходят разной
+   толщины. Полпикселя интерполяции дают браузеру сгладить край. */
+.heat-cell.nodata {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(var(--sec), 0.3) 0,
+        rgba(var(--sec), 0.3) 1.5px,
+        transparent 2px,
+        transparent 4.5px,
+        rgba(var(--sec), 0.3) 5px
+    );
+    box-shadow: inset 0 0 0 1px var(--sep);
+}
+button.heat-cell { cursor: pointer; }
+button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .heat-hours { margin-top: 4px; }
-.heat-hour { flex: 1; text-align: center; font-size: 9px; color: var(--text-3); }
-.heat-legend { display: flex; align-items: center; gap: 8px; margin: 13px 2px 0; font-size: 12px; color: var(--text-3); }
+.heat-hour { flex: 1; text-align: center; font-size: 10px; color: var(--axis-ink); }
+/* wrap: на 390px подпись и шкала в одну строку не помещаются, и подпись ломалась
+   пополам, прижимаясь к квадратикам. Пусть лучше шкала уходит на свою строку. */
+.heat-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 13px 2px 0; font-size: 12px; color: var(--text-2); }
 .heat-scale { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; }
 .heat-scale i { width: 10px; height: 10px; border-radius: 3px; }
 .heat-swatch { width: 10px; height: 10px; flex-shrink: 0; border-radius: 3px; }
+.heat-swatch.zero { box-shadow: inset 0 0 0 1px var(--sep); }
+.heat-swatch.nodata {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(var(--sec), 0.3) 0,
+        rgba(var(--sec), 0.3) 1.5px,
+        transparent 2px,
+        transparent 4.5px,
+        rgba(var(--sec), 0.3) 5px
+    );
+    box-shadow: inset 0 0 0 1px var(--sep);
+}
 
-/* Часы по месяцам: значение показывается только у выбранного столбика. */
-/* Отступ сверху — место для подписи над самым высоким столбиком. */
-.bars { display: flex; align-items: flex-end; gap: 5px; margin-top: 18px; }
+/* Значение выбранной ячейки. Тултипа тут быть не может: в вебвью нет hover, а
+   нативный title на тап не открывается — значение читается строкой под картой. */
+.heat-readout {
+    margin: 12px 2px 0;
+    min-height: 18px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-2);
+}
+.heat-readout b { color: var(--text); font-weight: 600; }
+
+/* Часы по месяцам. Ось и сетка обязательны: без них прочитать можно только
+   выбранный столбик, а остальные восемь месяцев не сравнить ни с чем. */
+.bars-plot { position: relative; margin-top: 18px; padding-left: 28px; }
+/* Слой сетки ровно по высоте дорожки столбиков — подписи месяцев ниже её не касаются. */
+.bars-grid { position: absolute; left: 28px; right: 0; top: 0; height: 92px; pointer-events: none; }
+.bar-grid { position: absolute; left: 0; right: 0; height: 1px; background: var(--sep); }
+.bar-base { position: absolute; left: 0; right: 0; height: 1px; background: rgba(var(--sec), 0.3); }
+.bar-ytick {
+    position: absolute;
+    right: calc(100% + 6px);
+    font-size: 10px;
+    color: var(--axis-ink);
+    transform: translateY(-50%);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.bars { display: flex; align-items: flex-end; gap: 5px; position: relative; }
 .bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
 .bar-val {
     position: absolute;
@@ -1776,12 +1869,14 @@ body.busy #busy-overlay { display: flex; }
     transform: translateX(-50%);
     font-size: 11px;
     font-weight: 700;
-    color: var(--blue);
+    color: var(--text);
     white-space: nowrap;
 }
 .bar-track { position: relative; width: 100%; height: 92px; display: flex; align-items: flex-end; }
-.bar-track i { display: block; width: 100%; border-radius: 5px; }
-.bar-label { font-size: 11px; color: var(--text-3); }
+/* Скругляем только конец данных: круглый низ отрывает столбик от базовой линии,
+   а на минимальной высоте радиус превращает его в плавающую каплю. */
+.bar-track i { display: block; width: 100%; border-radius: 4px 4px 0 0; }
+.bar-label { font-size: 11px; color: var(--axis-ink); }
 .bar-label.on { font-weight: 700; color: var(--text); }
 
 /* Заглушка аватарки: буква на градиенте по userId (фото людей журнал не тянет). */
@@ -1805,21 +1900,32 @@ body.busy #busy-overlay { display: flex; }
 .person-name { font-size: 16px; }
 .person-hours { margin-left: auto; font-size: 15px; font-weight: 600; }
 .share-bar { height: 4px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 7px; overflow: hidden; }
-.share-bar i { display: block; height: 100%; border-radius: 999px; background: var(--blue); }
+.share-bar i { display: block; height: 100%; border-radius: 999px; background: var(--chart-blue); }
 
 .person-head { display: flex; align-items: center; gap: 13px; margin: 8px 4px 18px; }
 .person-head-text { min-width: 0; }
 .person-head-text .title { font-size: 30px; }
 
 /* Таймлайн дня: строка на человека, полоска — интервал присутствия. */
-.tl-ticks { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 4px; }
+.tl-ticks { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 4px; }
 /* Строка подписей — та же ширина, но без рельса и без обрезки: крайние отметки
    вынесены за границы дорожки на половину своей ширины. */
 .tl-ticks .tl-track { height: 12px; background: none; overflow: visible; }
-.tl-ticks span { position: absolute; top: 0; font-size: 9px; color: var(--text-3); transform: translateX(-50%); }
+.tl-ticks span { position: absolute; top: 0; font-size: 10px; color: var(--axis-ink); transform: translateX(-50%); }
 .tl-name { width: 84px; flex-shrink: 0; display: flex; align-items: center; gap: 7px; min-width: 0; }
 .tl-name span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-row { display: flex; gap: 10px; align-items: center; padding: 4px 0; cursor: pointer; }
+/* Время — своя колонка справа, а не вторая строка под ником: в узкой колонке имени
+   жались оба, и обрезались оба. Ширина под «00:00–00:00», сокращать нечего. */
+.tl-when {
+    width: 62px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 10px;
+    color: var(--axis-ink);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.tl-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; }
 /* Дорожка — это шкала суток целиком, поэтому фон у неё есть всегда, даже если
    человек был внутри полчаса. Сетка часов делает её читаемой: без неё пустой
    рельс с точкой выглядит как артефакт вёрстки. */
@@ -1827,13 +1933,21 @@ body.busy #busy-overlay { display: flex; }
 .tl-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(var(--sec), 0.14); }
 /* min-width: короткий визит на суточной шкале вырождается в точку — оставляем
    ему различимую капсулу, иначе строка читается как пустая. */
-.tl-bar { position: absolute; top: 2px; bottom: 2px; min-width: 9px; border-radius: 999px; background: var(--blue); }
-/* Авто-отметка по MAC: тот же тон, но штриховкой — её границы менее точны. */
-.tl-bar.mac { background: repeating-linear-gradient(115deg, #0a84ff 0 3px, rgba(10, 132, 255, 0.62) 3px 6px); }
-.tl-legend { display: flex; align-items: center; gap: 14px; margin: 12px 2px 0; font-size: 11px; color: var(--text-3); }
+.tl-bar { position: absolute; top: 2px; bottom: 2px; min-width: 14px; border-radius: 999px; background: var(--chart-blue); }
+/* Авто-отметка по MAC: тот же тон, но контур вместо заливки — её границы менее
+   точны. Контур читается на любой ширине; штриховка с шагом 3px на короткой
+   капсуле не показывала ни одной полосы, и отличие пропадало совсем. */
+.tl-bar.mac {
+    background: repeating-linear-gradient(135deg, var(--chart-blue) 0 3px, transparent 3px 7px), var(--card);
+    box-shadow: inset 0 0 0 1.5px var(--chart-blue);
+}
+.tl-legend { display: flex; align-items: center; gap: 14px; margin: 12px 2px 0; font-size: 11.5px; color: var(--text-2); }
 .tl-legend span { display: flex; align-items: center; gap: 6px; }
-.tl-swatch { width: 14px; height: 8px; border-radius: 999px; background: var(--blue); }
-.tl-swatch.mac { background: repeating-linear-gradient(115deg, #0a84ff 0 3px, rgba(10, 132, 255, 0.62) 3px 6px); }
+.tl-swatch { width: 16px; height: 9px; border-radius: 999px; background: var(--chart-blue); }
+.tl-swatch.mac {
+    background: repeating-linear-gradient(135deg, var(--chart-blue) 0 3px, transparent 3px 7px), var(--card);
+    box-shadow: inset 0 0 0 1.5px var(--chart-blue);
+}
 
 /* Плитка даты в списках журнала. */
 .date-tile {
@@ -1862,7 +1976,7 @@ body.busy #busy-overlay { display: flex; }
 /* Точки визитов: 12 недель по столбцам, дни недели по строкам. */
 .dots { display: flex; gap: 2px; }
 .dots-labels { width: 22px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
-.dots-labels div { flex: 1; display: flex; align-items: center; font-size: 10px; font-weight: 600; color: var(--text-3); }
+.dots-labels div { flex: 1; display: flex; align-items: center; font-size: 10px; font-weight: 600; color: var(--axis-ink); }
 .dots-grid {
     flex: 1;
     display: grid;
@@ -1872,6 +1986,22 @@ body.busy #busy-overlay { display: flex; }
     gap: 2px;
 }
 .dot { aspect-ratio: 1; border-radius: 4px; }
+.dot.zero { box-shadow: inset 0 0 0 1px var(--sep); }
+/* Будущее не рисуется вовсе: ни заливки, ни контура. */
+.dot.future { background: none; box-shadow: none; }
+
+/* Подписи месяцев над колонками-неделями. Отступ слева равен колонке дней недели
+   (22px) плюс её gap, иначе подпись съезжает с своей недели. */
+.dots-months {
+    margin-left: 24px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--axis-ink);
+}
 
 /* --- Анимации разделов статистики --- */
 

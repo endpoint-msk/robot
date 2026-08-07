@@ -6,7 +6,7 @@ import { api } from '../api'
 import { WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { push, useStore } from '../store'
-import { gradientFor, heatBg, HEAT_NO_DATA, hoursNum, hoursWord, initialOf } from '../stats'
+import { gradientFor, heatCell, heatLevel, heatSlot, heatValue, hoursNum, hoursWord, initialOf } from '../stats'
 import type { StatsOverview, StatsPeriod } from '../types'
 import { BackRow, EmptyState, Header, SectionTitle, Sep, SpinnerCenter } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -23,6 +23,21 @@ const HOUR_LABELS = Array.from({ length: 12 }, (_, i) => (i % 2 === 0 ? String(i
 const TOP_PREVIEW = 5
 
 function HeatCard({ data }: { data: StatsOverview }) {
+  const [picked, setPicked] = useState<string | null>(null)
+
+  // Значение ячейки читается строкой под картой: hover в вебвью нет, а нативный
+  // title на тап не открывается — цвет оставался единственным каналом.
+  const readout = (): string | null => {
+    if (!picked) return null
+    const [dow, bucket] = picked.split('-').map(Number)
+    const cell = data.heat.rows.find((r) => r.dow === dow)?.cells[bucket!]
+    if (!cell) return null
+    const when = `${WEEKDAYS_SHORT[dow!]}, ${heatSlot(bucket!)}`
+    if (cell.noData) return `${when} — данных нет, роутер не отвечал`
+    if (cell.v <= 0) return `${when} — никого не было`
+    return `${when} — в среднем ${heatValue(cell.v)}`
+  }
+
   return (
     <div className="card stats-card">
       <div className="stats-card-title">Когда здесь людно</div>
@@ -30,14 +45,20 @@ function HeatCard({ data }: { data: StatsOverview }) {
         {data.heat.rows.map((row) => (
           <div className="heat-row" key={row.dow}>
             <div className="heat-dow">{WEEKDAYS_SHORT[row.dow]}</div>
-            {row.cells.map((cell, i) => (
-              <div
-                key={i}
-                className="heat-cell"
-                style={{ background: heatBg(cell.v, data.heat.max, cell.noData) }}
-                title={cell.noData ? 'Данных нет' : `${WEEKDAYS_SHORT[row.dow]} ${String(i * 2).padStart(2, '0')}:00 — ${cell.v}`}
-              />
-            ))}
+            {row.cells.map((cell, i) => {
+              const key = `${row.dow}-${i}`
+              const { className, style } = heatCell(heatLevel(cell.v, data.heat.max), cell.noData)
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className={className + (picked === key ? ' picked' : '')}
+                  style={style}
+                  aria-label={`${WEEKDAYS_SHORT[row.dow]} ${heatSlot(i)}`}
+                  onClick={() => setPicked((cur) => (cur === key ? null : key))}
+                />
+              )
+            })}
           </div>
         ))}
         <div className="heat-row heat-hours">
@@ -49,56 +70,82 @@ function HeatCard({ data }: { data: StatsOverview }) {
           ))}
         </div>
       </div>
+      <div className="heat-readout">{readout() ?? 'Нажмите на клетку, чтобы увидеть значение'}</div>
       <div className="heat-legend">
         <span>Среднее число людей внутри</span>
         <div className="heat-scale">
           <span>меньше</span>
-          {[0.2, 0.4, 0.6, 0.8, 1].map((k) => (
-            <i key={k} style={{ background: heatBg(k * data.heat.max, data.heat.max) }} />
+          {[1, 2, 3, 4, 5].map((level) => (
+            <i key={level} style={{ background: `var(--heat-${level})` }} />
           ))}
           <span>больше</span>
         </div>
       </div>
       <div className="heat-legend">
-        <i className="heat-swatch" style={{ background: HEAT_NO_DATA }} />
+        <i className="heat-swatch zero" />
+        <span>никого не было</span>
+        <i className="heat-swatch nodata" style={{ marginLeft: 8 }} />
         <span>роутер был недоступен</span>
       </div>
     </div>
   )
 }
 
+/** Деления оси часов: круглый шаг, не больше четырёх линий над базой. */
+const axisOf = (maxHours: number): { top: number; ticks: number[] } => {
+  const step = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].find((s) => maxHours / s <= 4) ?? 2000
+  const top = Math.max(step, Math.ceil(maxHours / step) * step)
+  const ticks: number[] = []
+  for (let t = 0; t <= top; t += step) ticks.push(t)
+  return { top, ticks }
+}
+
 function MonthBars({ data }: { data: StatsOverview }) {
   const [picked, setPicked] = useState<string | null>(null)
-  const max = Math.max(...data.months.map((m) => m.minutes), 1)
-  const current = data.months[data.months.length - 1]?.key
+  const peak = data.months.reduce((a, m) => (m.minutes > a.minutes ? m : a), data.months[0]!)
+  const { top, ticks } = axisOf(Math.max(...data.months.map((m) => m.minutes)) / 60)
+
   return (
     <div className="card stats-card">
       <div className="stats-card-title">Часы по месяцам</div>
-      <div className="bars">
-        {data.months.map((m) => {
-          const active = picked ? picked === m.key : m.key === current
-          const height = Math.max(m.minutes > 0 ? 3 : 0, (m.minutes / max) * 100)
-          return (
-            <div className="bar-col" key={m.key} onClick={() => setPicked(m.key)}>
-              <div className="bar-track">
-                {/* Подпись висит над своим столбиком, а не на общей высоте: иначе
-                    у низкого месяца между цифрой и столбиком провал в полкарточки. */}
-                {active && m.minutes > 0 ? (
-                  <div className="bar-val" style={{ bottom: `calc(${height}% + 5px)` }}>
-                    {hoursNum(m.minutes)}
-                  </div>
-                ) : null}
-                <i
-                  style={{
-                    height: `${height}%`,
-                    background: active ? 'var(--blue)' : 'rgba(10, 132, 255, 0.28)',
-                  }}
-                />
+      <div className="bars-plot">
+        <div className="bars-grid">
+          {ticks.map((t) => (
+            <Fragment key={t}>
+              <div className={t === 0 ? 'bar-base' : 'bar-grid'} style={{ top: `${100 - (t / top) * 100}%` }} />
+              <div className="bar-ytick" style={{ top: `${100 - (t / top) * 100}%` }}>
+                {t}
               </div>
-              <div className={'bar-label' + (active ? ' on' : '')}>{m.label}</div>
-            </div>
-          )
-        })}
+            </Fragment>
+          ))}
+        </div>
+        <div className="bars">
+          {data.months.map((m) => {
+            // Ничего не выбрано, пока не тапнули: подсвеченный по умолчанию месяц
+            // читается как выбор, которого пользователь не делал.
+            const active = picked === m.key
+            const height = Math.max(m.minutes > 0 ? 2 : 0, (m.minutes / 60 / top) * 100)
+            // Подпись всегда одна: пик — пока выбора нет, дальше только выбранный.
+            const labelled = active || (!picked && m.key === peak.key && m.minutes > 0)
+            return (
+              <div className="bar-col" key={m.key} onClick={() => setPicked(m.key)}>
+                <div className="bar-track">
+                  {/* Подпись висит над своим столбиком, а не на общей высоте: иначе
+                      у низкого месяца между цифрой и столбиком провал в полкарточки. */}
+                  {labelled ? (
+                    <div className="bar-val" style={{ bottom: `calc(${height}% + 5px)` }}>
+                      {hoursNum(m.minutes)}
+                    </div>
+                  ) : null}
+                  {/* Ступени шкалы, а не тон акцента с альфой: у прежней заливки было
+                      1.41:1 к карточке, и невыбранные месяцы читались как призраки. */}
+                  <i style={{ height: `${height}%`, background: active ? 'var(--heat-5)' : 'var(--heat-3)' }} />
+                </div>
+                <div className={'bar-label' + (active ? ' on' : '')}>{m.label}</div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

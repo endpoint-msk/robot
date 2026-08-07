@@ -31,21 +31,39 @@ export const fmtMinutes = (minutes: number): string => {
   return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
-export const HEAT_STEPS = [0.16, 0.32, 0.5, 0.72, 1]
+export const HEAT_LEVELS = 5
 
-/** Полосатая заливка «данных нет»: пустая ячейка означает «никого не было», это другое. */
-export const HEAT_NO_DATA =
-  'repeating-linear-gradient(135deg, rgba(var(--sec),0.16) 0 3px, rgba(var(--sec),0.04) 3px 6px)'
-
-export const heatEmpty = 'rgba(var(--sec),0.07)'
-
-/** Ступень шкалы для ячейки: 5 уровней одного тона, а не радуга. */
-export const heatBg = (v: number, max: number, noData = false): string => {
-  if (noData) return HEAT_NO_DATA
-  if (max <= 0 || v <= 0) return heatEmpty
-  const level = Math.min(HEAT_STEPS.length, Math.max(1, Math.ceil((v / max) * HEAT_STEPS.length)))
-  return `rgba(10, 132, 255, ${HEAT_STEPS[level - 1]})`
+/**
+ * Ступень шкалы: 0 — никого не было, 1..5 — сколько.
+ *
+ * Ноль отдельным уровнем, а не самой светлой ступенью: раньше «пусто» и «людей
+ * было мало» отличались на 1.08:1 в светлой теме и 1.02:1 в тёмной, то есть
+ * ровно то различие, ради которого карта нарисована, она и теряла.
+ */
+export const heatLevel = (v: number, max: number): number => {
+  if (max <= 0 || v <= 0) return 0
+  return Math.min(HEAT_LEVELS, Math.max(1, Math.ceil((v / max) * HEAT_LEVELS)))
 }
+
+/**
+ * Класс и стиль ячейки карты. Три состояния читаются структурой, а не оттенком:
+ * штриховка — данных нет, пустая клетка с контуром — никого, заливка — были.
+ */
+export const heatCell = (
+  level: number,
+  noData = false,
+): { className: string; style?: { background: string } } => {
+  if (noData) return { className: 'heat-cell nodata' }
+  if (level <= 0) return { className: 'heat-cell zero' }
+  return { className: 'heat-cell', style: { background: `var(--heat-${level})` } }
+}
+
+/** Человекочасы ячейки словами: «1,3 чел.». Без единицы цифра в подсказке нечитаема. */
+export const heatValue = (v: number): string => `${(Math.round(v * 10) / 10).toString().replace('.', ',')} чел.`
+
+/** Двухчасовой интервал ячейки: «14–16». */
+export const heatSlot = (bucket: number): string =>
+  `${String(bucket * 2).padStart(2, '0')}–${String((bucket * 2 + 2) % 24).padStart(2, '0')}`
 
 /** Аватарка-заглушка: буква на градиенте, цвет детерминирован по userId. */
 export const gradientFor = (userId: number): string => {
