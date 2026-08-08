@@ -95,7 +95,10 @@ export type StatsPersonView = {
     favArrival: string
     /** Первый визит в журнале ('YYYY-MM-DD'). Пусто — визитов не было. */
     firstDateKey: string
-    /** Дата вступления, выставленная руками. Пусто — считаем по журналу. */
+    /**
+     * Дата вступления, выставленная руками, либо `RESIDENT_SINCE_ORIGIN`.
+     * Пусто — считаем по журналу.
+     */
     manualSince: string
     /** 12 недель × 7 дней, минуты. Порядок — по столбцам-неделям, как в сетке. */
     dots: number[]
@@ -418,6 +421,13 @@ export const buildStatsPerson = async (
             })),
     }
 }
+
+/**
+ * «Резидент с самого начала»: у части людей даты нет вовсе — спейс начинался с них,
+ * и любое конкретное число было бы выдумкой. Хранится вместо ключа дня, отсюда
+ * значение, которым `YYYY-MM-DD` быть не может.
+ */
+export const RESIDENT_SINCE_ORIGIN = 'origin'
 
 /** Ручная дата «резидент с». null — снять и снова считать по первому визиту. */
 export const setResidentSince = async (storage: Storage, userId: number, dateKey: string | null): Promise<void> => {

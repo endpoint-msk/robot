@@ -113,6 +113,7 @@ import {
     buildStatsDays,
     buildStatsOverview,
     buildStatsPerson,
+    RESIDENT_SINCE_ORIGIN,
     setResidentSince,
     type StatsPeriod,
 } from './stats.js'
@@ -1404,7 +1405,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             const raw = typeof body.dateKey === 'string' ? body.dateKey : ''
             // Пусто — сброс к расчёту по журналу; дата из будущего это опечатка.
-            if (raw && (!isValidDayKey(raw) || raw > todayKey(tzOffsetMinutes))) {
+            if (raw && raw !== RESIDENT_SINCE_ORIGIN && (!isValidDayKey(raw) || raw > todayKey(tzOffsetMinutes))) {
                 sendError(res, 400, 'bad_date', 'Дата должна быть сегодняшней или прошедшей.')
                 return
             }

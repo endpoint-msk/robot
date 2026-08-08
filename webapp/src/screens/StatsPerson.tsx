@@ -28,6 +28,9 @@ import { SkBlock, SkCard, SkGrid, SkQuad, SkRows } from '../components/skeleton'
 
 const DOT_WEEKS = 12
 
+/** Маркер «резидент с самого начала» вместо ключа дня (см. RESIDENT_SINCE_ORIGIN на бэке). */
+const ORIGIN = 'origin'
+
 /** Скелет карточки: шапка, четыре показателя, сетка визитов и список последних. */
 function PersonSkeleton() {
   return (
@@ -53,9 +56,11 @@ function PersonSkeleton() {
  * «Резидент с 12 марта» — дата первого визита в журнале, а не вступления в чат:
  * даты вступления Telegram для обычных участников не отдаёт вовсе. Тех, кто пришёл
  * в спейс раньше журнала, дата врёт — поэтому dev может выставить её руками
- * (`manualSince`), и тогда она перебивает расчёт.
+ * (`manualSince`), и тогда она перебивает расчёт. У основателей даты нет вовсе —
+ * для них `ORIGIN`.
  */
 const since = (sinceKey: string): string => {
+  if (sinceKey === ORIGIN) return 'Резидент с самого начала'
   if (!sinceKey) return 'Визитов в журнале пока нет'
   const year = yearOf(sinceKey)
   const now = new Date().getUTCFullYear()
@@ -104,7 +109,7 @@ export function StatsPerson() {
   const askSince = async () => {
     const picked = await datePrompt({
       text: 'Резидент с',
-      initial: sinceKey || boot!.todayKey,
+      initial: (sinceKey === ORIGIN ? data.firstDateKey : sinceKey) || boot!.todayKey,
       max: boot!.todayKey,
     })
     if (picked) await setSince(picked)
@@ -256,11 +261,25 @@ export function StatsPerson() {
               </span>
               <div className="row-right">
                 <span className={'row-value' + (sinceKey ? '' : ' muted')}>
-                  {sinceKey ? `${fmtDayMonth(sinceKey)} ${yearOf(sinceKey)}` : '—'}
+                  {sinceKey === ORIGIN
+                    ? 'с самого начала'
+                    : sinceKey
+                      ? `${fmtDayMonth(sinceKey)} ${yearOf(sinceKey)}`
+                      : '—'}
                 </span>
                 {icons.chevron()}
               </div>
             </button>
+            {data.manualSince === ORIGIN ? null : (
+              <>
+                <div className="sep" style={{ marginLeft: 14 }} />
+                <button type="button" className="row tappable" onClick={() => void setSince(ORIGIN)}>
+                  <span className="row-label" style={{ color: 'var(--blue)' }}>
+                    С самого начала
+                  </span>
+                </button>
+              </>
+            )}
             {data.manualSince ? (
               <>
                 <div className="sep" style={{ marginLeft: 14 }} />
@@ -274,7 +293,7 @@ export function StatsPerson() {
           </div>
           <Footnote>
             По умолчанию берётся первый визит в журнале. Ручная дата нужна тем, кто пришёл в спейс раньше, чем появился
-            журнал.
+            журнал, а «с самого начала» — тем, с кого спейс начинался.
           </Footnote>
         </>
       ) : null}
