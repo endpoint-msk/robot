@@ -96,6 +96,12 @@ export type StatsPersonView = {
     /** Первый визит в журнале ('YYYY-MM-DD'). Пусто — визитов не было. */
     firstDateKey: string
     /**
+     * Вступление в чат резидентов ('YYYY-MM-DD') — точный ответ «с какого числа он
+     * резидент», в отличие от первого визита. Пусто — Telegram даты не отдал
+     * (создатель чата, не резидент, нет доступа).
+     */
+    joinedSince: string
+    /**
      * Дата вступления, выставленная руками, либо `RESIDENT_SINCE_ORIGIN`.
      * Пусто — считаем по журналу.
      */
@@ -354,6 +360,8 @@ export const buildStatsPerson = async (
     tzOffsetMinutes: number,
     userId: number,
     period: StatsPeriod,
+    /** Вступление в чат резидентов (`ResidentDirectory.joinedAt`); null — даты нет. */
+    joinedAt: Date | null = null,
 ): Promise<StatsPersonView> => {
     const today = todayKey(tzOffsetMinutes)
     const { from, to } = rangeOf(storage, period, today)
@@ -406,6 +414,7 @@ export const buildStatsPerson = async (
         avgMinutes: inWindow.length > 0 ? Math.round(minutes / inWindow.length) : 0,
         favArrival,
         firstDateKey: allKeys[0] ?? '',
+        joinedSince: joinedAt ? dayKeyOf(joinedAt, tzOffsetMinutes) : '',
         manualSince: storage.get().residentSince[String(userId)] ?? '',
         dots,
         dotsFrom,

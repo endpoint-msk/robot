@@ -216,6 +216,8 @@ export type StatsPersonView = {
   avgMinutes: number
   favArrival: string
   firstDateKey: string
+  /** Вступление в чат резидентов. Пусто — Telegram даты не отдал. */
+  joinedSince: string
   /**
    * Дата вступления, выставленная руками (dev), либо `RESIDENT_SINCE_ORIGIN`.
    * Пусто — считаем по первому визиту.

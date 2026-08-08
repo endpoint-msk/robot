@@ -42,6 +42,15 @@ export interface ResidentDirectory {
     listIds(): Promise<Set<number>>
 
     /**
+     * Когда человек стал резидентом — момент вступления в чат резидентов.
+     *
+     * `null` — даты нет: создатель чата (он был там всегда), человек не резидент,
+     * бот не смог спросить или директория такого вопроса не знает (откат на
+     * allowlist-режим: дату выдачи админки Telegram не отдаёт).
+     */
+    joinedAt(userId: number): Promise<Date | null>
+
+    /**
      * Чаты, в которых нужно показывать присутствие этого резидента.
      *
      * Для резидента это все allowlist-чаты: бот работает в них, и присутствие имеет
@@ -133,6 +142,8 @@ export const createTelegramResidentDirectory = (
     const statusCache = new Map<string, { status: ChatMemberStatus | null; at: number }>()
     /** Запросы в полёте: два параллельных вопроса об одном человеке - один round-trip. */
     const inFlight = new Map<string, Promise<ChatMemberStatus | null>>()
+    /** Кэш дат вступления в чат резидентов: ключ - userId. */
+    const joinedCache = new Map<number, { value: Date | null; at: number }>()
     let roster: { value: ResidentRoster; at: number } | null = null
     let rosterInFlight: Promise<ResidentRoster> | null = null
 
@@ -146,9 +157,11 @@ export const createTelegramResidentDirectory = (
     const invalidate = (userId?: number): void => {
         if (userId === undefined) {
             statusCache.clear()
+            joinedCache.clear()
             roster = null
             return
         }
+        joinedCache.delete(userId)
         const suffix = `#${userId}`
         for (const key of statusCache.keys()) {
             if (key.endsWith(suffix)) statusCache.delete(key)
@@ -312,5 +325,31 @@ export const createTelegramResidentDirectory = (
 
     const listIds = async (): Promise<Set<number>> => new Set((await list()).users.map((r) => r.userId))
 
-    return { isResident, list, listIds, presenceChats, isChatAdmin, isMember, access, invalidate }
+    /**
+     * Дата вступления в чат резидентов — она же ответ на «с какого числа он резидент».
+     *
+     * Спрашивается живьём у Telegram (`channelParticipant.date`), а не копится по
+     * событиям входа: так дата известна и про тех, кто вступил задолго до бота.
+     * В стейт ответ не кладём — там он стал бы вторым источником правды, как и любой
+     * другой кэш `getChatMember`. У создателя чата даты нет вовсе, и это не ошибка:
+     * спейс начинался с него.
+     */
+    const joinedAt = async (userId: number): Promise<Date | null> => {
+        if (residentsChatId === null) return null
+        const now = Date.now()
+        const hit = joinedCache.get(userId)
+        // Дата вступления меняется раз в жизни, а карточку человека перезапрашивают на
+        // каждое переключение периода — держим ответ тот же срок, что и состав.
+        if (hit && now - hit.at < ROSTER_TTL_MS) return hit.value
+        try {
+            const member = await client.getChatMember({ chatId: residentsChatId, userId })
+            const value = !member || member.status === 'left' || member.status === 'banned' ? null : member.joinedDate
+            joinedCache.set(userId, { value, at: Date.now() })
+            return value
+        } catch {
+            return null
+        }
+    }
+
+    return { isResident, list, listIds, joinedAt, presenceChats, isChatAdmin, isMember, access, invalidate }
 }

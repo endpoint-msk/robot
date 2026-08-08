@@ -53,10 +53,10 @@ function PersonSkeleton() {
 }
 
 /**
- * «Резидент с 12 марта» — дата первого визита в журнале, а не вступления в чат:
- * даты вступления Telegram для обычных участников не отдаёт вовсе. Тех, кто пришёл
- * в спейс раньше журнала, дата врёт — поэтому dev может выставить её руками
- * (`manualSince`), и тогда она перебивает расчёт. У основателей даты нет вовсе —
+ * «Резидент с 12 марта». Источников три, в порядке убывания доверия: ручная дата
+ * (`manualSince`, её ставит dev), вступление в чат резидентов (`joinedSince` —
+ * точный ответ, но Telegram не отдаёт его для создателя чата) и первый визит в
+ * журнале — он моложе спейса и у старожилов врёт. У основателей даты нет вовсе —
  * для них `ORIGIN`.
  */
 const since = (sinceKey: string): string => {
@@ -96,7 +96,12 @@ export function StatsPerson() {
   }
 
   const isMe = boot!.me.id === userId
-  const sinceKey = data.manualSince || data.firstDateKey
+  const sinceKey = data.manualSince || data.joinedSince || data.firstDateKey
+  const sinceSource = data.manualSince
+    ? 'выставлено вручную'
+    : data.joinedSince
+      ? 'вступление в чат резидентов'
+      : 'первый визит в журнале'
 
   const setSince = async (dateKey: string | null) => {
     const done = await action('stats.residentSince', { userId, dateKey: dateKey ?? '' })
@@ -109,7 +114,7 @@ export function StatsPerson() {
   const askSince = async () => {
     const picked = await datePrompt({
       text: 'Резидент с',
-      initial: (sinceKey === ORIGIN ? data.firstDateKey : sinceKey) || boot!.todayKey,
+      initial: (sinceKey === ORIGIN ? data.joinedSince || data.firstDateKey : sinceKey) || boot!.todayKey,
       max: boot!.todayKey,
     })
     if (picked) await setSince(picked)
@@ -255,9 +260,7 @@ export function StatsPerson() {
             <button type="button" className="row tappable" onClick={() => void askSince()}>
               <span className="row-label">
                 Дата
-                <span className="row-sublabel">
-                  {data.manualSince ? 'выставлено вручную' : 'первый визит в журнале'}
-                </span>
+                <span className="row-sublabel">{sinceSource}</span>
               </span>
               <div className="row-right">
                 <span className={'row-value' + (sinceKey ? '' : ' muted')}>
@@ -285,15 +288,16 @@ export function StatsPerson() {
                 <div className="sep" style={{ marginLeft: 14 }} />
                 <button type="button" className="row tappable" onClick={() => void setSince(null)}>
                   <span className="row-label" style={{ color: 'var(--blue)' }}>
-                    Считать по журналу
+                    Считать автоматически
                   </span>
                 </button>
               </>
             ) : null}
           </div>
           <Footnote>
-            По умолчанию берётся первый визит в журнале. Ручная дата нужна тем, кто пришёл в спейс раньше, чем появился
-            журнал, а «с самого начала» — тем, с кого спейс начинался.
+            По умолчанию берётся вступление в чат резидентов, а если Telegram даты не отдал — первый визит в журнале.
+            Ручная дата нужна тем, кто пришёл в спейс раньше и того и другого, а «с самого начала» — тем, с кого спейс
+            начинался.
           </Footnote>
         </>
       ) : null}

@@ -1390,7 +1390,17 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, 'bad_user', 'Непонятно, о ком спрашиваешь.')
                 return
             }
-            sendJson(res, 200, await buildStatsPerson(storage, tzOffsetMinutes, userId, statsPeriodOf(body.period)))
+            sendJson(
+                res,
+                200,
+                await buildStatsPerson(
+                    storage,
+                    tzOffsetMinutes,
+                    userId,
+                    statsPeriodOf(body.period),
+                    await residents.joinedAt(userId),
+                ),
+            )
             return
         }
 
