@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises'
 import { BotCommands, TelegramClient } from '@mtcute/node'
 import { Dispatcher, filters } from '@mtcute/dispatcher'
 import { healthSnapshot } from './health.js'
+import { rateLimitStats } from './ratelimit.js'
 import { parseAllowedChats, registerHandlers } from './handlers.js'
 import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
@@ -369,6 +370,18 @@ const main = async () => {
                 // файла ещё нет - не повод молчать про остальное
             }
             const ago = (ms: number | null): string => (ms === null ? 'ни разу' : `${Math.round(ms / 1000)} с назад`)
+            // Лимиты API: молча отданный 429 иначе виден только в логах прокси, а по нему
+            // и понятно, ошиблись ли мы с полками или кто-то действительно долбится.
+            const rateLimitLines = (): string[] => {
+                const limits = rateLimitStats()
+                if (limits.throttled.length === 0) return ['', `Лимиты API: отказов не было, бакетов ${limits.buckets}`]
+                const total = limits.throttled.reduce((sum, s) => sum + s.count, 0)
+                return [
+                    '',
+                    `Лимиты API: ${total} отказов, последний ${ago(Date.now() - limits.lastAt)}, бакетов ${limits.buckets}`,
+                    ...limits.throttled.slice(0, 5).map((s) => `• ${s.scope} — ${s.count}`),
+                ]
+            }
             const lines = [
                 `Аптайм: ${Math.round(health.uptimeMs / 60_000)} мин`,
                 `Стейт: ${sizeKb} КБ, запись ${write.lastError ? `СБОЙ (${write.lastError})` : 'в порядке'}`,
@@ -377,6 +390,7 @@ const main = async () => {
                 ...health.components.map((c) => `${c.healthy ? '✅' : '⚠️'} ${c.name} - ${ago(c.ageMs)}${c.note ? ` (${c.note})` : ''}`),
                 '',
                 `Заявок: ${Object.keys(state.hostingRequests).length}, ивентов: ${Object.keys(state.events).length}, внутри: ${Object.keys(state.presence).length}`,
+                ...rateLimitLines(),
             ]
             await msg.answerText(lines.join('\n'))
         })

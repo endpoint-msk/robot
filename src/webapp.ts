@@ -118,6 +118,7 @@ import {
     type StatsPeriod,
 } from './stats.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
+import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -232,6 +233,224 @@ const sendError = (res: ServerResponse, status: number, error: string, message: 
 /** Срок антиспама «Я на месте» словами: хардкод в тексте разъехался бы с ARRIVAL_COOLDOWN_MS. */
 const ARRIVAL_COOLDOWN_MINUTES = Math.round(ARRIVAL_COOLDOWN_MS / 60_000)
 const ARRIVAL_COOLDOWN_LABEL = `${ARRIVAL_COOLDOWN_MINUTES} ${plural(ARRIVAL_COOLDOWN_MINUTES, ['минуту', 'минуты', 'минут'])}`
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+
+/**
+ * Полки лимитов вне `/api/*`. Ключ у всех, кроме `ip`/`board`/`authFail`, — userId из
+ * подписанного initData: подпись живёт сутки, и это единственная устойчивая личность
+ * запроса (адрес за туннелем у всех общий, см. `clientIp`).
+ */
+const LIMITS = {
+    /** Грубая сетка до аутентификации: сюда попадает всё, включая статику. Одна холодная
+        загрузка миниаппа — это десятки запросов (бандл, картинки, аватарки), а без
+        `CF-Connecting-IP` весь спейс приходит с одного адреса прокси — отсюда высокая полка. */
+    ip: { limit: 1200, windowMs: MINUTE },
+    /** Неудачные проверки подписи и токена табло. Дорого не само сравнение, а то, что за
+        ним: без этой полки перебор initData/токена ничем не ограничен. */
+    authFail: { limit: 60, windowMs: MINUTE },
+    /** Общий потолок на человека по всем `/api/*` поверх классовых полок ниже. */
+    user: { limit: 240, windowMs: MINUTE },
+    /** Опрос табло: прошивка ходит раз в несколько минут, запас — на ретраи и отладку. */
+    board: { limit: 60, windowMs: MINUTE },
+    /** Файлы календаря: их открывает системный браузер, по одному на тап. */
+    ics: { limit: 30, windowMs: MINUTE },
+    /** Афиши ивентов: `<img>` на экране дня и в карточке. */
+    photo: { limit: 120, windowMs: MINUTE },
+    /** Заливка афиши: до 4 МБ на файл, каждая — запись на диск рядом со стейтом. */
+    photoUpload: { limit: 12, windowMs: HOUR },
+    /** Аватарки: список людей просит их пачкой, дальше работает кэш браузера. */
+    avatar: { limit: 300, windowMs: MINUTE },
+    /** Холодные промахи аватарок — единственная их часть, которая дёргает Telegram
+        (`getUsers` + `downloadAsBuffer`). Ответ от полки не меняется (404 без кэша),
+        меняется только то, греем ли мы кэш: очередь mtcute дороже пустой картинки. */
+    avatarWarm: { limit: 40, windowMs: MINUTE },
+} as const satisfies Record<string, RateRule>
+
+/**
+ * Класс метода API — по цене одного вызова, а не по важности.
+ *
+ * `dm` и `heavy` вынесены отдельно потому, что за ними стоит не наш процесс, а Telegram:
+ * рассылка резидентам, бан во всех чатах, живой `getChatMembers`. Упереться там во
+ * FLOOD_WAIT значит положить бота целиком — клиент mtcute на процесс один.
+ */
+type RateClass = 'read' | 'write' | 'dm' | 'heavy' | 'broadcast'
+
+const CLASS_LIMITS: Record<RateClass, RateRule> = {
+    /** Чтение: bootstrap, витрины журнала, взносы, архив. Ходит только в память и файлы. */
+    read: { limit: 120, windowMs: MINUTE },
+    /** Мутация стейта: каждая — перезапись всего JSON (записи коалесятся, но не бесплатны). */
+    write: { limit: 40, windowMs: MINUTE },
+    /** Всё, за чем уходит сообщение живому человеку. */
+    dm: { limit: 15, windowMs: MINUTE },
+    /** Поход в Telegram/GitHub/на диск за пределы обычной мутации. */
+    heavy: { limit: 10, windowMs: MINUTE },
+    /** Рассылка во все чаты сразу. */
+    broadcast: { limit: 5, windowMs: HOUR },
+}
+
+/**
+ * Классы методов. Неизвестный метод (в том числе перебор имён) считается `write` —
+ * до `default: unknown_method` в `handleApi` он всё равно доходит через общий потолок.
+ */
+const METHOD_CLASS: Record<string, RateClass> = {
+    bootstrap: 'read',
+    archive: 'read',
+    'archive.week': 'read',
+    'guests.search': 'read',
+    'guest.requests': 'read',
+    'stats.overview': 'read',
+    'stats.days': 'read',
+    'stats.day': 'read',
+    'stats.person': 'read',
+    'dues.period': 'read',
+    'dues.history': 'read',
+    'dues.person': 'read',
+
+    'rules.accept': 'write',
+    edit: 'write',
+    'remind.set': 'write',
+    attend: 'write',
+    'dev.update': 'write',
+    'dev.delete': 'write',
+    'event.draft.drop': 'write',
+    'note.set': 'write',
+    notify: 'write',
+    'notify.events': 'write',
+    'presence.log': 'write',
+    'stats.residentSince': 'write',
+    'mac.add': 'write',
+    'mac.remove': 'write',
+    'mac.anon': 'write',
+    'dues.confirm': 'write',
+    'dues.clear': 'write',
+    'dues.rate': 'write',
+    'dues.settings': 'write',
+    'dues.notify': 'write',
+
+    create: 'dm',
+    invite: 'dm',
+    approve: 'dm',
+    unapprove: 'dm',
+    cancel: 'dm',
+    close: 'dm',
+    arrived: 'dm',
+    propose: 'dm',
+    'proposal.accept': 'dm',
+    'proposal.decline': 'dm',
+    'event.create': 'dm',
+    'event.update': 'dm',
+    'event.delete': 'dm',
+    'dues.claim': 'dm',
+
+    'invite.list': 'heavy',
+    'dev.seed': 'heavy',
+    block: 'heavy',
+    unblock: 'heavy',
+    'dues.export': 'heavy',
+    'announce.latest': 'heavy',
+
+    'announce.send': 'broadcast',
+}
+
+/**
+ * Персональные полки поверх классовой — там, где важна не скорость, а количество за
+ * долгий срок: один вызов порождает событие в чужой личке или в общем чате.
+ */
+const METHOD_LIMITS: Record<string, RateRule> = {
+    // Заявка = DM всем резидентам. Легальный всплеск — заявки на разные дни подряд.
+    create: { limit: 12, windowMs: HOUR },
+    // Зов = DM конкретному человеку; на день их зовут пачкой, отсюда запас.
+    invite: { limit: 30, windowMs: HOUR },
+    // Ивент = DM всем резидентам, как и заявка.
+    'event.create': { limit: 10, windowMs: HOUR },
+    // Бан во всех allowlist-чатах, откат — только через дева.
+    block: { limit: 10, windowMs: HOUR },
+    // Выгрузка = файл со всей таблицей взносов в личку.
+    'dues.export': { limit: 6, windowMs: HOUR },
+}
+
+/**
+ * Отдельная полка на пару «кто зовёт → кого зовут»: общего лимита на зовы мало, он не
+ * мешает 30 раз подряд написать в личку одному и тому же человеку.
+ */
+const INVITE_TARGET_LIMIT: RateRule = { limit: 3, windowMs: HOUR }
+
+const waitLabel = (seconds: number): string => {
+    if (seconds < 60) return `${seconds} ${plural(seconds, ['секунду', 'секунды', 'секунд'])}`
+    const minutes = Math.ceil(seconds / 60)
+    return `${minutes} ${plural(minutes, ['минуту', 'минуты', 'минут'])}`
+}
+
+/**
+ * Отказ по лимиту. `Retry-After` — не украшение: миниапп показывает `message`, а вот
+ * прошивка табло и браузер читают заголовок.
+ *
+ * `json: false` — для ручек, которые открывает браузер или `<img>`: тело там всё равно
+ * никто не прочитает.
+ */
+const sendRateLimited = (res: ServerResponse, retryAfterMs: number, json = true): void => {
+    const seconds = retryAfterSeconds(retryAfterMs)
+    if (!json) {
+        res.writeHead(429, { 'Retry-After': String(seconds), 'Cache-Control': 'no-store' }).end()
+        return
+    }
+    res.writeHead(429, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Retry-After': String(seconds),
+    })
+    res.end(JSON.stringify({
+        error: 'rate_limited',
+        message: `Слишком часто. Попробуйте через ${waitLabel(seconds)}.`,
+    }))
+}
+
+/** Гейт: списывает токен и, если не хватило, сам отвечает 429. `true` — можно продолжать. */
+const allow = (res: ServerResponse, scope: string, key: string | number, rule: RateRule, json = true): boolean => {
+    const verdict = rateLimit(scope, String(key), rule)
+    if (verdict.ok) return true
+    sendRateLimited(res, verdict.retryAfterMs, json)
+    return false
+}
+
+const headerValue = (raw: string | string[] | undefined): string =>
+    (Array.isArray(raw) ? raw[0] ?? '' : raw ?? '').trim()
+
+const stripV4Prefix = (ip: string): string => ip.replace(/^::ffff:/i, '')
+
+/** Приватный ли адрес — то есть может ли он быть нашим же прокси, а не клиентом из интернета. */
+const isPrivateAddr = (ip: string): boolean =>
+    ip === '::1'
+    || /^127\./.test(ip)
+    || /^10\./.test(ip)
+    || /^192\.168\./.test(ip)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)
+    || /^f[cd][0-9a-f]{2}:/i.test(ip)
+
+/**
+ * Адрес клиента для лимитов.
+ *
+ * Наружу миниапп смотрит через туннель, а порт контейнера не опубликован (см.
+ * docker-compose): `remoteAddress` — это всегда сосед по докер-сети, один на всех.
+ * Поэтому реальный адрес берём из заголовков, но **только** когда сокет действительно
+ * пришёл из приватной сети: иначе любой клиент выписывал бы себе свежий бакет одним
+ * заголовком.
+ *
+ * `CF-Connecting-IP` предпочтительнее `X-Forwarded-For`: Cloudflare перезаписывает его
+ * на краю, и клиентское значение туда не проникает. XFF — фолбэк для другого прокси, и
+ * он подделываем; отсюда и роли слоёв: IP — грубая сетка до аутентификации, настоящий
+ * учёт идёт по userId из подписанного initData.
+ */
+const clientIp = (req: IncomingMessage): string => {
+    const peer = stripV4Prefix(req.socket.remoteAddress ?? '')
+    if (peer === '' || !isPrivateAddr(peer)) return peer || 'unknown'
+    const cf = headerValue(req.headers['cf-connecting-ip'])
+    if (cf) return stripV4Prefix(cf)
+    const forwarded = headerValue(req.headers['x-forwarded-for']).split(',')[0]?.trim() ?? ''
+    return forwarded ? stripV4Prefix(forwarded) : peer
+}
 
 const readBody = (req: IncomingMessage): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -801,6 +1020,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 404, 'not_found', 'Этого человека больше нет в списке — обновите экран.')
                 return
             }
+            // Полка на пару «кто зовёт → кого зовут»: общего лимита на зовы мало, он не
+            // мешает написать одному и тому же человеку тридцать раз подряд.
+            if (!allow(res, 'invite.target', `${user.userId}>${targetId}`, INVITE_TARGET_LIMIT)) return
             const sent = await sendHostingInvite(
                 client, storage, residents, tzOffsetMinutes, config.publicUrl, dateKey, target, user,
             )
@@ -2032,7 +2254,7 @@ const boardRequests = (deps: WebappDeps): BoardRequests => {
  * секунд мигания, поэтому на неизменившиеся данные отвечаем 304, и прошивка не
  * перерисовывает экран.
  */
-const serveBoard = (deps: WebappDeps, req: IncomingMessage, url: URL, res: ServerResponse): void => {
+const serveBoard = (deps: WebappDeps, req: IncomingMessage, url: URL, res: ServerResponse, ip: string): void => {
     if (deps.boardToken === null) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('not found\n')
         return
@@ -2043,6 +2265,10 @@ const serveBoard = (deps: WebappDeps, req: IncomingMessage, url: URL, res: Serve
     }
     const token = boardTokenOf(req, url)
     if (token === '' || !secretEquals(token, deps.boardToken)) {
+        // Перебор токена считаем там же, где и перебор подписи initData: полка `board`
+        // выше пропускает штатный опрос прошивки, а гадать токен даёт всего десяток
+        // попыток в минуту с адреса.
+        if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
         res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' }).end('unauthorized\n')
         return
     }
@@ -2073,6 +2299,12 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             const url = new URL(req.url ?? '/', 'http://localhost')
             const pathname = url.pathname
 
+            // Первый слой лимитов — до всякой аутентификации: сюда попадает и статика, и
+            // мусорные запросы с неподписанным initData. Дальше по каждой ручке идёт свой
+            // счёт по userId (см. LIMITS).
+            const ip = clientIp(req)
+            if (!allow(res, 'ip', ip, LIMITS.ip, pathname.startsWith('/api/'))) return
+
             // Healthcheck докера. Ручка смотрит наружу без токена, поэтому наружу идёт
             // только вердикт: имена компонентов и счётчики рассказали бы о внутреннем
             // устройстве спейса больше, чем нужно. Подробности - дев-команда /status.
@@ -2089,7 +2321,8 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             // Табло донатов. Гейт — статический BOARD_TOKEN, а не initData: у железки
             // нет Telegram-сессии, подписать initData ей нечем.
             if (pathname === '/board') {
-                serveBoard(deps, req, url, res)
+                if (!allow(res, 'board', ip, LIMITS.board, false)) return
+                serveBoard(deps, req, url, res, ip)
                 return
             }
 
@@ -2103,10 +2336,13 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 }
                 const user = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
                 if (!user) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
                         .end('Ссылка устарела — открой миниапп заново.')
                     return
                 }
+                // Полка до `residents.access`: на холодном кэше он ходит в Telegram.
+                if (!allow(res, 'ics', user.userId, LIMITS.ics, false)) return
                 if (isBlocked(deps.storage, user.userId) || (await deps.residents.access(user.userId)).banned) {
                     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
                     return
@@ -2135,10 +2371,12 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 }
                 const user = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
                 if (!user) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
                         .end('Ссылка устарела - открой миниапп заново.')
                     return
                 }
+                if (!allow(res, 'ics', user.userId, LIMITS.ics, false)) return
                 const access = await deps.residents.access(user.userId)
                 if (isBlocked(deps.storage, user.userId) || access.banned) {
                     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
@@ -2166,9 +2404,14 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 }
                 const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
                 if (!viewer) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, req.method === 'POST')) return
                     res.writeHead(401).end()
                     return
                 }
+                // Заливка (POST) считается отдельно от показа: она пишет до 4 МБ на диск.
+                const uploading = req.method === 'POST'
+                const photoRule = uploading ? LIMITS.photoUpload : LIMITS.photo
+                if (!allow(res, uploading ? 'photo.upload' : 'photo', viewer.userId, photoRule, uploading)) return
                 const access = await deps.residents.access(viewer.userId)
                 if (isBlocked(deps.storage, viewer.userId) || access.banned) {
                     res.writeHead(403).end()
@@ -2231,9 +2474,11 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 }
                 const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
                 if (!viewer) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401).end()
                     return
                 }
+                if (!allow(res, 'avatar', viewer.userId, LIMITS.avatar, false)) return
                 // Гейт blocked — тот же, что у /visit.ics выше. Живой `access` (бан в чате)
                 // тут намеренно не зовём: это getChatMember на каждый <img>, а список
                 // рендерится пачками. Данные всё равно закрыты в /api/*, где access есть.
@@ -2257,7 +2502,14 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     // Холодный промах: греем фоном и отвечаем сразу, чтобы не занимать
                     // mtcute-клиент под HTTP-запросом. no-store — чтобы браузер спросил
                     // снова на следующем рендере, когда фото уже будет в кэше.
-                    void warmAvatar(deps.client, id)
+                    //
+                    // Прогрев — единственная часть ручки, которая ходит в Telegram, поэтому
+                    // у него своя полка. Исчерпал — не 429, а тот же 404: ответ клиенту от
+                    // этого не меняется (он и так получал бы заглушку), а очередь mtcute
+                    // важнее пары аватарок в списке.
+                    if (rateLimit('avatar.warm', String(viewer.userId), LIMITS.avatarWarm).ok) {
+                        void warmAvatar(deps.client, id)
+                    }
                     res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
                     return
                 }
@@ -2293,9 +2545,19 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 const initData = typeof body.initData === 'string' ? body.initData : ''
                 const user = validateInitData(initData, deps.botToken)
                 if (!user) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail)) return
                     sendError(res, 401, 'bad_init_data', 'Откройте миниапп заново — сессия устарела.')
                     return
                 }
+                const method = pathname.slice('/api/'.length).replace(/\/+$/, '').replaceAll('/', '.')
+                // Три полки подряд: общий потолок на человека, полка класса метода и
+                // персональная полка самых дорогих методов. Всё до `residents.access` —
+                // на холодном кэше он сам ходит в Telegram по всем allowlist-чатам.
+                if (!allow(res, 'api', user.userId, LIMITS.user)) return
+                const rateClass = METHOD_CLASS[method] ?? 'write'
+                if (!allow(res, `api.${rateClass}`, user.userId, CLASS_LIMITS[rateClass])) return
+                const methodLimit = METHOD_LIMITS[method]
+                if (methodLimit && !allow(res, `api.${method}`, user.userId, methodLimit)) return
                 // Заблокированный участник не имеет доступа к миниаппу — глухой отказ.
                 // Источников бана два: своя запись в blockedUsers (блокировка из миниаппа)
                 // и живой статус в allowlist-чатах — забаненного руками в Телеграме, минуя
@@ -2305,7 +2567,6 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     sendError(res, 403, 'blocked', 'Доступ закрыт.')
                     return
                 }
-                const method = pathname.slice('/api/'.length).replace(/\/+$/, '').replaceAll('/', '.')
                 await handleApi({ ...deps, user, resident, body, res }, method)
                 return
             }
