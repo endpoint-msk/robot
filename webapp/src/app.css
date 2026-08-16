@@ -2087,21 +2087,11 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .bar-label { font-size: 11px; color: var(--axis-ink); }
 .bar-label.on { font-weight: 700; color: var(--text); }
 
-/* Заглушка аватарки: буква на градиенте по userId (фото людей журнал не тянет). */
-.avatar-ini {
-    width: 34px;
-    height: 34px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.avatar-ini.small { width: 22px; height: 22px; font-size: 10px; }
-.avatar-ini.big { width: 54px; height: 54px; font-size: 22px; }
+/* Размеры аватарок журнала. Сама аватарка общая (.avatar): градиент с буквой —
+   только подложка, поверх неё приезжает настоящее фото из /avatar.jpg. */
+.stat-avatar { width: 34px; height: 34px; font-size: 14px; }
+.stat-avatar.small { width: 22px; height: 22px; font-size: 10px; }
+.stat-avatar.big { width: 54px; height: 54px; font-size: 22px; }
 
 .person-cell { flex: 1; min-width: 0; }
 .person-top { display: flex; align-items: baseline; gap: 10px; }

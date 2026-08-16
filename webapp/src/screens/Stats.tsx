@@ -8,7 +8,6 @@ import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push, useStore } from '../store'
 import {
-  gradientFor,
   heatCell,
   heatLevel,
   heatSlot,
@@ -16,10 +15,11 @@ import {
   hoursNum,
   hoursNumWord,
   hoursWord,
-  initialOf,
+  statsAvatarUser,
 } from '../stats'
 import type { StatsOverview, StatsPeriod } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
+import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { SkBars, SkBlock, SkCard, SkFigure, SkGrid } from '../components/skeleton'
 
@@ -290,9 +290,7 @@ export function Stats() {
         className="row tappable"
         onClick={() => push('statsPerson', { userId: p.userId, backLabel: 'Статистика' })}
       >
-        <div className="avatar-ini" style={{ background: gradientFor(p.userId) }}>
-          {initialOf(p.label)}
-        </div>
+        <Avatar user={statsAvatarUser(p)} className="stat-avatar" />
         <div className="person-cell">
           <div className="person-top">
             <span className="person-name">{p.label}</span>

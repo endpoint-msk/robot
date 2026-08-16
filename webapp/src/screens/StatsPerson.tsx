@@ -19,10 +19,11 @@ import { icons } from '../icons'
 import { datePrompt } from '../modals'
 import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
-import { fmtDuration, gradientFor, heatLevel, hoursNum, hoursNumWord, initialOf } from '../stats'
+import { fmtDuration, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
 import { haptic } from '../telegram'
 import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote } from '../components/common'
+import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { SkBlock, SkCard, SkGrid, SkQuad, SkRows } from '../components/skeleton'
 
@@ -145,9 +146,7 @@ export function StatsPerson() {
     <Screen>
       {back}
       <div className="person-head">
-        <div className="avatar-ini big" style={{ background: gradientFor(userId) }}>
-          {initialOf(data.user.label)}
-        </div>
+        <Avatar user={statsAvatarUser(data.user)} className="stat-avatar big" profile />
         <div className="person-head-text">
           <div className="title">{isMe ? 'Мои визиты' : data.user.label}</div>
           <div className="subtitle">{since(sinceKey)}</div>

@@ -76,13 +76,12 @@ export const heatValue = (v: number): string => `${(Math.round(v * 10) / 10).toS
 export const heatSlot = (bucket: number): string =>
   `${String(bucket * 2).padStart(2, '0')}–${String((bucket * 2 + 2) % 24).padStart(2, '0')}`
 
-/** Аватарка-заглушка: буква на градиенте, цвет детерминирован по userId. */
-export const gradientFor = (userId: number): string => {
-  const hue = Math.abs(userId * 47) % 360
-  return `linear-gradient(135deg, hsl(${hue} 68% 55%), hsl(${(hue + 40) % 360} 68% 45%))`
-}
-
-export const initialOf = (label: string): string => {
-  const clean = label.replace(/^@/, '').trim()
-  return (clean[0] ?? '?').toUpperCase()
-}
+/**
+ * Человек журнала в виде, который понимает `Avatar`: имён Telegram в сессиях нет,
+ * там только ник — он же идёт и в букву заглушки, пока не приедет фото.
+ */
+export const statsAvatarUser = (p: { userId: number; username: string | null }) => ({
+  userId: p.userId,
+  username: p.username,
+  name: p.username ?? 'Без ника',
+})

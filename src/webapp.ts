@@ -1584,7 +1584,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
 
         case 'stats.overview': {
             if (!requireResident()) return
-            sendJson(res, 200, await buildStatsOverview(storage, tzOffsetMinutes, statsPeriodOf(body.period), user.userId))
+            const view = await buildStatsOverview(storage, tzOffsetMinutes, statsPeriodOf(body.period), user.userId)
+            // Люди журнала идут мимо `userView` (в нём только карточки участников),
+            // поэтому whitelist `/avatar.jpg` пополняем тут — иначе аватарки в
+            // статистике вечно отбивались бы 404-кой.
+            for (const p of view.top) discloseUser(p.userId)
+            sendJson(res, 200, view)
             return
         }
 
@@ -1601,7 +1606,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, 'bad_date', 'Непонятный день.')
                 return
             }
-            sendJson(res, 200, await buildStatsDay(storage, tzOffsetMinutes, dateKey))
+            const view = await buildStatsDay(storage, tzOffsetMinutes, dateKey)
+            for (const row of view.rows) discloseUser(row.userId)
+            sendJson(res, 200, view)
             return
         }
 
@@ -1612,17 +1619,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, 'bad_user', 'Непонятно, о ком спрашиваешь.')
                 return
             }
-            sendJson(
-                res,
-                200,
-                await buildStatsPerson(
-                    storage,
-                    tzOffsetMinutes,
-                    userId,
-                    statsPeriodOf(body.period),
-                    await residents.joinedAt(userId),
-                ),
+            const view = await buildStatsPerson(
+                storage,
+                tzOffsetMinutes,
+                userId,
+                statsPeriodOf(body.period),
+                await residents.joinedAt(userId),
             )
+            discloseUser(view.user.userId)
+            sendJson(res, 200, view)
             return
         }
 

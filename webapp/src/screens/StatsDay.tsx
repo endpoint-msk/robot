@@ -5,9 +5,10 @@ import { api } from '../api'
 import { fmtWeekdayDate, plural } from '../dates'
 import { useRemote } from '../remote'
 import { push, useParams } from '../store'
-import { fmtDuration, fmtMinutes, gradientFor, initialOf } from '../stats'
+import { fmtDuration, fmtMinutes, statsAvatarUser } from '../stats'
 import type { StatsDayView } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
+import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { SkBlock, SkCard } from '../components/skeleton'
 
@@ -198,9 +199,7 @@ export function StatsDay() {
             onClick={() => push('statsPerson', { userId: r.userId, backLabel: 'Назад' })}
           >
             <div className="tl-name">
-              <div className="avatar-ini small" style={{ background: gradientFor(r.userId) }}>
-                {initialOf(r.label)}
-              </div>
+              <Avatar user={statsAvatarUser(r)} className="stat-avatar small" />
               <span>{r.label}</span>
             </div>
             <div className="tl-track">
