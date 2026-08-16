@@ -987,6 +987,28 @@ body {
     appearance: none;
 }
 
+/* Часы и минуты — два <select> внутри той же «таблетки» (см. components/TimeField.tsx).
+   color-scheme нужен ради нативного попапа: без него в тёмной теме он остаётся светлым. */
+.time-field {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    color-scheme: light;
+}
+:root[data-theme="dark"] .time-field { color-scheme: dark; }
+
+.time-field .tf-select {
+    padding: 0 2px;
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: center;
+    -webkit-appearance: none;
+    appearance: none;
+}
+.time-field .tf-colon { opacity: 0.45; }
+
 .purpose-input {
     width: 100%;
     border: none;

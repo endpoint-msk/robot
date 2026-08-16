@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { DayChips, isPastForToday, useDayTime } from './components/forms'
+import { TimeField } from './components/TimeField'
 import { icons } from './icons'
 import { getState } from './store'
 
@@ -110,12 +111,7 @@ function ModalCard({ modal }: { modal: Modal & { kind: 'confirm' | 'time' } }) {
         <div className="modal-card">
           {modal.text ? <div className="modal-text">{modal.text}</div> : null}
           <div className="modal-time-wrap">
-            <input
-              className="time-input modal-time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-            />
+            <TimeField className="modal-time" value={time} onChange={setTime} />
           </div>
           <div className="modal-actions">
             <button className="modal-btn" onClick={() => close(null)}>
@@ -201,13 +197,7 @@ function RescheduleCard({ modal }: { modal: Modal & { kind: 'reschedule' } }) {
           <DayChips days={days} selected={day} onSelect={selectDay} showCounts={false} />
         </div>
         <div className="modal-time-wrap">
-          <input
-            className="time-input modal-time"
-            type="time"
-            value={time}
-            min={min}
-            onChange={(e) => onTimeChange(e.target.value)}
-          />
+          <TimeField className="modal-time" value={time} min={min} onChange={onTimeChange} />
         </div>
         <div className="modal-actions">
           <button className="modal-btn" onClick={() => close(null)}>

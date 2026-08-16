@@ -8,6 +8,7 @@ import { haptic } from '../telegram'
 import { BackRow, BottomBar, EmptyState, Header, SectionTitle, Sep } from '../components/common'
 import { DayChips, defaultTimeFor } from '../components/forms'
 import { Screen } from '../components/Screen'
+import { TimeField } from '../components/TimeField'
 
 // Dev-меню: сид фейковых заявок + правка/удаление любых заявок. Доступ только у
 // DEV_USER_IDS (сервер проверяет сам, чип лишь прячет вход).
@@ -54,7 +55,7 @@ export function Dev() {
       <div className="card">
         <div className="row" style={{ padding: '6px 14px' }}>
           <span style={{ fontSize: 16 }}>Придёт к</span>
-          <input className="time-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          <TimeField value={time} onChange={setTime} />
         </div>
         <Sep left={14} />
         <div className="kv-block">

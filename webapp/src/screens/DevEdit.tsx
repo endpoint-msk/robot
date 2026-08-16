@@ -6,6 +6,7 @@ import { haptic } from '../telegram'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
 import { DayChips } from '../components/forms'
 import { Screen } from '../components/Screen'
+import { TimeField } from '../components/TimeField'
 
 // Дев-правка чужой заявки: день/время/цель.
 export function DevEdit() {
@@ -45,7 +46,7 @@ export function DevEdit() {
       <div className="card">
         <div className="row" style={{ padding: '6px 14px' }}>
           <span style={{ fontSize: 16 }}>Придёт к</span>
-          <input className="time-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          <TimeField value={time} onChange={setTime} />
         </div>
         <Sep left={14} />
         <div className="kv-block">

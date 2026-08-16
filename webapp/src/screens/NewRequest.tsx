@@ -8,6 +8,7 @@ import type { Bootstrap, ReminderChoice } from '../types'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
 import { AnonRow, DayChips, isPastForToday, PurposeInput, RemindCard, reminderFor, useDayTime } from '../components/forms'
 import { Screen } from '../components/Screen'
+import { TimeField } from '../components/TimeField'
 
 export function NewRequest() {
   const { data } = useStore()
@@ -67,7 +68,7 @@ export function NewRequest() {
       <div className="card">
         <div className="row" style={{ padding: '6px 14px' }}>
           <span style={{ fontSize: 16 }}>Приду к</span>
-          <input className="time-input" type="time" value={time} min={min} onChange={(e) => onTimeChange(e.target.value)} />
+          <TimeField value={time} min={min} onChange={onTimeChange} />
         </div>
         <Sep left={14} />
         <div className="kv-block">
