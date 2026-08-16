@@ -233,8 +233,12 @@ export const buildStatsOverview = async (
         const day = days.get(key)
         const gaps = new Set(day?.gaps ?? [])
         for (let b = 0; b < BUCKETS_PER_DAY; b++) {
-            if (gaps.has(b)) continue
-            sums[dow]![b] = (sums[dow]![b] ?? 0) + (day?.buckets[b] ?? 0) / BUCKET_MINUTES
+            const minutes = day?.buckets[b] ?? 0
+            // Провал выбрасывает интервал из среднего, но только когда в нём и правда
+            // пусто: если отметки за эти два часа есть, мы знаем как минимум их, и
+            // «мы видели столько-то» полезнее, чем «мы не знаем ничего».
+            if (gaps.has(b) && minutes <= 0) continue
+            sums[dow]![b] = (sums[dow]![b] ?? 0) + minutes / BUCKET_MINUTES
             counts[dow]![b] = (counts[dow]![b] ?? 0) + 1
         }
     }

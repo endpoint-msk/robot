@@ -34,6 +34,15 @@ export const BUCKETS_PER_DAY = 24 * 60 / BUCKET_MINUTES
 const DAY_MINUTES = 24 * 60
 
 /**
+ * Сколько минут ячейки должен занять провал, чтобы её вообще списали в «данных нет».
+ *
+ * Раньше засчитывалось любое пересечение, и одна неудачная минута опроса вычёркивала
+ * все два часа: на карте это выглядело случайной штриховкой, а хуже того — день с
+ * такой ячейкой выпадал из среднего целиком, унося с собой реальные отметки.
+ */
+const GAP_MIN_MINUTES = BUCKET_MINUTES / 4
+
+/**
  * Пояс спейса для нарезки суток. Ставится на старте (`setPresenceLogTz`) — модулю
  * нужен он один, а тащить его параметром пришлось бы через поллер MAC и все снятия
  * отметок. Дефолт совпадает с `parseHostingTzOffset`.
@@ -381,10 +390,17 @@ export const markRouterGap = async (storage: Storage, fromMs: number, toMs: numb
         const set = touched.get(dateKey) ?? new Set<number>()
         const fromBucket = Math.floor((cursor - start) / 60_000 / BUCKET_MINUTES)
         const toBucket = Math.floor((until - 1 - start) / 60_000 / BUCKET_MINUTES)
-        for (let b = Math.max(0, fromBucket); b <= Math.min(BUCKETS_PER_DAY - 1, toBucket); b++) set.add(b)
-        touched.set(dateKey, set)
+        for (let b = Math.max(0, fromBucket); b <= Math.min(BUCKETS_PER_DAY - 1, toBucket); b++) {
+            const bucketFrom = start + b * BUCKET_MINUTES * 60_000
+            const overlap = Math.min(until, bucketFrom + BUCKET_MINUTES * 60_000) - Math.max(cursor, bucketFrom)
+            if (overlap >= GAP_MIN_MINUTES * 60_000) set.add(b)
+        }
+        // Пустой набор в карту не кладём: короткий провал не должен заводить день
+        // в стейте только ради `gaps: []`.
+        if (set.size > 0) touched.set(dateKey, set)
         cursor = until
     }
+    if (touched.size === 0) return
 
     const days = storage.get().presenceStats.days
     let changed = false

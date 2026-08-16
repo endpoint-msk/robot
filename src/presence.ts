@@ -24,6 +24,15 @@ export const MAC_MAX_PRESENCE_MS = 14 * 60 * 60 * 1000
 export const MAC_STALE_MS = 30 * 60 * 1000
 /** После скольких неудачных опросов подряд жалуемся девам (console.error → личка). */
 const MAC_FAIL_STREAK = 5
+/**
+ * Чаще этого про лежащий роутер девам не пишем.
+ *
+ * Раньше отчёт был «один раз на переход в down», и этого не хватало: мигающий линк
+ * (пять минут нет сети, минута есть, снова нет) считается новым провалом на каждом
+ * обрыве, и в личку сыпалось по сообщению на каждое мигание. Отсчёт живёт поверх
+ * восстановлений — короткий успех между обрывами не снимает кулдаун.
+ */
+const MAC_REPORT_COOLDOWN_MS = 6 * 60 * 60 * 1000
 /** Как часто крутим планировщик. */
 const TICK_INTERVAL_MS = 60 * 1000
 
@@ -751,7 +760,10 @@ export const startMacPresencePoller = (
     /** Когда последний раз получили данные о сети; от него считается протухание отметок. */
     let lastSuccessAt = Date.now()
     let failStreak = 0
-    let reportedDown = false
+    /** Начало текущего провала. 0 — сеть в порядке. */
+    let downSince = 0
+    /** Когда последний раз жаловались девам. Восстановление это НЕ сбрасывает (см. MAC_REPORT_COOLDOWN_MS). */
+    let lastReportAt = 0
 
     const tick = async () => {
         const bindings = Object.values(storage.get().macBindings)
@@ -762,16 +774,24 @@ export const startMacPresencePoller = (
             activeMacs = await keenetic.fetchActiveMacs()
         } catch (err) {
             failStreak++
+            if (downSince === 0) downSince = Date.now()
             console.warn('[keenetic] не удалось получить список устройств:', err)
-            // Один раз на переход, а не каждый тик: console.error уходит девам в личку,
-            // и лежащий роутер превратился бы в сообщение в минуту.
-            if (failStreak >= MAC_FAIL_STREAK && !reportedDown) {
-                reportedDown = true
-                console.error(`[keenetic] роутер не отвечает ${failStreak} опросов подряд - авто-отметки по MAC не обновляются.`)
+            // Не каждый тик и не на каждый обрыв: console.error уходит девам в личку,
+            // и лежащий (а тем более мигающий) роутер превратился бы в поток сообщений.
+            // Пока идёт один и тот же провал, отчёт повторяется раз в MAC_REPORT_COOLDOWN_MS —
+            // это напоминание «всё ещё лежит», а не новость.
+            if (failStreak >= MAC_FAIL_STREAK && Date.now() - lastReportAt >= MAC_REPORT_COOLDOWN_MS) {
+                lastReportAt = Date.now()
+                const downMin = Math.round((Date.now() - downSince) / 60_000)
+                console.error(`[keenetic] роутер не отвечает ${downMin} мин (${failStreak} опросов подряд) - авто-отметки по MAC не обновляются.`)
             }
             // Про это время мы ничего не знаем — помечаем провал в журнале, иначе в
             // статистике «роутер лежал» будет неотличимо от «в спейсе никого не было».
-            await markRouterGap(storage, lastSuccessAt, Date.now())
+            // Но не с первой же неудачи: пока не прошло MAC_STALE_MS, бот сам считает
+            // свои mac-отметки живыми (ниже он их только после этого срока и снимает),
+            // и объявлять это время неизвестным значит вычёркивать данные, которые у
+            // нас есть. Провал начинается ровно там, где кончается доверие к отметкам.
+            await markRouterGap(storage, lastSuccessAt + MAC_STALE_MS, Date.now())
             // Снимает mac-отметки тот же поллер, который сейчас лежит. Без этого доска,
             // /inside и миниапп часами показывают людей в давно пустом спейсе.
             if (Date.now() - lastSuccessAt >= MAC_STALE_MS) {
@@ -779,9 +799,13 @@ export const startMacPresencePoller = (
             }
             return
         }
-        if (reportedDown) console.log('[keenetic] опрос сети восстановился')
+        // Лог о восстановлении — только про провал, который успел стать заметным:
+        // одиночный сбойный тик не новость ни для логов, ни для человека.
+        if (failStreak >= MAC_FAIL_STREAK) {
+            console.log(`[keenetic] опрос сети восстановился (лежал ${Math.round((Date.now() - downSince) / 60_000)} мин)`)
+        }
         failStreak = 0
-        reportedDown = false
+        downSince = 0
         lastSuccessAt = Date.now()
 
         const nowIso = new Date().toISOString()
