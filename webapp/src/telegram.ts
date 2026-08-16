@@ -14,7 +14,7 @@ interface TelegramWebApp {
   openTelegramLink(url: string): void
   requestWriteAccess?(callback: (granted: boolean) => void): void
   onEvent(event: string, callback: () => void): void
-  HapticFeedback?: { notificationOccurred(kind: string): void }
+  HapticFeedback?: { notificationOccurred(kind: string): void; selectionChanged?(): void }
   BackButton: { show(): void; hide(): void; onClick(callback: () => void): void }
 }
 
@@ -33,6 +33,15 @@ export type HapticKind = 'success' | 'warning' | 'error'
 export function haptic(kind: HapticKind): void {
   try {
     tg?.HapticFeedback?.notificationOccurred(kind)
+  } catch {
+    /* старый клиент */
+  }
+}
+
+/** Щелчок прокрутки колеса времени: у нативных пикеров iOS он есть, без него жест мёртвый. */
+export function hapticTick(): void {
+  try {
+    tg?.HapticFeedback?.selectionChanged?.()
   } catch {
     /* старый клиент */
   }

@@ -987,27 +987,114 @@ body {
     appearance: none;
 }
 
-/* Часы и минуты — два <select> внутри той же «таблетки» (см. components/TimeField.tsx).
-   color-scheme нужен ради нативного попапа: без него в тёмной теме он остаётся светлым. */
-.time-field {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 10px;
-    color-scheme: light;
-}
-:root[data-theme="dark"] .time-field { color-scheme: dark; }
+/* «Таблетка» времени — кнопка: тап открывает шторку с колесом (components/TimeField.tsx). */
+.time-field { cursor: pointer; line-height: 1.3; }
+.time-field:active { opacity: 0.6; }
 
-.time-field .tf-select {
-    padding: 0 2px;
-    border: none;
-    background: transparent;
-    font: inherit;
-    color: inherit;
-    text-align: center;
-    -webkit-appearance: none;
-    appearance: none;
+/* Шторка пикера времени. z-index выше модалок (100) и лайтбокса (110): пикер
+   вызывается в том числе из модалки переноса и должен лечь поверх неё. */
+.tp-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: flex-end;
+    background: var(--overlay);
+    opacity: 0;
+    transition: opacity 0.22s ease;
 }
-.time-field .tf-colon { opacity: 0.45; }
+.tp-overlay.shown { opacity: 1; }
+
+.tp-sheet {
+    width: 100%;
+    background: var(--card);
+    border-radius: 20px 20px 0 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    transform: translateY(100%);
+    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.tp-overlay.shown .tp-sheet { transform: none; }
+
+.tp-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 48px;
+    padding: 0 6px;
+    border-bottom: 0.5px solid var(--sep);
+}
+.tp-bar-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.tp-bar-btn {
+    min-width: 84px;
+    padding: 10px;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 17px;
+    color: var(--blue);
+    text-align: left;
+    cursor: pointer;
+}
+.tp-bar-btn.primary { font-weight: 600; text-align: right; }
+.tp-bar-btn:active { opacity: 0.6; }
+
+/* Колёса: --tp-item-h должна совпадать с ITEM_H в TimeField.tsx. */
+.tp-wheels {
+    --tp-item-h: 40px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    /* Ровно пять строк, без своих паддингов: scrollTop колеса должен быть кратен
+       строке (в JS индекс считается как scrollTop / ITEM_H). */
+    height: calc(var(--tp-item-h) * 5);
+    margin: 8px 0;
+}
+/* Подсветка выбранной строки — под колёсами, жесты сквозь неё. */
+.tp-band {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 168px;
+    height: var(--tp-item-h);
+    transform: translate(-50%, -50%);
+    border-radius: 10px;
+    background: rgba(var(--sec), 0.09);
+    pointer-events: none;
+}
+.tp-colon { font-size: 22px; font-weight: 600; color: var(--text); }
+
+.tp-wheel {
+    height: 100%;
+    width: 74px;
+    /* Отступ в две строки сверху и снизу — иначе крайние значения не встают в центр. */
+    padding: calc(var(--tp-item-h) * 2) 0;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    /* Скролл колеса не должен уводить страницу и закрывать миниапп свайпом. */
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+.tp-wheel::-webkit-scrollbar { display: none; }
+
+.tp-item {
+    height: var(--tp-item-h);
+    line-height: var(--tp-item-h);
+    scroll-snap-align: center;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(var(--sec), 0.55);
+    cursor: pointer;
+    transition: color 0.12s ease;
+}
+.tp-item.active { color: var(--text); font-weight: 600; }
+.tp-item.disabled { color: rgba(var(--sec), 0.22); }
+
+@media (prefers-reduced-motion: reduce) {
+    .tp-sheet { transition: none; transform: none; }
+}
 
 .purpose-input {
     width: 100%;
