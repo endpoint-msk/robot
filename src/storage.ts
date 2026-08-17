@@ -129,6 +129,7 @@ export class Storage {
             backups: parsed.backups ?? {},
             events: parsed.events ?? {},
             eventDrafts: parsed.eventDrafts ?? {},
+            eventFeedTokens: parsed.eventFeedTokens ?? {},
             // Взносы — вложенный объект, а не словарь: недостающие поля добираем из
             // дефолта, иначе стейт, записанный до появления очередной настройки,
             // приезжал бы с undefined там, где код ждёт число.

@@ -57,16 +57,19 @@ import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
 import { isReminderChoice, mergeReminder, reminderFits, setVisitReminder } from './visit-reminder.js'
 import {
     buildEventIcs,
+    buildEventsFeedIcs,
     canEditEvent,
     clearEventDraft,
     createEvent,
     deleteEvent,
     draftPhotoId,
+    ensureEventFeedToken,
     eventDraftFor,
     eventForPhoto,
     eventNotifyPrefsFor,
     eventPhotoIds,
     eventsForDay,
+    feedEvents,
     isStagedPhotoOf,
     notifyEventCancelled,
     notifyEventMoved,
@@ -256,6 +259,8 @@ const LIMITS = {
     board: { limit: 60, windowMs: MINUTE },
     /** Файлы календаря: их открывает системный браузер, по одному на тап. */
     ics: { limit: 30, windowMs: MINUTE },
+    /** Подписка календаря: клиент ходит раз в час сам, запас — на ручные обновления. */
+    feed: { limit: 20, windowMs: MINUTE },
     /** Афиши ивентов: `<img>` на экране дня и в карточке. */
     photo: { limit: 120, windowMs: MINUTE },
     /** Заливка афиши: до 4 МБ на файл, каждая — запись на диск рядом со стейтом. */
@@ -318,6 +323,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'note.set': 'write',
     notify: 'write',
     'notify.events': 'write',
+    'calendar.link': 'write',
     'presence.log': 'write',
     'stats.residentSince': 'write',
     'mac.add': 'write',
@@ -1567,6 +1573,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         }
 
         // Уведомления об ивентах — отдельный тумблер от заявок (см. DEFAULT_EVENT_NOTIFY).
+        case 'calendar.link': {
+            // Гейта резидентства нет намеренно: в фиде только те ивенты, что и так
+            // видит любой гость в миниаппе. Ответ — не bootstrap: ссылка нужна разово,
+            // на тап по строке, и в стейт фронта ей не место.
+            const token = await ensureEventFeedToken(storage, user.userId)
+            sendJson(res, 200, { token })
+            return
+        }
+
         case 'notify.events': {
             if (!requireResident()) return
             const enabled = body.enabled === true
@@ -2192,6 +2207,21 @@ const serveStatic = async (pathname: string, res: ServerResponse): Promise<void>
 const secretEquals = (a: string, b: string): boolean =>
     timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
 
+/**
+ * Чей это токен подписки на календарь. null — такого нет.
+ *
+ * Ищем перебором, а не словарём с ключом-токеном: ключ пришёл бы из query, и
+ * `tokens['__proto__']` вернул бы прототип вместо undefined. Записей тут столько,
+ * сколько людей нажало «Подписаться», — перебор дешевле этой ловушки.
+ */
+const feedUserId = (storage: Storage, token: string): number | null => {
+    if (token === '') return null
+    for (const [userId, value] of Object.entries(storage.get().eventFeedTokens)) {
+        if (secretEquals(value, token)) return Number(userId)
+    }
+    return null
+}
+
 /** Токен из `Authorization: Bearer <token>` либо из `?token=` — прошивке проще query. */
 const boardTokenOf = (req: IncomingMessage, url: URL): string => {
     const header = req.headers.authorization ?? ''
@@ -2397,6 +2427,38 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     'Content-Disposition': 'attachment; filename="event.ics"',
                     'Cache-Control': 'no-store',
                 }).end(buildEventIcs(event, deps.tzOffsetMinutes))
+                return
+            }
+
+            // Подписка календаря на ивенты. Вторая после /board ручка без initData: фид
+            // дёргает календарь месяцами и в фоне, а подпись живёт сутки. Гейт — личный
+            // токен из ссылки; за ним лежит ровно то, что видит в миниаппе любой гость
+            // (резидентские ивенты в фид не попадают, см. feedEvents).
+            if (pathname === '/events.ics') {
+                if (req.method !== 'GET' && req.method !== 'HEAD') {
+                    res.writeHead(405).end()
+                    return
+                }
+                const token = url.searchParams.get('token')?.trim() ?? ''
+                const userId = feedUserId(deps.storage, token)
+                if (userId === null) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ссылка не найдена.')
+                    return
+                }
+                if (!allow(res, 'feed', userId, LIMITS.feed, false)) return
+                // Живой бан в чате здесь не перепроверяем, в отличие от /visit.ics:
+                // `access` на холодном кэше ходит в Telegram по всем allowlist-чатам, а
+                // календарь стучится сам и по расписанию. Своей записи в blockedUsers
+                // хватает — публичных ивентов заблокированный и так не лишён.
+                if (isBlocked(deps.storage, userId)) {
+                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
+                    return
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Cache-Control': 'no-store',
+                }).end(buildEventsFeedIcs(feedEvents(deps.storage, deps.tzOffsetMinutes), deps.tzOffsetMinutes))
                 return
             }
 

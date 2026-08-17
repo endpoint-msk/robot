@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import { action } from '../api'
+import { action, api } from '../api'
 import { icons } from '../icons'
-import { confirmDialog } from '../modals'
+import { confirmDialog, showAlert } from '../modals'
 import { setTheme, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { NotifyPrefs, Settings as SettingsData, ThemeChoice } from '../types'
@@ -87,6 +87,83 @@ function NotifyCard({
         {radioRow(allLabel, allSublabel, 'all')}
       </div>
     </div>
+  )
+}
+
+/** Сколько строка держит галочку после копирования (как в «Как пройти»). */
+const COPIED_MS = 1600
+
+/**
+ * Подписка календаря на ивенты: ссылка на ICS-фид, которую человек один раз кладёт
+ * в свой календарь.
+ *
+ * Тап копирует ссылку, а не открывает её: подписка живёт на схеме `webcal://`, а из
+ * вебвью её открыть нечем - `openLink` берёт только http/https, остальное Telegram
+ * молча проглатывает (та же история, что с `tg://user?id=`).
+ *
+ * Токен тянем на монтировании экрана, а не по тапу: после `await` Safari уже не
+ * считает клик «живым» жестом и запрещает запись в буфер обмена.
+ */
+function CalendarSection() {
+  const [link, setLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<number | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const { token } = await api<{ token: string }>('calendar.link')
+        if (alive) setLink(`${location.origin}/events.ics?token=${encodeURIComponent(token)}`)
+      } catch {
+        // Ссылку покажем при следующем открытии настроек — алерт тут был бы шумом.
+      }
+    })()
+    return () => {
+      alive = false
+      window.clearTimeout(timer.current ?? undefined)
+    }
+  }, [])
+
+  const copy = (): void => {
+    if (!link) return
+    navigator.clipboard.writeText(link).then(
+      () => {
+        haptic('success')
+        setCopied(true)
+        window.clearTimeout(timer.current ?? undefined)
+        timer.current = window.setTimeout(() => setCopied(false), COPIED_MS)
+      },
+      // В вебвью буфер обмена может быть недоступен — тогда показываем саму ссылку,
+      // выделить и скопировать её руками всё равно можно.
+      () => showAlert(link),
+    )
+  }
+
+  return (
+    <>
+      <SectionTitle>Календарь</SectionTitle>
+      <div className="card">
+        <button type="button" className={'row tappable' + (link ? '' : ' rows-disabled')} onClick={copy}>
+          <div className="row-icon" style={{ background: 'var(--purple)' }}>
+            {icons.calendar(17, '#fff')}
+          </div>
+          <span className="row-label">
+            Подписаться на ивенты
+            {copied ? <span className="row-sublabel">Ссылка скопирована</span> : null}
+          </span>
+          <div className="row-right">
+            <div className={'route-copy' + (copied ? ' done' : '')}>
+              {copied ? icons.check(15, '#34c759', 2.6) : icons.copy(15, '#007aff')}
+            </div>
+          </div>
+        </button>
+      </div>
+      <Footnote>
+        Ссылка добавляется в календарь один раз — дальше новые ивенты появляются в нём сами. Ивенты только для
+        резидентов в неё не попадают.
+      </Footnote>
+    </>
   )
 }
 
@@ -200,6 +277,7 @@ export function Settings() {
         <BackRow label="Назад" />
         <Header title="Настройки" />
         <ThemeSection />
+        <CalendarSection />
       </Screen>
     )
   }
@@ -209,6 +287,7 @@ export function Settings() {
       <BackRow label="Ближайшие дни" />
       <Header title="Настройки" />
       <ThemeSection />
+      <CalendarSection />
       <SectionTitle>Уведомления о заявках</SectionTitle>
       <NotifyCard
         prefs={s.notify}

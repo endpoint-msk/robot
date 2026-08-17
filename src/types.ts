@@ -90,6 +90,15 @@ export type State = {
     events: Record<string, SpaceEvent>
     /** Заготовка ивента из пересланного поста канала. Ключ — userId резидента, по одной на человека. */
     eventDrafts: Record<string, EventDraft>
+    /**
+     * Токены подписки на календарь ивентов (`GET /events.ics`). Ключ — userId,
+     * значение — секрет из ссылки.
+     *
+     * Своя ссылка на человека, а не одна общая: календарь дёргает её месяцами и в
+     * фоне, подписать ему initData нечем (та живёт сутки), а утёкшую ссылку надо
+     * уметь погасить одному, не ломая подписку всем остальным.
+     */
+    eventFeedTokens: Record<string, string>
     /** Резидентские взносы — одна общая настройка на весь спейс. */
     dues: DuesState
     /**
@@ -577,6 +586,7 @@ export const emptyState = (): State => ({
     backups: {},
     events: {},
     eventDrafts: {},
+    eventFeedTokens: {},
     dues: emptyDues(),
     presenceNoLog: {},
     presenceStats: { days: {} },

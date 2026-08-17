@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
@@ -346,7 +346,7 @@ const broadcastEventNotice = async (
  * (`buildVisitIcs`): DTSTART в UTC из пояса спейса, фиксированная длительность.
  * Отдаётся по `GET /event.ics`, гейт видимости - там же.
  */
-export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: Date = new Date()): string => {
+const eventVevent = (event: SpaceEvent, tzOffsetMinutes: number, now: Date): string[] => {
     const startUtc = new Date(slotStartUtc(event.dateKey, event.time, tzOffsetMinutes))
     const endUtc = new Date(startUtc.getTime() + ICS_EVENT_HOURS * 3600_000)
     const description: string[] = []
@@ -354,12 +354,7 @@ export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: D
     description.push(
         `Организатор: ${displayName(event.host.name)}${event.host.username ? ` (@${event.host.username})` : ''}`,
     )
-    const lines = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'PRODID:-//endpoint//events//RU',
-        'CALSCALE:GREGORIAN',
-        'METHOD:PUBLISH',
+    return [
         'BEGIN:VEVENT',
         `UID:${event.id}@endpoint-events`,
         `DTSTAMP:${icsStamp(now)}`,
@@ -369,9 +364,80 @@ export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: D
         `DESCRIPTION:${icsEscape(description.join('\n'))}`,
         'STATUS:CONFIRMED',
         'END:VEVENT',
+    ]
+}
+
+export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: Date = new Date()): string => {
+    const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//endpoint//events//RU',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        ...eventVevent(event, tzOffsetMinutes, now),
         'END:VCALENDAR',
     ]
     return lines.map(icsFold).join('\r\n') + '\r\n'
+}
+
+// ---------------------------------------------------------------------------
+// Подписка календаря на ивенты (GET /events.ics)
+// ---------------------------------------------------------------------------
+
+/** Имя календаря у подписчика. Клиенты показывают его в списке календарей. */
+const FEED_NAME = 'Ивенты хакспейса'
+
+/** Как часто календарю стоит перечитывать фид: подсказка, а не гарантия. */
+const FEED_REFRESH = 'PT1H'
+
+/**
+ * Что уезжает в подписку: будущие ивенты, кроме резидентских.
+ *
+ * Резидентские не отдаём ни в каком виде - ссылку календарь хранит годами, она
+ * переживает и выход человека из резидентов, и пересылку кому угодно. За фидом
+ * должно лежать ровно то, что видит в миниаппе любой гость.
+ */
+export const feedEvents = (storage: Storage, tzOffsetMinutes: number): SpaceEvent[] => {
+    const today = todayKey(tzOffsetMinutes)
+    return Object.values(storage.get().events)
+        .filter((e) => !e.residentsOnly && e.dateKey >= today)
+        .sort((a, b) => (a.dateKey === b.dateKey ? a.time.localeCompare(b.time) : a.dateKey.localeCompare(b.dateKey)))
+}
+
+/** Фид подписки: тот же VEVENT, что и в одиночном `.ics`, но пачкой и с именем календаря. */
+export const buildEventsFeedIcs = (
+    events: SpaceEvent[],
+    tzOffsetMinutes: number,
+    now: Date = new Date(),
+): string => {
+    const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//endpoint//events//RU',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        `NAME:${icsEscape(FEED_NAME)}`,
+        `X-WR-CALNAME:${icsEscape(FEED_NAME)}`,
+        `REFRESH-INTERVAL;VALUE=DURATION:${FEED_REFRESH}`,
+        `X-PUBLISHED-TTL:${FEED_REFRESH}`,
+        ...events.flatMap((e) => eventVevent(e, tzOffsetMinutes, now)),
+        'END:VCALENDAR',
+    ]
+    return lines.map(icsFold).join('\r\n') + '\r\n'
+}
+
+/**
+ * Токен подписки этого человека: заводим при первом обращении, дальше ссылка
+ * постоянная - её один раз добавили в календарь, и менять её нельзя.
+ */
+export const ensureEventFeedToken = async (storage: Storage, userId: number): Promise<string> => {
+    const existing = storage.get().eventFeedTokens[String(userId)]
+    if (existing) return existing
+    const token = randomBytes(24).toString('base64url')
+    await storage.update((s) => {
+        s.eventFeedTokens[String(userId)] = token
+    })
+    return token
 }
 
 /** Слот ивента на момент до правки - чтобы в уведомлении назвать и старое, и новое время. */
