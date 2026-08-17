@@ -3,7 +3,7 @@ import { action, api } from '../api'
 import { icons } from '../icons'
 import { confirmDialog, showAlert } from '../modals'
 import { setTheme, useStore } from '../store'
-import { haptic } from '../telegram'
+import { haptic, openUrl } from '../telegram'
 import type { NotifyPrefs, Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -90,73 +90,43 @@ function NotifyCard({
   )
 }
 
-/** Сколько строка держит галочку после копирования (как в «Как пройти»). */
-const COPIED_MS = 1600
-
 /**
- * Подписка календаря на ивенты: ссылка на ICS-фид, которую человек один раз кладёт
- * в свой календарь.
+ * Подписка календаря на ивенты.
  *
- * Тап копирует ссылку, а не открывает её: подписка живёт на схеме `webcal://`, а из
- * вебвью её открыть нечем - `openLink` берёт только http/https, остальное Telegram
- * молча проглатывает (та же история, что с `tg://user?id=`).
- *
- * Токен тянем на монтировании экрана, а не по тапу: после `await` Safari уже не
- * считает клик «живым» жестом и запрещает запись в буфер обмена.
+ * Кнопка ведёт на `/events-subscribe` — он редиректит на ту же ссылку схемой
+ * `webcal://`, и календарь заводит подписку, которая дальше обновляется сама.
+ * Отдавать https-ссылку на `.ics` напрямую бесполезно: система разово импортирует
+ * ближайшие ивенты и на этом всё. Схему подменяет сервер, потому что из вебвью
+ * `webcal://` не открыть — `openLink` берёт только http/https.
  */
 function CalendarSection() {
-  const [link, setLink] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const timer = useRef<number | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const { token } = await api<{ token: string }>('calendar.link')
-        if (alive) setLink(`${location.origin}/events.ics?token=${encodeURIComponent(token)}`)
-      } catch {
-        // Ссылку покажем при следующем открытии настроек — алерт тут был бы шумом.
-      }
-    })()
-    return () => {
-      alive = false
-      window.clearTimeout(timer.current ?? undefined)
-    }
-  }, [])
-
-  const copy = (): void => {
-    if (!link) return
-    navigator.clipboard.writeText(link).then(
-      () => {
-        haptic('success')
-        setCopied(true)
-        window.clearTimeout(timer.current ?? undefined)
-        timer.current = window.setTimeout(() => setCopied(false), COPIED_MS)
-      },
-      // В вебвью буфер обмена может быть недоступен — тогда показываем саму ссылку,
-      // выделить и скопировать её руками всё равно можно.
-      () => showAlert(link),
-    )
-  }
-
+  const [busy, setBusy] = useState(false)
   return (
     <>
       <SectionTitle>Календарь</SectionTitle>
       <div className="card">
-        <button type="button" className={'row tappable' + (link ? '' : ' rows-disabled')} onClick={copy}>
+        <button
+          type="button"
+          className={'row tappable' + (busy ? ' rows-disabled' : '')}
+          onClick={async () => {
+            if (busy) return
+            setBusy(true)
+            try {
+              const { token } = await api<{ token: string }>('calendar.link')
+              haptic('success')
+              openUrl(`${location.origin}/events-subscribe?token=${encodeURIComponent(token)}`)
+            } catch (err) {
+              showAlert((err as Error).message)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
           <div className="row-icon" style={{ background: 'var(--purple)' }}>
             {icons.calendar(17, '#fff')}
           </div>
-          <span className="row-label">
-            Подписаться на ивенты
-            {copied ? <span className="row-sublabel">Ссылка скопирована</span> : null}
-          </span>
-          <div className="row-right">
-            <div className={'route-copy' + (copied ? ' done' : '')}>
-              {copied ? icons.check(15, '#34c759', 2.6) : icons.copy(15, '#007aff')}
-            </div>
-          </div>
+          <span className="row-label">Подписаться на ивенты</span>
+          <div className="row-right">{icons.chevron()}</div>
         </button>
       </div>
       <Footnote>

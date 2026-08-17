@@ -2430,6 +2430,42 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
+            // Вход в подписку: 302 на ту же ссылку, но схемой `webcal://`.
+            //
+            // Без этого перехода ничего не работает: по https календарь получает файл и
+            // разово импортирует ближайшие ивенты, а подписку (календарь, который сам
+            // перечитывается) заводит только `webcal://`. Открыть эту схему из миниаппа
+            // нельзя — `openLink` берёт только http/https, — поэтому наружу уходит
+            // обычная https-ссылка, а схему подменяет уже редирект в системном браузере.
+            if (pathname === '/events-subscribe') {
+                if (req.method !== 'GET' && req.method !== 'HEAD') {
+                    res.writeHead(405).end()
+                    return
+                }
+                const token = url.searchParams.get('token')?.trim() ?? ''
+                const userId = feedUserId(deps.storage, token)
+                if (userId === null) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ссылка не найдена.')
+                    return
+                }
+                if (!allow(res, 'feed', userId, LIMITS.feed, false)) return
+                // Хост берём из запроса (наружу ходят через туннель, своего адреса
+                // процесс не знает), но в Location его пускаем только отфильтрованным:
+                // заголовок подделывается кем угодно, а перенос строки в нём — это
+                // инъекция в ответ.
+                const host = (req.headers.host ?? '').trim()
+                if (!/^[A-Za-z0-9.\-]+(:\d+)?$/.test(host)) {
+                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Неизвестный адрес.')
+                    return
+                }
+                res.writeHead(302, {
+                    Location: `webcal://${host}/events.ics?token=${encodeURIComponent(token)}`,
+                    'Cache-Control': 'no-store',
+                }).end()
+                return
+            }
+
             // Подписка календаря на ивенты. Вторая после /board ручка без initData: фид
             // дёргает календарь месяцами и в фоне, а подпись живёт сутки. Гейт — личный
             // токен из ссылки; за ним лежит ровно то, что видит в миниаппе любой гость
