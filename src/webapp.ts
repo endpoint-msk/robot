@@ -1774,6 +1774,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                         const username = s.macBindings[String(user.userId)]?.username ?? null
                         p.displayLabel = anon ? ANON_LABEL : (username ? `@${username}` : ANON_LABEL)
                         p.username = anon ? null : username
+                        p.realUsername = username
                     }
                 })
                 syncBoard()

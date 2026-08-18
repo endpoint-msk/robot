@@ -334,6 +334,16 @@ const endOf = (present: ResidentPresence, reason: PresenceEndReason, now: number
 }
 
 /**
+ * Ник для журнала: настоящий, а не тот, что показан в публичном списке.
+ *
+ * Режим «без ника» скрывает человека в чате и на доске, а журнал резидентский и всё
+ * равно хранит userId (по нему миниапп рисует аватарку) — «Без ника» в нём никого не
+ * прятало, только делало строку нечитаемой. Отказ от журнала — отдельный тумблер.
+ * `?? username` — для отметок, поставленных до появления поля.
+ */
+const logNick = (p: ResidentPresence): string | null => p.realUsername ?? p.username
+
+/**
  * Закрывает сессию присутствия и обновляет итоги дня. Вызывается из единственной
  * точки снятия отметки (`removePresence`), поэтому в журнал попадают все способы
  * ухода — и кнопка, и уход устройства из сети, и таймаут.
@@ -351,7 +361,7 @@ export const closePresenceSession = async (
 
     const session: PresenceSession = {
         userId: present.userId,
-        username: present.username,
+        username: logNick(present),
         from: new Date(from).toISOString(),
         to: new Date(to).toISOString(),
         source: present.source,
@@ -445,7 +455,7 @@ export const openSessionsNow = (storage: Storage, now: number = Date.now()): Pre
         if (!Number.isFinite(from) || from >= now) continue
         out.push({
             userId: p.userId,
-            username: p.username,
+            username: logNick(p),
             from: new Date(from).toISOString(),
             to: new Date(now).toISOString(),
             source: p.source,

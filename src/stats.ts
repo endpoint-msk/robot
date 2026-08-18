@@ -178,6 +178,21 @@ const labelsFromVisits = (visits: PresenceVisit[]): Map<number, string | null> =
 
 const labelOf = (username: string | null | undefined): string => (username ? `@${username}` : 'Без ника')
 
+/**
+ * Запасной источник ника: MAC-привязка человека.
+ *
+ * Нужен для сессий, записанных до того, как журнал начал хранить настоящий ник (в
+ * режиме «без ника» туда уезжал null). Восстанавливать сами файлы ради этого не стоит:
+ * привязка хранит тот же @ник и обновляется на /bindmac. Нет привязки — так и остаётся
+ * «Без ника».
+ */
+const knownNick = (storage: Storage, userId: number): string | null =>
+    storage.get().macBindings[String(userId)]?.username ?? null
+
+/** Ник по журналу, а если его там нет — по привязке. */
+const nickOf = (storage: Storage, journal: string | null | undefined, userId: number): string | null =>
+    journal ?? knownNick(storage, userId)
+
 // ---------------------------------------------------------------------------
 
 export const buildStatsOverview = async (
@@ -274,13 +289,16 @@ export const buildStatsOverview = async (
     for (const v of visits) visitCount.set(v.userId, (visitCount.get(v.userId) ?? 0) + 1)
 
     const top = [...userMinutes.entries()]
-        .map(([userId, minutes]) => ({
-            userId,
-            username: labels.get(userId) ?? null,
-            label: labelOf(labels.get(userId)),
-            minutes: Math.round(minutes),
-            visits: visitCount.get(userId) ?? 0,
-        }))
+        .map(([userId, minutes]) => {
+            const nick = nickOf(storage, labels.get(userId), userId)
+            return {
+                userId,
+                username: nick,
+                label: labelOf(nick),
+                minutes: Math.round(minutes),
+                visits: visitCount.get(userId) ?? 0,
+            }
+        })
         .sort((a, b) => b.minutes - a.minutes)
 
     return {
@@ -312,14 +330,17 @@ export const buildStatsDay = async (
     const day = computeDay(sessions, dateKey)
     const start = Date.parse(`${dateKey}T00:00:00Z`) - presenceLogTz() * 60_000
     const rows: StatsDayRow[] = toVisits(sessions)
-        .map((v) => ({
-            userId: v.userId,
-            username: v.username,
-            label: labelOf(v.username),
-            fromMin: Math.max(0, Math.round((v.from - start) / 60_000)),
-            toMin: Math.min(24 * 60, Math.round((v.to - start) / 60_000)),
-            source: v.source,
-        }))
+        .map((v) => {
+            const nick = nickOf(storage, v.username, v.userId)
+            return {
+                userId: v.userId,
+                username: nick,
+                label: labelOf(nick),
+                fromMin: Math.max(0, Math.round((v.from - start) / 60_000)),
+                toMin: Math.min(24 * 60, Math.round((v.to - start) / 60_000)),
+                source: v.source,
+            }
+        })
         .filter((r) => r.toMin > r.fromMin)
         .sort((a, b) => a.fromMin - b.fromMin)
 
@@ -409,8 +430,9 @@ export const buildStatsPerson = async (
         .sort()
 
     const labels = labelsFromVisits(visits)
+    const nick = nickOf(storage, labels.get(userId), userId)
     return {
-        user: { userId, username: labels.get(userId) ?? null, label: labelOf(labels.get(userId)) },
+        user: { userId, username: nick, label: labelOf(nick) },
         period,
         periodLabel: periodLabelOf(period, from, to),
         visits: inWindow.length,

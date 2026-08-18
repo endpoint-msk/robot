@@ -304,6 +304,8 @@ export const checkInResident = async (
         userId: user.id,
         displayLabel: useNick && user.username ? `@${user.username}` : ANON_LABEL,
         username: useNick ? user.username : null,
+        // Журналу ник нужен и в режиме «без ника» — см. комментарий у поля.
+        realUsername: user.username,
         checkedInAt: existing?.checkedInAt ?? now,
         lastConfirmedAt: now,
         pendingPingAt: null,
@@ -525,6 +527,7 @@ export const registerPresenceHandlers = (
                     if (p) {
                         const uname = storage.get().macBindings[String(userId)]?.username ?? null
                         p.username = anon ? null : uname
+                        p.realUsername = uname
                         p.displayLabel = anon ? ANON_LABEL : (uname ? `@${uname}` : ANON_LABEL)
                     }
                 })
@@ -718,6 +721,7 @@ const macCheckIn = async (
         userId: binding.userId,
         displayLabel: useNick ? `@${binding.username}` : ANON_LABEL,
         username: useNick ? binding.username : null,
+        realUsername: binding.username,
         checkedInAt: nowIso,
         lastConfirmedAt: nowIso,
         pendingPingAt: null,
