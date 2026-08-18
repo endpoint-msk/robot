@@ -344,6 +344,13 @@ export const buildStatsDay = async (
         .filter((r) => r.toMin > r.fromMin)
         .sort((a, b) => a.fromMin - b.fromMin)
 
+    // Провал показываем, только если в интервале и правда пусто. Тот же критерий, что
+    // у тепловой карты: раз отметки за эти два часа есть, значит роутер о них рассказал,
+    // и «данных не было» поверх записанных визитов — просто неправда. Метку в стейте при
+    // этом не трогаем: она пишется в момент провала, а сессии за то же время дописываются
+    // позже (визит уезжает в журнал только на чек-ауте), поэтому фильтруем на чтении.
+    const gaps = (storage.get().presenceStats.days[dateKey]?.gaps ?? []).filter((b) => (day.buckets[b] ?? 0) <= 0)
+
     return {
         dateKey,
         openMinutes: day.openMinutes,
@@ -353,7 +360,7 @@ export const buildStatsDay = async (
         to: day.to,
         people: new Set(rows.map((r) => r.userId)).size,
         rows,
-        gaps: storage.get().presenceStats.days[dateKey]?.gaps ?? [],
+        gaps,
     }
 }
 

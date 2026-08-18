@@ -771,7 +771,13 @@ export const startMacPresencePoller = (
 
     const tick = async () => {
         const bindings = Object.values(storage.get().macBindings)
-        if (bindings.length === 0) return
+        if (bindings.length === 0) {
+            // Опрашивать нечего - но и провалом это время назвать нельзя. Без этой
+            // строки `lastSuccessAt` замирал на старте процесса, и первая же неудача
+            // после появления привязки помечала провалом всё время с запуска бота.
+            lastSuccessAt = Date.now()
+            return
+        }
 
         let activeMacs: Set<string>
         try {
