@@ -239,8 +239,18 @@ export type Me = {
   acceptedRules: boolean
 }
 
+/** Коммит, на котором крутится бот: подпись внизу настроек. Собирается на сервере. */
+export type BuildInfo = {
+  /** Короткий SHA — он же текст ссылки. */
+  commit: string
+  /** Ссылка на коммит в GitHub. */
+  url: string
+}
+
 export type Bootstrap = {
   me: Me
+  /** null, если бот не знает своего коммита (нет ни GIT_COMMIT, ни git рядом). */
+  build: BuildInfo | null
   todayKey: string
   nowTime: string
   days: Day[]

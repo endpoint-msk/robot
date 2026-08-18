@@ -137,6 +137,26 @@ function CalendarSection() {
   )
 }
 
+/**
+ * Подпись внизу настроек: на каком коммите крутится бот.
+ *
+ * Ссылку целиком собирает сервер (только он знает репо и свою сборку); нет коммита —
+ * подписи нет вовсе, писать «неизвестно» бессмысленно.
+ */
+function BuildSign() {
+  const { data } = useStore()
+  const build = data?.build
+  if (!build) return null
+  return (
+    <div className="build-sign">
+      Endpoint robot, now running{' '}
+      <button type="button" className="build-commit" onClick={() => openUrl(build.url)}>
+        {build.commit}
+      </button>
+    </div>
+  )
+}
+
 function MacCard({ s }: { s: SettingsData }) {
   const [showForm, setShowForm] = useState(false)
   const [mac, setMac] = useState('')
@@ -248,6 +268,7 @@ export function Settings() {
         <Header title="Настройки" />
         <ThemeSection />
         <CalendarSection />
+        <BuildSign />
       </Screen>
     )
   }
@@ -331,6 +352,7 @@ export function Settings() {
         Журнал нужен статистике спейса: сколько часов он работал и когда сюда приходят. Уже записанные визиты остаются —
         выключение останавливает запись новых.
       </Footnote>
+      <BuildSign />
     </Screen>
   )
 }

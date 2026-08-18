@@ -13,6 +13,9 @@ fi
 
 echo "[deploy] коммит: $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"
 
+# Коммит рабочего дерева уезжает в образ: внутри контейнера git спросить не у кого.
+export GIT_COMMIT="$(git rev-parse HEAD)"
+
 docker compose up -d --build --remove-orphans
 
 # Слои от предыдущих сборок иначе копятся до заполнения диска.

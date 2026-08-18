@@ -109,6 +109,7 @@ import {
     updateDuesSettings,
 } from './dues.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
+import { buildCommit } from './build-info.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { isPresenceLogged, setPresenceNoLog } from './presence-log.js'
 import {
@@ -799,7 +800,14 @@ const buildBootstrap = (ctx: ApiContext) => {
         }
         : null
 
+    // Подпись «now running <коммит>» внизу настроек: ссылка ведёт на сам коммит в GitHub.
+    // Ссылку собирает сервер — только он знает и репо, и на чём собран.
+    const commit = buildCommit()
+
     return {
+        build: commit
+            ? { commit: commit.slice(0, 7), url: `https://github.com/${ctx.githubRepo}/commit/${commit}` }
+            : null,
         me: {
             id: user.userId,
             username: user.username,

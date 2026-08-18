@@ -4,6 +4,10 @@ services:
     hostname: endpoint-webapp
     build:
       context: .
+      args:
+        # Коммит, из которого собран образ (подпись в настройках миниаппа). Значение
+        # подставляет scripts/deploy.sh; при ручной сборке просто пусто — подписи не будет.
+        GIT_COMMIT: ${GIT_COMMIT:-}
     restart: always
     # PID 1 должен уметь пожинать зомби и пробрасывать сигналы — иначе SIGTERM не доходит.
     init: true
