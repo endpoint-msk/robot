@@ -568,7 +568,7 @@ const userView = <T extends { userId: number; name: string }>(u: T): T => {
 }
 
 /** Сколько прошедших визитов гостя отдаём в «Были раньше»: это напоминание, а не журнал. */
-const MY_PAST_LIMIT = 5
+const MY_PAST_LIMIT = 3
 
 /**
  * Заявки для фронта. `viewerId` — кому мы их показываем: напоминание о визите это
