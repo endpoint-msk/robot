@@ -77,6 +77,8 @@ src/types.ts        — все типы стейта; emptyState() — фабр�
 
 `/goals` или `/donate` → `ensureCurrentFundraiser` → `renderFundraiser` → `msg.answerText` + `rememberLastMessage`. Дальше любые `/donate`, `/setgoal`, `/settitle`, `/remove` и кнопки `◀️▶️` → `refreshLastMessageInChat`, который **редактирует** запомненное сообщение. Если оно удалено/протухло (`MESSAGE_ID_INVALID`, `MESSAGE_DELETE`) — забываем id, при следующем `/goals` запомнится новое.
 
+Под прогресс-баром — строка «сколько осталось» (`daysLeftInPeriod`/`renderDaysLeft`): счёт в **целых UTC-сутках** до старта следующего периода, а не по разнице миллисекунд — иначе «осталось 14 дней» к вечеру превращалось бы в 13. День сброса берётся **из ключа сбора** (`resetDayFromKey`), а не из текущей настройки: `/setresetday` двигает только будущие периоды. Ноль и меньше — период закончился, строки нет вовсе; так она сама собой не появляется в `/history`. У закрытого сбора (цель взята) строку тоже не показываем — там своя строка про достигнутую цель, а дедлайн уже не важен. `renderFundraiser` принимает `now` последним параметром (дефолт `new Date()`), чтобы рендер оставался чистой функцией.
+
 ### Поток presence
 
 - Чек-ин: callback `presence:checkin:nick|anon` → `checkInResident` пишет в `state.presence[userId]` и дёргает `onPresenceChanged` (хук `syncHostingBoard`) — доска показывает актуальное «Сейчас в спейсе».

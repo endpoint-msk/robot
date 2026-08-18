@@ -346,10 +346,50 @@ const renderPreviousTop = (prev: Fundraiser): string => {
     return `Топ за ${monthNameRu(disp.month)}: ${parts.join(' · ')}`
 }
 
+/**
+ * Момент окончания периода = старт следующего (UTC). `f.month` 1-based, поэтому
+ * `Date.UTC(year, month, day)` сам перекатывает декабрь в январь следующего года.
+ * День сброса берём из ключа сбора, а не из текущей настройки: `/setresetday` двигает
+ * только будущие периоды, у уже заведённого граница остаётся прежней.
+ */
+const periodEndUtc = (f: Fundraiser): number =>
+    Date.UTC(f.year, f.month, resetDayFromKey(f.periodKey))
+
+/** Начало UTC-суток, которым принадлежит дата. */
+const utcDayStart = (date: Date): number =>
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+
+/**
+ * Сколько целых суток осталось до сброса сбора. Считаем по границам UTC-суток, а не
+ * по разнице миллисекунд: «осталось 14 дней» не должно превращаться в 13 к вечеру.
+ * 0 и меньше — период уже закончился (так отсекается история прошлых сборов).
+ */
+export const daysLeftInPeriod = (f: Fundraiser, now: Date = new Date()): number =>
+    Math.round((periodEndUtc(f) - utcDayStart(now)) / 86_400_000)
+
+/** Русское склонение: 1 день, 2 дня, 5 дней, 21 день. */
+const pluralDays = (n: number): string => {
+    const mod100 = n % 100
+    if (mod100 >= 11 && mod100 <= 14) return 'дней'
+    const mod10 = n % 10
+    if (mod10 === 1) return 'день'
+    if (mod10 >= 2 && mod10 <= 4) return 'дня'
+    return 'дней'
+}
+
+/** Строка «сколько осталось» под прогресс-баром. Пустая — если период уже закрыт. */
+const renderDaysLeft = (f: Fundraiser, now: Date): string => {
+    const days = daysLeftInPeriod(f, now)
+    if (days <= 0) return ''
+    if (days === 1) return '⏳ Сегодня последний день сбора'
+    return `⏳ До конца сбора ${days} ${pluralDays(days)}`
+}
+
 export const renderFundraiser = (
     f: Fundraiser,
     requestedPage = 1,
     previous?: Fundraiser,
+    now: Date = new Date(),
 ): RenderResult => {
     const total = totalAmount(f)
     const board = buildLeaderboard(f)
@@ -361,6 +401,9 @@ export const renderFundraiser = (
     const bar = renderProgressBar(total, f.goal)
 
     const lines: string[] = [header, bar]
+    // У закрытого сбора дедлайн уже не важен — там своя строка «цель достигнута».
+    const daysLeft = closed ? '' : renderDaysLeft(f, now)
+    if (daysLeft) lines.push(daysLeft)
     if (board.length === 0) {
         lines.push('', 'Пока нет ни одного доната.')
     } else {
