@@ -1,7 +1,7 @@
 // История взносов: собираемость за всё время, периоды и выгрузка таблицы.
 // Тап по периоду открывает список того месяца тем же экраном, что и текущий.
 
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { api } from '../api'
 import { duesWord, periodsWord } from '../dates'
 import { money } from '../format'
@@ -13,6 +13,7 @@ import { haptic } from '../telegram'
 import { ApiError, type DuesHistory as DuesHistoryData } from '../types'
 import { BackRow, BottomBar, EmptyState, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
 
 /** Каркас истории: собираемость крупной цифрой и полосой, дальше периоды списком. */
@@ -49,47 +50,35 @@ export function DuesHistory() {
     }
   }
 
-  if (loading && !data) {
-    return (
-      <Screen>
-        <BackRow label="Взносы" />
-        {/* Подпись считается по периодам, поэтому под ней полоса, а не текст. */}
-        <Header title="История" subtitle={<SkBlock w={196} h={14} />} />
-        {pending ? <HistorySkeleton /> : null}
-      </Screen>
-    )
-  }
+  // Шапка на месте во всех состояниях, подменяется только тело: каркас гаснет поверх
+  // проявляющейся истории, а не исчезает в том же кадре.
+  const frame = (subtitle: ReactNode, body: ReactNode, hasBottomBar = false) => (
+    <Screen hasBottomBar={hasBottomBar}>
+      <BackRow label="Взносы" />
+      <Header title="История" subtitle={subtitle} />
+      <Swap loading={loading && !data} skeleton={pending ? <HistorySkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
+
+  // Подпись считается по периодам, поэтому на время загрузки под ней полоса, а не текст.
+  if (loading && !data) return frame(<SkBlock w={196} h={14} />, null)
   // Упавший запрос — не «сборов ещё не было»: пустая история это утверждение о спейсе.
-  if (error) {
-    return (
-      <Screen>
-        <BackRow label="Взносы" />
-        <Header title="История" />
-        <ErrorState onRetry={reload} />
-      </Screen>
-    )
-  }
+  if (error) return frame(undefined, <ErrorState onRetry={reload} />)
   if (!data || data.periods.length === 0) {
-    return (
-      <Screen>
-        <BackRow label="Взносы" />
-        <Header title="История" />
-        <div className="card">
-          <EmptyState title="Сборов ещё не было" text="Первый период откроется в день сбора." />
-        </div>
-      </Screen>
+    return frame(
+      undefined,
+      <div className="card">
+        <EmptyState title="Сборов ещё не было" text="Первый период откроется в день сбора." />
+      </div>,
     )
   }
 
   const closed = data.periods.reduce((sum, p) => sum + (p.total - p.paid), 0)
-  return (
-    <Screen hasBottomBar>
-      <BackRow label="Взносы" />
-      <Header
-        title="История"
-        subtitle={`${periodsWord(data.periods.length)} · собрано ${money(data.collected, data.currency)}`}
-      />
-
+  return frame(
+    `${periodsWord(data.periods.length)} · собрано ${money(data.collected, data.currency)}`,
+    <>
       <div className="card dues-summary">
         <div className="dues-figure">
           <span className="df-main">{`${data.rate}%`}</span>
@@ -133,12 +122,14 @@ export function DuesHistory() {
       </div>
 
       <Footnote>В таблице строка на человека, столбец на месяц, суммы и итоги. Файл придёт в личку от бота.</Footnote>
+      {/* Панель уезжает порталом наружу экрана — слой подмены её не задевает. */}
       <BottomBar>
         <button className="primary-btn" onClick={() => void exportCsv()}>
           {icons.doc(18, '#fff')}
           Выгрузить таблицу
         </button>
       </BottomBar>
-    </Screen>
+    </>,
+    true,
   )
 }

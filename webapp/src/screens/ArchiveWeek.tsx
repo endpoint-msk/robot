@@ -7,6 +7,7 @@ import type { ArchiveWeekResponse } from '../types'
 import { BackRow, EmptyState, ErrorState, ReadonlyBadge, Sep } from '../components/common'
 import { DayRow } from '../components/DayRow'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock } from '../components/skeleton'
 
 /** Дней с заявками в неделе обычно меньше семи: рисуем типичную, а не полную неделю. */
@@ -53,7 +54,7 @@ export function ArchiveWeek() {
   if (error) {
     body = <ErrorState onRetry={reload} />
   } else if (!data) {
-    body = pending ? <WeekSkeleton /> : null
+    body = null
   } else {
     const all = data.flatMap((d) => d.requests)
     const approvedCount = all.filter((r) => r.status === 'approved').length
@@ -97,7 +98,9 @@ export function ArchiveWeek() {
         <div className="subtitle">{sub}</div>
       </div>
       <ReadonlyBadge />
-      {body}
+      <Swap loading={!data && !error} skeleton={pending ? <WeekSkeleton /> : null}>
+        {body}
+      </Swap>
     </Screen>
   )
 }

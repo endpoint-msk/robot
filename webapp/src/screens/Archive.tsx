@@ -20,6 +20,7 @@ import type { ArchiveResponse, ArchiveWeekSummary, GuestSearchResponse, GuestSum
 import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
 
 function weeksAgoLabel(weekStart: string, todayKey: string): string {
@@ -213,7 +214,7 @@ export function Archive() {
 
   let body
   if (weeks.error) body = <ErrorState onRetry={weeks.reload} />
-  else if (!weeks.data) body = weeks.pending ? <ArchiveSkeleton /> : null
+  else if (!weeks.data) body = null
   else if (weeks.data.length === 0)
     body = (
       <div className="card">
@@ -242,7 +243,14 @@ export function Archive() {
           </button>
         ) : null}
       </div>
-      {searching ? search : body}
+      {searching ? (
+        search
+      ) : (
+        // Каркас гаснет поверх пришедших недель, а не пропадает в том же кадре.
+        <Swap loading={weeks.loading && !weeks.data} skeleton={weeks.pending ? <ArchiveSkeleton /> : null}>
+          {body}
+        </Swap>
+      )}
     </Screen>
   )
 }

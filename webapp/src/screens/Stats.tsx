@@ -1,7 +1,7 @@
 // Статистика присутствия: сколько спейс работал, когда здесь людно, кто его держит
 // открытым. Раздел резидентский целиком — сервер проверяет это на каждой ручке.
 
-import { Fragment, useState } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { plural, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
@@ -21,6 +21,7 @@ import type { StatsOverview, StatsPeriod } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBars, SkBlock, SkCard, SkFigure, SkGrid } from '../components/skeleton'
 
 const PERIODS: { key: StatsPeriod; label: string }[] = [
@@ -238,35 +239,29 @@ export function Stats() {
     </>
   )
 
-  if (error) {
-    return (
-      <Screen>
-        {chrome('Журнал присутствия')}
-        <ErrorState onRetry={reload} />
-      </Screen>
-    )
-  }
+  // Меняется только тело — его и подменяет Swap: каркас гаснет поверх проявляющихся
+  // данных. Раньше он пропадал в том же кадре, и переход читался как рывок.
+  const frame = (subtitle: string, body: ReactNode) => (
+    <Screen>
+      {chrome(subtitle)}
+      <Swap loading={loading && !data} skeleton={pending ? <StatsSkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
 
-  if (loading && !data) {
-    return (
-      <Screen>
-        {chrome('Журнал присутствия')}
-        {pending ? <StatsSkeleton /> : null}
-      </Screen>
-    )
-  }
+  if (error) return frame('Журнал присутствия', <ErrorState onRetry={reload} />)
+  if (loading && !data) return frame('Журнал присутствия', null)
 
   if (!data || !data.hasData) {
-    return (
-      <Screen>
-        {chrome('Журнал присутствия')}
-        <div className="card">
-          <EmptyState
-            title="Пока нечего показать"
-            text="Журнал наполняется, когда резиденты отмечаются в спейсе. За выбранный период отметок не было."
-          />
-        </div>
-      </Screen>
+    return frame(
+      'Журнал присутствия',
+      <div className="card">
+        <EmptyState
+          title="Пока нечего показать"
+          text="Журнал наполняется, когда резиденты отмечаются в спейсе. За выбранный период отметок не было."
+        />
+      </div>,
     )
   }
 
@@ -305,13 +300,11 @@ export function Stats() {
     </Fragment>
   )
 
-  return (
-    <Screen>
-      {chrome(`${data.periodLabel} · журнал присутствия`)}
-
-      {/* key по периоду: смена окна меняет все цифры разом, и без ремаунта с
-          проявлением экран просто дёргается новыми числами. */}
-      <div className="stats-body" key={data.period}>
+  return frame(
+    `${data.periodLabel} · журнал присутствия`,
+    // key по периоду: смена окна меняет все цифры разом, и без ремаунта с
+    // проявлением экран просто дёргается новыми числами.
+    <div className="stats-body" key={data.period}>
       <div className="card stats-card">
         <div className="stats-figure">
           <span className="sf-main">{hoursNum(data.openMinutes)}</span>
@@ -396,7 +389,6 @@ export function Stats() {
           </div>
         </button>
       </div>
-      </div>
-    </Screen>
+    </div>,
   )
 }

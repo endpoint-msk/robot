@@ -1,7 +1,7 @@
 // Карточка резидента по взносам: просрочка, ставка и вся история по месяцам.
 // Читают все резиденты, меняют ставку и закрывают месяцы только dev.
 
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay } from '../dates'
 import { money } from '../format'
@@ -14,6 +14,7 @@ import { ApiError, type DuesPerson as DuesPersonData, type DuesRateKind } from '
 import { BackRow, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
 import { userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
 import { debtWord } from './Dues'
 
@@ -65,35 +66,24 @@ export function DuesPerson() {
     }
   }, [userId])
 
+  // Меняется и шапка (она целиком из ответа), и тело; подменяем через Swap только
+  // тело — каркас гаснет поверх проявляющейся карточки, а не исчезает в том же кадре.
   // Скелет только на первой загрузке: перезапрос после смены ставки должен
   // обновлять карточку на месте, а не подменять экран.
-  if (loading && !data) {
-    return (
-      <Screen>
-        <BackRow label="Взносы" />
-        {/* Шапка тут целиком из ответа: в экран приходит только userId. */}
-        <Header title={<SkBlock w={186} h={30} />} subtitle={<SkBlock w={108} h={14} />} />
-        {pending ? <PersonSkeleton /> : null}
-      </Screen>
-    )
-  }
-  if (error) {
-    return (
-      <Screen>
-        <BackRow label="Взносы" />
-        <Header title="Взносы" />
-        <ErrorState onRetry={reload} />
-      </Screen>
-    )
-  }
-  if (!data) {
-    return (
-      <Screen>
-        <BackRow label="Взносы" />
-        <Header title="Не нашёл" subtitle="Человека нет ни в одном периоде взносов." />
-      </Screen>
-    )
-  }
+  const frame = (title: ReactNode, subtitle: ReactNode, body: ReactNode) => (
+    <Screen>
+      <BackRow label="Взносы" />
+      <Header title={title} subtitle={subtitle} />
+      <Swap loading={loading && !data} skeleton={pending ? <PersonSkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
+
+  // Шапка тут целиком из ответа: в экран приходит только userId.
+  if (loading && !data) return frame(<SkBlock w={186} h={30} />, <SkBlock w={108} h={14} />, null)
+  if (error) return frame('Взносы', undefined, <ErrorState onRetry={reload} />)
+  if (!data) return frame('Не нашёл', 'Человека нет ни в одном периоде взносов.', null)
 
   const current = data.months[0]
 
@@ -127,11 +117,10 @@ export function DuesPerson() {
     }
   }
 
-  return (
-    <Screen>
-      <BackRow label="Взносы" />
-      <Header title={data.user.name} subtitle={data.user.username ? `@${data.user.username}` : 'без ника'} />
-
+  return frame(
+    data.user.name,
+    data.user.username ? `@${data.user.username}` : 'без ника',
+    <>
       {data.missed > 0 && data.rate.amount > 0 ? (
         <div className="status-card" style={{ background: data.missed >= 2 ? 'rgba(255,59,48,0.1)' : 'rgba(255,149,0,0.1)' }}>
           <div className="status-card-head">
@@ -258,6 +247,6 @@ export function DuesPerson() {
         })}
       </div>
       {data.canEdit ? <Footnote>Тап по месяцу закрывает его задним числом: деньги нередко доносят позже.</Footnote> : null}
-    </Screen>
+    </>,
   )
 }

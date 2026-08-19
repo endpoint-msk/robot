@@ -1,7 +1,7 @@
 // Карточка человека в журнале: сколько бывает, когда приходит, последние визиты.
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { action, api } from '../api'
 import {
   addDays,
@@ -25,6 +25,7 @@ import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock, SkCard, SkGrid, SkQuad, SkRows } from '../components/skeleton'
 
 const DOT_WEEKS = 12
@@ -76,25 +77,21 @@ export function StatsPerson() {
     [userId],
   )
 
-  const back = <BackRow label={backLabel ?? 'Статистика'} />
-  if (error) {
-    return (
-      <Screen>
-        {back}
-        <ErrorState onRetry={reload} />
-      </Screen>
-    )
-  }
+  // Подменяется только тело: каркас гаснет поверх проявляющейся карточки, а не
+  // пропадает в том же кадре, в котором приходят данные.
+  const frame = (body: ReactNode) => (
+    <Screen>
+      <BackRow label={backLabel ?? 'Статистика'} />
+      <Swap loading={!data && !error} skeleton={pending ? <PersonSkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
+
+  if (error) return frame(<ErrorState onRetry={reload} />)
   // Данных нет только пока идёт первый запрос: `reload` из «Резидент с» держит
   // прошлый ответ на экране, чтобы карточка не мигала спиннером после правки.
-  if (!data) {
-    return (
-      <Screen>
-        {back}
-        {pending ? <PersonSkeleton /> : null}
-      </Screen>
-    )
-  }
+  if (!data) return frame(null)
 
   const isMe = boot!.me.id === userId
   const sinceKey = data.manualSince || data.joinedSince || data.firstDateKey
@@ -142,9 +139,8 @@ export function StatsPerson() {
     })
   })()
 
-  return (
-    <Screen>
-      {back}
+  return frame(
+    <>
       <div className="person-head">
         <Avatar user={statsAvatarUser(data.user)} className="stat-avatar big" profile />
         <div className="person-head-text">
@@ -300,6 +296,6 @@ export function StatsPerson() {
           </Footnote>
         </>
       ) : null}
-    </Screen>
+    </>,
   )
 }

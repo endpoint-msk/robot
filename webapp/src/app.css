@@ -230,6 +230,40 @@ body {
     .screen.in-forward, .screen.in-back, .screen.in-fade { animation: screen-in 0.12s ease; }
 }
 
+/* Каркас → данные. Содержимое проявляется, каркас гаснет поверх него: одновременно,
+   иначе между ними мелькает пустой экран. Уходящий слой вынут из потока, чтобы высота
+   на время перехода оставалась высотой данных. */
+.swap { position: relative; }
+.swap-in { animation: swap-in 0.26s ease both; }
+.swap-out {
+    position: absolute;
+    inset: 0;
+    animation: swap-out 0.22s ease both;
+    /* Каркас ещё висит поверх данных — тапы должны проходить сквозь него. */
+    pointer-events: none;
+}
+@keyframes swap-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+/* Без transform: он создал бы containing block для position:fixed внутри (нижняя
+   панель), и та на время анимации считала бы координаты не от окна. */
+.swap-in.fade-only { animation-name: screen-fade-in; }
+@keyframes screen-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes swap-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+/* Правило ниже определений, а не в общем блоке выше: одинаковый вес селектора решает
+   порядок, и из общего блока оно бы проиграло. */
+@media (prefers-reduced-motion: reduce) {
+    .swap-in { animation: screen-in 0.12s ease both; }
+    .swap-out { animation: swap-out 0.12s ease both; }
+}
+
 /* --- Шапка экрана --- */
 
 .back-row {
@@ -918,8 +952,7 @@ body {
     line-height: 1.45;
     color: rgba(var(--sec), 0.45);
 }
-.build-commit {
-    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+.build-link {
     font-size: 13px;
     color: var(--blue);
     background: none;
@@ -927,7 +960,8 @@ body {
     padding: 0;
     cursor: pointer;
 }
-.build-commit:active { opacity: 0.5; }
+.build-link.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+.build-link:active { opacity: 0.5; }
 
 /* --- Новая заявка: чипы дней --- */
 

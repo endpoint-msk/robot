@@ -7,6 +7,7 @@ import { haptic } from '../telegram'
 import type { AnnounceLatest, AnnounceSendResult } from '../types'
 import { BackRow, EmptyState, Header, SectionTitle, SpinnerCenter } from '../components/common'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 
 function AnnounceForm({ info }: { info: AnnounceLatest }) {
   const [text, setText] = useState(info.defaultText || '')
@@ -106,7 +107,7 @@ export function Announce() {
   }, [])
 
   let body
-  if (state.status === 'loading') body = <SpinnerCenter />
+  if (state.status === 'loading') body = null
   else if (state.status === 'error')
     body = (
       <div className="card">
@@ -119,7 +120,9 @@ export function Announce() {
     <Screen>
       <BackRow label="Dev" />
       <Header title="Анонс" subtitle="Рассылка обновлений и объявлений в чаты" />
-      {body}
+      <Swap loading={state.status === 'loading'} skeleton={<SpinnerCenter />}>
+        {body}
+      </Swap>
     </Screen>
   )
 }

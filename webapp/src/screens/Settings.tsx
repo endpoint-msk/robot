@@ -146,13 +146,23 @@ function CalendarSection() {
 function BuildSign() {
   const { data } = useStore()
   const build = data?.build
-  if (!build) return null
   return (
     <div className="build-sign">
-      Endpoint robot, now running{' '}
-      <button type="button" className="build-commit" onClick={() => openUrl(build.url)}>
-        {build.commit}
+      made by{' '}
+      <button type="button" className="build-link" onClick={() => openUrl('https://keetsta.me')}>
+        Keet
       </button>
+      {' · Endpoint robot'}
+      {/* Коммита может не быть вовсе (бот не знает своей сборки) — подпись про автора
+          от этого не должна пропадать, поэтому хвост про версию необязателен. */}
+      {build ? (
+        <>
+          {', now running '}
+          <button type="button" className="build-link mono" onClick={() => openUrl(build.url)}>
+            {build.commit}
+          </button>
+        </>
+      ) : null}
     </div>
   )
 }

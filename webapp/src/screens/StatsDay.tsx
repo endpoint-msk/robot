@@ -1,6 +1,7 @@
 // Один день журнала: сколько спейс был открыт и кто когда внутри был.
 // Таймлайн строится по сырым сессиям, поэтому доступен, пока живут месячные файлы.
 
+import type { ReactNode } from 'react'
 import { api } from '../api'
 import { fmtWeekdayDate, plural } from '../dates'
 import { useRemote } from '../remote'
@@ -10,6 +11,7 @@ import type { StatsDayView } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock, SkCard } from '../components/skeleton'
 
 /**
@@ -106,35 +108,25 @@ export function StatsDay() {
     [dateKey],
   )
 
-  const back = <BackRow label={backLabel ?? 'История по дням'} />
+  // Шапка одна на все состояния, меняется только тело — его и подменяет Swap:
+  // каркас гаснет поверх проявляющихся данных, а не исчезает рывком.
+  const frame = (body: ReactNode) => (
+    <Screen>
+      <BackRow label={backLabel ?? 'История по дням'} />
+      <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
+      <Swap loading={loading && !data} skeleton={pending ? <DaySkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
 
-  if (error) {
-    return (
-      <Screen>
-        {back}
-        <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
-        <ErrorState onRetry={reload} />
-      </Screen>
-    )
-  }
-  if (loading && !data) {
-    return (
-      <Screen>
-        {back}
-        <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
-        {pending ? <DaySkeleton /> : null}
-      </Screen>
-    )
-  }
+  if (error) return frame(<ErrorState onRetry={reload} />)
+  if (loading && !data) return frame(null)
   if (!data || data.rows.length === 0) {
-    return (
-      <Screen>
-        {back}
-        <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
-        <div className="card">
-          <EmptyState title="В этот день отметок не было" />
-        </div>
-      </Screen>
+    return frame(
+      <div className="card">
+        <EmptyState title="В этот день отметок не было" />
+      </div>,
     )
   }
 
@@ -145,11 +137,8 @@ export function StatsDay() {
   for (let t = start; t <= end; t += step) ticks.push(t)
   const pct = (minutes: number): number => ((minutes - start) / span) * 100
 
-  return (
-    <Screen>
-      {back}
-      <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
-
+  return frame(
+    <>
       <div className="card stats-card">
         <div className="stats-figure">
           <span className="sf-main sf-mid">{fmtDuration(data.openMinutes)}</span>
@@ -235,6 +224,6 @@ export function StatsDay() {
             .join(', ')}). Отметок в это время могло быть больше.`}
         </Footnote>
       ) : null}
-    </Screen>
+    </>,
   )
 }

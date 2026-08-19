@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { App } from './App'
+import { Swap } from './components/Swap'
 import { bump, getState, pop, push, setData, setPerspective } from './store'
 import { applyTheme } from './theme'
 import { tg } from './telegram'
@@ -125,6 +126,12 @@ export function Root() {
 
   if (phase === 'notg') return <NoTg />
   if (phase === 'error') return <BootError message={err} />
-  if (phase === 'loading') return <CenterSpinner />
-  return <App />
+  // Спиннер не исчезает в том же кадре, в котором появляется первый экран: он гаснет
+  // поверх него, пока тот проявляется. Первое, что человек видит после открытия
+  // миниаппа, — этот переход, и рывок здесь заметнее всего.
+  return (
+    <Swap loading={phase === 'loading'} skeleton={<CenterSpinner />} fadeOnly>
+      <App />
+    </Swap>
+  )
 }

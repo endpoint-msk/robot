@@ -15,6 +15,7 @@ import { sec } from '../theme'
 import type { GuestRequestsResponse, HostingRequest, User } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, ReadonlyBadge, Sep, SectionTitle } from '../components/common'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 
 function VisitRow({ r }: { r: HostingRequest }) {
@@ -54,12 +55,7 @@ export function GuestVisits() {
   if (guest.error) {
     body = <ErrorState onRetry={guest.reload} />
   } else if (!guest.data) {
-    // Шапка и заметка уже настоящие — под скелетом только список заявок.
-    body = guest.pending ? (
-      <div aria-busy="true" aria-label="Загружаем заявки гостя">
-        <SkRows count={4} avatar />
-      </div>
-    ) : null
+    body = null
   } else if (guest.data.requests.length === 0) {
     body = (
       <div className="card">
@@ -107,7 +103,19 @@ export function GuestVisits() {
         </>
       ) : null}
       <SectionTitle>Заявки</SectionTitle>
-      {body}
+      {/* Шапка и заметка уже настоящие — подменяется только список заявок. */}
+      <Swap
+        loading={!guest.data && !guest.error}
+        skeleton={
+          guest.pending ? (
+            <div aria-busy="true" aria-label="Загружаем заявки гостя">
+              <SkRows count={4} avatar />
+            </div>
+          ) : null
+        }
+      >
+        {body}
+      </Swap>
     </Screen>
   )
 }

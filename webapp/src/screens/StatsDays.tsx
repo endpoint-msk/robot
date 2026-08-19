@@ -1,7 +1,7 @@
 // История по дням. Месяцы — свёрнутые группы: за год журнала выходит триста строк,
 // и прокрутить их до нужной даты нереально. Раскрыт последний, остальные тапом.
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { dayNum, MONTHS_NOM, monthIdx, peopleWord, plural, WEEKDAYS_SHORT, weekdayIdx, yearOf } from '../dates'
 import { icons } from '../icons'
@@ -11,6 +11,7 @@ import { fmtDuration, hoursNum } from '../stats'
 import type { StatsDaySummary, StatsDaysView } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 
 type Group = { key: string; title: string; days: StatsDaySummary[]; minutes: number }
@@ -67,33 +68,26 @@ export function StatsDays() {
     if (freshMonth) setOpen([freshMonth])
   }, [freshMonth])
 
-  if (error) {
-    return (
-      <Screen>
-        <BackRow label="Статистика" />
-        <Header title="История по дням" />
-        <ErrorState onRetry={reload} />
-      </Screen>
-    )
-  }
-  if (loading && !data) {
-    return (
-      <Screen>
-        <BackRow label="Статистика" />
-        <Header title="История по дням" />
-        {pending ? <DaysSkeleton /> : null}
-      </Screen>
-    )
-  }
+  // Шапка держится на месте, подменяется только тело: каркас гаснет поверх
+  // проявляющихся данных, а не исчезает в том же кадре.
+  const frame = (subtitle: string | undefined, body: ReactNode) => (
+    <Screen>
+      <BackRow label="Статистика" />
+      <Header title="История по дням" subtitle={subtitle} />
+      <Swap loading={loading && !data} skeleton={pending ? <DaysSkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
+
+  if (error) return frame(undefined, <ErrorState onRetry={reload} />)
+  if (loading && !data) return frame(undefined, null)
   if (!data || data.days.length === 0) {
-    return (
-      <Screen>
-        <BackRow label="Статистика" />
-        <Header title="История по дням" />
-        <div className="card">
-          <EmptyState title="Дней с отметками пока нет" />
-        </div>
-      </Screen>
+    return frame(
+      undefined,
+      <div className="card">
+        <EmptyState title="Дней с отметками пока нет" />
+      </div>,
     )
   }
 
@@ -101,13 +95,9 @@ export function StatsDays() {
   const toggle = (key: string): void =>
     setOpen((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]))
 
-  return (
-    <Screen>
-      <BackRow label="Статистика" />
-      <Header
-        title="История по дням"
-        subtitle={`${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`}
-      />
+  return frame(
+    `${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`,
+    <>
       {groups.map((group) => {
         const isOpen = open.includes(group.key)
         return (
@@ -152,6 +142,6 @@ export function StatsDays() {
           </div>
         )
       })}
-    </Screen>
+    </>,
   )
 }

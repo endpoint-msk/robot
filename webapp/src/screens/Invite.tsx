@@ -14,6 +14,7 @@ import type { InviteCandidate, InviteListResponse } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 
 function PersonRow({
@@ -109,7 +110,7 @@ export function Invite() {
   const [query, setQuery] = useState('')
   const [invited, setInvited] = useState<Set<number>>(new Set())
   const [busyId, setBusyId] = useState<number | null>(null)
-  const { data, error, pending, reload } = useRemote(
+  const { data, error, loading, pending, reload } = useRemote(
     async () => (await api<InviteListResponse>('invite.list', { dateKey })).people,
     [dateKey],
   )
@@ -129,7 +130,7 @@ export function Invite() {
 
   let body
   if (error) body = <ErrorState onRetry={reload} />
-  else if (!data) body = pending ? <InviteSkeleton /> : null
+  else if (!data) body = null
   else {
     const q = query.trim().toLowerCase()
     const match = (p: InviteCandidate): boolean =>
@@ -168,7 +169,9 @@ export function Invite() {
           />
         </div>
       </div>
-      {body}
+      <Swap loading={loading && !data} skeleton={pending ? <InviteSkeleton /> : null}>
+        {body}
+      </Swap>
     </Screen>
   )
 }

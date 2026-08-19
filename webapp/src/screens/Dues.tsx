@@ -15,6 +15,7 @@ import type { DuesRow, DuesSnapshot } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
 import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
+import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
 import { SwipeRow, type SwipeAction } from '../components/SwipeRow'
 
@@ -292,37 +293,33 @@ export function DuesScreen() {
     if (periodKey) remote.reload()
   }
 
+  // Шапка одна на все состояния, меняется только тело — его и подменяет Swap: каркас
+  // гаснет поверх проявившегося списка, а не пропадает в том же кадре.
   // Скелет только на первой загрузке: перезапрос после отметки должен обновлять
   // список на месте, а не подменять экран.
-  if (periodKey && remote.loading && !remote.data) {
-    return (
-      <Screen>
-        <BackRow label={back} />
-        {/* Заголовок известен заранее, подпись с названием периода — нет. */}
-        <Header title="Взносы" subtitle={<SkBlock w={168} h={14} />} />
-        {remote.pending ? <DuesSkeleton /> : null}
-      </Screen>
-    )
-  }
+  const loading = !!periodKey && remote.loading && !remote.data
+  const frame = (subtitle: ReactNode, body: ReactNode) => (
+    <Screen>
+      <BackRow label={back} />
+      <Header title="Взносы" subtitle={subtitle} />
+      <Swap loading={loading} skeleton={remote.pending ? <DuesSkeleton /> : null}>
+        {body}
+      </Swap>
+    </Screen>
+  )
+
+  // Заголовок известен заранее, подпись с названием периода — нет.
+  if (loading) return frame(<SkBlock w={168} h={14} />, null)
   // Упавший запрос — не «сбор выключен»: про настройки спейса экран в этот момент
   // ничего не знает.
-  if (periodKey && remote.error) {
-    return (
-      <Screen>
-        <BackRow label={back} />
-        <Header title="Взносы" />
-        <ErrorState onRetry={remote.reload} />
-      </Screen>
-    )
-  }
+  if (periodKey && remote.error) return frame(undefined, <ErrorState onRetry={remote.reload} />)
   // Пустое состояние: сбор выключен либо ещё ни разу не открывался. Обычный резидент
   // сюда не попадает (у него в bootstrap просто нет раздела), поэтому ниже вход в
   // настройки — единственный способ включить сбор обратно.
   if (!snap || !snap.periodKey) {
-    return (
-      <Screen>
-        <BackRow label={back} />
-        <Header title="Взносы" />
+    return frame(
+      undefined,
+      <>
         <div className="card">
           <EmptyState
             title={snap?.enabled ? 'Сбор ещё не открывался' : 'Сбор выключен'}
@@ -344,7 +341,7 @@ export function DuesScreen() {
             </button>
           </div>
         ) : null}
-      </Screen>
+      </>,
     )
   }
 
@@ -380,13 +377,9 @@ export function DuesScreen() {
   }
   sections.push(listOf('Не платят', exempt))
 
-  return (
-    <Screen>
-      <BackRow label={back} />
-      <Header
-        title="Взносы"
-        subtitle={`${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`}
-      />
+  return frame(
+    `${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`,
+    <>
       <MyDues snap={snap} onChanged={onChanged} />
       <Summary snap={snap} />
       {sections}
@@ -418,6 +411,6 @@ export function DuesScreen() {
           ? 'Свайп по строке: ставка человека и отметка наличными. У подтверждённого — снять отметку.'
           : 'Чужие строки только на чтение: подтверждает dev. Свой взнос отмечается кнопкой выше.'}
       </Footnote>
-    </Screen>
+    </>,
   )
 }
