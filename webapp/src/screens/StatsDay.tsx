@@ -15,9 +15,10 @@ import { Swap } from '../components/Swap'
 import { SkBlock, SkCard } from '../components/skeleton'
 
 /**
- * Сколько делений подписываем на шкале. Дорожка делит строку с ником и колонкой
- * времени, на 390px ей достаётся около 150px — семь подписей по 28px там просто
- * слипались в сплошную строку цифр.
+ * Сколько делений подписываем на шкале — ровно столько, первое в начале дорожки,
+ * последнее в конце. Дорожка делит строку с ником и колонкой времени, на 390px ей
+ * достаётся около 150px — семь подписей по 28px там просто слипались в сплошную
+ * строку цифр.
  */
 const MAX_TICKS = 3
 
@@ -132,9 +133,14 @@ export function StatsDay() {
 
   const { start, end } = rangeOf(data)
   const span = Math.max(1, end - start)
-  const step = Math.ceil(span / 60 / MAX_TICKS) * 60
+  // Делим окно на равные части, а не шагаем круглыми часами от начала: шаг, не
+  // делящий окно нацело, не доводил подписи до конца дорожки (14:00 → 00:00 шагом
+  // 4 ч упирается в 22:00), а последняя подпись всё равно прижималась к правому
+  // краю — и уезжала от своего деления на всю свою ширину. Окно кратно часу,
+  // поэтому деления попадают на :00 или :30.
+  const step = span / (MAX_TICKS - 1)
   const ticks: number[] = []
-  for (let t = start; t <= end; t += step) ticks.push(t)
+  for (let i = 0; i < MAX_TICKS; i++) ticks.push(start + step * i)
   const pct = (minutes: number): number => ((minutes - start) / span) * 100
 
   return frame(
