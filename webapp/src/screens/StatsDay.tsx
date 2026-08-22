@@ -7,7 +7,7 @@ import { fmtWeekdayDate, plural } from '../dates'
 import { useRemote } from '../remote'
 import { push, useParams } from '../store'
 import { fmtDuration, fmtMinutes, statsAvatarUser } from '../stats'
-import type { StatsDayView } from '../types'
+import type { StatsDayRow, StatsDayView } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
@@ -34,6 +34,47 @@ const rangeOf = (data: StatsDayView): { start: number; end: number } => {
     end = Math.min(24 * 60, end + 60)
   }
   return { start, end }
+}
+
+/** Человек на таймлайне: все его визиты за день — отрезки одной дорожки. */
+type PersonRow = {
+  userId: number
+  username: string | null
+  label: string
+  visits: StatsDayRow[]
+  fromMin: number
+  toMin: number
+}
+
+/**
+ * Строка таймлайна — человек, а не визит. Отлучка длиннее склейки (15 мин) режет день
+ * на несколько сессий, и каждая занимала свою строку: один человек с перерывом на обед
+ * выглядел как двое, споря с «1 человек за день» в карточке выше. Порядок людей — по
+ * первому приходу, он уже задан сортировкой строк с сервера.
+ */
+const groupByPerson = (rows: StatsDayRow[]): PersonRow[] => {
+  const byUser = new Map<number, PersonRow>()
+  const out: PersonRow[] = []
+  for (const r of rows) {
+    const seen = byUser.get(r.userId)
+    if (seen) {
+      seen.visits.push(r)
+      seen.fromMin = Math.min(seen.fromMin, r.fromMin)
+      seen.toMin = Math.max(seen.toMin, r.toMin)
+      continue
+    }
+    const person: PersonRow = {
+      userId: r.userId,
+      username: r.username,
+      label: r.label,
+      visits: [r],
+      fromMin: r.fromMin,
+      toMin: r.toMin,
+    }
+    byUser.set(r.userId, person)
+    out.push(person)
+  }
+  return out
 }
 
 /**
@@ -142,6 +183,7 @@ export function StatsDay() {
   const ticks: number[] = []
   for (let i = 0; i < MAX_TICKS; i++) ticks.push(start + step * i)
   const pct = (minutes: number): number => ((minutes - start) / span) * 100
+  const people = groupByPerson(data.rows)
 
   return frame(
     <>
@@ -186,29 +228,34 @@ export function StatsDay() {
           </div>
           <div className="tl-when" />
         </div>
-        {data.rows.map((r, i) => (
+        {people.map((p) => (
           <button
             type="button"
             className="tl-row"
-            key={`${r.userId}-${i}`}
-            onClick={() => push('statsPerson', { userId: r.userId, backLabel: 'Назад' })}
+            key={p.userId}
+            onClick={() => push('statsPerson', { userId: p.userId, backLabel: 'Назад' })}
           >
             <div className="tl-name">
-              <Avatar user={statsAvatarUser(r)} className="stat-avatar small" />
-              <span>{r.label}</span>
+              <Avatar user={statsAvatarUser(p)} className="stat-avatar small" />
+              <span>{p.label}</span>
             </div>
             <div className="tl-track">
               {ticks.slice(1, -1).map((t) => (
                 <i className="tl-grid" key={t} style={{ left: `${pct(t)}%` }} />
               ))}
-              <i
-                className={'tl-bar' + (r.source === 'mac' ? ' mac' : '')}
-                style={{ left: `${pct(r.fromMin)}%`, width: `${Math.max(1.5, pct(r.toMin) - pct(r.fromMin))}%` }}
-              />
+              {p.visits.map((v, j) => (
+                <i
+                  key={`${v.fromMin}-${j}`}
+                  className={'tl-bar' + (v.source === 'mac' ? ' mac' : '')}
+                  style={{ left: `${pct(v.fromMin)}%`, width: `${Math.max(1.5, pct(v.toMin) - pct(v.fromMin))}%` }}
+                />
+              ))}
             </div>
             {/* Интервал отдельной колонкой, а не под ником: в вебвью нет hover, и
-                через нативный title время визита было не прочитать вовсе. */}
-            <div className="tl-when">{`${fmtMinutes(r.fromMin)}–${fmtMinutes(r.toMin)}`}</div>
+                через нативный title время визита было не прочитать вовсе. У нескольких
+                визитов это от первого прихода до последнего ухода — перерывы видно по
+                самой дорожке. */}
+            <div className="tl-when">{`${fmtMinutes(p.fromMin)}–${fmtMinutes(p.toMin)}`}</div>
           </button>
         ))}
         <div className="tl-legend">
