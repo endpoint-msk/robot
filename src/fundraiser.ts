@@ -154,6 +154,14 @@ const nickLink = (rawNick: string): string => {
     return `<a href="${href}">@${escapeHtml(nick)}</a>`
 }
 
+/**
+ * Описание сбора (реквизиты, ссылки) как готовая разметка: `html()` схлопывает `\n`
+ * в пробел, поэтому перенос строки даёт только `<br>`. Отдельная функция, потому что
+ * то же описание уходит человеку в ответ на `/donate` без прав админа.
+ */
+export const renderDescription = (description: string): string =>
+    description.split('\n').map((l) => escapeHtml(l)).join('<br>')
+
 /** Размер одной страницы лидерборда. */
 export const PAGE_SIZE = 10
 
@@ -437,8 +445,7 @@ export const renderFundraiser = (
     if (description) {
         // Многострочное описание (реквизиты/ссылки): каждая строка экранируется,
         // переносы — через <br>. URL Telegram подсветит сам, даже без web-превью.
-        const descLines = description.split('\n').map((l) => escapeHtml(l))
-        lines.push('', ...descLines)
+        lines.push('', renderDescription(description))
     }
     return { text: lines.join('<br>'), page, pages, closed }
 }

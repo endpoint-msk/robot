@@ -13,6 +13,7 @@ import {
     pastFundraisers,
     periodAnchorOf,
     periodKeyOf,
+    renderDescription,
     renderFundraiser,
     renderHistoryList,
     totalPages,
@@ -236,6 +237,8 @@ const requireUserInAllowedChat = async (
     return true
 }
 
+const ADMIN_ONLY_TEXT = 'Эта команда доступна только админам этой группы.'
+
 /** Прошёл ли пользователь все проверки (чат в allowlist + админ). Если нет - отвечает и возвращает false. */
 export const requireChatAdminInAllowedChat = async (
     residents: ResidentDirectory,
@@ -245,7 +248,7 @@ export const requireChatAdminInAllowedChat = async (
     if (!(await requireUserInAllowedChat(msg, allowed))) return false
     const chatId = Number(msg.chat.id)
     if (!(await residents.isChatAdmin(chatId, msg.sender!.id))) {
-        await msg.answerText('Эта команда доступна только админам этой группы.')
+        await msg.answerText(ADMIN_ONLY_TEXT)
         return false
     }
     return true
@@ -553,7 +556,20 @@ export const registerHandlers = (
     })
 
     dp.onNewMessage(filters.command('donate'), async (msg) => {
-        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
+        if (!(await requireUserInAllowedChat(msg, allowedChats))) return
+        if (!(await residents.isChatAdmin(Number(msg.chat.id), msg.sender!.id))) {
+            // Учёт донатов ведёт админ, но набравший /donate обычно хочет перевести
+            // деньги, а не записать чужой перевод: отвечаем ему описанием сбора
+            // (/setdesc - там реквизиты). Описания нет - остаётся прежний отказ,
+            // иначе на месте ответа оказывается пустота.
+            const description = (ensureCurrentFundraiser(storage).description ?? '').trim()
+            if (description) {
+                await msg.answerText(html(renderDescription(description)), { disableWebPreview: true })
+            } else {
+                await msg.answerText(ADMIN_ONLY_TEXT)
+            }
+            return
+        }
         const args = msg.command.slice(1)
         const parsed = parseDonateArgs(args)
         if (typeof parsed === 'string') {
