@@ -143,6 +143,11 @@ function CalendarSection() {
  * Ссылку целиком собирает сервер (только он знает репо и свою сборку); нет коммита —
  * подписи нет вовсе, писать «неизвестно» бессмысленно.
  */
+// Фавиконка keetsta.me (20×20 PNG) — вшита data-URI: внешние картинки режет CSP,
+// а тянуть её сетевым запросом ради 800 байт незачем.
+const KEET_FAVICON =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAALGSURBVHgBzVRdSJNhFD7f97nNzc20+TNTyi6aTmhzxRzMLQUpNcyr1kUEFuhFUDfZnVh3YhQIhRiIXihUF3VTN9GPqHixFFICF85EFkaGuNQ158Tt6d2rm22t8sKLDhy+9zvv4TnnPOecVwAT2kcRaZ/l/wdMS2X8lVZBECgSiXBb9CyKYvz8V8CoUzgcJo/HQ653Lpr1zNL8/Dx5vV7y+/20tbVFKpWKDAYDlZWVkcPhILPZTGq1OhGcRUcgEMDgwCBsNhtkMhmYw560qKgI7e3tmJubQxSHT8ydzk5o1Oo9g6RShUKBpqYm+Hy+6L+wb3NYUlJCiYCMiuysA5Sbe5AWFr7S+vrGtnGb5X/ACdwnDqhUKqijo5Uq7Vbq6uqlb4s+WmTqds/EAXNysujK5UskV8iooEBLn1gD7z8YYA2V2G1kO2iMB7vdjB8BF06e0EMUJGYTYbVWMOIL+TktTUJPTwcqKkzcXxQFvHrZyxpp4vcxnPhga3OySS4nOlSYx5IHj7a25qOz9dX8rNVm0uZmkCYmPsSLlKQw1dRUJtJRbiqHJEnQZKowNfUE3s8vUHvGAp0uC48f3UVzywUeWaWSY2bmDY4W5/PsnOdr2bi5UGkz7mQsQq/Xg4LBIIaHh2GxWGAoPYyhoYdY849gaek1xsb6UHxEFy/n+rWL+Oh+jqfP7uHLwlt0d9+EOkOJ6qoq9Pf1Y3VlFYQdYRsCo9EIuSwN5aZjaGhwQKNRMj53+ZFYZrWnrbh96ypO2Y+jQJeH8fFxhEKhGMwuYFSWl5fReqOVgcp4CbyUGNn8K/IAUTWUlsI9PY1kEZIf2Ojv5PtJamtr4/uMCCi0ucEeBYlTn5+fR80tzeR0OlmjtL+PI1JIdC8bzzWyLCWkK9JZQ1TIUGUgPV2J+rq6hBKTJSXgyvcVaDI0STsrclXIFRgdGf0j4E8ktgAM3uIFFgAAAABJRU5ErkJggg=='
+
 function BuildSign() {
   const { data } = useStore()
   const build = data?.build
@@ -150,6 +155,7 @@ function BuildSign() {
     <div className="build-sign">
       made by{' '}
       <button type="button" className="build-link" onClick={() => openUrl('https://keetsta.me')}>
+        <img className="build-fav" src={KEET_FAVICON} alt="" width={13} height={13} />
         Keet
       </button>
       {' · Endpoint robot'}
@@ -159,6 +165,7 @@ function BuildSign() {
         <>
           {', now running '}
           <button type="button" className="build-link mono" onClick={() => openUrl(build.url)}>
+            <span className="build-fav">{icons.github(12)}</span>
             {build.commit}
           </button>
         </>

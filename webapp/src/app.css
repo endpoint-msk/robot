@@ -962,6 +962,12 @@ body {
 }
 .build-link.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
 .build-link:active { opacity: 0.5; }
+.build-fav {
+    display: inline-flex;
+    vertical-align: -2px;
+    margin-right: 3px;
+    border-radius: 3px;
+}
 
 /* --- Новая заявка: чипы дней --- */
 
