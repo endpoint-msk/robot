@@ -3,8 +3,9 @@
 // Разделение важное. Сырых сессий набегает тысячи в год, а `data.json` переписывается
 // целиком на каждую мутацию — поэтому они лежат месячными ndjson-файлами рядом со
 // стейтом (тот же приём, что у афиш ивентов), дозаписью, без переписывания. В стейт
-// попадают только посчитанные по ним итоги дня: их вес не зависит от числа визитов,
-// и по ним считается вся статистика «за всё время», когда старые файлы уже удалены.
+// попадают только посчитанные по ним итоги дня: их вес не зависит от числа визитов.
+// Сырьё не обрезается по сроку — за год это порядка мегабайта, зато поминутный
+// таймлайн любого прошлого дня остаётся доступен навсегда.
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -12,8 +13,6 @@ import { dayKeyOf } from './hosting.js'
 import type { Storage } from './storage.js'
 import type { PresenceDay, PresenceEndReason, PresenceSession, ResidentPresence } from './types.js'
 
-/** Сколько месячных файлов сырых сессий держим: год плюс текущий месяц. */
-export const RAW_RETENTION_MONTHS = 13
 /**
  * Разрыв, короче которого две сессии одного человека считаются одним визитом.
  * Телефон отваливается от Wi-Fi и возвращается — без склейки один вечер выглядел
@@ -133,7 +132,10 @@ export const sessionsInRange = async (storage: Storage, fromKey: string, toKey: 
     const months: string[] = []
     let cursor = prevMonth(monthKeyOf(fromKey))
     const last = monthKeyOf(toKey)
-    for (let i = 0; i < RAW_RETENTION_MONTHS + 2 && cursor <= last; i++) {
+    // Границу задаёт сам диапазон (`cursor <= last`), а не срок хранения: сырьё живёт
+    // вечно, и окно «за всё время» может охватывать несколько лет. Курсор строго растёт
+    // помесячно к `last`, так что цикл всегда конечен.
+    while (cursor <= last) {
         months.push(cursor)
         const d = new Date(`${cursor}-01T12:00:00Z`)
         d.setUTCMonth(d.getUTCMonth() + 1)
@@ -144,23 +146,6 @@ export const sessionsInRange = async (storage: Storage, fromKey: string, toKey: 
     const all: PresenceSession[] = []
     for (const month of months) all.push(...(await readMonth(storage, month)))
     return all.filter((s) => Date.parse(s.to) > start && Date.parse(s.from) < end)
-}
-
-/** Удаляет месячные файлы старше `RAW_RETENTION_MONTHS`. Агрегаты дней остаются навсегда. */
-export const pruneRawLog = async (storage: Storage, today: string): Promise<void> => {
-    let oldest = monthKeyOf(today)
-    for (let i = 0; i < RAW_RETENTION_MONTHS; i++) oldest = prevMonth(oldest)
-    let names: string[]
-    try {
-        names = await fs.readdir(logDir(storage))
-    } catch {
-        return
-    }
-    for (const name of names) {
-        const month = name.replace(/\.ndjson$/, '')
-        if (name === month || month >= oldest) continue
-        await fs.rm(path.join(logDir(storage), name)).catch(() => {})
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +363,6 @@ export const closePresenceSession = async (
     const lastDay = dayKeyOf(new Date(to), tzOffsetMinutes)
     await recomputeDay(storage, firstDay)
     if (lastDay !== firstDay) await recomputeDay(storage, lastDay)
-    await pruneRawLog(storage, lastDay)
 }
 
 /**

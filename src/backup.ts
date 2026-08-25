@@ -1,4 +1,6 @@
+import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import zlib from 'node:zlib'
 import { html, InputMedia, type TelegramClient } from '@mtcute/node'
 import { filters, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import { startHeartbeatInterval } from './health.js'
@@ -66,22 +68,101 @@ export const nextBackupAt = (from: Date, i: BackupInterval): Date => {
     return new Date(from.getTime() + i.value * UNIT_MS[i.unit])
 }
 
-/** `data-2026-07-25-13-40-11.json` — имя от файла хранилища плюс метка времени UTC. */
-const backupFileName = (storage: Storage, now: Date): string => {
+/** `data-2026-07-25-13-40-11` — основа имени: файл хранилища плюс метка времени UTC. */
+const backupBaseName = (storage: Storage, now: Date): string => {
     const base = path.basename(storage.path()).replace(/\.json$/i, '') || 'data'
-    return `${base}-${now.toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+    return `${base}-${now.toISOString().slice(0, 19).replace(/[:T]/g, '-')}`
 }
 
 const formatUtc = (iso: string): string => iso.slice(0, 16).replace('T', ' ') + ' UTC'
 
-/** Документ с полным снимком стейта. Один и тот же для ручной и авто-отправки. */
-export const buildBackupDocument = (storage: Storage, now: Date, caption: string) => {
-    const json = Buffer.from(storage.snapshot(), 'utf8')
-    const sizeKb = Math.max(1, Math.round(json.length / 1024))
-    return InputMedia.document(json, {
-        fileName: backupFileName(storage, now),
-        fileMime: 'application/json',
-        caption: html(`${html.escape(caption)} · ${sizeKb} КБ · ${formatUtc(now.toISOString())}`),
+/** Одна запись tar: имя внутри архива, содержимое, время в мс. */
+type TarEntry = { name: string; data: Buffer; mtime: number }
+
+/** Поле ustar-заголовка: `len-1` восьмеричных цифр с ведущими нулями плюс завершающий `\0`. */
+const octalField = (n: number, len: number): string => {
+    const digits = len - 1
+    return n.toString(8).padStart(digits, '0').slice(-digits) + '\0'
+}
+
+/**
+ * Свой минимальный tar.gz без сторонних зависимостей: у нас всего пара директорий
+ * с мелкими файлами, и тянуть ради этого archiver/tar в проект незачем. Имена короткие
+ * (`presence-log/…`, `event-photos/…`), в 100-байтовое поле ustar влезают без префикса.
+ */
+const tarHeader = (entry: TarEntry): Buffer => {
+    const h = Buffer.alloc(512, 0)
+    h.write(entry.name, 0, 100, 'utf8')
+    h.write('0000644\0', 100, 'ascii') // mode
+    h.write('0000000\0', 108, 'ascii') // uid
+    h.write('0000000\0', 116, 'ascii') // gid
+    h.write(octalField(entry.data.length, 12), 124, 'ascii')
+    h.write(octalField(Math.floor(entry.mtime / 1000), 12), 136, 'ascii')
+    h.write('        ', 148, 'ascii') // контрольная сумма считается по пробелам на её месте
+    h.write('0', 156, 'ascii') // typeflag: обычный файл
+    h.write('ustar\0', 257, 'ascii')
+    h.write('00', 263, 'ascii')
+    let sum = 0
+    for (let i = 0; i < 512; i++) sum += h[i]!
+    h.write(sum.toString(8).padStart(6, '0').slice(-6) + '\0 ', 148, 'ascii')
+    return h
+}
+
+const buildTarGz = (entries: TarEntry[]): Buffer => {
+    const parts: Buffer[] = []
+    for (const e of entries) {
+        parts.push(tarHeader(e), e.data)
+        const pad = (512 - (e.data.length % 512)) % 512
+        if (pad) parts.push(Buffer.alloc(pad, 0))
+    }
+    parts.push(Buffer.alloc(1024, 0)) // два нулевых блока — конец архива
+    return zlib.gzipSync(Buffer.concat(parts))
+}
+
+/** Файлы примыкающей к стейту директории (`presence-log/`, `event-photos/`) для архива. */
+const collectDir = async (dir: string, prefix: string): Promise<TarEntry[]> => {
+    let names: string[]
+    try {
+        names = await fs.readdir(dir)
+    } catch {
+        return [] // директории может не быть — журнал/афиши ещё не завелись
+    }
+    const out: TarEntry[] = []
+    for (const name of names.sort()) {
+        const full = path.join(dir, name)
+        try {
+            const stat = await fs.stat(full)
+            if (!stat.isFile()) continue
+            out.push({ name: `${prefix}/${name}`, data: await fs.readFile(full), mtime: stat.mtimeMs })
+        } catch {
+            // файл исчез между readdir и чтением — пропускаем, бэкап важнее одной строки
+        }
+    }
+    return out
+}
+
+/**
+ * Документ-архив со всем стейтом: `data.json` (из in-memory снимка — он всегда
+ * консистентен, в отличие от возможной гонки с tmp+rename), сырой журнал присутствия
+ * (`presence-log/`) и афиши ивентов (`event-photos/`). Раньше уходил только JSON, и
+ * сессии журнала с картинками в бэкап не попадали. Один и тот же для ручной и авто-отправки.
+ */
+export const buildBackupArchive = async (storage: Storage, now: Date, caption: string) => {
+    const dataName = `${path.basename(storage.path()).replace(/\.json$/i, '') || 'data'}.json`
+    const stateDir = path.dirname(storage.path())
+    const entries: TarEntry[] = [
+        { name: dataName, data: Buffer.from(storage.snapshot(), 'utf8'), mtime: now.getTime() },
+        ...(await collectDir(path.join(stateDir, 'presence-log'), 'presence-log')),
+        ...(await collectDir(path.join(stateDir, 'event-photos'), 'event-photos')),
+    ]
+    const gz = buildTarGz(entries)
+    const sizeKb = Math.max(1, Math.round(gz.length / 1024))
+    return InputMedia.document(gz, {
+        fileName: `${backupBaseName(storage, now)}.tar.gz`,
+        fileMime: 'application/gzip',
+        caption: html(
+            `${html.escape(caption)} · ${entries.length} ${plural(entries.length, ['файл', 'файла', 'файлов'])} · ${sizeKb} КБ · ${formatUtc(now.toISOString())}`,
+        ),
     })
 }
 
@@ -128,7 +209,7 @@ export const registerBackupHandlers = (dp: Dispatcher, deps: BackupDeps): void =
 
     dp.onNewMessage(filters.command('backup'), async (msg) => {
         if (!isDevHere(msg, deps)) return
-        await msg.answerMedia(buildBackupDocument(storage, new Date(), 'Бэкап хранилища'))
+        await msg.answerMedia(await buildBackupArchive(storage, new Date(), 'Бэкап хранилища'), { silent: true })
     })
 
     dp.onNewMessage(filters.command('autobackup'), async (msg) => {
@@ -180,7 +261,7 @@ export const registerBackupHandlers = (dp: Dispatcher, deps: BackupDeps): void =
             ].join('\n'),
         )
         // Первый бэкап сразу: сразу видно, что доставка работает.
-        await client.sendMedia(chatId, buildBackupDocument(storage, now, 'Авто-бэкап хранилища'))
+        await client.sendMedia(chatId, await buildBackupArchive(storage, now, 'Авто-бэкап хранилища'), { silent: true })
     })
 }
 
@@ -214,7 +295,9 @@ export const startBackupScheduler = (
                 continue
             }
             try {
-                await client.sendMedia(b.chatId, buildBackupDocument(storage, now, 'Авто-бэкап хранилища'))
+                await client.sendMedia(b.chatId, await buildBackupArchive(storage, now, 'Авто-бэкап хранилища'), {
+                    silent: true,
+                })
                 await storage.update((s) => {
                     const cur = s.backups[key]
                     if (!cur) return
