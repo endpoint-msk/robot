@@ -46,9 +46,28 @@ export const setDuesMiniappUrl = (url: string | null): void => {
 const pad2 = (n: number): string => String(n).padStart(2, '0')
 const monthKey = (year: number, month: number): string => `${year}-${pad2(month)}`
 
+export const clampDuesDay = (day: number): number =>
+    Math.min(Math.max(Math.trunc(day), MIN_DUES_DAY), MAX_DUES_DAY)
+
+/**
+ * Ключ периода. При сборе 1-го числа — `YYYY-MM`, как было (все заведённые периоды
+ * такие). При другом дне — `YYYY-MM-DD` от даты старта: сбор, открытый 25 августа,
+ * это не тот же сбор, что открытый 1 августа, и общий ключ с ним означал бы, что
+ * смена дня не открывает ничего до следующего месяца. Ключи остаются сравнимыми
+ * лексикографически: `2026-08` < `2026-08-25` < `2026-09`.
+ */
+const keyForDues = (year: number, month: number, day: number): string =>
+    day === MIN_DUES_DAY ? monthKey(year, month) : `${monthKey(year, month)}-${pad2(day)}`
+
 const parseMonthKey = (key: string): { year: number; month: number } => {
     const [y, m] = key.split('-').map(Number)
     return { year: y ?? 1970, month: m ?? 1 }
+}
+
+/** День сбора, зашитый в ключ 3-м сегментом. У календарного `YYYY-MM` — 1-е число. */
+const dayFromKey = (key: string): number => {
+    const raw = Number(key.split('-')[2])
+    return Number.isFinite(raw) ? clampDuesDay(raw) : MIN_DUES_DAY
 }
 
 const daysInMonth = (year: number, month: number): number => new Date(Date.UTC(year, month, 0)).getUTCDate()
@@ -57,21 +76,30 @@ const daysInMonth = (year: number, month: number): number => new Date(Date.UTC(y
 export const duesDayIn = (year: number, month: number, day: number): number =>
     Math.min(Math.max(day, MIN_DUES_DAY), daysInMonth(year, month))
 
-/** Момент, когда должен открыться период (UTC). */
+/**
+ * Момент, когда должен открыться период (UTC). День берётся из ключа, а не из текущей
+ * настройки: правка дня двигает будущие периоды, а у уже заведённого граница обязана
+ * остаться прежней — иначе задним числом меняется и просрочка.
+ */
 export const duesAnchorOf = (periodKey: string, day: number, tzOffsetMinutes: number): Date => {
     const { year, month } = parseMonthKey(periodKey)
-    return new Date(Date.UTC(year, month - 1, duesDayIn(year, month, day), POST_HOUR) - tzOffsetMinutes * 60_000)
+    const anchorDay = periodKey.split('-').length > 2 ? dayFromKey(periodKey) : day
+    return new Date(Date.UTC(year, month - 1, duesDayIn(year, month, anchorDay), POST_HOUR) - tzOffsetMinutes * 60_000)
 }
 
-export const prevMonthKey = (key: string): string => {
+/** Соседний месяц с тем же днём сбора: день — часть ключа, терять его нельзя. */
+const shiftMonthKey = (key: string, delta: 1 | -1): string => {
     const { year, month } = parseMonthKey(key)
-    return month === 1 ? monthKey(year - 1, 12) : monthKey(year, month - 1)
+    const day = dayFromKey(key)
+    const shifted = month + delta
+    if (shifted === 0) return keyForDues(year - 1, 12, day)
+    if (shifted === 13) return keyForDues(year + 1, 1, day)
+    return keyForDues(year, shifted, day)
 }
 
-export const nextMonthKey = (key: string): string => {
-    const { year, month } = parseMonthKey(key)
-    return month === 12 ? monthKey(year + 1, 1) : monthKey(year, month + 1)
-}
+export const prevMonthKey = (key: string): string => shiftMonthKey(key, -1)
+
+export const nextMonthKey = (key: string): string => shiftMonthKey(key, 1)
 
 /**
  * Период, который к моменту `now` уже должен быть открыт. До дня и часа сбора это
@@ -79,18 +107,29 @@ export const nextMonthKey = (key: string): string => {
  */
 export const duesPeriodKeyOf = (now: Date, day: number, tzOffsetMinutes: number): string => {
     const local = new Date(now.getTime() + tzOffsetMinutes * 60_000)
-    const key = monthKey(local.getUTCFullYear(), local.getUTCMonth() + 1)
+    const key = keyForDues(local.getUTCFullYear(), local.getUTCMonth() + 1, clampDuesDay(day))
     return duesAnchorOf(key, day, tzOffsetMinutes).getTime() <= now.getTime() ? key : prevMonthKey(key)
+}
+
+/**
+ * Месяц для показа. Период, открытый не 1-го числа, покрывает в основном следующий
+ * месяц (25 августа → 25 сентября), и «Август» на нём спорит с тем, за что человек
+ * платит. Тот же сдвиг, что у сборов донатов (`displayPeriodOf`).
+ */
+const displayMonthOf = (periodKey: string): { year: number; month: number } => {
+    const { year, month } = parseMonthKey(periodKey)
+    if (dayFromKey(periodKey) === MIN_DUES_DAY) return { year, month }
+    return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }
 }
 
 /** «Август 2026». */
 export const duesPeriodLabel = (periodKey: string): string => {
-    const { year, month } = parseMonthKey(periodKey)
+    const { year, month } = displayMonthOf(periodKey)
     return `${monthNameRu(month)} ${year}`
 }
 
 /** «августа» — для фраз вида «не подтверждены июнь и июль». */
-const monthOnly = (periodKey: string): string => monthNameRu(parseMonthKey(periodKey).month)
+const monthOnly = (periodKey: string): string => monthNameRu(displayMonthOf(periodKey).month)
 
 // ---------------------------------------------------------------------------
 // Стейт
@@ -550,7 +589,7 @@ export const updateDuesSettings = async (
 ): Promise<void> => {
     await storage.update((s) => {
         if (patch.enabled !== undefined) s.dues.enabled = patch.enabled
-        if (patch.day !== undefined) s.dues.day = Math.min(Math.max(Math.trunc(patch.day), MIN_DUES_DAY), MAX_DUES_DAY)
+        if (patch.day !== undefined) s.dues.day = clampDuesDay(patch.day)
         if (patch.amount !== undefined) s.dues.amount = Math.max(0, patch.amount)
         if (patch.studentAmount !== undefined) s.dues.studentAmount = Math.max(0, patch.studentAmount)
         if (patch.requisites !== undefined) s.dues.requisites = patch.requisites.slice(0, 1000)
@@ -680,7 +719,10 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
         if (!isDevHere(msg)) return
         const dues = duesOf(storage)
         const latest = periodKeysOf(dues).pop()
-        const nextKey = latest === undefined ? duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes) : nextMonthKey(latest)
+        // Считаем от периода, который положен сейчас: если он ещё не открыт, /skip
+        // делает ровно то же, что шедулер в день сбора, а не прыгает через месяц.
+        const current = duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes)
+        const nextKey = latest !== undefined && latest >= current ? nextMonthKey(current) : current
         await openDuesPeriod(client, storage, residents, nextKey)
         await msg.answerText(`[тест] Открыл период ${duesPeriodLabel(nextKey)}.`)
     })
