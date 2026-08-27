@@ -1901,8 +1901,12 @@ body.busy #busy-overlay { display: flex; }
 
 /* Поле ввода числа в модалке (ставка взноса, день сбора). */
 .modal-num-wrap { padding: 0 18px 4px; }
-.modal-num { text-align: center; font-size: 22px; font-weight: 700; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.08); }
-.modal-num-hint { padding: 8px 18px 0; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: center; }
+/* width: 100% обязателен: .text-input рассчитан на flex-строку (`flex: 1`), а здесь
+   он лежит в обычном блоке — без ширины инпут берёт природную (те самые ~20 символов),
+   вылезает за карточку и обрезается её `overflow: hidden`. */
+.modal-num { width: 100%; text-align: center; font-size: 22px; font-weight: 700; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.08); }
+/* Нижний отступ — за разделитель кнопок: без него подпись лежит прямо на линии. */
+.modal-num-hint { padding: 8px 18px 16px; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: center; }
 .modal-btn.disabled { opacity: 0.4; pointer-events: none; }
 
 /* Какой это по счёту визит гостя - пилюля рядом с именем в строке заявки.
