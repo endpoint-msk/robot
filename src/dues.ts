@@ -27,6 +27,8 @@ export const MAX_DUES_DAY = 28
 /** Час (в поясе спейса), в который открывается период. */
 const POST_HOUR = 12
 const TICK_INTERVAL_MS = 60_000
+/** Как часто сверяем ростер активного периода с живым составом резидентов. */
+const ROSTER_SYNC_INTERVAL_MS = 60 * 60_000
 /** Пропущено периодов подряд: столько — предупреждение, столько и больше — крайний срок. */
 export const WARN_DEBT = 1
 export const CRITICAL_DEBT = 2
@@ -792,11 +794,24 @@ export const startDuesScheduler = (
     directory: ResidentDirectory,
     tzOffsetMinutes: number,
 ): { stop: () => void } => {
+    /** Ноль — первая сверка уходит на первом же тике: рестарт как раз и повод свериться. */
+    let lastRosterSyncAt = 0
+
     const tick = async () => {
         const dues = duesOf(storage)
         if (!dues.enabled) return
         // Повторы недоставленных писем идут независимо от того, пора ли открывать период.
         await retryFailedDuesNotifications(client, storage)
+        // Ростер — снимок состава, и человек, вышедший из чата резидентов, остаётся в нём
+        // должником до чьего-нибудь тапа по «Я внёс»: остальные вызовы `syncDuesRoster`
+        // висят на ручках миниаппа. `list()` кэширован на пять минут, так что час сверки —
+        // это один поход в Telegram.
+        const now = Date.now()
+        if (now - lastRosterSyncAt >= ROSTER_SYNC_INTERVAL_MS) {
+            lastRosterSyncAt = now
+            const active = activeDuesPeriod(dues)
+            if (active) await syncDuesRoster(storage, directory, active.periodKey)
+        }
         const currentKey = duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes)
         const latest = periodKeysOf(dues).pop()
         if (latest !== undefined && latest >= currentKey) return
