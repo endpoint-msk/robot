@@ -13,9 +13,15 @@ function PeekDayRow({ day }: { day: Day }) {
   const isToday = day.dateKey === data!.todayKey
   const att = day.attendees || []
   const events = day.events || []
+  const lock = day.lock || null
   // День с ивентом «не пустой», даже если никто ещё не отметился: сам ивент и есть повод прийти.
   const empty = att.length === 0 && events.length === 0
-  const cls = 'row' + (!empty ? ' tappable' : '') + (isToday ? ' today' : '') + (empty ? ' day-empty' : '')
+  const cls =
+    'row' +
+    (!empty ? ' tappable' : '') +
+    (isToday ? ' today' : '') +
+    (empty ? ' day-empty' : '') +
+    (lock ? ' day-locked' : '')
   const dayCol = (
     <div className="day-col">
       <div className="dow">{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</div>
@@ -24,9 +30,9 @@ function PeekDayRow({ day }: { day: Day }) {
   )
   if (empty) {
     return (
-      <div className={cls}>
+      <div className={cls} title={lock ? 'Закрыт для заявок' : undefined}>
         {dayCol}
-        <span className="day-none">Пока никого</span>
+        <span className="day-none">{lock ? lock.reason || 'Спейс закрыт' : 'Пока никого'}</span>
       </div>
     )
   }
@@ -37,6 +43,7 @@ function PeekDayRow({ day }: { day: Day }) {
     <button
       type="button"
       className={cls + (first && att.length > 0 ? ' day-stack' : '')}
+      title={lock ? 'Закрыт для заявок' : undefined}
       onClick={() => push('peekDay', { dateKey: day.dateKey })}
     >
       {dayCol}

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { BlockedUser, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal, VisitReminder } from './types.js'
+import type { BlockedUser, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal, VisitReminder } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -56,12 +56,69 @@ export const weekStartOf = (key: string): string => addDaysToKey(key, -weekdayOf
 export const isValidTime = (raw: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(raw)
 
 // ---------------------------------------------------------------------------
+// Закрытые дни: спейс не берёт гостей
+// ---------------------------------------------------------------------------
+
+/** Потолок пояснения «почему закрыт»: это подпись в строке дня, а не объявление. */
+export const MAX_LOCK_REASON_LENGTH = 120
+
+export const dayLockFor = (storage: Storage, dateKey: string): DayLock | null =>
+    storage.get().hostingDayLocks[dateKey] ?? null
+
+export const isDayLocked = (storage: Storage, dateKey: string): boolean =>
+    storage.get().hostingDayLocks[dateKey] !== undefined
+
+/**
+ * Закрывает/открывает день для гостевых заявок. Окно то же, что у заявок
+ * (сегодня..+6): закрывать день, которого нет ни на одной поверхности, незачем.
+ *
+ * Заодно чистим прошедшие замки: они ничего не значат, а копились бы вечно —
+ * ключ у них дневной, и снимать их вручную никто не станет.
+ */
+export const setDayLock = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    locked: boolean,
+    reason: string,
+    by: HostingUser,
+): Promise<{ ok: true; lock: DayLock | null } | { ok: false; error: 'bad_date' }> => {
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    await storage.update((s) => {
+        for (const key of Object.keys(s.hostingDayLocks)) {
+            if (key < today) delete s.hostingDayLocks[key]
+        }
+        if (locked) {
+            s.hostingDayLocks[dateKey] = {
+                dateKey,
+                reason: reason.trim().slice(0, MAX_LOCK_REASON_LENGTH),
+                by,
+                at: new Date().toISOString(),
+            }
+        } else {
+            delete s.hostingDayLocks[dateKey]
+        }
+    })
+    return { ok: true, lock: dayLockFor(storage, dateKey) }
+}
+
+/**
+ * Заявка переезжает на закрытый день. Именно переезд: визит, назначенный до закрытия,
+ * никуда не девается, и время внутри того же дня ему двигать можно — иначе хост не
+ * смог бы договориться по уже согласованному визиту.
+ */
+const movesIntoLockedDay = (storage: Storage, currentDateKey: string, nextDateKey: string): boolean =>
+    nextDateKey !== currentDateKey && isDayLocked(storage, nextDateKey)
+
+// ---------------------------------------------------------------------------
 // Операции над заявками
 // ---------------------------------------------------------------------------
 
 export const MAX_PURPOSE_LENGTH = 300
 
-export type CreateRequestError = 'bad_date' | 'bad_time' | 'past_time' | 'duplicate'
+export type CreateRequestError = 'bad_date' | 'bad_time' | 'past_time' | 'duplicate' | 'day_locked'
 
 /** Слот дня/времени уже в прошлом относительно «сейчас» в поясе спейса (проверяем только текущий день). */
 export const isPastSlot = (dateKey: string, time: string, offsetMinutes: number): boolean =>
@@ -84,6 +141,7 @@ export const createHostingRequest = async (
     }
     if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
     if (isPastSlot(input.dateKey, input.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
+    if (isDayLocked(storage, input.dateKey)) return { ok: false, error: 'day_locked' }
     const duplicate = Object.values(storage.get().hostingRequests).some(
         (r) => r.guest.userId === input.guest.userId && r.dateKey === input.dateKey,
     )
@@ -109,7 +167,7 @@ export const createHostingRequest = async (
     return { ok: true, request }
 }
 
-export type EditRequestError = 'not_found' | 'not_pending' | 'bad_date' | 'bad_time' | 'past_time' | 'duplicate'
+export type EditRequestError = 'not_found' | 'not_pending' | 'bad_date' | 'bad_time' | 'past_time' | 'duplicate' | 'day_locked'
 
 /**
  * Правка гостем своей заявки: день/время/цель/анонимность. Только пока заявка без
@@ -135,6 +193,7 @@ export const editHostingRequest = async (
     }
     if (!isValidTime(patch.time)) return { ok: false, error: 'bad_time' }
     if (isPastSlot(patch.dateKey, patch.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
+    if (movesIntoLockedDay(storage, existing.dateKey, patch.dateKey)) return { ok: false, error: 'day_locked' }
     const duplicate = Object.values(storage.get().hostingRequests).some(
         (r) => r.id !== id && r.guest.userId === guestUserId && r.dateKey === patch.dateKey,
     )
@@ -856,7 +915,7 @@ export const deleteHostingRequest = async (storage: Storage, id: string): Promis
 // Предложения переноса дня/времени (резидент ↔ гость)
 // ---------------------------------------------------------------------------
 
-export type ProposeError = 'not_found' | 'bad_date' | 'bad_time' | 'past_time' | 'duplicate'
+export type ProposeError = 'not_found' | 'bad_date' | 'bad_time' | 'past_time' | 'duplicate' | 'day_locked'
 
 /**
  * Ставит предложение перенести визит на другой день и/или время — и у pending-заявки,
@@ -883,6 +942,7 @@ export const proposeReschedule = async (
     }
     if (!isValidTime(input.time)) return { ok: false, error: 'bad_time' }
     if (isPastSlot(input.dateKey, input.time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
+    if (movesIntoLockedDay(storage, existing.dateKey, input.dateKey)) return { ok: false, error: 'day_locked' }
     if (hasOtherRequestOnDay(storage, existing.guest.userId, input.dateKey, id)) return { ok: false, error: 'duplicate' }
     // Адресат: гостю — если предложил резидент; резиденту — хост, а на pending-заявке
     // автор предложения, на которое гость отвечает. Запоминаем его на самом предложении,
@@ -920,6 +980,9 @@ export const acceptReschedule = async (
         !isValidDayKey(proposal.dateKey) ||
         proposal.dateKey < today ||
         proposal.dateKey > maxDay ||
+        // Пока стороны договаривались, день могли закрыть для заявок — переносить визит
+        // туда уже нельзя, и предложение протухло ровно как выпавшее из окна обзора.
+        movesIntoLockedDay(storage, existing.dateKey, proposal.dateKey) ||
         (proposal.dateKey !== existing.dateKey && hasOtherRequestOnDay(storage, existing.guest.userId, proposal.dateKey, id))
     if (stale) {
         await storage.update((s) => {

@@ -111,10 +111,22 @@ export type EventDraft = {
   at: string
 }
 
+/**
+ * День закрыт для гостевых заявок. Причину видят все, автора — только резиденты
+ * (сервер не отдаёт `by` гостю).
+ */
+export type DayLock = {
+  reason: string
+  by?: User
+  at?: string
+}
+
 export type Day = {
   dateKey: string
   total: number
   approved: number
+  /** null — день открыт. Закрытый: гость не оставит заявку, резидент отметится «я приду». */
+  lock: DayLock | null
   /** Детали заявок приходят только резидентам и dev-аккаунтам; гостям — undefined. */
   requests?: HostingRequest[]
   attendees: Attendee[]

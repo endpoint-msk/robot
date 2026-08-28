@@ -2,13 +2,97 @@ import { Fragment } from 'react'
 import { action } from '../api'
 import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
+import { confirmDialog, textPrompt } from '../modals'
 import { haptic } from '../telegram'
 import { push, useParams, useStore } from '../store'
-import type { HostingRequest } from '../types'
-import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle, Sep } from '../components/common'
+import type { DayLock, HostingRequest } from '../types'
+import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
 import { RequestsCard } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
+
+/** Причина закрытия: её вводят один раз при закрытии и правят строкой в карточке. */
+const askReason = (initial: string): Promise<string | null> =>
+  textPrompt({
+    text: 'Почему спейс закрыт?',
+    initial,
+    placeholder: 'Например: уборка',
+    hint: 'Причину увидят гости. Можно оставить пустой.',
+    maxLength: 120,
+    confirmLabel: 'Готово',
+  })
+
+/** Плашка «день закрыт» под шапкой — отдельно от переключателя внизу экрана. */
+function LockBanner({ lock }: { lock: DayLock }) {
+  const who = lock.by ? (lock.by.username ? '@' + lock.by.username : lock.by.name) : ''
+  return (
+    <div className="lock-banner">
+      <div className="lb-icon">{icons.lockFilled()}</div>
+      <div className="lb-text">
+        <div className="lb-title">Спейс закрыт для гостей</div>
+        <div className="lb-sub">
+          {[lock.reason, who ? `закрыл ${who}` : ''].filter(Boolean).join(' · ') || 'Новые заявки не принимаются'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Переключатель «Закрыт для заявок». Уже поданные заявки закрытие не трогает: отменить
+ * чужой согласованный визит одним тумблером нельзя, для этого есть «Закрыть заявку»
+ * с уведомлением гостя — поэтому на непустом дне сначала спрашиваем подтверждение.
+ */
+function LockCard({ dateKey, lock, requests }: { dateKey: string; lock: DayLock | null; requests: number }) {
+  const toggle = async (): Promise<void> => {
+    if (lock) {
+      const done = await action('day.lock', { dateKey, locked: false })
+      if (done) haptic('success')
+      return
+    }
+    if (requests > 0) {
+      const ok = await confirmDialog(
+        `На этот день уже есть ${requestsWord(requests)}. Закрытие их не отменяет — гости просто не смогут оставить новые.`,
+        { confirmLabel: 'Всё равно закрыть' },
+      )
+      if (!ok) return
+    }
+    const reason = await askReason('')
+    if (reason === null) return
+    const done = await action('day.lock', { dateKey, locked: true, reason })
+    if (done) haptic('warning')
+  }
+
+  const editReason = async (): Promise<void> => {
+    const reason = await askReason(lock?.reason ?? '')
+    if (reason === null) return
+    await action('day.lock', { dateKey, locked: true, reason })
+  }
+
+  return (
+    <div className="card">
+      <div className="row">
+        <span className="row-label">
+          Закрыт для заявок
+          <span className="row-sublabel">Гости не оставят заявку, резиденты отмечаются как обычно</span>
+        </span>
+        <Switch on={Boolean(lock)} onToggle={toggle} label="Закрыт для заявок" />
+      </div>
+      {lock ? (
+        <>
+          <Sep left={14} />
+          <button type="button" className="row tappable" onClick={editReason}>
+            <span className="row-label">Причина</span>
+            <div className="row-right">
+              <span className="lock-reason">{lock.reason || 'Добавить'}</span>
+              {icons.chevron()}
+            </div>
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
 
 export function Day() {
   const params = useParams()
@@ -31,6 +115,7 @@ export function Day() {
   const residentsComing = !archive ? ((dayObj && dayObj.attendees) || []).filter((a) => a.resident) : []
   const iAmComing = residentsComing.some((a) => a.userId === data!.me.id)
   const events = (dayObj && dayObj.events) || []
+  const lock = (dayObj && dayObj.lock) || null
 
   return (
     <Screen>
@@ -40,6 +125,7 @@ export function Day() {
         subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)} · ${requestsWord(requests.length)}`}
       />
       {archive ? <ReadonlyBadge /> : null}
+      {lock ? <LockBanner lock={lock} /> : null}
       {!archive ? (
         <button
           className={'attend-btn' + (iAmComing ? ' on' : '')}
@@ -124,6 +210,12 @@ export function Day() {
         <>
           <SectionTitle>{`Ждут ответа · ${pending.length}`}</SectionTitle>
           <RequestsCard list={pending} archive={archive} />
+        </>
+      ) : null}
+      {!archive ? (
+        <>
+          <SectionTitle>День</SectionTitle>
+          <LockCard dateKey={params.dateKey} lock={lock} requests={requests.length} />
         </>
       ) : null}
     </Screen>

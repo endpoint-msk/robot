@@ -55,6 +55,13 @@ export const icons = {
       <rect x="3.5" y="8" width="11" height="7.5" rx="2" fill="none" stroke={sec(0.55)} strokeWidth="1.6" />
     </svg>
   ),
+  /** Заливной замок для плашки «день закрыт»: контурный на мелком размере мылится. */
+  lockFilled: (size = 17, color = '#fff'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M6.7 8.8V6.7a3.3 3.3 0 0 1 6.6 0v2.1" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
+      <rect x="4.3" y="8.6" width="11.4" height="8.2" rx="2.6" fill={color} />
+    </svg>
+  ),
   info: (): ReactElement => (
     <svg width="16" height="16" viewBox="0 0 16 16">
       <circle cx="8" cy="8" r="7" fill="none" stroke={sec(0.35)} strokeWidth="1.4" />

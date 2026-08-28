@@ -6,14 +6,27 @@ import { resetRoot, setBusy, setData, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { Bootstrap, ReminderChoice } from '../types'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
-import { AnonRow, DayChips, isPastForToday, PurposeInput, RemindCard, reminderFor, useDayTime } from '../components/forms'
+import {
+  AnonRow,
+  DayChips,
+  DayChipsLegend,
+  firstOpenDay,
+  isPastForToday,
+  PurposeInput,
+  RemindCard,
+  reminderFor,
+  useDayTime,
+} from '../components/forms'
 import { Screen } from '../components/Screen'
 import { TimeField } from '../components/TimeField'
 
 export function NewRequest() {
   const { data } = useStore()
   const days = data!.days
-  const { day, time, min, selectDay, onTimeChange } = useDayTime(days[0]!.dateKey, null)
+  // Закрытый день в чипах не выбрать — предвыбранным он оставил бы форму в состоянии,
+  // из которого заявку не отправить.
+  const { day, time, min, selectDay, onTimeChange } = useDayTime(firstOpenDay(days), null)
+  const locked = days.find((d) => d.dateKey === day)?.lock ?? null
   const [purpose, setPurpose] = useState('')
   const [anon, setAnon] = useState(false)
   // Напоминание предлагается включённым: выключенное по умолчанию им бы почти никто
@@ -22,6 +35,10 @@ export function NewRequest() {
   const [submitting, setSubmitting] = useState(false)
 
   const submit = async (): Promise<void> => {
+    if (locked) {
+      showAlert('В этот день спейс закрыт для гостей — выберите другой.')
+      return
+    }
     if (!time) {
       showAlert('Укажите время прихода.')
       return
@@ -53,17 +70,7 @@ export function NewRequest() {
       <Header title="Хочу прийти" />
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={day} onSelect={selectDay} />
-      <div className="chips-legend">
-        <span className="cl-row">
-          {icons.check(12, '#34c759', 2.2)}
-          число заявок и уже одобренных в этот день
-        </span>
-        {days.some((d) => d.events.length > 0) ? (
-          <span className="cl-row">
-            <i className="legend-dot" />в этот день ивент
-          </span>
-        ) : null}
-      </div>
+      <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">
         <div className="row" style={{ padding: '6px 14px' }}>

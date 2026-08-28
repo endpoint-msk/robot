@@ -60,6 +60,8 @@ export type State = {
     hostingRequests: Record<string, HostingRequest>
     /** Отметки резидентов «я приду» на день. Ключ — `${dateKey}#${userId}`. */
     hostingAttendance: Record<string, HostingAttendance>
+    /** Дни, закрытые для заявок гостей. Ключ — dateKey ('YYYY-MM-DD' в поясе спейса). */
+    hostingDayLocks: Record<string, DayLock>
     /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
      *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
     hostingNotify: Record<string, HostingNotifyPrefs>
@@ -495,6 +497,25 @@ export type GuestNote = {
     updatedAt: string
 }
 
+/**
+ * День, закрытый для заявок: спейс в этот день гостей не берёт (уборка, частное
+ * мероприятие, никого не будет).
+ *
+ * Закрывает и открывает любой резидент. Запрет касается только гостевых заявок:
+ * резиденты по-прежнему отмечаются «я приду», просто такой день не выходит на доску
+ * в чат — объявлять «сегодня в спейсе» про день, в который спейс закрыт, нельзя.
+ */
+export type DayLock = {
+    /** День 'YYYY-MM-DD' в поясе спейса. */
+    dateKey: string
+    /** Зачем закрыли — видно и гостю. Пусто: без пояснения. */
+    reason: string
+    /** Кто закрыл. Гостю не отдаём: это внутренняя кухня спейса. */
+    by: HostingUser
+    /** Когда закрыли (ISO). */
+    at: string
+}
+
 /** Отметка резидента «я приду» на конкретный день (без заявки, просто присутствие в списке). */
 export type HostingAttendance = {
     /** День визита: 'YYYY-MM-DD' в поясе спейса. */
@@ -586,6 +607,7 @@ export const emptyState = (): State => ({
     goalsMuted: {},
     hostingRequests: {},
     hostingAttendance: {},
+    hostingDayLocks: {},
     hostingNotify: {},
     eventNotify: {},
     hostingBoard: {},

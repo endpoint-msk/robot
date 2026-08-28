@@ -1,4 +1,5 @@
 import { fmtDayMonth, peopleWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { icons } from '../icons'
 import { useParams, useStore } from '../store'
 import { BackRow, EmptyState, Header, SectionTitle } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
@@ -11,6 +12,7 @@ export function PeekDay() {
   const day = data!.days.find((d) => d.dateKey === params.dateKey)
   const att = (day && day.attendees) || []
   const events = (day && day.events) || []
+  const lock = (day && day.lock) || null
   const isToday = params.dateKey === data!.todayKey
   return (
     <Screen>
@@ -19,6 +21,15 @@ export function PeekDay() {
         title={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]}
         subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)} · ${peopleWord(att.length)}`}
       />
+      {lock ? (
+        <div className="lock-banner">
+          <div className="lb-icon">{icons.lockFilled()}</div>
+          <div className="lb-text">
+            <div className="lb-title">Спейс закрыт для гостей</div>
+            <div className="lb-sub">{lock.reason || 'В этот день заявку оставить не получится'}</div>
+          </div>
+        </div>
+      ) : null}
       {/* Ивенты — над списком людей: это главное, что происходит в этот день. */}
       {events.map((ev) => (
         <EventCard key={ev.id} event={ev} calendar />

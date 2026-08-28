@@ -4,7 +4,7 @@ import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_SHORT } fro
 import { icons } from '../icons'
 import { useStore } from '../store'
 import { sec } from '../theme'
-import type { Attendee, HostingRequest, SpaceEvent } from '../types'
+import type { Attendee, DayLock, HostingRequest, SpaceEvent } from '../types'
 import { AvatarStack } from './people'
 
 type DayRowData = {
@@ -16,6 +16,8 @@ type DayRowData = {
   attendees?: Attendee[]
   /** Ивенты дня: в архиве их нет. */
   events?: SpaceEvent[]
+  /** День закрыт для гостевых заявок. В архиве замков нет. */
+  lock?: DayLock | null
 }
 
 export function DayRow({
@@ -33,6 +35,7 @@ export function DayRow({
   const isToday = day.dateKey === data!.todayKey
   const att = day.attendees ?? []
   const event = (day.events ?? [])[0]
+  const lock = day.lock ?? null
   // Заявок нет, но кто-то придёт — показываем людей, а не «нет заявок»: иначе день
   // с одними отметками резидентов выглядит пустым.
   const people = day.total > 0 || att.length > 0
@@ -47,6 +50,7 @@ export function DayRow({
     (tappable ? ' tappable' : '') +
     (isToday ? ' today' : '') +
     (empty ? ' day-empty' : '') +
+    (lock ? ' day-locked' : '') +
     // Две строки внутри — своя вертикальная подложка (та же, что в «Активности»).
     (event && people ? ' day-stack' : '')
 
@@ -66,10 +70,13 @@ export function DayRow({
   const Tag = tappable ? 'button' : 'div'
 
   return (
-    <Tag className={cls} {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}>
+    // title — единственный след закрытия для тех, кому штриховка ни о чём не говорит
+    // (скринридер, наведение мышью): текстовой метки в строке нет намеренно.
+    <Tag className={cls} title={lock ? 'Закрыт для заявок' : undefined} {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}>
       {dayCol}
       {empty ? (
-        <span className="day-none">Пока никого</span>
+        // «Пока никого» в закрытом дне — неправда: никого и не будет.
+        <span className="day-none">{lock ? lock.reason || 'Закрыт для гостей' : 'Пока никого'}</span>
       ) : (
         // Ивент и люди — двумя строками, как в «Активности» у гостя: в одну строку
         // метка и список не влезают. В метке только время — название видно внутри дня.

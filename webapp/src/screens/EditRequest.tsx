@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
 import { action } from '../api'
 import { showAlert } from '../modals'
-import { icons } from '../icons'
 import { pop, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { ReminderChoice } from '../types'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
-import { AnonRow, DayChips, isPastForToday, PurposeInput, RemindCard, reminderFor, useDayTime } from '../components/forms'
+import {
+  AnonRow,
+  DayChips,
+  DayChipsLegend,
+  firstOpenDay,
+  isPastForToday,
+  PurposeInput,
+  RemindCard,
+  reminderFor,
+  useDayTime,
+} from '../components/forms'
 import { Screen } from '../components/Screen'
 import { TimeField } from '../components/TimeField'
 
@@ -17,7 +26,7 @@ export function EditRequest() {
   const r = data!.myRequests.find((x) => x.id === params.id)
 
   // Хуки — безусловно; при отсутствии заявки инициализируем дефолтами и уходим назад.
-  const { day, time, min, selectDay, onTimeChange } = useDayTime(r ? r.dateKey : days[0]!.dateKey, r ? r.time : null)
+  const { day, time, min, selectDay, onTimeChange } = useDayTime(r ? r.dateKey : firstOpenDay(days), r ? r.time : null)
   const [purpose, setPurpose] = useState(r ? r.purpose : '')
   const [anon, setAnon] = useState(r ? r.anon : false)
   const [remind, setRemind] = useState<ReminderChoice | null>(r?.remind?.choice ?? null)
@@ -56,17 +65,7 @@ export function EditRequest() {
       <Header title="Изменить заявку" />
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={day} onSelect={selectDay} />
-      <div className="chips-legend">
-        <span className="cl-row">
-          {icons.check(12, '#34c759', 2.2)}
-          число заявок и уже одобренных в этот день
-        </span>
-        {days.some((d) => d.events.length > 0) ? (
-          <span className="cl-row">
-            <i className="legend-dot" />в этот день ивент
-          </span>
-        ) : null}
-      </div>
+      <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">
         <div className="row" style={{ padding: '6px 14px' }}>

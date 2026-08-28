@@ -12,6 +12,7 @@ import {
     formatDayKey,
     HOSTING_DAYS_AHEAD,
     isBlocked,
+    isDayLocked,
     isValidDayKey,
     listKnownGuests,
     requestsForDay,
@@ -69,7 +70,7 @@ export const listInviteCandidates = async (
     ]
 }
 
-export type InviteError = 'bad_date' | 'blocked' | 'self' | 'dm_closed'
+export type InviteError = 'bad_date' | 'blocked' | 'self' | 'dm_closed' | 'day_locked'
 
 /**
  * Шлёт зов в личку. 'dm_closed' — человек не открывал чат с ботом (или закрыл его):
@@ -90,12 +91,15 @@ export const sendHostingInvite = async (
     if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
     if (target.userId === from.userId) return { ok: false, error: 'self' }
     if (isBlocked(storage, target.userId)) return { ok: false, error: 'blocked' }
+    const isResident = await residents.isResident(target.userId)
+    // Гостя на закрытый день звать некуда: заявку он всё равно не оставит. Резидента
+    // зовём как обычно — запрет только про гостей.
+    if (!isResident && isDayLocked(storage, dateKey)) return { ok: false, error: 'day_locked' }
 
     const who = from.username
         ? `${html.escape(displayName(from.name))} (@${from.username})`
         : html.escape(displayName(from.name))
     const when = `${formatDayKey(dateKey)}${dateKey === today ? ' (сегодня)' : ''}`
-    const isResident = await residents.isResident(target.userId)
     const text = isResident
         ? `👋 ${who} зовёт тебя в спейс: <b>${when}</b>.`
         : `👋 ${who} зовёт вас в спейс: <b>${when}</b>.<br>Оставьте заявку на визит — резиденты увидят её и подтвердят.`

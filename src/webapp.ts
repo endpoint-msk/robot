@@ -16,6 +16,7 @@ import {
     cleanName,
     clearReschedule,
     createHostingRequest,
+    dayLockFor,
     deleteHostingRequest,
     displayName,
     editHostingRequest,
@@ -28,6 +29,7 @@ import {
     listBlockedUsers,
     listGuestNotes,
     markArrived,
+    MAX_LOCK_REASON_LENGTH,
     MAX_NOTE_LENGTH,
     notifyArrival,
     nowTimeKey,
@@ -46,6 +48,7 @@ import {
     requestsForDay,
     requestsOfGuest,
     searchGuests,
+    setDayLock,
     setGuestNote,
     setResidentAttendance,
     todayKey,
@@ -315,6 +318,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.person': 'read',
 
     'rules.accept': 'write',
+    'day.lock': 'write',
     edit: 'write',
     'remind.set': 'write',
     attend: 'write',
@@ -765,9 +769,15 @@ const buildBootstrap = (ctx: ApiContext) => {
     for (let i = 0; i < HOSTING_DAYS_AHEAD; i++) {
         const dateKey = addDaysToKey(today, i)
         const requests = requestsForDay(storage, dateKey)
+        const lock = dayLockFor(storage, dateKey)
         days.push({
             dateKey,
             total: requests.length,
+            // Закрытый день виден всем: гость должен понимать, почему день не выбрать.
+            // Кто именно закрыл — только резидентам: это внутренняя кухня спейса.
+            lock: lock
+                ? { reason: lock.reason, ...(resident ? { by: userView(lock.by), at: lock.at } : {}) }
+                : null,
             approved: requests.filter((r) => r.status === 'approved').length,
             // Детали заявок видят резиденты и dev-аккаунты (последним они нужны для
             // дев-меню — правка и удаление). Гостям — только счётчики.
@@ -904,6 +914,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     bad_time: 'Укажите время прихода в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У вас уже есть заявка на этот день.',
+                    day_locked: 'В этот день спейс закрыт для гостей — выберите другой.',
                 } as const
                 sendError(res, 400, created.error, messages[created.error])
                 return
@@ -953,6 +964,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     bad_time: 'Укажите время прихода в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У вас уже есть заявка на этот день.',
+                    day_locked: 'В этот день спейс закрыт для гостей — выберите другой.',
                 } as const
                 const status = edited.error === 'not_found' ? 404 : edited.error === 'not_pending' ? 409 : 400
                 sendError(res, status, edited.error, messages[edited.error])
@@ -1012,6 +1024,29 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // Закрыть/открыть день для гостевых заявок: любой резидент, это оперативное решение
+        // («сегодня никого не будет»), а не настройка спейса. Существующие заявки закрытие
+        // НЕ трогает — удалять чужой согласованный визит тумблером нельзя, для этого есть
+        // «Закрыть заявку» с DM гостю.
+        case 'day.lock': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const locked = body.locked === true
+            const reason = typeof body.reason === 'string' ? body.reason : ''
+            if (reason.length > MAX_LOCK_REASON_LENGTH) {
+                sendError(res, 400, 'too_long', `Причина не длиннее ${MAX_LOCK_REASON_LENGTH} символов.`)
+                return
+            }
+            const result = await setDayLock(storage, tzOffsetMinutes, dateKey, locked, reason, user)
+            if (!result.ok) {
+                sendError(res, 400, result.error, 'Закрыть можно только день из ближайшей недели.')
+                return
+            }
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
         // Кого можно позвать в спейс на день: резиденты + гости из заявок.
         case 'invite.list': {
             if (!requireResident()) return
@@ -1046,6 +1081,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     blocked: 'Этот участник заблокирован.',
                     self: 'Себя звать не нужно — просто отметься «я приду».',
                     dm_closed: 'Не смог написать ему в личку: он не открывал чат с ботом.',
+                    day_locked: 'В этот день спейс закрыт для гостей — звать их некуда.',
                 } as const
                 sendError(res, sent.error === 'dm_closed' ? 409 : 400, sent.error, messages[sent.error])
                 return
@@ -1075,6 +1111,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло.',
                     duplicate: 'У этого фейкового гостя уже есть заявка на день.',
+                    day_locked: 'Этот день закрыт для заявок — открой его или выбери другой.',
                 } as const
                 sendError(res, 400, created.error, messages[created.error])
                 return
@@ -1413,6 +1450,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У гостя уже есть заявка на этот день.',
+                    day_locked: 'Этот день закрыт для гостей — перенести визит туда нельзя.',
                 } as const
                 sendError(res, result.error === 'not_found' ? 404 : 400, result.error, messages[result.error])
                 return

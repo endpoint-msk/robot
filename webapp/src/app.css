@@ -50,6 +50,9 @@
     --attn: rgba(0, 122, 255, 0.11);
     --attn-strong: rgba(0, 122, 255, 0.18);
     --warn-bg: rgba(255, 149, 0, 0.1);
+    /* Штрих закрытого дня. Оранжевый, как и всё обратимое: день закрывают и открывают
+       обратно одним тумблером. Альфа низкая — поверх штриховки должен читаться текст. */
+    --hatch: rgba(255, 149, 0, 0.16);
     --ok-soft-bg: rgba(52, 199, 89, 0.1);
     --ok-soft-strong: rgba(52, 199, 89, 0.12);
     --ev-bg: rgba(191, 90, 242, 0.1);
@@ -100,6 +103,8 @@
     --attn: rgba(0, 122, 255, 0.24);
     --attn-strong: rgba(0, 122, 255, 0.34);
     --warn-bg: #4a3416;
+    /* На чёрной карточке тот же штрих почти не виден — берём чуть заметнее. */
+    --hatch: rgba(255, 159, 20, 0.16);
     --ok-soft-bg: #1b3826;
     --ok-soft-strong: #1e412b;
     --ev-bg: #3b2848;
@@ -1029,6 +1034,68 @@ body {
 .chips-legend .cl-row { display: grid; grid-template-columns: 14px 1fr; align-items: center; gap: 6px; }
 .chips-legend .cl-row > :first-child { justify-self: center; }
 .chips-legend .legend-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--purple); }
+.chips-legend .legend-hatch {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    background-color: rgba(255, 149, 0, 0.08);
+    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 3px, transparent 3px 6px);
+}
+
+/* --- Закрытый день -------------------------------------------------------
+
+   Штриховка, а не заливка: сплошной фон читается как статус («одобрено»,
+   «ошибка»), а закрытый день — не статус, а выключенный из расписания кусок,
+   лента поперёк строки. Слой идёт background-image, поэтому подложка «сегодня»
+   (background-color) под ним сохраняется. */
+
+.row.day-locked,
+.day-chip.locked {
+    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
+}
+.day-chip.locked { cursor: default; }
+.day-chip.locked .dc-dow, .day-chip.locked .dc-num { color: var(--text-3); }
+/* Дата приглушается, как у пустого дня: слова «закрыт» в строке нет, роль берут
+   на себя штриховка и погасший день. */
+.row.day-locked .dow { color: var(--text-3); }
+.row.day-locked .date { color: var(--text-4); }
+
+/* Плашка на экране дня — близнец .write-banner, но не кнопка: она сообщает, а не зовёт.
+   Штриховка тут не нужна: она язык списка, где закрытый день опознают среди семи
+   других, а на экране одного дня про него сказано словами. */
+.lock-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: var(--radius-card);
+    background: var(--warn-bg);
+}
+.lb-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--orange);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.lb-text { flex: 1; min-width: 0; }
+.lb-title { font-size: 15px; font-weight: 600; }
+.lb-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; overflow-wrap: anywhere; }
+
+/* Причина в строке карточки: длинную обрезаем — целиком она видна в плашке выше. */
+.lock-reason {
+    max-width: 46vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    color: var(--text-2);
+}
 
 /* --- Поля формы --- */
 
@@ -1907,6 +1974,14 @@ body.busy #busy-overlay { display: flex; }
 .modal-num { width: 100%; text-align: center; font-size: 22px; font-weight: 700; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.08); }
 /* Нижний отступ — за разделитель кнопок: без него подпись лежит прямо на линии. */
 .modal-num-hint { padding: 8px 18px 16px; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: center; }
+/* Тот же блок, что у числа, но текст идёт слева: причину читают, а не сверяют цифру. */
+.modal-text-input {
+    width: 100%;
+    font-size: 17px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(var(--sec), 0.08);
+}
 .modal-btn.disabled { opacity: 0.4; pointer-events: none; }
 
 /* Какой это по счёту визит гостя - пилюля рядом с именем в строке заявки.

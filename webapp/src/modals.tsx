@@ -40,6 +40,15 @@ type NumberInput = {
   max: number
   confirmLabel: string
 }
+type TextInput = {
+  kind: 'text'
+  text: string
+  initial: string
+  placeholder?: string
+  hint?: string
+  maxLength: number
+  confirmLabel: string
+}
 type DateInput = {
   kind: 'date'
   text: string
@@ -53,7 +62,7 @@ type ImageInput = {
   src: string
   alt: string
 }
-type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | DateInput | ImageInput
+type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | TextInput | DateInput | ImageInput
 type Modal = ModalInput & { id: number; resolve: (value: any) => void }
 
 let modals: Modal[] = []
@@ -284,6 +293,71 @@ function NumberCard({ modal }: { modal: Modal & { kind: 'number' } }) {
   )
 }
 
+/**
+ * Ввод строки: причина закрытия дня. Пустой текст — тоже ответ («без пояснения»),
+ * поэтому кнопка активна всегда, а отмена возвращает null, а не пустую строку.
+ */
+function TextCard({ modal }: { modal: Modal & { kind: 'text' } }) {
+  const [shown, setShown] = useState(false)
+  const [value, setValue] = useState(modal.initial)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const done = useRef(false)
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      setShown(true)
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const close = (result: string | null): void => {
+    if (done.current) return
+    done.current = true
+    setShown(false)
+    modal.resolve(result)
+    setTimeout(() => remove(modal.id), 180)
+  }
+
+  return (
+    <div
+      className={'modal-overlay' + (shown ? ' shown' : '')}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close(null)
+      }}
+    >
+      <div className="modal-card">
+        <div className="modal-text">{modal.text}</div>
+        <div className="modal-num-wrap">
+          <input
+            ref={inputRef}
+            className="text-input modal-text-input"
+            type="text"
+            autoComplete="off"
+            placeholder={modal.placeholder}
+            maxLength={modal.maxLength}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') close(value.trim())
+            }}
+          />
+        </div>
+        {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
+        <div className="modal-actions">
+          <button className="modal-btn" onClick={() => close(null)}>
+            Отмена
+          </button>
+          <button className="modal-btn primary" onClick={() => close(value.trim())}>
+            {modal.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Выбор даты: та же карточка, что у ввода числа, но с нативным date-инпутом. */
 function DateCard({ modal }: { modal: Modal & { kind: 'date' } }) {
   const [shown, setShown] = useState(false)
@@ -380,6 +454,8 @@ export function ModalHost() {
           <RescheduleCard key={m.id} modal={m} />
         ) : m.kind === 'number' ? (
           <NumberCard key={m.id} modal={m} />
+        ) : m.kind === 'text' ? (
+          <TextCard key={m.id} modal={m} />
         ) : m.kind === 'date' ? (
           <DateCard key={m.id} modal={m} />
         ) : (
@@ -454,6 +530,25 @@ export const numberPrompt = (opts: {
     hint: opts.hint,
     min: opts.min ?? 0,
     max: opts.max ?? 1_000_000,
+    confirmLabel: opts.confirmLabel ?? 'Сохранить',
+  })
+
+/** Ввод строки. null — отмена; пустая строка — осознанный ответ «без текста». */
+export const textPrompt = (opts: {
+  text: string
+  initial?: string
+  placeholder?: string
+  hint?: string
+  maxLength?: number
+  confirmLabel?: string
+}): Promise<string | null> =>
+  open<string | null>({
+    kind: 'text',
+    text: opts.text,
+    initial: opts.initial ?? '',
+    placeholder: opts.placeholder,
+    hint: opts.hint,
+    maxLength: opts.maxLength ?? 200,
     confirmLabel: opts.confirmLabel ?? 'Сохранить',
   })
 

@@ -6,6 +6,7 @@ import {
     displayName,
     formatDayKey,
     HOSTING_DAYS_AHEAD,
+    isDayLocked,
     isFakeUserId,
     requestsForDay,
     residentsAttendingDay,
@@ -58,13 +59,18 @@ const publicRequestsForDay = (storage: Storage, dateKey: string) =>
 /**
  * В дне есть активность, ради которой заводится доска: подтверждённый визит, отметка
  * резидента «я приду» или (только для сегодня) кто-то отмечен внутри спейса.
+ *
+ * Закрытый для заявок день на доску не выходит вовсе, даже если резиденты отметились
+ * «я приду»: доска висит в общем чате и читается как «приходите», а спейс в этот день
+ * гостей не берёт. Резидентам их собственные отметки видны в миниаппе.
  */
 const dayHasActivity = (storage: Storage, dateKey: string, today: string): boolean =>
-    residentsAttendingDay(storage, dateKey).length > 0 ||
+    !isDayLocked(storage, dateKey) &&
+    (residentsAttendingDay(storage, dateKey).length > 0 ||
     publicRequestsForDay(storage, dateKey).some((r) => r.status === 'approved') ||
     // Ивент — сам по себе повод завести доску: он и есть то, ради чего в этот день придут.
     eventsForDay(storage, dateKey, false).length > 0 ||
-    (dateKey === today && Object.keys(storage.get().presence).length > 0)
+    (dateKey === today && Object.keys(storage.get().presence).length > 0))
 
 /** Ближайший день в окне [сегодня; +6] с активностью, или null — активности нет нигде. */
 export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): string | null => {

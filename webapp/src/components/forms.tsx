@@ -46,6 +46,9 @@ export function useDayTime(initialDay: string, initialTime: string | null) {
   return { day, time, min, selectDay, onTimeChange }
 }
 
+/** Первый день, на который вообще можно проситься: закрытые пропускаем. */
+export const firstOpenDay = (days: Day[]): string => (days.find((d) => !d.lock) ?? days[0]!).dateKey
+
 export function DayChips({
   days,
   selected,
@@ -59,32 +62,63 @@ export function DayChips({
 }) {
   return (
     <div className="day-chips">
-      {days.map((d) => (
-        <button
-          key={d.dateKey}
-          className={'day-chip' + (d.dateKey === selected ? ' selected' : '')}
-          onClick={() => onSelect(d.dateKey)}
-        >
-          <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
-          <span className="dc-num">{String(dayNum(d.dateKey))}</span>
-          {/* Ивент дня — точкой в углу. Гостю сюда приезжают только открытые
-              ивенты (сервер фильтрует residentsOnly), так что метка честная. */}
-          {d.events.length > 0 ? (
-            <i className="dc-event" title={d.events.map((e) => e.title).join(', ')} />
-          ) : null}
-          {showCounts ? (
-            d.total > 0 ? (
-              <div className="dc-counts">
-                <span>{String(d.total)}</span>
-                {icons.check(10, d.dateKey === selected ? '#fff' : '#34c759', 2.2)}
-                <span className="dc-approved">{String(d.approved)}</span>
-              </div>
-            ) : (
+      {days.map((d) => {
+        // Закрытый день не выбирается вовсе: сервер такую заявку всё равно отобьёт, а
+        // штриховка объясняет отказ до тапа, а не алертом после.
+        const locked = Boolean(d.lock)
+        return (
+          <button
+            key={d.dateKey}
+            className={'day-chip' + (d.dateKey === selected ? ' selected' : '') + (locked ? ' locked' : '')}
+            disabled={locked}
+            title={locked ? (d.lock!.reason ? `Закрыт: ${d.lock!.reason}` : 'День закрыт для заявок') : undefined}
+            onClick={() => onSelect(d.dateKey)}
+          >
+            <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
+            <span className="dc-num">{String(dayNum(d.dateKey))}</span>
+            {/* Ивент дня — точкой в углу. Гостю сюда приезжают только открытые
+                ивенты (сервер фильтрует residentsOnly), так что метка честная. */}
+            {d.events.length > 0 ? (
+              <i className="dc-event" title={d.events.map((e) => e.title).join(', ')} />
+            ) : null}
+            {locked ? (
               <span className="dc-dash">—</span>
-            )
-          ) : null}
-        </button>
-      ))}
+            ) : showCounts ? (
+              d.total > 0 ? (
+                <div className="dc-counts">
+                  <span>{String(d.total)}</span>
+                  {icons.check(10, d.dateKey === selected ? '#fff' : '#34c759', 2.2)}
+                  <span className="dc-approved">{String(d.approved)}</span>
+                </div>
+              ) : (
+                <span className="dc-dash">—</span>
+              )
+            ) : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Строка легенды под чипами: она нужна на всех трёх экранах с выбором дня. */
+export function DayChipsLegend({ days }: { days: Day[] }) {
+  return (
+    <div className="chips-legend">
+      <span className="cl-row">
+        {icons.check(12, '#34c759', 2.2)}
+        число заявок и уже одобренных в этот день
+      </span>
+      {days.some((d) => d.events.length > 0) ? (
+        <span className="cl-row">
+          <i className="legend-dot" />в этот день ивент
+        </span>
+      ) : null}
+      {days.some((d) => d.lock) ? (
+        <span className="cl-row">
+          <i className="legend-hatch" />в этот день спейс закрыт для гостей
+        </span>
+      ) : null}
     </div>
   )
 }
