@@ -3,6 +3,7 @@ import {
     addDaysToKey,
     attendeesForDay,
     type DayAttendee,
+    dayLockFor,
     displayName,
     formatDayKey,
     HOSTING_DAYS_AHEAD,
@@ -30,10 +31,16 @@ export const setHostingBoardLink = (link: string | null): void => {
     hostingBoardLink = link
 }
 
-export const boardMarkup = () =>
-    hostingBoardLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', hostingBoardLink)]])
-        : undefined
+/**
+ * Кнопка под доской. `locked` — день закрыт для гостей: зовём пустой разметкой, а не
+ * `undefined`, потому что у `editMessage` пропущенное поле оставило бы кнопку на месте.
+ */
+export const boardMarkup = (locked = false) =>
+    locked
+        ? BotKeyboard.inline([])
+        : hostingBoardLink
+            ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', hostingBoardLink)]])
+            : undefined
 
 const escapeHtml = (s: string): string =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -90,6 +97,21 @@ export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): st
  */
 export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMinutes: number): string => {
     const isToday = dateKey === todayKey(tzOffsetMinutes)
+    // Закрытый день доску не заводит (`dayHasActivity`), но уже висящая на него попадает:
+    // если активности впереди нет, `syncChatBoard` откатывается на сегодня. Звать в чат
+    // «приходите» в день, когда спейс не берёт гостей, нельзя — поэтому у такого дня свой
+    // короткий текст, а кнопку гасит `boardMarkup(true)`. Кто внутри — оставляем: чат свой,
+    // и «закрыт для гостей» не значит «внутри никого».
+    const lock = dayLockFor(storage, dateKey)
+    if (lock) {
+        const closed = [`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> — спейс закрыт для гостей`]
+        if (lock.reason) closed.push(escapeHtml(lock.reason))
+        if (isToday) {
+            const inside = insideBoardLines(storage)
+            if (inside.length > 0) closed.push('', ...inside)
+        }
+        return closed.join('<br>')
+    }
     const attendees = attendeesForDay(storage, dateKey)
     const requests = publicRequestsForDay(storage, dateKey)
     const total = requests.length
@@ -185,6 +207,7 @@ const syncChatBoard = async (
     if (!entry && activeDay === null) return
 
     const displayDay = activeDay ?? today
+    const locked = isDayLocked(storage, displayDay)
     const text = buildBoardMessage(storage, displayDay, tzOffsetMinutes)
 
     if (entry) {
@@ -194,7 +217,7 @@ const syncChatBoard = async (
                 message: entry.messageId,
                 text: html(text),
                 disableWebPreview: true,
-                replyMarkup: boardMarkup(),
+                replyMarkup: boardMarkup(locked),
             })
             if (entry.shownDay !== displayDay) {
                 await storage.update((s) => {
@@ -224,7 +247,7 @@ const syncChatBoard = async (
 
     // Доски нет (или её удалили) и есть активность — постим новую и тихо закрепляем.
     try {
-        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: boardMarkup() })
+        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: boardMarkup(locked) })
         await storage.update((s) => {
             s.hostingBoard[key] = { chatId, messageId: sent.id, postedDay: today, shownDay: displayDay }
         })

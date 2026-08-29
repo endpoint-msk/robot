@@ -6,6 +6,7 @@ import {
     displayName,
     formatDayKey,
     HOSTING_DAYS_AHEAD,
+    isDayLocked,
     isFakeUserId,
     requestsForDay,
     todayKey,
@@ -86,6 +87,7 @@ const renderRequest = (r: HostingRequest): string => {
 
 /** Короткая подпись доски в выдаче: сколько придут и сколько всего заявок. */
 const boardSummary = (storage: Storage, dateKey: string): string => {
+    if (isDayLocked(storage, dateKey)) return 'закрыт для гостей'
     const attendees = attendeesForDay(storage, dateKey).length
     const requests = requestsForDay(storage, dateKey).filter((r) => !isFakeUserId(r.guest.userId)).length
     return `придут: ${attendees}, заявок: ${requests}`
@@ -129,7 +131,11 @@ export const registerInlineHandlers = (
                     description: boardSummary(storage, boardDay),
                     message: BotInlineMessage.text(html(buildBoardMessage(storage, boardDay, tzOffsetMinutes)), {
                         disableWebPreview: true,
-                        replyMarkup: boardMarkup(),
+                        // Закрытый день попадает сюда тем же откатом на сегодня, что и на доске:
+                        // кнопки «Хочу прийти» у него быть не должно. Здесь именно undefined —
+                        // пустая разметка нужна только чтобы гасить кнопку у существующего
+                        // сообщения, а этого ещё не существует.
+                        replyMarkup: isDayLocked(storage, boardDay) ? undefined : boardMarkup(),
                     }),
                 }),
             )
