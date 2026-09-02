@@ -266,6 +266,8 @@ export type Bootstrap = {
   todayKey: string
   nowTime: string
   days: Day[]
+  /** Ивенты дальше окна обзора: их дня в `days` нет, поэтому едут отдельным списком. */
+  laterEvents: SpaceEvent[]
   myRequests: HostingRequest[]
   /** Свои прошедшие визиты, свежие сверху (последние 5): «Были раньше» в «Моих визитах». */
   myPast: HostingRequest[]

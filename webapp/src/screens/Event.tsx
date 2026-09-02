@@ -4,7 +4,7 @@
 
 import { useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
-import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { addDays, fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { compressImage } from '../image'
 import { linkedText } from '../linkify'
@@ -13,6 +13,7 @@ import { haptic, initData, openUrl, tg } from '../telegram'
 import { pop, setBusy, useParams, useStore } from '../store'
 import type { SpaceEvent } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Switch } from '../components/common'
+import { DateField } from '../components/DateField'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Screen } from '../components/Screen'
 
@@ -20,6 +21,8 @@ const MAX_TITLE = 120
 const MAX_DESCRIPTION = 2000
 /** Столько же держит сервер (MAX_EVENT_PHOTOS): ивент — анонс, а не фотоальбом. */
 const MAX_PHOTOS = 6
+/** Столько же держит сервер (EVENT_DAYS_AHEAD): дальше даты не выставить. */
+const MAX_DAYS_AHEAD = 365
 /** Шаг стрелок времени: получасовой, как в афишах («в 19:00», «в 19:30»). */
 const STEP_MINUTES = 30
 /** Последний слот суток: заворачивать стрелку через полночь нельзя — это сменило бы день. */
@@ -221,6 +224,8 @@ export function Event() {
       </div>
 
       <SectionTitle>Когда</SectionTitle>
+      {/* Чипы — быстрый выбор ближайшей недели, всё остальное берётся в календаре
+          строкой ниже. Дальний день не подсвечивает ни один чип: дату видно в строке. */}
       <div className="day-chips">
         {days.map((d) => (
           <button
@@ -234,6 +239,18 @@ export function Event() {
         ))}
       </div>
       <div className="card" style={{ marginTop: 10 }}>
+        <div className="row">
+          <span className="row-label">Дата</span>
+          <div className="row-right">
+            <DateField
+              value={dateKey}
+              min={data!.todayKey}
+              max={addDays(data!.todayKey, MAX_DAYS_AHEAD - 1)}
+              onChange={selectDay}
+            />
+          </div>
+        </div>
+        <div className="sep" style={{ marginLeft: 14 }} />
         <div className="row">
           <span className="row-label">Начало в</span>
           <div className="row-right ev-time">
@@ -257,6 +274,14 @@ export function Event() {
       </div>
       {guardPast && dateKey === data!.todayKey ? (
         <Footnote>{`Сегодня ивент можно поставить не раньше ${data!.nowTime}: анонсировать то, что уже началось, некому.`}</Footnote>
+      ) : null}
+      {/* Дальний ивент никуда не пропадает, но живёт до своей недели отдельным списком:
+          доска и дни показывают только ближайшие семь дней. */}
+      {!days.some((d) => d.dateKey === dateKey) ? (
+        <Footnote>
+          Эта дата дальше ближайшей недели: до неё ивент будет виден в разделе «Позже», а на доску в чате и в дни
+          обзора выйдет за неделю до начала.
+        </Footnote>
       ) : null}
 
       <SectionTitle>{`Превью · ${residentsOnly ? 'резиденты' : 'все'}`}</SectionTitle>

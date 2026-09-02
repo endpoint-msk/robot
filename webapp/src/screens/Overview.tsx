@@ -5,6 +5,7 @@ import { icons } from '../icons'
 import { push, useStore } from '../store'
 import { DevChips, Header, Sep } from '../components/common'
 import { DayRow } from '../components/DayRow'
+import { LaterEvents } from '../components/EventRow'
 import { Screen } from '../components/Screen'
 
 /**
@@ -81,6 +82,7 @@ export function Overview() {
           </Fragment>
         ))}
       </div>
+      <LaterEvents backLabel="Ближайшие дни" />
       <div style={{ height: 22 }} />
       <div className="card">
         <button type="button" className="row tappable" onClick={() => push('archive')}>

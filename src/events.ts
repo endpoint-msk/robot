@@ -23,6 +23,13 @@ import type { Storage } from './storage.js'
 import type { EventDraft, HostingNotifyPrefs, HostingUser, SpaceEvent } from './types.js'
 
 export const MAX_EVENT_TITLE = 120
+/**
+ * Насколько вперёд можно поставить ивент. Окно хостинга (`HOSTING_DAYS_AHEAD`) ему мало:
+ * заявка гостя живёт неделю, а воркшоп объявляют за месяц, и упереться в семь дней
+ * значит не дать завести его вовсе. Потолок всё же нужен — он ловит опечатку в дате,
+ * после которой ивент уехал бы в 2099-й и остался бы там навсегда.
+ */
+export const EVENT_DAYS_AHEAD = 365
 export const MAX_EVENT_DESCRIPTION = 2000
 /** Потолок афиши: посты канала — это фото на сотни килобайт, мегабайты тут не нужны. */
 export const MAX_EVENT_PHOTO_BYTES = 4 * 1024 * 1024
@@ -180,7 +187,7 @@ const clip = (value: unknown, max: number): string =>
 /** Проверяет слот и заголовок. Общая часть создания и правки. */
 const validate = (input: EventInput, tzOffsetMinutes: number, allowPast: boolean): EventError | null => {
     const today = todayKey(tzOffsetMinutes)
-    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    const maxDay = addDaysToKey(today, EVENT_DAYS_AHEAD - 1)
     if (!isValidDayKey(input.dateKey) || input.dateKey < today || input.dateKey > maxDay) return 'bad_date'
     if (!isValidTime(input.time)) return 'bad_time'
     // Правку в прошедший слот пропускаем: ивент, который уже идёт, всё ещё нужно уметь
@@ -254,6 +261,22 @@ export const eventsForDay = (storage: Storage, dateKey: string, forResidents: bo
     Object.values(storage.get().events)
         .filter((e) => e.dateKey === dateKey && (forResidents || !e.residentsOnly))
         .sort((a, b) => (a.time === b.time ? a.createdAt.localeCompare(b.createdAt) : a.time.localeCompare(b.time)))
+
+/**
+ * Ивенты дальше окна обзора, от ближайшего к дальнему. `forResidents: false` прячет
+ * резидентские, как и `eventsForDay`.
+ *
+ * Нужны отдельным списком потому, что все дневные поверхности — экран дня, «Активность»,
+ * доска — живут в `HOSTING_DAYS_AHEAD`: без него ивент, поставленный на месяц вперёд,
+ * пропадал бы с глаз до самой недели проведения, включая автора, которому его ещё
+ * нужно уметь поправить.
+ */
+export const eventsLater = (storage: Storage, tzOffsetMinutes: number, forResidents: boolean): SpaceEvent[] => {
+    const lastVisibleDay = addDaysToKey(todayKey(tzOffsetMinutes), HOSTING_DAYS_AHEAD - 1)
+    return Object.values(storage.get().events)
+        .filter((e) => e.dateKey > lastVisibleDay && (forResidents || !e.residentsOnly))
+        .sort((a, b) => (a.dateKey === b.dateKey ? a.time.localeCompare(b.time) : a.dateKey.localeCompare(b.dateKey)))
+}
 
 /** Может ли этот человек править ивент: автор или любой dev (дев чинит чужое). */
 export const canEditEvent = (event: SpaceEvent, userId: number, isDev: boolean): boolean =>

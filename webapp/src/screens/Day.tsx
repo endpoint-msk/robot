@@ -8,6 +8,7 @@ import { push, useParams, useStore } from '../store'
 import type { DayLock, HostingRequest } from '../types'
 import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
+import { EventRow } from '../components/EventRow'
 import { RequestsCard } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 
@@ -152,17 +153,7 @@ export function Day() {
           {events.map((ev, i) => (
             <Fragment key={ev.id}>
               {i > 0 ? <Sep left={62} /> : null}
-              <button type="button" className="row tappable" onClick={() => push('event', { event: ev })}>
-                <div className="row-icon ev-row-icon">{icons.calendar(17, '#bf5af2')}</div>
-                <div className="ev-row-main">
-                  <div className="ev-row-title-line">
-                    <span className="ev-row-title">{ev.title}</span>
-                    {ev.residentsOnly ? <span className="ev-chip">резидентам</span> : null}
-                  </div>
-                  <div className="ev-row-sub">{`в ${ev.time} · ${ev.host.username ? '@' + ev.host.username : ev.host.name}`}</div>
-                </div>
-                <div className="row-right">{icons.chevron()}</div>
-              </button>
+              <EventRow event={ev} />
             </Fragment>
           ))}
           <Sep left={62} />

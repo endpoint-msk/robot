@@ -72,6 +72,7 @@ import {
     eventNotifyPrefsFor,
     eventPhotoIds,
     eventsForDay,
+    eventsLater,
     feedEvents,
     isStagedPhotoOf,
     notifyEventCancelled,
@@ -830,6 +831,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         todayKey: today,
         nowTime: nowTimeKey(tzOffsetMinutes),
         days,
+        // Ивенты дальше окна обзора: их день в `days` не попадает, а показать их надо —
+        // и автору (иначе он не поправит собственный анонс), и всем остальным.
+        laterEvents: eventsLater(storage, tzOffsetMinutes, resident).map(eventView),
         myRequests: requestsView(myRequests, user.userId),
         myPast: requestsView(myPast, user.userId),
         settings,

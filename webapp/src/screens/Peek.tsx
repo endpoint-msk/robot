@@ -5,6 +5,7 @@ import { push, useStore } from '../store'
 import { sec } from '../theme'
 import type { Day } from '../types'
 import { BackRow, Footnote, Header, Sep } from '../components/common'
+import { LaterEvents } from '../components/EventRow'
 import { AvatarStack } from '../components/people'
 import { Screen } from '../components/Screen'
 
@@ -84,6 +85,7 @@ export function Peek() {
           </Fragment>
         ))}
       </div>
+      <LaterEvents backLabel="Активность" />
       <Footnote>
         Показаны те, кого уже подтвердили, и резиденты, отметившие «я приду». Гости, пришедшие анонимно, в списке не
         видны. Цель визита не показывается.

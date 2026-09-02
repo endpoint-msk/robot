@@ -1222,6 +1222,62 @@ body {
     .tp-sheet { transition: none; transform: none; }
 }
 
+/* Календарь месяца в той же шторке, что и колесо времени (components/DateField.tsx). */
+.dp-field { font-weight: 600; }
+.dp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px 4px;
+}
+.dp-month { font-size: 17px; font-weight: 600; color: var(--text); }
+.dp-nav {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+}
+.dp-nav:active { opacity: 0.6; }
+.dp-nav:disabled { opacity: 0.3; cursor: default; }
+/* Стрелка «назад» — та же шеврон-иконка зеркально: отдельной левой в наборе нет. */
+.dp-nav-back { display: flex; transform: scaleX(-1); }
+.dp-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    /* Ячейка квадратная и по центру своей колонки: растянутая на всю колонку кнопка
+       давала под выделением эллипс вместо круга. */
+    justify-items: center;
+    row-gap: 4px;
+    padding: 2px 10px max(14px, env(safe-area-inset-bottom));
+}
+.dp-dow {
+    padding-bottom: 6px;
+    font-size: 12px;
+    color: var(--text-2);
+}
+.dp-cell {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--text);
+    cursor: pointer;
+}
+.dp-cell.empty { cursor: default; }
+.dp-cell:disabled { color: rgba(var(--sec), 0.25); cursor: default; }
+.dp-cell.selected { background: var(--blue); color: #fff; font-weight: 600; }
+
 .purpose-input {
     width: 100%;
     border: none;
