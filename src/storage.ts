@@ -123,6 +123,7 @@ export class Storage {
             hostingBoard: parsed.hostingBoard ?? {},
             hostingBoardMuted: parsed.hostingBoardMuted ?? {},
             announceMuted: parsed.announceMuted ?? {},
+            eventsMuted: parsed.eventsMuted ?? {},
             lastAnnouncedVersion: typeof parsed.lastAnnouncedVersion === 'string' ? parsed.lastAnnouncedVersion : '',
             blockedUsers: parsed.blockedUsers ?? {},
             guestNotes: parsed.guestNotes ?? {},

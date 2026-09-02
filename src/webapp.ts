@@ -59,6 +59,7 @@ import {
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
 import { isReminderChoice, mergeReminder, reminderFits, setVisitReminder } from './visit-reminder.js'
 import {
+    announceEventToChats,
     buildEventIcs,
     buildEventsFeedIcs,
     canEditEvent,
@@ -1263,6 +1264,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Рассылка резидентам — в фоне, чтобы не держать ответ автору.
             void notifyResidentsAboutEvent(client, storage, residents, tzOffsetMinutes, config.publicUrl, created.event)
                 .catch((err) => console.error('[events] не удалось разослать уведомления об ивенте:', err))
+            // И анонс в общие чаты — там сидят те, кто в миниапп не заходит. Афишу берём
+            // с диска уже после syncEventPhotos, иначе картинки ивента ещё нет.
+            void announceEventToChats(client, storage, allowedChats, tzOffsetMinutes, storage.path(), created.event)
+                .catch((err) => console.error('[events] не удалось анонсировать ивент в чаты:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return

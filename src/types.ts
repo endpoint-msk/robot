@@ -77,6 +77,9 @@ export type State = {
     /** Чаты, где выключены анонсы (рассылка обновлений/объявлений). Ключ — chatId как строка.
      *  Переключается командой /announcemute админом чата. */
     announceMuted: Record<string, true>
+    /** Чаты, где выключен анонс нового ивента. Ключ — chatId как строка.
+     *  Переключается командой /eventmute админом чата. */
+    eventsMuted: Record<string, true>
     /** Версия (tag_name последнего релиза), до которой уже разослали анонс. Пусто — ещё ни разу.
      *  Чисто индикатор для дев-меню миниаппа: видно, есть ли неанонсированный релиз. */
     lastAnnouncedVersion: string
@@ -613,6 +616,7 @@ export const emptyState = (): State => ({
     hostingBoard: {},
     hostingBoardMuted: {},
     announceMuted: {},
+    eventsMuted: {},
     lastAnnouncedVersion: '',
     blockedUsers: {},
     guestNotes: {},

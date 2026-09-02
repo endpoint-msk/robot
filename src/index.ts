@@ -29,6 +29,7 @@ import {
 } from './presence.js'
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
 import { registerInlineHandlers, setInlineMiniappLink } from './inline.js'
+import { setEventAnnounceLink } from './events.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
 import { registerVisitReminderHandlers, startVisitReminderScheduler } from './visit-reminder.js'
 import { registerBackupHandlers, startBackupScheduler } from './backup.js'
@@ -235,6 +236,7 @@ const main = async () => {
             setHostingMiniappLink(deepLink)
             setHostingBoardLink(deepLink)
             setInlineMiniappLink(deepLink)
+            setEventAnnounceLink(deepLink)
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
@@ -288,6 +290,7 @@ const main = async () => {
         BotCommands.cmd('setresetday', 'День сброса сбора (1–29)'),
         BotCommands.cmd('announcemute', 'Вкл/выкл анонсы (обновления/объявления) в этот чат'),
         BotCommands.cmd('boardmute', 'Вкл/выкл доску «кто сегодня в спейсе» в этом чате'),
+        BotCommands.cmd('eventmute', 'Вкл/выкл анонсы новых ивентов в этот чат'),
         BotCommands.cmd('export', 'Выгрузить донаты в CSV (all — за все периоды)'),
         BotCommands.cmd('help', 'Справка по командам'),
     ]

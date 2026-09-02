@@ -362,6 +362,7 @@ export const registerHandlers = (
                 'Что бот присылает в этот чат (админ):',
                 '/goalsmute - вкл/выкл ежедневную автоотправку сбора',
                 '/boardmute - вкл/выкл доску «кто сегодня в спейсе»',
+                '/eventmute - вкл/выкл анонсы новых ивентов',
                 '/announcemute - вкл/выкл анонсы обновлений и объявления',
                 '',
                 '/help - это сообщение',
@@ -534,6 +535,23 @@ export const registerHandlers = (
             muted
                 ? 'Анонсы (обновления бота и объявления) снова будут приходить в этот чат. Выключить - /announcemute.'
                 : 'Больше не буду присылать анонсы в этот чат. Включить обратно - /announcemute.',
+        )
+    })
+
+    // /eventmute - вкл/выкл анонсы новых ивентов в этот чат. Настройка чата - только админам.
+    dp.onNewMessage(filters.command('eventmute'), async (msg) => {
+        if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
+        const chatId = Number(msg.chat.id)
+        const key = String(chatId)
+        const muted = storage.get().eventsMuted[key]
+        await storage.update((s) => {
+            if (muted) delete s.eventsMuted[key]
+            else s.eventsMuted[key] = true
+        })
+        await msg.answerText(
+            muted
+                ? 'Анонсы новых ивентов снова будут приходить в этот чат. Выключить - /eventmute.'
+                : 'Больше не буду присылать анонсы новых ивентов в этот чат. Включить обратно - /eventmute.',
         )
     })
 

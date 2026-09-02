@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
     displayName,
@@ -360,6 +360,102 @@ const broadcastEventNotice = async (
             await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
         } catch {
             // резидент не открывал личку с ботом — молча пропускаем
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Анонс в чаты
+// ---------------------------------------------------------------------------
+
+/**
+ * Deep link миниаппа для кнопки под анонсом: в группах web_app-кнопки запрещены, поэтому
+ * та же ссылка, что у доски (`setHostingBoardLink`). null — миниапп не настроен, кнопки нет.
+ */
+let eventAnnounceLink: string | null = null
+
+export const setEventAnnounceLink = (link: string | null): void => {
+    eventAnnounceLink = link
+}
+
+/**
+ * Сколько описания уносим в чат: у сообщения с фото подпись ограничена 1024 символами
+ * на всё, включая заголовок и организатора.
+ */
+const CHAT_DESCRIPTION_LIMIT = 600
+
+/**
+ * Организатор в анонсе: с ником — t.me-ссылка, без ника — просто имя. Text-mention
+ * (`tg://user?id=`), который уходит в личку, тут не годится: он пингует человека при
+ * каждой публикации, а анонс не повод дёргать (тот же довод, что у доски).
+ */
+const hostLabel = (host: HostingUser): string =>
+    host.username
+        ? `<a href="https://t.me/${encodeURIComponent(host.username)}">@${host.username}</a>`
+        : html.escape(displayName(host.name))
+
+/** Чаты, которые получат анонс ивента: allowlist минус замьюченные через /eventmute. */
+export const eventAnnounceTargets = (storage: Storage, allowedChats: ReadonlySet<number>): number[] =>
+    [...allowedChats].filter((chatId) => storage.get().eventsMuted[String(chatId)] !== true)
+
+/**
+ * Анонс нового ивента в общие чаты — параллельно DM резидентам
+ * (`notifyResidentsAboutEvent`): в личку уходит рабочее уведомление тем, кто держит
+ * спейс, а в чат — приглашение всем, кто там сидит.
+ *
+ * `residentsOnly` в чат не выносим по тому же правилу, что и на доску: чат читают гости,
+ * и звать их на закрытый ивент нельзя.
+ */
+export const announceEventToChats = async (
+    client: TelegramClient,
+    storage: Storage,
+    allowedChats: ReadonlySet<number>,
+    tzOffsetMinutes: number,
+    dataFile: string,
+    event: SpaceEvent,
+): Promise<void> => {
+    if (event.residentsOnly) return
+    const targets = eventAnnounceTargets(storage, allowedChats)
+    if (targets.length === 0) return
+
+    // Ивент из пересылки ведёт на исходный пост канала: там вёрстка, картинки и
+    // комментарии, которых в анонсе быть не может (так же сделано на доске).
+    const title = event.sourceUrl
+        ? `<a href="${html.escape(event.sourceUrl)}">${html.escape(event.title)}</a>`
+        : `<b>${html.escape(event.title)}</b>`
+    const lines = [
+        `📅 Новый ивент: ${title}`,
+        `${formatDayKey(event.dateKey)} к ${event.time}${event.dateKey === todayKey(tzOffsetMinutes) ? ' (сегодня)' : ''}`,
+        `Организатор: ${hostLabel(event.host)}`,
+    ]
+    if (event.description) {
+        const short =
+            event.description.length > CHAT_DESCRIPTION_LIMIT
+                ? `${event.description.slice(0, CHAT_DESCRIPTION_LIMIT).trimEnd()}…`
+                : event.description
+        lines.push('', ...short.split('\n').map((line) => html.escape(line)))
+    }
+    const text = lines.join('<br>')
+    const markup = eventAnnounceLink
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', eventAnnounceLink)]])
+        : undefined
+
+    // Афиша — первая: анонс с картинкой в ленте чата заметнее, а разводить ради этого
+    // альбом незачем — подробности всё равно в миниаппе.
+    const photoId = eventPhotoIds(event)[0]
+    const photo = photoId ? await readEventPhoto(dataFile, photoId) : null
+
+    for (const chatId of targets) {
+        try {
+            if (photo) {
+                await client.sendMedia(chatId, InputMedia.photo(photo, { caption: html(text) }), {
+                    replyMarkup: markup,
+                })
+            } else {
+                await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: markup })
+            }
+        } catch (err) {
+            console.error(`[events] не удалось отправить анонс ивента в чат ${chatId}:`, err)
         }
     }
 }
