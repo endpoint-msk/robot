@@ -43,10 +43,24 @@ function LockBanner({ lock }: { lock: DayLock }) {
  * Переключатель «Закрыт для заявок». Уже поданные заявки закрытие не трогает: отменить
  * чужой согласованный визит одним тумблером нельзя, для этого есть «Закрыть заявку»
  * с уведомлением гостя — поэтому на непустом дне сначала спрашиваем подтверждение.
+ * Открытие тоже подтверждается: день закрывает любой резидент, и снять чужой замок
+ * промахом по тумблеру — значит впустить гостей в день, про который договорились иначе.
  */
 function LockCard({ dateKey, lock, requests }: { dateKey: string; lock: DayLock | null; requests: number }) {
   const toggle = async (): Promise<void> => {
     if (lock) {
+      const who = lock.by ? (lock.by.username ? '@' + lock.by.username : lock.by.name) : ''
+      const ok = await confirmDialog(
+        [
+          who ? `День закрыл ${who}.` : 'День закрыт.',
+          lock.reason ? `Причина: ${lock.reason}.` : '',
+          'Откроем — гости снова смогут оставлять заявки, и день вернётся на доску.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        { confirmLabel: 'Открыть день' },
+      )
+      if (!ok) return
       const done = await action('day.lock', { dateKey, locked: false })
       if (done) haptic('success')
       return
