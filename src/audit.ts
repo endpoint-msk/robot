@@ -43,8 +43,22 @@ let dirEnsured = false
  * `event-photos/`), пояс нужен только для имени месячного файла.
  */
 export const initAuditLog = (dataFile: string, tzOffset: number): void => {
-    dir = path.join(path.dirname(dataFile), 'audit')
+    const base = path.join(path.dirname(dataFile), 'audit')
+    dir = base
     tzOffsetMinutes = tzOffset
+    // Директорию заводим сразу, а не на первой записи. Пустая папка рядом со стейтом -
+    // это ответ на вопрос «журнал вообще включён?», который иначе приходится проверять
+    // действием; а несмонтированный том или отсутствие прав всплывают на старте, а не
+    // через неделю, когда за журналом придут.
+    chain = chain
+        .then(async () => {
+            await fs.mkdir(base, { recursive: true })
+            dirEnsured = true
+            console.log(`[audit] журнал действий: ${base}`)
+        })
+        .catch((err) => {
+            console.error('[audit] не удалось создать директорию журнала:', err)
+        })
 }
 
 /** Ждёт, пока допишутся поставленные в очередь строки. Для выключения и для падения. */
