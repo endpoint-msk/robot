@@ -13,6 +13,7 @@
 
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
+import { audit, auditUser } from './audit.js'
 import { monthNameRu } from './fundraiser.js'
 import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
@@ -760,6 +761,13 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
             await ctx.answer({ text, alert: true })
             return
         }
+        // Первая стадия отметки. Без неё в журнале была бы только вторая (dues.confirm),
+        // и пара «заявил — подтвердили» не читалась бы.
+        audit({
+            action: 'dues.claim',
+            actor: auditUser(ctx.user),
+            text: `отметил свой взнос за ${periodKey} (кнопка в личке)`,
+        })
         void notifyDevsAboutClaim(client, devUserIds, duesOf(storage), periodKey, result.member).catch((err) =>
             console.error('[dues] не удалось уведомить дева о заявке:', err),
         )

@@ -119,7 +119,7 @@ const buildTarGz = (entries: TarEntry[]): Buffer => {
     return zlib.gzipSync(Buffer.concat(parts))
 }
 
-/** Файлы примыкающей к стейту директории (`presence-log/`, `event-photos/`) для архива. */
+/** Файлы примыкающей к стейту директории (`presence-log/`, `event-photos/`, `audit/`) для архива. */
 const collectDir = async (dir: string, prefix: string): Promise<TarEntry[]> => {
     let names: string[]
     try {
@@ -144,8 +144,9 @@ const collectDir = async (dir: string, prefix: string): Promise<TarEntry[]> => {
 /**
  * Документ-архив со всем стейтом: `data.json` (из in-memory снимка — он всегда
  * консистентен, в отличие от возможной гонки с tmp+rename), сырой журнал присутствия
- * (`presence-log/`) и афиши ивентов (`event-photos/`). Раньше уходил только JSON, и
- * сессии журнала с картинками в бэкап не попадали. Один и тот же для ручной и авто-отправки.
+ * (`presence-log/`), афиши ивентов (`event-photos/`) и журнал действий (`audit/`).
+ * Раньше уходил только JSON, и сессии журнала с картинками в бэкап не попадали.
+ * Один и тот же для ручной и авто-отправки.
  */
 export const buildBackupArchive = async (storage: Storage, now: Date, caption: string) => {
     const dataName = `${path.basename(storage.path()).replace(/\.json$/i, '') || 'data'}.json`
@@ -154,6 +155,7 @@ export const buildBackupArchive = async (storage: Storage, now: Date, caption: s
         { name: dataName, data: Buffer.from(storage.snapshot(), 'utf8'), mtime: now.getTime() },
         ...(await collectDir(path.join(stateDir, 'presence-log'), 'presence-log')),
         ...(await collectDir(path.join(stateDir, 'event-photos'), 'event-photos')),
+        ...(await collectDir(path.join(stateDir, 'audit'), 'audit')),
     ]
     const gz = buildTarGz(entries)
     const sizeKb = Math.max(1, Math.round(gz.length / 1024))

@@ -36,6 +36,7 @@ import { registerBackupHandlers, startBackupScheduler } from './backup.js'
 import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './dues.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
+import { drainAudit, initAuditLog } from './audit.js'
 import { installErrorReporting } from './errors.js'
 import { parseHostingTzOffset } from './hosting.js'
 import { setPresenceLogTz } from './presence-log.js'
@@ -105,6 +106,9 @@ const main = async () => {
     // Журнал присутствия нарезает сутки по поясу спейса — как и хостинг. Ставим до
     // логина: снятие отметки может случиться на первой же минуте работы.
     setPresenceLogTz(hostingTzOffset)
+    // Журнал действий — рядом со стейтом, то есть в примонтированном томе. Включаем до
+    // логина: первое же действие может случиться на первой минуте работы.
+    initAuditLog(dataFile, hostingTzOffset)
     // Репо для чтения GitHub-релизов в дев-анонсах (публичное, токен не нужен).
     const githubRepo = process.env.GITHUB_REPO?.trim() || 'endpoint-msk/robot'
     // Табло донатов (GET /board). Без токена ручка не поднимается вовсе: она отдаёт
@@ -266,7 +270,10 @@ const main = async () => {
     // После логина: форвардить все ошибки (console.error + process-level) в личку dev'ам.
     // Необработанное исключение роняет процесс - но сначала дописав стейт, иначе
     // подтверждённая пользователю правка ушла бы в никуда.
-    installErrorReporting(tg, devUserIds, () => storage.drain())
+    installErrorReporting(tg, devUserIds, async () => {
+        await storage.drain()
+        await drainAudit()
+    })
     // Жалобы загрузки стейта копятся до этого момента: сама загрузка идёт раньше логина,
     // и console.error там ушёл бы только в докер-лог (см. Storage.takeWarnings).
     for (const w of storage.takeWarnings()) console.error('[storage]', w)
@@ -439,7 +446,7 @@ const main = async () => {
         // Записи в Storage поставлены в очередь и могут быть ещё в полёте: без ожидания
         // подтверждённая пользователю правка (донат, одобренный визит, чек-ин) терялась.
         await Promise.race([
-            storage.drain(),
+            Promise.all([storage.drain(), drainAudit()]),
             new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
         ])
         await tg.destroy()

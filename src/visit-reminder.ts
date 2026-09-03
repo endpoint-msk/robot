@@ -19,6 +19,7 @@ import {
     slotStartUtc,
     todayKey,
 } from './hosting.js'
+import { audit, auditUser } from './audit.js'
 import { syncHostingBoard } from './hosting-board.js'
 import { startHeartbeatInterval } from './health.js'
 import type { Storage } from './storage.js'
@@ -237,6 +238,14 @@ export const registerVisitReminderHandlers = (
         }
         await storage.update((s) => {
             delete s.hostingRequests[id]
+        })
+        // Та же отмена, что в миниаппе, только другой кнопкой — и в журнале должна
+        // выглядеть так же, иначе в нём дыра ровно там, где визит сорвался.
+        audit({
+            action: 'cancel',
+            actor: auditUser(ctx.user),
+            text: `отменил свой визит ${request.dateKey} ${request.time} (кнопка в напоминании)`,
+            meta: { id },
         })
         if (request.status === 'approved') {
             void notifyApproverCancelled(client, request)

@@ -5,6 +5,7 @@ data.json
 # Резервная копия, карантин битого стейта и афиши ивентов ложатся рядом с ним.
 data.json.*
 event-photos/
+audit/
 bot.session
 bot.session-*
 *.log

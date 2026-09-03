@@ -22,6 +22,7 @@ import {
     MIN_RESET_DAY,
     MAX_RESET_DAY,
 } from './fundraiser.js'
+import { audit, auditUser } from './audit.js'
 import { postPresenceList, renderPresenceText } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -504,6 +505,17 @@ export const registerHandlers = (
         )
     })
 
+    /**
+     * Мьюты — настройка чата, а не человека: включённая обратно доска или анонсы ничем
+     * не отличаются от никогда не выключавшихся, и кто их трогал, из стейта не узнать.
+     */
+    const auditMute = (msg: MessageContext, what: string, enabled: boolean): void =>
+        audit({
+            action: 'chat.mute',
+            actor: auditUser(msg.sender!),
+            text: `${enabled ? 'включил' : 'выключил'} ${what} в чате ${msg.chat.id}`,
+        })
+
     dp.onNewMessage(filters.command('goalsmute'), async (msg) => {
         if (!(await requireChatAdminInAllowedChat(residents, msg, allowedChats))) return
         const chatId = Number(msg.chat.id)
@@ -513,6 +525,7 @@ export const registerHandlers = (
             if (muted) delete s.goalsMuted[key]
             else s.goalsMuted[key] = true
         })
+        auditMute(msg, 'автоотправку сбора', Boolean(muted))
         await msg.answerText(
             muted
                 ? 'Автоотправка сбора в этот чат снова включена (12:00 по МСК).'
@@ -531,6 +544,7 @@ export const registerHandlers = (
             if (muted) delete s.announceMuted[key]
             else s.announceMuted[key] = true
         })
+        auditMute(msg, 'анонсы и объявления', Boolean(muted))
         await msg.answerText(
             muted
                 ? 'Анонсы (обновления бота и объявления) снова будут приходить в этот чат. Выключить - /announcemute.'
@@ -548,6 +562,7 @@ export const registerHandlers = (
             if (muted) delete s.eventsMuted[key]
             else s.eventsMuted[key] = true
         })
+        auditMute(msg, 'анонсы новых ивентов', Boolean(muted))
         await msg.answerText(
             muted
                 ? 'Анонсы новых ивентов снова будут приходить в этот чат. Выключить - /eventmute.'
@@ -566,6 +581,7 @@ export const registerHandlers = (
             if (muted) delete s.hostingBoardMuted[key]
             else s.hostingBoardMuted[key] = true
         })
+        auditMute(msg, 'доску «кто сегодня в спейсе»', Boolean(muted))
         await msg.answerText(
             muted
                 ? 'Доска «кто сегодня в спейсе» снова включена в этом чате. Выключить - /boardmute.'

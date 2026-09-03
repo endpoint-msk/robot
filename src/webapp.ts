@@ -127,6 +127,7 @@ import {
     type StatsPeriod,
 } from './stats.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
+import { audit } from './audit.js'
 import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -235,9 +236,17 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
     res.end(payload)
 }
 
+/**
+ * Код последней ошибки, отданной этому ответу. Нужен журналу действий: статус говорит
+ * «отказали», а причину («not_yours», «day_locked») знает только сам обработчик.
+ */
+const lastApiError = new WeakMap<ServerResponse, string>()
+
 /** Ошибка API с человекочитаемым (русским) текстом — фронт показывает message как есть. */
-const sendError = (res: ServerResponse, status: number, error: string, message: string): void =>
+const sendError = (res: ServerResponse, status: number, error: string, message: string): void => {
+    lastApiError.set(res, error)
     sendJson(res, status, { error, message })
+}
 
 /** Срок антиспама «Я на месте» словами: хардкод в тексте разъехался бы с ARRIVAL_COOLDOWN_MS. */
 const ARRIVAL_COOLDOWN_MINUTES = Math.round(ARRIVAL_COOLDOWN_MS / 60_000)
@@ -855,6 +864,181 @@ const buildBootstrap = (ctx: ApiContext) => {
         // так все мутации обновляют экран одним ответом, как везде.
         ...(resident ? { dues: duesSnapshot(ctx) } : {}),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Журнал действий (см. src/audit.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Методы, которые попадают в журнал: только значимые мутации. Чтения не пишем вовсе —
+ * каждая мутация возвращает bootstrap, и без этого фильтра журнал на четыре пятых
+ * состоял бы из него.
+ */
+const AUDITED = new Set([
+    'create', 'edit', 'cancel', 'approve', 'unapprove', 'close',
+    'propose', 'proposal.accept', 'proposal.decline',
+    'day.lock', 'block', 'unblock', 'note.set',
+    'event.create', 'event.update', 'event.delete',
+    'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
+    'announce.send', 'stats.residentSince',
+    'dev.seed', 'dev.update', 'dev.delete',
+])
+
+/** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
+type AuditBefore = { request: HostingRequest | null; event: SpaceEvent | null }
+
+/**
+ * Снимок берётся ДО `handleApi`: `close`, `cancel`, `dev.delete` и `event.delete`
+ * стирают объект из стейта, а `approve`/`edit`/`proposal.*` переписывают ровно те
+ * поля, о которых потом и надо рассказать. Копия поверхностная — вложенные объекты
+ * (`proposal`, `approvedBy`) обработчики заменяют целиком, а не правят на месте.
+ */
+const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
+    if (!AUDITED.has(method)) return null
+    const id = typeof ctx.body.id === 'string' ? ctx.body.id : ''
+    const state = ctx.storage.get()
+    const request = state.hostingRequests[id]
+    const event = state.events[id]
+    return { request: request ? { ...request } : null, event: event ? { ...event } : null }
+}
+
+const slotOf = (dateKey: string, time: string): string => `${dateKey} ${time}`.trim()
+const whoOf = (u: HostingUser): string => (u.username ? `@${u.username}` : displayName(u.name))
+const strOf = (v: unknown): string => (typeof v === 'string' ? v : '')
+const idOf = (v: unknown): string => `id ${typeof v === 'number' ? v : Number(v)}`
+/** Анонс уходит во все чаты, так что его текст не тайна — но и целиком в строке журнала не нужен. */
+const excerpt = (text: string, limit = 120): string =>
+    text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text
+
+/** Какие поля настроек взносов трогали. Значения не пишем: среди них реквизиты. */
+const duesSettingsFields = (body: Record<string, unknown>): string =>
+    ['enabled', 'day', 'amount', 'studentAmount', 'requisites'].filter((k) => body[k] !== undefined).join(', ')
+
+/**
+ * Фраза для журнала. Пишет, что человек сделал, а не какие поля пришли в теле:
+ * заявка к моменту чтения журнала может быть давно удалена, и один только её id
+ * ничего не расскажет.
+ *
+ * Цель визита и текст заметки сюда не попадают — это содержимое, а не действие.
+ */
+const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): string | null => {
+    const { body, storage, user } = ctx
+    const id = strOf(body.id)
+    const req = before.request
+    const ev = before.event
+    const target = req ? ` заявки ${whoOf(req.guest)}` : ` заявки ${id}`
+    const reqSlot = req ? slotOf(req.dateKey, req.time) : '?'
+    switch (method) {
+        case 'create':
+            return `оставил заявку на ${slotOf(strOf(body.dateKey), strOf(body.time))}`
+        case 'edit': {
+            if (!req) return `поправил заявку ${id}`
+            const now = storage.get().hostingRequests[id]
+            const to = now ? slotOf(now.dateKey, now.time) : slotOf(strOf(body.dateKey), strOf(body.time))
+            return to === reqSlot ? `поправил свою заявку на ${to}` : `перенёс свою заявку ${reqSlot} → ${to}`
+        }
+        case 'cancel':
+            return `отменил свою заявку на ${reqSlot}`
+        case 'approve':
+            return `захостил${target} на ${reqSlot}`
+        case 'unapprove':
+            return `снял хостинг с${target} на ${reqSlot}`
+        case 'close':
+            return `закрыл${target} на ${reqSlot}`
+        case 'propose': {
+            const asked = slotOf(strOf(body.dateKey) || (req?.dateKey ?? ''), strOf(body.time))
+            const now = storage.get().hostingRequests[id]
+            // Встречное предложение тем же слотом сервер засчитывает как согласие:
+            // предложения после вызова уже нет, а слот заявки стал предложенным.
+            if (req?.proposal && now && !now.proposal) return `принял перенос${target}: ${slotOf(now.dateKey, now.time)}`
+            return `предложил перенос${target}: ${asked}`
+        }
+        case 'proposal.accept': {
+            const p = req?.proposal
+            return `принял перенос${target}: ${p ? slotOf(p.dateKey, p.time) : '?'}`
+        }
+        case 'proposal.decline': {
+            const p = req?.proposal
+            // Своё снял или чужое отклонил — для читателя журнала это разные события.
+            const verb = p && p.user.userId === user.userId ? 'отозвал' : 'отклонил'
+            return `${verb} перенос${target}${p ? `: ${slotOf(p.dateKey, p.time)}` : ''}`
+        }
+        case 'day.lock': {
+            const reason = strOf(body.reason).trim()
+            const day = strOf(body.dateKey)
+            return body.locked === true
+                ? `закрыл день ${day} для заявок${reason ? ` (${reason})` : ''}`
+                : `открыл день ${day} для заявок`
+        }
+        case 'block':
+            return req ? `заблокировал ${whoOf(req.guest)} (${idOf(req.guest.userId)})` : `заблокировал гостя заявки ${id}`
+        case 'unblock':
+            return `разблокировал ${idOf(body.userId)}`
+        case 'note.set':
+            return `${strOf(body.text).trim() ? 'изменил' : 'удалил'} заметку о ${idOf(body.userId)}`
+        case 'event.create':
+            return `завёл ивент «${strOf(body.title)}» на ${slotOf(strOf(body.dateKey), strOf(body.time))}`
+        case 'event.update': {
+            if (!ev) return `поправил ивент ${id}`
+            const now = storage.get().events[id]
+            const from = slotOf(ev.dateKey, ev.time)
+            const to = now ? slotOf(now.dateKey, now.time) : from
+            return to !== from
+                ? `перенёс ивент «${ev.title}» ${from} → ${to}`
+                : `поправил ивент «${now?.title ?? ev.title}» на ${from}`
+        }
+        case 'event.delete':
+            return ev ? `удалил ивент «${ev.title}» на ${slotOf(ev.dateKey, ev.time)}` : `удалил ивент ${id}`
+        case 'dues.claim':
+            return 'отметил свой взнос'
+        case 'dues.confirm':
+            return `подтвердил взнос ${idOf(body.userId)} за ${strOf(body.periodKey) || 'текущий период'}`
+        case 'dues.clear':
+            return `снял отметку о взносе ${idOf(body.userId)} за ${strOf(body.periodKey) || 'текущий период'}`
+        case 'dues.rate': {
+            const kind = strOf(body.kind)
+            return `поставил ставку «${kind}»${kind === 'custom' ? ` ${Number(body.amount)}` : ''} для ${idOf(body.userId)}`
+        }
+        case 'dues.settings':
+            return `изменил настройки взносов (${duesSettingsFields(body) || 'без изменений'})`
+        case 'announce.send':
+            return `разослал анонс${strOf(body.version) ? ` ${strOf(body.version)}` : ''}: ${excerpt(strOf(body.text))}`
+        case 'stats.residentSince':
+            return `поставил «резидент с» ${strOf(body.dateKey) || '(сброс)'} для ${idOf(body.userId)}`
+        case 'dev.seed':
+            return `[dev] создал фейковую заявку на ${slotOf(strOf(body.dateKey), strOf(body.time))}`
+        case 'dev.update':
+            return `[dev] поправил${target}: ${reqSlot} → ${slotOf(strOf(body.dateKey), strOf(body.time))}`
+        case 'dev.delete':
+            return `[dev] удалил${target} на ${reqSlot}`
+        default:
+            return null
+    }
+}
+
+/**
+ * Пишет строку журнала уже после обработчика: статус ответа известен только там.
+ * Отказы попадают в журнал вместе с успехами — «резидент попытался закрыть чужой
+ * визит, 403» это ровно то, от чего в стейте не остаётся никакого следа.
+ */
+const logApiAudit = (ctx: ApiContext, method: string, before: AuditBefore): void => {
+    const { res, user } = ctx
+    const text = describeAudit(ctx, method, before)
+    if (text === null) return
+    // Заголовков нет — обработчик бросил исключение, 500 напишет внешний catch уже после нас.
+    const status = res.headersSent ? res.statusCode : 500
+    const ok = status < 400
+    const error = ok ? undefined : `${status} ${lastApiError.get(res) ?? ''}`.trim()
+    const id = strOf(ctx.body.id)
+    audit({
+        action: method,
+        actor: { id: user.userId, username: user.username, name: user.name },
+        ok,
+        ...(error ? { error } : {}),
+        text: ok ? text : `${text} — отказ (${error})`,
+        ...(id ? { meta: { id } } : {}),
+    })
 }
 
 const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
@@ -2726,7 +2910,14 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     sendError(res, 403, 'blocked', 'Доступ закрыт.')
                     return
                 }
-                await handleApi({ ...deps, user, resident, body, res }, method)
+                const apiCtx: ApiContext = { ...deps, user, resident, body, res }
+                // Снимок для журнала — до вызова: close/cancel/event.delete стирают объект.
+                const before = auditBefore(apiCtx, method)
+                try {
+                    await handleApi(apiCtx, method)
+                } finally {
+                    if (before) logApiAudit(apiCtx, method, before)
+                }
                 return
             }
 
