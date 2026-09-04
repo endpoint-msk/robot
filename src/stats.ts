@@ -5,7 +5,7 @@
 // Сегодняшний день всегда пересчитывается на лету с учётом тех, кто внутри прямо
 // сейчас: их сессии ещё не закрыты и в журнал не попали.
 
-import { addDaysToKey, dayKeyOf, todayKey, weekdayOfKey } from './hosting.js'
+import { addDaysToKey, dayKeyOf, hostedGuestCount, todayKey, weekdayOfKey } from './hosting.js'
 import {
     BUCKETS_PER_DAY,
     BUCKET_MINUTES,
@@ -93,6 +93,8 @@ export type StatsPersonView = {
     avgMinutes: number
     /** Типичное время прихода 'HH:MM'. Пусто — визитов не было. */
     favArrival: string
+    /** Сколько разных гостей резидент захостил за всё время. */
+    hostedGuests: number
     /** Первый визит в журнале ('YYYY-MM-DD'). Пусто — визитов не было. */
     firstDateKey: string
     /**
@@ -446,6 +448,7 @@ export const buildStatsPerson = async (
         minutes: Math.round(minutes),
         avgMinutes: inWindow.length > 0 ? Math.round(minutes / inWindow.length) : 0,
         favArrival,
+        hostedGuests: hostedGuestCount(storage, userId),
         firstDateKey: allKeys[0] ?? '',
         joinedSince: joinedAt ? dayKeyOf(joinedAt, tzOffsetMinutes) : '',
         manualSince: storage.get().residentSince[String(userId)] ?? '',

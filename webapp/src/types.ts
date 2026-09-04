@@ -227,6 +227,8 @@ export type StatsPersonView = {
   minutes: number
   avgMinutes: number
   favArrival: string
+  /** Сколько разных гостей резидент захостил за всё время. */
+  hostedGuests: number
   firstDateKey: string
   /** Вступление в чат резидентов. Пусто — Telegram даты не отдал. */
   joinedSince: string

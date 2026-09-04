@@ -430,6 +430,21 @@ export const searchGuests = (storage: Storage, query: string, limit = 40): Guest
 }
 
 /**
+ * Сколько разных гостей захостил резидент за всё время: подтверждённые заявки, где он
+ * значится хостом. Заявки не чистятся, поэтому это полная история. Фейки дев-сида
+ * (`userId <= 0`) не в счёт; один гость с несколькими визитами считается один раз.
+ */
+export const hostedGuestCount = (storage: Storage, userId: number): number => {
+    const guests = new Set<number>()
+    for (const r of Object.values(storage.get().hostingRequests)) {
+        if (r.status === 'approved' && r.approvedBy?.userId === userId && r.guest.userId > 0) {
+            guests.add(r.guest.userId)
+        }
+    }
+    return guests.size
+}
+
+/**
  * Свод по каждому человеку из заявок: сколько всего, сколько состоялось, когда был
  * последний раз. Имя и ник берём из самой поздней заявки - человек мог их сменить.
  */

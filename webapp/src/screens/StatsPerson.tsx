@@ -173,6 +173,17 @@ export function StatsPerson() {
             <div className="sq-label">обычно приходит</div>
           </div>
         </div>
+        {data.hostedGuests > 0 ? (
+          <>
+            <div className="sep" style={{ margin: '0 16px' }} />
+            <div className="sq-row">
+              <div className="sq-cell">
+                <div className="sq-num small">{data.hostedGuests}</div>
+                <div className="sq-label">захостил гостей за всё время</div>
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="card stats-card">
