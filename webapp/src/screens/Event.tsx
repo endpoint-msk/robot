@@ -10,10 +10,11 @@ import { compressImage } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { haptic, initData, openUrl, tg } from '../telegram'
-import { pop, setBusy, useParams, useStore } from '../store'
-import type { SpaceEvent } from '../types'
+import { pop, push, setBusy, useParams, useStore } from '../store'
+import type { ReviewerScope, SpaceEvent } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Switch } from '../components/common'
 import { DateField } from '../components/DateField'
+import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Screen } from '../components/Screen'
 
@@ -58,8 +59,11 @@ export function EventPoster({ photoId, className }: { photoId: string; className
 
 export function Event() {
   const params = useParams()
-  const { data } = useStore()
+  const { data, perspective } = useStore()
   const days = data!.days
+  // Перспектива гостя (в т.ч. дев-превью) должна вести себя как гость: гостевая карточка
+  // с подачей заявки, а не редактор — даже если человек на самом деле автор/дев.
+  const asGuest = perspective === 'guest'
   const existing = params.event as SpaceEvent | undefined
   // Заготовка из пересланного поста: текст уже вставлен, афиша лежит под ключом владельца.
   const draft = params.fromDraft ? data!.eventDraft || null : null
@@ -75,6 +79,15 @@ export function Event() {
   const [time, setTime] = useState(existing?.time ?? defaultTimeFor(initialDay))
   const [residentsOnly, setResidentsOnly] = useState(existing?.residentsOnly ?? false)
 
+  // Форма-заявка: включена, если у ивента она уже есть. reviewers приходит только автору
+  // (canReview), поэтому для чужого ивента редактор всё равно недоступен.
+  const [formOn, setFormOn] = useState<boolean>(Boolean(existing?.form))
+  const [form, setForm] = useState<BuilderForm>(
+    existing?.form
+      ? { fields: existing.form.fields, reviewers: (existing.form.reviewers as ReviewerScope | undefined) ?? { kind: 'all' } }
+      : emptyForm(),
+  )
+
   // Афиши — список id файлов: у заготовки это её картинка, у нового ивента список
   // копится заливкой (файл лежит на сервере ничей, пока ивент не сохранён).
   const [photos, setPhotos] = useState<string[]>(existing?.photos ?? (draft?.hasPhoto ? [`draft-${data!.me.id}`] : []))
@@ -82,7 +95,7 @@ export function Event() {
 
   // Правку и удаление сервер отдаёт автору либо деву (canEditEvent) — чужой ивент
   // открывается на чтение, иначе резидент правил бы его до отказа сервера.
-  if (existing && existing.host.userId !== data!.me.id && !data!.me.isDev) {
+  if (existing && (asGuest || (existing.host.userId !== data!.me.id && !data!.me.isDev))) {
     return (
       <Screen>
         <BackRow label={params.backLabel || 'День'} />
@@ -90,8 +103,8 @@ export function Event() {
           title={existing.title}
           subtitle={`${fmtShortDate(existing.dateKey)} · в ${existing.time}`}
         />
-        <EventCard event={existing} calendar />
-        <Footnote>Править ивент может только тот, кто его создал.</Footnote>
+        <EventCard event={existing} calendar actions />
+        {!asGuest ? <Footnote>Править ивент может только тот, кто его создал.</Footnote> : null}
       </Screen>
     )
   }
@@ -139,7 +152,8 @@ export function Event() {
 
   const save = async (): Promise<void> => {
     if (!canSave) return
-    const payload = { dateKey, time, title, description, residentsOnly, photos }
+    // Сервер сам нормализует форму (обрежет пустые блоки/варианты; пустая → null).
+    const payload = { dateKey, time, title, description, residentsOnly, photos, form: formOn ? form : null }
     const done = existing
       ? await action('event.update', { id: existing.id, ...payload })
       : await action('event.create', { ...payload, fromDraft: Boolean(draft) })
@@ -284,6 +298,31 @@ export function Event() {
         </Footnote>
       ) : null}
 
+      <SectionTitle>Заявки на ивент</SectionTitle>
+      {existing?.canReview && existing.form ? (
+        <button
+          className="card row tappable"
+          style={{ width: '100%', marginBottom: 10 }}
+          onClick={() => push('eventApps', { event: existing, backLabel: 'Ивент' })}
+        >
+          <span className="row-label">Разобрать заявки</span>
+          <div className="row-right">
+            {existing.applicationsPending ? <span className="ev-count">{existing.applicationsPending}</span> : null}
+            {icons.chevron()}
+          </div>
+        </button>
+      ) : null}
+      <div className="card">
+        <div className="row">
+          <span className="row-label">
+            Принимать заявки по форме
+            <span className="row-sublabel">Гость попадёт на ивент только через заявку</span>
+          </span>
+          <Switch on={formOn} onToggle={() => setFormOn(!formOn)} label="Принимать заявки по форме" />
+        </div>
+      </div>
+      {formOn ? <FormBuilder value={form} onChange={setForm} /> : null}
+
       <SectionTitle>{`Превью · ${residentsOnly ? 'резиденты' : 'все'}`}</SectionTitle>
       <EventCard
         event={{
@@ -327,14 +366,54 @@ export function Event() {
  * `calendar` - показать «В календарь». В превью редактора её нет: там ивента ещё не
  * существует, и ссылка вела бы в никуда.
  */
+/** Блок заявок в карточке: «кто придёт», кнопка рецензента «Заявки · N» или подача гостя. */
+function EventFormActions({ event }: { event: SpaceEvent }) {
+  const { perspective } = useStore()
+  const approved = event.approvedAttendees ?? []
+  const count = event.approvedCount ?? approved.length
+  const app = event.myApplication ?? null
+  const names = approved.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')
+  // В гостевой перспективе (в т.ч. дев-превью) рецензентскую кнопку прячем — гость подаёт заявку.
+  const canReview = event.canReview && perspective !== 'guest'
+  return (
+    <div className="ev-apps">
+      {count > 0 ? (
+        <div className="ev-going">
+          {icons.check(13, '#34c759', 2.4)}
+          <span>
+            Придут: {count}
+            {names ? <span className="ev-going-names"> · {names}</span> : null}
+          </span>
+        </div>
+      ) : null}
+      {canReview ? (
+        <button className="primary-btn" onClick={() => push('eventApps', { event, backLabel: 'Ивент' })}>
+          Заявки{event.applicationsPending ? ` · ${event.applicationsPending}` : ''}
+        </button>
+      ) : app ? (
+        <button className="ev-status-btn" onClick={() => push('eventApply', { event, backLabel: 'Ивент' })}>
+          {app.status === 'approved' ? 'Вы участвуете · открыть' : 'Заявка на рассмотрении · изменить'}
+        </button>
+      ) : (
+        <button className="primary-btn" onClick={() => push('eventApply', { event, backLabel: 'Ивент' })}>
+          Оставить заявку
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function EventCard({
   event,
   dimTitle = false,
   calendar = false,
+  actions = false,
 }: {
   event: SpaceEvent
   dimTitle?: boolean
   calendar?: boolean
+  /** Показывать блок заявок (подача/разбор/«кто придёт»). В превью редактора не нужен. */
+  actions?: boolean
 }) {
   const photos = event.photos ?? []
   return (
@@ -383,6 +462,7 @@ export function EventCard({
           В календарь
         </button>
       ) : null}
+      {actions && event.form ? <EventFormActions event={event} /> : null}
       <div className="ev-host">
         <span>создал {event.host.username ? `@${event.host.username}` : event.host.name}</span>
       </div>

@@ -20,7 +20,19 @@ import {
 } from './hosting.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { EventDraft, HostingNotifyPrefs, HostingUser, SpaceEvent } from './types.js'
+import type {
+    EventAnswer,
+    EventApplication,
+    EventDraft,
+    EventFieldType,
+    EventForm,
+    EventFormField,
+    EventFormOption,
+    HostingNotifyPrefs,
+    HostingUser,
+    ReviewerScope,
+    SpaceEvent,
+} from './types.js'
 
 export const MAX_EVENT_TITLE = 120
 /**
@@ -37,6 +49,14 @@ export const MAX_EVENT_PHOTO_BYTES = 4 * 1024 * 1024
 export const MAX_EVENT_PHOTOS = 6
 /** Сколько живёт залитая, но не привязанная к ивенту картинка (см. `sweepStagedPhotos`). */
 const STAGED_TTL_MS = 60 * 60 * 1000
+
+// Лимиты формы-заявки и ответов на неё.
+export const MAX_FORM_FIELDS = 15
+export const MAX_FIELD_OPTIONS = 12
+export const MAX_FIELD_LABEL = 200
+export const MAX_ANSWER_TEXT = 1000
+export const MAX_WRITE_IN = 200
+export const MAX_CIRCLE_REVIEWERS = 40
 
 /**
  * Каталог афиш — рядом с файлом стейта, а не внутри него: JSON переписывается целиком
@@ -179,6 +199,8 @@ export type EventInput = {
     residentsOnly: boolean
     /** Ссылка на пост канала: её ставит сервер из заготовки, а не клиент. */
     sourceUrl?: string
+    /** Форма-заявка (уже нормализованная сервером). null — без формы, анонс как раньше. */
+    form?: EventForm | null
 }
 
 const clip = (value: unknown, max: number): string =>
@@ -217,6 +239,7 @@ export const createEvent = async (
         ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
         host,
         createdAt: new Date().toISOString(),
+        form: input.form ?? null,
     }
     await storage.update((s) => {
         s.events[event.id] = event
@@ -241,6 +264,7 @@ export const updateEvent = async (
         e.title = clip(input.title, MAX_EVENT_TITLE)
         e.description = clip(input.description, MAX_EVENT_DESCRIPTION)
         e.residentsOnly = input.residentsOnly === true
+        e.form = input.form ?? null
     })
     return { ok: true, event: storage.get().events[id]! }
 }
@@ -251,6 +275,10 @@ export const deleteEvent = async (storage: Storage, dataFile: string, id: string
     const photos = eventPhotoIds(existing)
     await storage.update((s) => {
         delete s.events[id]
+        // Заявки на удалённый ивент осиротели бы — чистим вместе с ним.
+        for (const [appId, app] of Object.entries(s.eventApplications)) {
+            if (app.eventId === id) delete s.eventApplications[appId]
+        }
     })
     for (const photoId of photos) await deleteEventPhoto(dataFile, photoId)
     return true
@@ -281,6 +309,281 @@ export const eventsLater = (storage: Storage, tzOffsetMinutes: number, forReside
 /** Может ли этот человек править ивент: автор или любой dev (дев чинит чужое). */
 export const canEditEvent = (event: SpaceEvent, userId: number, isDev: boolean): boolean =>
     isDev || event.host.userId === userId
+
+// ---------------------------------------------------------------------------
+// Форма-заявка на ивент
+// ---------------------------------------------------------------------------
+
+const shortId = (): string => randomUUID().slice(0, 8)
+const clipStr = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '')
+
+/**
+ * Приводит присланную клиентом форму к чистому виду или к null (нет формы). Пустая форма
+ * (без валидных блоков) — это тоже «нет формы»: гость тогда попадает на ивент как раньше.
+ * id блоков и вариантов сохраняем клиентские (стабильность в редакторе), иначе генерируем.
+ */
+export const normalizeEventForm = (raw: unknown): EventForm | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const r = raw as { fields?: unknown; reviewers?: unknown }
+    const rawFields = Array.isArray(r.fields) ? r.fields : []
+    const fields: EventFormField[] = []
+    for (const f of rawFields.slice(0, MAX_FORM_FIELDS)) {
+        if (!f || typeof f !== 'object') continue
+        const ff = f as { id?: unknown; type?: unknown; label?: unknown; required?: unknown; multi?: unknown; options?: unknown }
+        const label = clipStr(ff.label, MAX_FIELD_LABEL)
+        if (!label) continue
+        const id = typeof ff.id === 'string' && ff.id ? ff.id.slice(0, 40) : shortId()
+        const type: EventFieldType = ff.type === 'choice' ? 'choice' : 'text'
+        const required = ff.required === true
+        if (type === 'text') {
+            fields.push({ id, type, label, required })
+            continue
+        }
+        const rawOpts = Array.isArray(ff.options) ? ff.options : []
+        const options: EventFormOption[] = []
+        for (const o of rawOpts.slice(0, MAX_FIELD_OPTIONS)) {
+            if (!o || typeof o !== 'object') continue
+            const oo = o as { id?: unknown; label?: unknown; writeIn?: unknown }
+            const olabel = clipStr(oo.label, MAX_FIELD_LABEL)
+            if (!olabel) continue
+            options.push({
+                id: typeof oo.id === 'string' && oo.id ? oo.id.slice(0, 40) : shortId(),
+                label: olabel,
+                ...(oo.writeIn === true ? { writeIn: true as const } : {}),
+            })
+        }
+        if (options.length === 0) continue // блок выбора без вариантов бессмыслен
+        fields.push({ id, type, label, required, multi: ff.multi === true, options })
+    }
+    if (fields.length === 0) return null
+
+    const rr = r.reviewers as { kind?: unknown; userIds?: unknown } | undefined
+    let reviewers: ReviewerScope = { kind: 'all' }
+    if (rr && rr.kind === 'creator') reviewers = { kind: 'creator' }
+    else if (rr && rr.kind === 'circle') {
+        const ids = Array.isArray(rr.userIds) ? rr.userIds.filter((x): x is number => Number.isInteger(x)) : []
+        reviewers = { kind: 'circle', userIds: [...new Set(ids)].slice(0, MAX_CIRCLE_REVIEWERS) }
+    }
+    return { fields, reviewers }
+}
+
+/**
+ * Вправе ли человек рассматривать заявки ивента. Автор — всегда, dev — всегда; дальше по
+ * `form.reviewers`. Для круга и «всех» нужно ещё быть резидентом (вышедший из резидентов
+ * права теряет).
+ */
+export const canReviewEvent = (event: SpaceEvent, userId: number, isResident: boolean, isDev: boolean): boolean => {
+    if (!event.form) return false
+    if (isDev || event.host.userId === userId) return true
+    const r = event.form.reviewers
+    if (r.kind === 'creator') return false
+    if (r.kind === 'all') return isResident
+    return isResident && r.userIds.includes(userId)
+}
+
+/** Кому слать DM о новой заявке: рецензенты по `form.reviewers` плюс автор. */
+export const reviewerIdsFor = async (event: SpaceEvent, directory: ResidentDirectory): Promise<number[]> => {
+    const r = event.form?.reviewers
+    if (!r) return []
+    const host = event.host.userId
+    if (r.kind === 'creator') return [host]
+    if (r.kind === 'circle') return [...new Set([host, ...r.userIds])]
+    const ids = await directory.listIds()
+    return [...new Set([host, ...ids])]
+}
+
+export type ApplicationError = 'not_found' | 'no_form' | 'not_visible' | 'past' | 'duplicate' | 'required' | 'not_pending'
+
+/**
+ * Собирает ответы по форме, проверяя обязательные. Текст вопроса и подписи выбранных
+ * вариантов — снимок: форму потом правят, а заявка должна остаться читаемой.
+ */
+const buildAnswers = (form: EventForm, raw: unknown): { ok: true; answers: EventAnswer[] } | { ok: false } => {
+    const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+    const answers: EventAnswer[] = []
+    for (const field of form.fields) {
+        const a = (src[field.id] && typeof src[field.id] === 'object' ? (src[field.id] as Record<string, unknown>) : {}) as {
+            text?: unknown
+            optionIds?: unknown
+            writeIn?: unknown
+        }
+        if (field.type === 'text') {
+            const text = clipStr(a.text, MAX_ANSWER_TEXT)
+            if (field.required && !text) return { ok: false }
+            answers.push({ fieldId: field.id, question: field.label, type: 'text', ...(text ? { text } : {}) })
+            continue
+        }
+        const options = field.options ?? []
+        const selIds = Array.isArray(a.optionIds) ? a.optionIds.filter((x): x is string => typeof x === 'string') : []
+        const chosen = options.filter((o) => selIds.includes(o.id))
+        const picked = field.multi ? chosen : chosen.slice(0, 1)
+        const labels = picked.map((o) => o.label)
+        const writeIn = picked.some((o) => o.writeIn) ? clipStr(a.writeIn, MAX_WRITE_IN) : ''
+        if (field.required && labels.length === 0) return { ok: false }
+        answers.push({
+            fieldId: field.id,
+            question: field.label,
+            type: 'choice',
+            ...(labels.length ? { choiceLabels: labels } : {}),
+            ...(writeIn ? { writeIn } : {}),
+        })
+    }
+    return { ok: true, answers }
+}
+
+/** Заявки на ивент, свежие снизу (по времени подачи). */
+export const applicationsForEvent = (storage: Storage, eventId: string): EventApplication[] =>
+    Object.values(storage.get().eventApplications)
+        .filter((a) => a.eventId === eventId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+/** Активная заявка этого гостя на этот ивент (одна на пару). */
+export const applicationOf = (storage: Storage, eventId: string, userId: number): EventApplication | null =>
+    Object.values(storage.get().eventApplications).find((a) => a.eventId === eventId && a.guest.userId === userId) ?? null
+
+/** Все заявки этого гостя (для «Моих визитов»). */
+export const applicationsByGuest = (storage: Storage, userId: number): EventApplication[] =>
+    Object.values(storage.get().eventApplications).filter((a) => a.guest.userId === userId)
+
+export const createApplication = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    event: SpaceEvent,
+    guest: HostingUser,
+    rawAnswers: unknown,
+    forResident: boolean,
+): Promise<{ ok: true; app: EventApplication } | { ok: false; error: ApplicationError }> => {
+    if (!event.form) return { ok: false, error: 'no_form' }
+    if (event.residentsOnly && !forResident) return { ok: false, error: 'not_visible' }
+    if (isPastSlot(event.dateKey, event.time, tzOffsetMinutes)) return { ok: false, error: 'past' }
+    if (applicationOf(storage, event.id, guest.userId)) return { ok: false, error: 'duplicate' }
+    const built = buildAnswers(event.form, rawAnswers)
+    if (!built.ok) return { ok: false, error: 'required' }
+    const app: EventApplication = {
+        id: randomUUID(),
+        eventId: event.id,
+        guest,
+        answers: built.answers,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        approvedBy: null,
+        approvedAt: null,
+    }
+    await storage.update((s) => {
+        s.eventApplications[app.id] = app
+    })
+    return { ok: true, app }
+}
+
+export const editApplication = async (
+    storage: Storage,
+    appId: string,
+    userId: number,
+    rawAnswers: unknown,
+): Promise<{ ok: true; app: EventApplication } | { ok: false; error: ApplicationError }> => {
+    const app = storage.get().eventApplications[appId]
+    if (!app || app.guest.userId !== userId) return { ok: false, error: 'not_found' }
+    if (app.status !== 'pending') return { ok: false, error: 'not_pending' }
+    const event = storage.get().events[app.eventId]
+    if (!event?.form) return { ok: false, error: 'no_form' }
+    const built = buildAnswers(event.form, rawAnswers)
+    if (!built.ok) return { ok: false, error: 'required' }
+    await storage.update((s) => {
+        const a = s.eventApplications[appId]
+        if (a) a.answers = built.answers
+    })
+    return { ok: true, app: storage.get().eventApplications[appId]! }
+}
+
+/** Отмена заявки гостем — удаление (как отмена визита). Возвращает удалённую для DM. */
+export const cancelApplication = async (storage: Storage, appId: string, userId: number): Promise<EventApplication | null> => {
+    const app = storage.get().eventApplications[appId]
+    if (!app || app.guest.userId !== userId) return null
+    await storage.update((s) => {
+        delete s.eventApplications[appId]
+    })
+    return app
+}
+
+export const approveApplication = async (storage: Storage, appId: string, reviewer: HostingUser): Promise<EventApplication | null> => {
+    if (!storage.get().eventApplications[appId]) return null
+    await storage.update((s) => {
+        const a = s.eventApplications[appId]
+        if (!a) return
+        a.status = 'approved'
+        a.approvedBy = reviewer
+        a.approvedAt = new Date().toISOString()
+    })
+    return storage.get().eventApplications[appId] ?? null
+}
+
+/** Отклонение рецензентом — удаление заявки (гость может подать заново). Возвращает её для DM. */
+export const declineApplication = async (storage: Storage, appId: string): Promise<EventApplication | null> => {
+    const app = storage.get().eventApplications[appId]
+    if (!app) return null
+    await storage.update((s) => {
+        delete s.eventApplications[appId]
+    })
+    return app
+}
+
+/** Принятые заявители ивента — для публичного счётчика/списка «кто придёт» на карточке. */
+export const approvedApplicants = (storage: Storage, eventId: string): HostingUser[] =>
+    applicationsForEvent(storage, eventId)
+        .filter((a) => a.status === 'approved')
+        .map((a) => a.guest)
+
+// ---------------------------------------------------------------------------
+// Уведомления по заявкам
+// ---------------------------------------------------------------------------
+
+/** DM рецензентам о новой заявке на ивент. Fire-and-forget, закрытая личка не фатальна. */
+export const notifyReviewersNewApplication = async (
+    client: TelegramClient,
+    storage: Storage,
+    directory: ResidentDirectory,
+    webappUrl: string,
+    event: SpaceEvent,
+    app: EventApplication,
+): Promise<void> => {
+    const ids = await reviewerIdsFor(event, directory)
+    const text = [
+        `Новая заявка на ивент: <b>${html.escape(event.title)}</b>`,
+        `${formatDayKey(event.dateKey)} к ${event.time}.`,
+        `От: ${await mentionLabel(client, app.guest)}.`,
+    ].join('<br>')
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]])
+    for (const userId of ids) {
+        if (userId === app.guest.userId) continue
+        try {
+            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+        } catch {
+            /* рецензент не открывал личку — молча пропускаем */
+        }
+    }
+}
+
+/**
+ * DM гостю о принятии заявки. Отклонение — тихое (без уведомления): по договорённости
+ * отказ гостю не сообщаем, заявка просто удаляется.
+ */
+export const notifyApplicantApproved = async (
+    client: TelegramClient,
+    webappUrl: string,
+    event: SpaceEvent,
+    guest: HostingUser,
+): Promise<void> => {
+    const text = [
+        `Заявка на ивент принята: <b>${html.escape(event.title)}</b>`,
+        `Ждём вас ${formatDayKey(event.dateKey)} к ${event.time}.`,
+    ].join('<br>')
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappUrl)]])
+    try {
+        await client.sendText(guest.userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+    } catch {
+        /* гость не открывал личку — молча пропускаем */
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Уведомления резидентам

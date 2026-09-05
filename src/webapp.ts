@@ -61,11 +61,23 @@ import { isReminderChoice, mergeReminder, reminderFits, setVisitReminder } from 
 import {
     announceEventToChats,
     buildEventIcs,
+    applicationOf,
+    applicationsForEvent,
+    approveApplication,
+    approvedApplicants,
     buildEventsFeedIcs,
     canEditEvent,
+    canReviewEvent,
+    cancelApplication,
     clearEventDraft,
+    createApplication,
     createEvent,
+    declineApplication,
     deleteEvent,
+    editApplication,
+    normalizeEventForm,
+    notifyApplicantApproved,
+    notifyReviewersNewApplication,
     draftPhotoId,
     ensureEventFeedToken,
     eventDraftFor,
@@ -132,7 +144,7 @@ import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
+import type { EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
 const INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60
@@ -327,8 +339,11 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.period': 'read',
     'dues.history': 'read',
     'dues.person': 'read',
+    'event.apps': 'read',
 
     'rules.accept': 'write',
+    'event.apply.edit': 'write',
+    'event.apply.cancel': 'write',
     'day.lock': 'write',
     edit: 'write',
     'remind.set': 'write',
@@ -364,6 +379,9 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.create': 'dm',
     'event.update': 'dm',
     'event.delete': 'dm',
+    'event.apply': 'dm',
+    'event.app.approve': 'dm',
+    'event.app.decline': 'dm',
     'dues.claim': 'dm',
 
     'invite.list': 'heavy',
@@ -372,6 +390,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     unblock: 'heavy',
     'dues.export': 'heavy',
     'announce.latest': 'heavy',
+    reviewers: 'heavy',
 
     'announce.send': 'broadcast',
 }
@@ -639,7 +658,32 @@ const proposalSides = (
  * Карточка ивента для фронта: имя автора чистим тем же `userView`, что и остальных,
  * а афиши отдаём готовым списком — легаси-флаг `hasPhoto` фронт знать не должен.
  */
-const eventView = (e: SpaceEvent) => ({ ...e, photos: eventPhotoIds(e), host: userView(e.host) })
+/**
+ * Карточка ивента для миниаппа. Поля под зрителя:
+ * - `form` — есть ли форма-заявка; гостю отдаём только блоки для заполнения, рецензенту
+ *   вдобавок `reviewers` (кому её править/видеть настройку).
+ * - `myApplication` — своя заявка (со снимком ответов для правки).
+ * - `approvedAttendees`/`approvedCount` — публичный «кто придёт» по принятым заявкам.
+ * - `canReview`/`applicationsPending` — только рецензенту: кнопка «Заявки · N».
+ */
+const eventView = (e: SpaceEvent, ctx: ApiContext) => {
+    const base = { ...e, photos: eventPhotoIds(e), host: userView(e.host) }
+    if (!e.form) return { ...base, form: null }
+    const canReview = canReviewEvent(e, ctx.user.userId, ctx.resident, isDevUser(ctx))
+    const mine = applicationOf(ctx.storage, e.id, ctx.user.userId)
+    const approved = approvedApplicants(ctx.storage, e.id).filter((u) => !isFakeUserId(u.userId))
+    return {
+        ...base,
+        form: { fields: e.form.fields, ...(canReview ? { reviewers: e.form.reviewers } : {}) },
+        canReview,
+        myApplication: mine ? { id: mine.id, status: mine.status, answers: mine.answers } : null,
+        approvedAttendees: approved.map(userView),
+        approvedCount: approved.length,
+        ...(canReview
+            ? { applicationsPending: applicationsForEvent(ctx.storage, e.id).filter((a) => a.status === 'pending').length }
+            : {}),
+    }
+}
 
 const EVENT_ERRORS: Record<EventError, string> = {
     not_found: 'Ивент не найден — обновите экран.',
@@ -662,7 +706,28 @@ const eventInputFrom = (body: Record<string, unknown>): EventInput => ({
     title: typeof body.title === 'string' ? body.title : '',
     description: typeof body.description === 'string' ? body.description : '',
     residentsOnly: body.residentsOnly === true,
+    form: normalizeEventForm(body.form),
 })
+
+/** Сообщения об ошибках заявки на ивент + HTTP-статусы. */
+const APP_ERRORS = {
+    not_found: 'Заявка не найдена — обновите экран.',
+    no_form: 'На этот ивент заявки не принимаются.',
+    not_visible: 'Ивент недоступен.',
+    past: 'Ивент уже прошёл.',
+    duplicate: 'Вы уже подали заявку на этот ивент.',
+    required: 'Заполните обязательные поля.',
+    not_pending: 'Заявку уже рассмотрели — правка недоступна.',
+} as const
+const APP_ERR_STATUS: Record<keyof typeof APP_ERRORS, number> = {
+    not_found: 404,
+    no_form: 400,
+    not_visible: 403,
+    past: 400,
+    duplicate: 400,
+    required: 400,
+    not_pending: 400,
+}
 
 /** Дев-аккаунт из DEV_USER_IDS: переключатель перспективы и сид фейковых заявок. */
 const isDevUser = (ctx: ApiContext): boolean => ctx.devUserIds.has(ctx.user.userId)
@@ -796,7 +861,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             // Публичный список «кто придёт» — виден всем.
             attendees: attendeesForDay(storage, dateKey).map(userView),
             // Ивенты дня: гостю — только открытые, резиденту — все.
-            events: eventsForDay(storage, dateKey, resident).map(eventView),
+            events: eventsForDay(storage, dateKey, resident).map((e) => eventView(e, ctx)),
         })
     }
     const myRequests = Object.values(storage.get().hostingRequests)
@@ -843,7 +908,7 @@ const buildBootstrap = (ctx: ApiContext) => {
         days,
         // Ивенты дальше окна обзора: их день в `days` не попадает, а показать их надо —
         // и автору (иначе он не поправит собственный анонс), и всем остальным.
-        laterEvents: eventsLater(storage, tzOffsetMinutes, resident).map(eventView),
+        laterEvents: eventsLater(storage, tzOffsetMinutes, resident).map((e) => eventView(e, ctx)),
         myRequests: requestsView(myRequests, user.userId),
         myPast: requestsView(myPast, user.userId),
         settings,
@@ -880,13 +945,14 @@ const AUDITED = new Set([
     'propose', 'proposal.accept', 'proposal.decline',
     'day.lock', 'block', 'unblock', 'note.set',
     'event.create', 'event.update', 'event.delete',
+    'event.app.approve', 'event.app.decline',
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
     'announce.send', 'stats.residentSince',
     'dev.seed', 'dev.update', 'dev.delete',
 ])
 
 /** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
-type AuditBefore = { request: HostingRequest | null; event: SpaceEvent | null }
+type AuditBefore = { request: HostingRequest | null; event: SpaceEvent | null; application: EventApplication | null }
 
 /**
  * Снимок берётся ДО `handleApi`: `close`, `cancel`, `dev.delete` и `event.delete`
@@ -900,7 +966,13 @@ const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
     const state = ctx.storage.get()
     const request = state.hostingRequests[id]
     const event = state.events[id]
-    return { request: request ? { ...request } : null, event: event ? { ...event } : null }
+    // Для методов разбора заявок `body.id` — id заявки на ивент (её decline удаляет).
+    const application = state.eventApplications[id]
+    return {
+        request: request ? { ...request } : null,
+        event: event ? { ...event } : null,
+        application: application ? { ...application } : null,
+    }
 }
 
 const slotOf = (dateKey: string, time: string): string => `${dateKey} ${time}`.trim()
@@ -990,6 +1062,15 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
         }
         case 'event.delete':
             return ev ? `удалил ивент «${ev.title}» на ${slotOf(ev.dateKey, ev.time)}` : `удалил ивент ${id}`
+        case 'event.app.approve':
+        case 'event.app.decline': {
+            const app = before.application
+            if (!app) return method === 'event.app.approve' ? `принял заявку на ивент ${id}` : `отклонил заявку на ивент ${id}`
+            const evt = storage.get().events[app.eventId]
+            const title = evt ? `«${evt.title}»` : `ивент ${app.eventId}`
+            const verb = method === 'event.app.approve' ? 'принял' : 'отклонил'
+            return `${verb} заявку ${whoOf(app.guest)} на ${title}`
+        }
         case 'dues.claim':
             return 'отметил свой взнос'
         case 'dues.confirm':
@@ -1513,6 +1594,116 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             await clearEventDraft(storage, storage.path(), user.userId)
             sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Список резидентов для выбора круга рецензентов в редакторе ивента.
+        case 'reviewers': {
+            if (!requireResident()) return
+            const { users } = await residents.list()
+            sendJson(res, 200, { people: users.map(userView) })
+            return
+        }
+
+        // Гость (или резидент) подаёт заявку на ивент по его форме.
+        case 'event.apply': {
+            const id = typeof body.eventId === 'string' ? body.eventId : ''
+            const event = storage.get().events[id]
+            if (!event) {
+                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                return
+            }
+            const result = await createApplication(storage, tzOffsetMinutes, event, user, body.answers, resident)
+            if (!result.ok) {
+                sendError(res, APP_ERR_STATUS[result.error], result.error, APP_ERRORS[result.error])
+                return
+            }
+            // DM рецензентам — в фоне, чтобы не держать ответ гостю.
+            void notifyReviewersNewApplication(client, storage, residents, config.publicUrl, event, result.app)
+                .catch((err) => console.error('[events] не удалось уведомить о заявке на ивент:', err))
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Правка своей заявки, пока она на рассмотрении.
+        case 'event.apply.edit': {
+            const id = typeof body.id === 'string' ? body.id : ''
+            const result = await editApplication(storage, id, user.userId, body.answers)
+            if (!result.ok) {
+                sendError(res, APP_ERR_STATUS[result.error], result.error, APP_ERRORS[result.error])
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Отмена своей заявки (удаление).
+        case 'event.apply.cancel': {
+            const id = typeof body.id === 'string' ? body.id : ''
+            const app = await cancelApplication(storage, id, user.userId)
+            if (!app) {
+                sendError(res, 404, 'not_found', 'Заявка не найдена — обновите экран.')
+                return
+            }
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Рецензент принимает или отклоняет заявку на ивент.
+        case 'event.app.approve':
+        case 'event.app.decline': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const app = storage.get().eventApplications[id]
+            if (!app) {
+                sendError(res, 404, 'not_found', 'Заявка не найдена — обновите экран.')
+                return
+            }
+            const event = storage.get().events[app.eventId]
+            if (!event) {
+                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                return
+            }
+            if (!canReviewEvent(event, user.userId, resident, isDevUser(ctx))) {
+                sendError(res, 403, 'not_reviewer', 'Рассматривать заявки этого ивента вам нельзя.')
+                return
+            }
+            if (method === 'event.app.approve') {
+                const guest = app.guest
+                await approveApplication(storage, id, user)
+                void notifyApplicantApproved(client, config.publicUrl, event, guest).catch((err) =>
+                    console.error('[events] не удалось уведомить о принятии заявки:', err),
+                )
+            } else {
+                // Отклонение тихое: гостю ничего не шлём, заявка просто удаляется.
+                await declineApplication(storage, id)
+            }
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Список заявок ивента с ответами — только рецензенту (отдельной ручкой: ответы объёмные).
+        case 'event.apps': {
+            if (!requireResident()) return
+            const id = typeof body.eventId === 'string' ? body.eventId : ''
+            const event = storage.get().events[id]
+            if (!event) {
+                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                return
+            }
+            if (!canReviewEvent(event, user.userId, resident, isDevUser(ctx))) {
+                sendError(res, 403, 'not_reviewer', 'Заявки этого ивента вам недоступны.')
+                return
+            }
+            const applications = applicationsForEvent(storage, id).map((a) => ({
+                ...a,
+                guest: userView(a.guest),
+                approvedBy: a.approvedBy ? userView(a.approvedBy) : null,
+            }))
+            sendJson(res, 200, { applications })
             return
         }
 

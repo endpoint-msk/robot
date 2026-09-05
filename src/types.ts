@@ -93,6 +93,8 @@ export type State = {
     backups: Record<string, BackupSchedule>
     /** Ивенты спейса (воркшопы, ремонт-кафе, демо-дни). Ключ — id ивента. */
     events: Record<string, SpaceEvent>
+    /** Заявки гостей на ивенты по форме. Ключ — id заявки. */
+    eventApplications: Record<string, EventApplication>
     /** Заготовка ивента из пересланного поста канала. Ключ — userId резидента, по одной на человека. */
     eventDrafts: Record<string, EventDraft>
     /**
@@ -323,6 +325,84 @@ export type SpaceEvent = {
     /** Резидент, который завёл ивент. */
     host: HostingUser
     createdAt: string
+    /**
+     * Форма-заявка на ивент. null/отсутствует — ивент как раньше, только анонс с «Хочу
+     * прийти». Есть форма — гость попадает на ивент только через заявку по ней, а
+     * рецензенты её принимают/отклоняют (кто вправе — `form.reviewers`).
+     */
+    form?: EventForm | null
+}
+
+/** Тип блока формы: свободный ответ или выбор варианта(ов). */
+export type EventFieldType = 'text' | 'choice'
+
+/** Вариант блока выбора. `writeIn` — «Другое»: рядом появляется поле ввода. */
+export type EventFormOption = {
+    id: string
+    label: string
+    writeIn?: boolean
+}
+
+/** Один блок формы заявки (аналог вопроса Google Forms). */
+export type EventFormField = {
+    id: string
+    type: EventFieldType
+    /** Текст вопроса. */
+    label: string
+    /** Обязательный — без ответа заявку не отправить (проверяется и на сервере). */
+    required: boolean
+    /** Для `choice`: множественный выбор (чекбоксы) вместо одиночного (радио). */
+    multi?: boolean
+    /** Для `choice`: варианты. */
+    options?: EventFormOption[]
+}
+
+/**
+ * Кто вправе рассматривать заявки на ивент. Настраивается при создании ивента.
+ * Автор ивента — рецензент всегда, независимо от `kind`.
+ */
+export type ReviewerScope =
+    | { kind: 'all' } // любой резидент
+    | { kind: 'creator' } // только автор
+    | { kind: 'circle'; userIds: number[] } // выбранный круг резидентов
+
+export type EventForm = {
+    fields: EventFormField[]
+    reviewers: ReviewerScope
+}
+
+/**
+ * Ответ на один блок формы. Текст вопроса и подписи вариантов — снимок на момент
+ * подачи: форму автор может править дальше, а заявка должна остаться читаемой.
+ */
+export type EventAnswer = {
+    fieldId: string
+    /** Снимок текста вопроса. */
+    question: string
+    type: EventFieldType
+    /** `text`: свободный ответ. */
+    text?: string
+    /** `choice`: снимок подписей выбранных вариантов. */
+    choiceLabels?: string[]
+    /** `choice`: текст, введённый в вариант «Другое». */
+    writeIn?: string
+}
+
+/**
+ * Заявка гостя на ивент по его форме. Отдельный объект от заявки на визит
+ * (`HostingRequest`): у ивента уже есть организатор и слот, дверь открывать не надо —
+ * рецензент решает только участие. Одобренная = гость идёт на ивент.
+ */
+export type EventApplication = {
+    id: string
+    eventId: string
+    guest: HostingUser
+    answers: EventAnswer[]
+    status: 'pending' | 'approved'
+    createdAt: string
+    /** Рецензент, который принял заявку. null — ещё на рассмотрении. */
+    approvedBy: HostingUser | null
+    approvedAt: string | null
 }
 
 /**
@@ -623,6 +703,7 @@ export const emptyState = (): State => ({
     hostingRules: {},
     backups: {},
     events: {},
+    eventApplications: {},
     eventDrafts: {},
     eventFeedTokens: {},
     dues: emptyDues(),

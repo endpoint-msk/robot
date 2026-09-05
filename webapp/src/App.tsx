@@ -32,6 +32,8 @@ import { NewRequest } from './screens/NewRequest'
 import { Rules } from './screens/Rules'
 import { EditRequest } from './screens/EditRequest'
 import { Event } from './screens/Event'
+import { EventApply } from './screens/EventApply'
+import { EventApps } from './screens/EventApps'
 import { Route } from './screens/Route'
 import { Dev } from './screens/Dev'
 import { DevEdit } from './screens/DevEdit'
@@ -62,6 +64,8 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   newRequest: NewRequest,
   editRequest: EditRequest,
   event: Event,
+  eventApply: EventApply,
+  eventApps: EventApps,
   route: Route,
   dev: Dev,
   devEdit: DevEdit,

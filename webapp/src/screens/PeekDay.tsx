@@ -32,7 +32,7 @@ export function PeekDay() {
       ) : null}
       {/* Ивенты — над списком людей: это главное, что происходит в этот день. */}
       {events.map((ev) => (
-        <EventCard key={ev.id} event={ev} calendar />
+        <EventCard key={ev.id} event={ev} calendar actions />
       ))}
       {att.length > 0 ? <SectionTitle>Кто придёт</SectionTitle> : null}
       {att.length === 0 && events.length === 0 ? (

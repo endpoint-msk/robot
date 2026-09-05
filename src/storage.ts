@@ -130,6 +130,7 @@ export class Storage {
             hostingRules: parsed.hostingRules ?? {},
             backups: parsed.backups ?? {},
             events: parsed.events ?? {},
+            eventApplications: parsed.eventApplications ?? {},
             eventDrafts: parsed.eventDrafts ?? {},
             eventFeedTokens: parsed.eventFeedTokens ?? {},
             // Взносы — вложенный объект, а не словарь: недостающие поля добираем из

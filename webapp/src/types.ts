@@ -85,6 +85,46 @@ export type InviteCandidate = {
 
 export type InviteListResponse = { people: InviteCandidate[] }
 
+export type EventFieldType = 'text' | 'choice'
+export type EventFormOption = { id: string; label: string; writeIn?: boolean }
+export type EventFormField = {
+  id: string
+  type: EventFieldType
+  label: string
+  required: boolean
+  multi?: boolean
+  options?: EventFormOption[]
+}
+/** Кто рассматривает заявки: все резиденты / только автор / выбранный круг. */
+export type ReviewerScope =
+  | { kind: 'all' }
+  | { kind: 'creator' }
+  | { kind: 'circle'; userIds: number[] }
+
+/** Ответ на один блок формы (снимок текста вопроса и подписей вариантов). */
+export type EventAnswer = {
+  fieldId: string
+  question: string
+  type: EventFieldType
+  text?: string
+  choiceLabels?: string[]
+  writeIn?: string
+}
+
+export type EventApplication = {
+  id: string
+  eventId: string
+  guest: User
+  answers: EventAnswer[]
+  status: 'pending' | 'approved'
+  createdAt: string
+  approvedBy: User | null
+  approvedAt: string | null
+}
+
+export type EventAppsResponse = { applications: EventApplication[] }
+export type ReviewersResponse = { people: User[] }
+
 /** Ивент спейса: воркшоп, ремонт-кафе, демо-день. Заводит резидент, видят все (если не resOnly). */
 export type SpaceEvent = {
   id: string
@@ -100,6 +140,20 @@ export type SpaceEvent = {
   sourceUrl?: string
   host: User
   createdAt: string
+  /**
+   * Форма-заявка. null — ивент без заявок (анонс + «Хочу прийти»). Гостю приходят только
+   * `fields` (для заполнения); `reviewers` — лишь рецензенту/автору (настройка формы).
+   */
+  form?: { fields: EventFormField[]; reviewers?: ReviewerScope } | null
+  /** Вправе ли текущий зритель рассматривать заявки (кнопка «Заявки · N»). */
+  canReview?: boolean
+  /** Число заявок на рассмотрении — только рецензенту. */
+  applicationsPending?: number
+  /** Своя заявка на этот ивент (со снимком ответов для правки). null — не подавал. */
+  myApplication?: { id: string; status: 'pending' | 'approved'; answers: EventAnswer[] } | null
+  /** Публичный «кто придёт» по принятым заявкам. */
+  approvedAttendees?: User[]
+  approvedCount?: number
 }
 
 /** Заготовка ивента из пересланного в личку поста канала анонсов. */

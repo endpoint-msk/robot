@@ -291,7 +291,35 @@ export const attendeesForDay = (storage: Storage, dateKey: string): DayAttendee[
         // Один и тот же человек мог и отметиться «я приду», и завести заявку как гость —
         // в списке он должен быть один раз, резидентской строкой (она приоритетнее).
         .filter((a) => !seen.has(a.userId))
-    return [...residents, ...guests]
+    for (const a of guests) seen.add(a.userId)
+    // Принятые заявки на ивенты этого дня — тоже «придут» (одобренная заявка = участие).
+    const eventGoers = eventApplicantsForDay(storage, dateKey).filter((a) => !seen.has(a.userId))
+    return [...residents, ...guests, ...eventGoers]
+}
+
+/**
+ * Принятые заявители ивентов этого дня для публичного списка «кто придёт». Читаем стейт
+ * напрямую (events + eventApplications), а не через `events.ts` — иначе импорт-цикл, ведь
+ * `events.ts` уже зависит от `hosting.ts`. Фейки дев-сида и дубли по userId отсекаются.
+ */
+const eventApplicantsForDay = (storage: Storage, dateKey: string): DayAttendee[] => {
+    const s = storage.get()
+    const timeByEvent = new Map(Object.values(s.events).filter((e) => e.dateKey === dateKey).map((e) => [e.id, e.time]))
+    const out: DayAttendee[] = []
+    const seen = new Set<number>()
+    for (const app of Object.values(s.eventApplications)) {
+        if (app.status !== 'approved' || !timeByEvent.has(app.eventId)) continue
+        if (isFakeUserId(app.guest.userId) || seen.has(app.guest.userId)) continue
+        seen.add(app.guest.userId)
+        out.push({
+            userId: app.guest.userId,
+            name: displayName(app.guest.name),
+            username: app.guest.username,
+            resident: false,
+            time: timeByEvent.get(app.eventId) ?? null,
+        })
+    }
+    return out
 }
 
 /** Заявки на конкретный день, отсортированные по времени прихода. */

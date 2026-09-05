@@ -32,6 +32,8 @@ export type ScreenName =
   | 'newRequest'
   | 'editRequest'
   | 'event'
+  | 'eventApply'
+  | 'eventApps'
   | 'route'
   | 'dev'
   | 'devEdit'

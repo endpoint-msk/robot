@@ -2540,3 +2540,237 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     .chev { transition: none; }
     .stats-body, .bar-val { animation: none; }
 }
+
+/* ======================= Заявки на ивент ======================= */
+
+/* --- Конструктор формы (FormBuilder) --- */
+.fb-fields { display: flex; flex-direction: column; gap: 10px; }
+.fb-field {
+    background: var(--card);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.fb-field-head { display: flex; align-items: center; justify-content: space-between; }
+.fb-kind { font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.55); }
+.fb-field-tools { display: flex; align-items: center; gap: 4px; }
+.fb-icon-btn {
+    border: none;
+    background: var(--chip);
+    color: rgba(var(--sec), 0.7);
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    cursor: pointer;
+}
+.fb-icon-btn[disabled] { opacity: 0.35; }
+.fb-icon-btn.danger { color: var(--red); }
+.fb-input {
+    width: 100%;
+    border: 1px solid rgba(var(--sec), 0.14);
+    outline: none;
+    background: var(--bg);
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--text);
+    padding: 9px 11px;
+    border-radius: 11px;
+}
+.fb-input::placeholder { color: rgba(var(--sec), 0.4); }
+.fb-question { font-weight: 600; }
+.fb-options { display: flex; flex-direction: column; gap: 7px; }
+.fb-option { display: flex; align-items: center; gap: 6px; }
+.fb-option .fb-input { flex: 1; }
+.fb-writein {
+    border: 1px solid rgba(var(--sec), 0.16);
+    background: transparent;
+    color: rgba(var(--sec), 0.6);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 8px;
+    border-radius: 9px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.fb-writein.on { background: var(--ev-bg); color: var(--purple); border-color: transparent; }
+.fb-add-option {
+    align-self: flex-start;
+    border: none;
+    background: transparent;
+    color: var(--blue);
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    cursor: pointer;
+}
+.fb-field-foot {
+    display: flex;
+    flex-direction: column;
+    margin-top: 2px;
+    padding-top: 6px;
+    border-top: 0.5px solid rgba(var(--sec), 0.12);
+}
+.fb-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 15px;
+    color: var(--text);
+    padding: 7px 0;
+}
+.fb-toggle-row + .fb-toggle-row { border-top: 0.5px solid rgba(var(--sec), 0.08); }
+.fb-add-row { display: flex; gap: 10px; margin-top: 10px; }
+.fb-add-btn {
+    flex: 1;
+    border: 1px dashed rgba(var(--sec), 0.25);
+    background: transparent;
+    color: var(--blue);
+    font-size: 15px;
+    font-weight: 600;
+    padding: 11px;
+    border-radius: var(--radius-btn);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    cursor: pointer;
+}
+.fb-hint { padding: 10px 14px; font-size: 14px; color: rgba(var(--sec), 0.5); }
+.fb-circle-empty {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1.6px solid rgba(var(--sec), 0.25);
+    display: inline-block;
+}
+
+/* --- Заполнение формы (FormFill) --- */
+.ff-form { display: flex; flex-direction: column; }
+.ff-field { padding: 12px 14px; }
+.ff-field + .ff-field { border-top: 0.5px solid var(--sep, rgba(var(--sec), 0.12)); }
+.ff-label { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 9px; }
+.ff-req { color: var(--red); }
+.ff-input {
+    width: 100%;
+    border: 1px solid rgba(var(--sec), 0.14);
+    outline: none;
+    background: var(--bg);
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--text);
+    padding: 9px 11px;
+    border-radius: 11px;
+}
+.ff-textarea { resize: none; line-height: 1.4; }
+.ff-options { display: flex; flex-direction: column; gap: 8px; }
+.ff-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(var(--sec), 0.14);
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 16px;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+.ff-option.on { border-color: var(--blue); background: var(--attn); }
+.ff-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1.6px solid rgba(var(--sec), 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.ff-mark.box { border-radius: 6px; }
+.ff-option.on .ff-mark { background: var(--blue); border-color: var(--blue); }
+.ff-option-label { flex: 1; }
+
+/* --- Разбор заявок (EventApps) --- */
+.ea-card { padding: 14px; margin-bottom: 12px; }
+.ea-head { display: flex; align-items: center; gap: 12px; }
+.ea-answers {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 12px 13px;
+    background: var(--bg);
+    border-radius: 14px;
+}
+.ea-answer .ea-q { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; color: rgba(var(--sec), 0.5); }
+.ea-answer .ea-a { font-size: 16px; color: var(--text); margin-top: 3px; white-space: pre-wrap; line-height: 1.35; }
+.ea-a-empty { color: rgba(var(--sec), 0.4); }
+.ea-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.ea-chip {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--blue);
+    background: var(--attn);
+    padding: 4px 10px;
+    border-radius: 9px;
+}
+.ea-chip.writein {
+    color: var(--purple);
+    background: var(--ev-bg);
+}
+.ea-chip.writein::before { content: '✎ '; }
+.ea-actions { display: flex; gap: 10px; margin-top: 14px; }
+.ea-actions .host-btn { flex: 1; justify-content: center; min-height: 40px; }
+.ea-decline {
+    border: none;
+    background: var(--chip);
+    color: var(--red);
+    font-size: 15px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+}
+.ea-decline[disabled] { opacity: 0.5; }
+
+/* --- Блок заявок в карточке ивента --- */
+.ev-apps { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.ev-going { display: flex; align-items: flex-start; gap: 6px; font-size: 14px; color: var(--text); }
+.ev-going-names { color: rgba(var(--sec), 0.55); }
+.ev-status-btn {
+    width: 100%;
+    min-height: 46px;
+    border-radius: var(--radius-btn);
+    background: var(--chip);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+}
+.ev-count {
+    background: var(--red);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
+}
