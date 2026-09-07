@@ -4,7 +4,7 @@ import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
 import { confirmDialog, reschedulePrompt, showAlert } from '../modals'
-import { pop, push, setBusy, setData, useParams, useStore } from '../store'
+import { getDataAt, pop, push, setBusy, setData, useParams, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic, initData, tg } from '../telegram'
 import type { Bootstrap } from '../types'
@@ -12,6 +12,7 @@ import { BackRow, Header, Sep, SectionTitle } from '../components/common'
 import { RemindCard } from '../components/forms'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
+import { ADDRESS } from './Route'
 
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
 function minuteOfDay(hhmm: string): number {
@@ -34,6 +35,17 @@ const countdown = (ms: number): string => {
  * экране, а отсчёт до следующего нажатия должен идти сам: bootstrap за это время не
  * перезапрашивается, и без тика кнопка так и осталась бы выключенной.
  */
+/** Живая минута в поясе спейса: снимок из bootstrap плюс время, прошедшее с загрузки. */
+function useNowMin(): number {
+  const { data } = useStore()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const timer = window.setInterval(() => tick((n) => n + 1), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return minuteOfDay(data!.nowTime) + Math.floor((Date.now() - getDataAt()) / 60_000)
+}
+
 function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -229,9 +241,11 @@ export function Visit() {
 
   // «Я на месте»: окно - за полчаса до слота и час после (сервер проверяет то же).
   // Считаем в поясе спейса: `todayKey`/`nowTime` приходят из bootstrap, локальные часы
-  // устройства тут не при чём.
+  // устройства тут не при чём. Но саму минуту пересчитываем на ходу: приложение
+  // открывают по дороге (адрес, «Как пройти»), и к двери человек приходит с уже
+  // открытым экраном — на замороженном снимке карточка просто не появлялась.
   const slotMin = minuteOfDay(r.time)
-  const nowMin = minuteOfDay(data!.nowTime)
+  const nowMin = useNowMin()
   const arrivalOpen =
     approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
 
@@ -282,6 +296,22 @@ export function Visit() {
           <span className="kv-key">Видимость</span>
           <span className="kv-val">{r.anon ? 'Анонимно' : 'Обычная'}</span>
         </div>
+        {/* Куда идти — тот же вопрос, что «когда»: у двери карточка визита это
+            первое, что открывают, а адрес до сих пор жил только в «Моих визитах». */}
+        {!isPast ? (
+          <>
+            <Sep left={14} />
+            <button type="button" className="row tappable" onClick={() => push('route')}>
+              <span className="kv-key">Где</span>
+              <div className="row-right">
+                <span className="kv-val" style={{ marginLeft: 0 }}>
+                  {ADDRESS}
+                </span>
+                {icons.chevron()}
+              </div>
+            </button>
+          </>
+        ) : null}
         {r.purpose ? <Sep left={14} /> : null}
         {r.purpose ? (
           <div className="kv-block">

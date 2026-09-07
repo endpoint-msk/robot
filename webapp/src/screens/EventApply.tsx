@@ -69,7 +69,7 @@ export function EventApply() {
 
   return (
     <Screen>
-      <BackRow label={params.backLabel || 'Ивент'} />
+      <BackRow />
       <Header title={title} subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в ${event.time}`} />
 
       {app ? (

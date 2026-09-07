@@ -61,9 +61,22 @@ export function DayRow({
     </div>
   )
 
+  // Резиденты и гости в одном стеке, резиденты первыми (тот же порядок, что у
+  // attendeesForDay). Раньше при непустом списке заявок отметившиеся резиденты
+  // из строки пропадали целиком: день, на который собрались трое своих, выглядел
+  // как день с одной гостевой заявкой.
   const guests = (day.requests || []).map((r) => r.guest)
-  const faces = guests.length > 0 ? guests : att
+  const seen = new Set<number>()
+  const faces = [...att.filter((a) => a.resident), ...guests, ...att.filter((a) => !a.resident)].filter((u) => {
+    if (seen.has(u.userId)) return false
+    seen.add(u.userId)
+    return true
+  })
   const label = day.total > 0 ? requestsWord(day.total) : peopleWord(att.length)
+  // Заявка есть, а хоста у неё нет — единственное место в неделе, где от резидента
+  // что-то требуется. Точка, а не слово: строка и так плотная, а «ждут ответа»
+  // читается как статус дня, хотя относится к части заявок.
+  const needsAction = day.total > day.approved && !lock
 
   // Кнопкой строка становится только когда по ней есть куда перейти: <button> без
   // обработчика всё равно ловил бы фокус и объявлялся как действие.
@@ -72,8 +85,9 @@ export function DayRow({
   return (
     // title — единственный след закрытия для тех, кому штриховка ни о чём не говорит
     // (скринридер, наведение мышью): текстовой метки в строке нет намеренно.
-    <Tag className={cls} title={lock ? 'Закрыт для заявок' : undefined} {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}>
+    <Tag className={cls} title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined} {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}>
       {dayCol}
+      {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
       {empty ? (
         // «Пока никого» в закрытом дне — неправда: никого и не будет.
         <span className="day-none">{lock ? lock.reason || 'Закрыт для гостей' : 'Пока никого'}</span>

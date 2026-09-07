@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { DayChips, isPastForToday, useDayTime } from './components/forms'
 import { TimeField } from './components/TimeField'
 import { icons } from './icons'
+import { pushOverlay } from './overlays'
 import { getState } from './store'
 
 type ConfirmInput = {
@@ -77,13 +78,34 @@ const subscribe = (fn: () => void): (() => void) => {
 const getSnapshot = (): Modal[] => modals
 const emit = (): void => listeners.forEach((l) => l())
 
+/** Чем модалка отвечает, когда её закрыли «Назад»: это отмена, а не выбор. */
+const cancelValue = (kind: ModalInput['kind']): unknown => (kind === 'confirm' ? false : null)
+
+/** Снятие оверлея по id: модалка может закрыться и сама (кнопкой), и снаружи. */
+const unregister = new Map<number, () => void>()
+
 function open<T>(input: ModalInput): Promise<T> {
   return new Promise<T>((resolve) => {
-    modals = [...modals, { ...input, id: nextId++, resolve }]
+    const id = nextId++
+    modals = [...modals, { ...input, id, resolve }]
+    // Системная «Назад» закрывает верхнюю модалку как отмену. Резолвим здесь же:
+    // карточка размонтируется без своего onClose, и ждущий промис иначе повис бы.
+    unregister.set(
+      id,
+      pushOverlay(() => {
+        if (!modals.some((m) => m.id === id)) return
+        modals = modals.filter((m) => m.id !== id)
+        unregister.delete(id)
+        emit()
+        resolve(cancelValue(input.kind) as T)
+      }),
+    )
     emit()
   })
 }
 function remove(id: number): void {
+  unregister.get(id)?.()
+  unregister.delete(id)
   modals = modals.filter((m) => m.id !== id)
   emit()
 }

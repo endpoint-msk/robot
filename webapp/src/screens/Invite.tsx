@@ -155,7 +155,7 @@ export function Invite() {
 
   return (
     <Screen>
-      <BackRow label="День" />
+      <BackRow />
       <Header title="Позвать в спейс" subtitle={fmtShortDate(dateKey)} />
       <div className="card">
         <div className="row">

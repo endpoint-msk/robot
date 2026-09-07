@@ -84,7 +84,7 @@ async function closeRequest(r: HostingRequest): Promise<void> {
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
 async function blockGuest(r: HostingRequest): Promise<void> {
   const ok = await confirmDialog(
-    `Заблокировать ${r.guest.name}? Бот забанит его во всех чатах, удалит его заявки и закроет ему миниапп.`,
+    `Заблокировать ${r.guest.name}? Бот забанит его во всех чатах, удалит его заявки и закроет ему миниапп. Снять блокировку может только дев — сами вы её не откатите.`,
     { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true },
   )
   if (!ok) return
@@ -112,8 +112,10 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
   if (r.status === 'approved' && r.approvedBy) {
     const mine = !archive && r.approvedBy.userId === me.id
     const pill = mine ? (
-      <div
+      <button
+        type="button"
         className="pill mine"
+        aria-label="Отменить хостинг"
         onClick={async () => {
           const ok = await confirmDialog(`Отменить хостинг? Заявка ${r.guest.name} снова будет ждать ответа.`, {
             confirmLabel: 'Отменить хостинг',
@@ -127,7 +129,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         <Avatar user={r.approvedBy} />
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
         <span className="pill-x">✕</span>
-      </div>
+      </button>
     ) : (
       // Свой пилл занят отменой хостинга — в профиль ведут только чужие.
       <Profile user={r.approvedBy} className="pill">
@@ -179,6 +181,17 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         >
           {icons.check(14, '#34c759', 2.4)}
           Принять {proposalSlot(r, p)}
+        </button>
+        {/* Отказ — половина переговоров, и сервер его разрешает (proposalSides:
+            снять вправе адресат). Без него предложение можно было только принять. */}
+        <button
+          className="link-btn"
+          onClick={async () => {
+            const done = await action('proposal.decline', { id: r.id })
+            if (done) haptic('warning')
+          }}
+        >
+          Оставить {r.time}
         </button>
       </div>
     ) : null
@@ -280,6 +293,18 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           <span>
             {p.user.userId === me.id ? 'вы предложили' : 'предложено'}{' '}
             <span className="pn-time">{proposalSlot(r, p)}</span> · ждём гостя
+            {/* Своё предложение висело до ответа гостя, отозвать его было нечем. */}
+            {p.user.userId === me.id && canReschedule ? (
+              <button
+                className="link-btn pn-undo"
+                onClick={async () => {
+                  const done = await action('proposal.decline', { id: r.id })
+                  if (done) haptic('warning')
+                }}
+              >
+                Отозвать
+              </button>
+            ) : null}
           </span>
         )}
       </div>

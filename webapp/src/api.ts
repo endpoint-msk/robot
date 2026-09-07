@@ -1,8 +1,9 @@
 // API и мутации. api() — низкоуровневый POST /api/*; action() — мутация,
 // возвращающая свежий bootstrap: обновляет стор и перерисовывает экран.
 
+import { left as cooldownLeft, startCooldown } from './cooldown'
 import { setBusy, setData } from './store'
-import { initData } from './telegram'
+import { haptic, initData } from './telegram'
 import { showAlert } from './modals'
 import { ApiError, type Bootstrap } from './types'
 
@@ -28,6 +29,9 @@ export async function api<T = any>(method: string, params?: Record<string, unkno
     /* не-JSON — ниже упадём в generic */
   }
   if (!res.ok) {
+    // Сервер отдаёт секунды в Retry-After (см. ratelimit.ts). Заголовка нет —
+    // минута: полки короткие, и лучше подождать лишнего, чем долбить сервер.
+    if (res.status === 429) startCooldown(Number(res.headers.get('Retry-After')) || 60)
     throw new ApiError(data?.message || 'Что-то пошло не так. Попробуйте ещё раз.', data?.error)
   }
   return data as T
@@ -66,14 +70,36 @@ const RESYNC_CODES = ['already_approved', 'not_found', 'not_approved', 'no_propo
 
 /** Мутация, возвращающая свежий bootstrap: обновляет стор и перерисовывает экран.
     Возвращает null при ошибке (алерт показан внутри). */
-export async function action(method: string, params?: Record<string, unknown>): Promise<Bootstrap | null> {
-  setBusy(true)
+/**
+ * `quiet` — мутация без блокирующего оверлея. Полноэкранный спиннер осмыслен
+ * там, где ответ меняет весь экран (создание заявки, блокировка, рассылка), и
+ * бессмыслен на тумблере: он гасит интерфейс ради переключателя, который уже
+ * показал новое состояние сам.
+ */
+export async function action(
+  method: string,
+  params?: Record<string, unknown>,
+  opts?: { quiet?: boolean },
+): Promise<Bootstrap | null> {
+  // Полка ещё идёт — до сервера не ходим вовсе: он ответит тем же отказом и
+  // продлит её. Кнопки в это время показывают отсчёт (useCooldown).
+  const wait = cooldownLeft()
+  if (wait > 0) {
+    haptic('error')
+    showAlert(`Слишком часто. Попробуйте через ${wait} с.`)
+    return null
+  }
+  const quiet = opts?.quiet === true
+  if (!quiet) setBusy(true)
   try {
     const data = await api<Bootstrap>(method, params)
     setData(data)
     return data
   } catch (err) {
     const e = err as ApiError
+    // Отказ сервера должен ощущаться, а не только читаться: успех отзывался
+    // haptic'ом, а «слот занят» и «нет связи» приходили молча.
+    haptic('error')
     showAlert(e.message)
     if (e.code && RESYNC_CODES.includes(e.code)) {
       try {
@@ -84,6 +110,6 @@ export async function action(method: string, params?: Record<string, unknown>): 
     }
     return null
   } finally {
-    setBusy(false)
+    if (!quiet) setBusy(false)
   }
 }

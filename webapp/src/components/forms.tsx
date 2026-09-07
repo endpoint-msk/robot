@@ -101,6 +101,27 @@ export function DayChips({
   )
 }
 
+/**
+ * Что происходит в выбранный день. Название ивента жило только в атрибуте `title`
+ * у точки на чипе: на телефоне его нельзя ни навести, ни прочитать — гость видел
+ * безымянную метку и не понимал, повод это прийти или помеха.
+ */
+export function SelectedDayEvents({ days, selected }: { days: Day[]; selected: string }) {
+  const events = days.find((d) => d.dateKey === selected)?.events ?? []
+  if (events.length === 0) return null
+  return (
+    <div className="chips-events">
+      {events.map((e) => (
+        <div className="ce-row" key={e.id}>
+          <i className="legend-dot" />
+          <span className="ce-title">{e.title}</span>
+          <span className="ce-time">{`в ${e.time}`}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Строка легенды под чипами: она нужна на всех трёх экранах с выбором дня. */
 export function DayChipsLegend({ days }: { days: Day[] }) {
   return (

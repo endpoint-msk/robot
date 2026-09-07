@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
 import { showAlert } from '../modals'
-import { resetRoot, setBusy, setData, useStore } from '../store'
+import { push, resetRoot, setBusy, setData, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { Bootstrap, ReminderChoice } from '../types'
 import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
@@ -10,6 +10,7 @@ import {
   AnonRow,
   DayChips,
   DayChipsLegend,
+  SelectedDayEvents,
   firstOpenDay,
   isPastForToday,
   PurposeInput,
@@ -53,9 +54,16 @@ export function NewRequest() {
       // Если гость открыл миниапп из чата без /start, бот не сможет прислать ему ответ
       // резидента в личку — до создания заявки просим доступ нативной плашкой Telegram.
       if (!botCanWrite()) await requestWriteAccess()
-      setData(await api<Bootstrap>('create', { dateKey: day, time, purpose, anon, remind: reminderFor(day, time, remind) }))
+      const boot = await api<Bootstrap>('create', { dateKey: day, time, purpose, anon, remind: reminderFor(day, time, remind) })
+      setData(boot)
       haptic('success')
+      // Не в корень, а на карточку созданной заявки: там сразу написано «ждёт
+      // ответа» и что бот напишет в личку. Раньше форма молча сменялась списком,
+      // где новая строка ничем не отличалась от остальных, — момента отправки
+      // не было вовсе, а ответ на «сколько ждать» лежал ещё за одним тапом.
       resetRoot()
+      const created = boot.myRequests.find((x) => x.dateKey === day && x.time === time)
+      if (created) push('visit', { id: created.id })
     } catch (err) {
       showAlert((err as Error).message)
       setSubmitting(false)
@@ -66,10 +74,11 @@ export function NewRequest() {
 
   return (
     <Screen hasBottomBar>
-      <BackRow label="Назад" />
+      <BackRow />
       <Header title="Хочу прийти" />
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={day} onSelect={selectDay} />
+      <SelectedDayEvents days={days} selected={day} />
       <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">

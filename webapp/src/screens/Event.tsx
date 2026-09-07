@@ -98,7 +98,7 @@ export function Event() {
   if (existing && (asGuest || (existing.host.userId !== data!.me.id && !data!.me.isDev))) {
     return (
       <Screen>
-        <BackRow label={params.backLabel || 'День'} />
+        <BackRow />
         <Header
           title={existing.title}
           subtitle={`${fmtShortDate(existing.dateKey)} · в ${existing.time}`}
@@ -180,7 +180,7 @@ export function Event() {
 
   return (
     <Screen>
-      <BackRow label={params.backLabel || 'День'} />
+      <BackRow />
       <Header
         title={existing ? 'Ивент' : 'Новый ивент'}
         subtitle={residentsOnly ? 'Увидят только резиденты' : 'Гости увидят его в «Активности»'}

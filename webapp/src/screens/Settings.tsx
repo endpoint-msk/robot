@@ -57,7 +57,7 @@ function NotifyCard({
       type="button"
       className="row tappable"
       onClick={() => {
-        if (prefs.mode !== mode) void action(method, { enabled: prefs.enabled, mode })
+        if (prefs.mode !== mode) void action(method, { enabled: prefs.enabled, mode }, { quiet: true })
       }}
     >
       <span className="row-label">
@@ -77,7 +77,7 @@ function NotifyCard({
         <Switch
           label={title}
           on={prefs.enabled}
-          onToggle={() => void action(method, { enabled: !prefs.enabled, mode: prefs.mode })}
+          onToggle={() => action(method, { enabled: !prefs.enabled, mode: prefs.mode }, { quiet: true })}
         />
       </div>
       <Sep left={54} />
@@ -281,7 +281,7 @@ export function Settings() {
   if (!s) {
     return (
       <Screen>
-        <BackRow label="Назад" />
+        <BackRow />
         <Header title="Настройки" />
         <ThemeSection />
         <CalendarSection />
@@ -342,7 +342,7 @@ export function Settings() {
           <Switch
             label="Отмечаться без ника"
             on={s.macAnon}
-            onToggle={() => void action('mac.anon', { anon: !s.macAnon })}
+            onToggle={() => action('mac.anon', { anon: !s.macAnon }, { quiet: true })}
           />
         </div>
       </div>
@@ -361,7 +361,7 @@ export function Settings() {
           <Switch
             label="Не вести историю моих визитов"
             on={!s.logVisits}
-            onToggle={() => void action('presence.log', { enabled: !s.logVisits })}
+            onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
           />
         </div>
       </div>

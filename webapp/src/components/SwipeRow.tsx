@@ -8,6 +8,7 @@
 //     поэтому без этой ветки на макбуке строка не двигается вообще.
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactElement, type ReactNode } from 'react'
+import { pushOverlay } from '../overlays'
 
 export type SwipeAction = {
   key: string
@@ -52,6 +53,8 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
   const actionsRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const openRef = useRef(false)
+  /** Снятие себя из реестра оверлеев: строка регистрируется, только пока открыта. */
+  const dropOverlay = useRef<(() => void) | null>(null)
   // Живое значение смещения: в pointerup состояние из замыкания может отставать
   // на один кадр, а решение «открыть или закрыть» принимается именно там.
   const offsetRef = useRef(0)
@@ -84,12 +87,18 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     setDragging(false)
     setOffset(0)
     if (wasClosed) setRevealed(false)
+    dropOverlay.current?.()
+    dropOverlay.current = null
     if (closeOpened === close) closeOpened = null
   }, [])
 
   const open = useCallback(() => {
     if (closeOpened && closeOpened !== close) closeOpened()
     closeOpened = close
+    // Открытая строка — такой же оверлей, как модалка: системная «Назад» сначала
+    // закрывает её, а уже потом уводит с экрана.
+    dropOverlay.current?.()
+    dropOverlay.current = pushOverlay(close)
     openRef.current = true
     const w = actionsRef.current?.offsetWidth ?? 0
     offsetRef.current = w
@@ -109,6 +118,8 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
   }, [open, close])
 
   useEffect(() => () => {
+    dropOverlay.current?.()
+    dropOverlay.current = null
     if (closeOpened === close) closeOpened = null
   }, [close])
 

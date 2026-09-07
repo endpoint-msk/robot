@@ -285,7 +285,6 @@ export function DuesScreen() {
     async () => (periodKey ? await api<DuesSnapshot>('dues.period', { periodKey }) : null),
     [periodKey],
   )
-  const back = periodKey ? 'История' : 'Ближайшие дни'
 
   const snap = periodKey ? remote.data : data!.dues ?? null
   // Мутация возвращает свежий bootstrap; для прошлого периода его мало — перезапрашиваем.
@@ -300,7 +299,7 @@ export function DuesScreen() {
   const loading = !!periodKey && remote.loading && !remote.data
   const frame = (subtitle: ReactNode, body: ReactNode) => (
     <Screen>
-      <BackRow label={back} />
+      <BackRow />
       <Header title="Взносы" subtitle={subtitle} />
       <Swap loading={loading} skeleton={remote.pending ? <DuesSkeleton /> : null}>
         {body}

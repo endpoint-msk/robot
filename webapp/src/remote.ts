@@ -32,6 +32,20 @@ export function useRemote<T>(load: () => Promise<T>, deps: unknown[]): Remote<T>
   const [pending, setPending] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
+  // Смена deps — это другой запрос, а не повтор того же: прошлые данные под уже
+  // переключённым сегментом («Год» в подписи, числа за месяц под ней) экран
+  // выдаёт за правду. Сбрасываем прямо в рендере, иначе кадр со старыми числами
+  // всё равно успевает показаться. На reload (attempt) данные, наоборот, остаются:
+  // там запрос тот же самый, и мигать содержимым незачем.
+  const depsKey = deps.map(String).join('\u0001')
+  const [seenKey, setSeenKey] = useState(depsKey)
+  if (seenKey !== depsKey) {
+    setSeenKey(depsKey)
+    setData(null)
+    setError(false)
+    setLoading(true)
+  }
+
   useEffect(() => {
     let alive = true
     setLoading(true)

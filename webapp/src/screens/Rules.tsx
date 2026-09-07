@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
 import { pop, push, useStore } from '../store'
-import { haptic } from '../telegram'
+import { haptic, openUrl } from '../telegram'
 import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -43,6 +43,12 @@ export function Rules() {
             </div>
           </div>
         ))}
+      </div>
+      <div className="rules-wiki">
+        Подробнее про спейс — в вики:{' '}
+        <button type="button" className="link-btn" onClick={() => openUrl('https://wiki.endpoint.moscow')}>
+          wiki.endpoint.moscow
+        </button>
       </div>
       <div style={{ height: 22 }} />
       <div className="card">

@@ -6,6 +6,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { pushOverlay } from '../overlays'
 import { hapticTick } from '../telegram'
 
 /** Высота строки колеса; должна совпадать с --tp-item-h в app.css. */
@@ -118,6 +119,10 @@ function TimeSheet({
     setShown(false)
     setTimeout(() => onClose(value), 220)
   }
+
+  // Системная «Назад» должна закрывать шторку, а не экран под ней. Регистрируем
+  // после close: эффект зовёт именно его, со всей защитой от повторного закрытия.
+  useEffect(() => pushOverlay(() => close(null)), [])
 
   const selectHour = (next: string): void => {
     setHour(next)

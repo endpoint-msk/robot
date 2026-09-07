@@ -106,3 +106,22 @@ export function SkCard({ title, children }: { title: string; children: React.Rea
     </div>
   )
 }
+
+/**
+ * Первый кадр миниаппа. Какой экран откроется, до ответа сервера неизвестно —
+ * у резидента и гостя разные корни, — поэтому каркас нейтральный: шапка и список.
+ * Спиннер тут был единственным местом во всём приложении, где ожидание выглядело
+ * иначе, чем на остальных экранах.
+ */
+export function BootSkeleton() {
+  return (
+    <div className="screen">
+      <div className="header">
+        <SkBlock w={196} h={32} style={{ display: 'block' }} />
+        <SkBlock w={132} h={15} style={{ display: 'block', marginTop: 10 }} />
+      </div>
+      <SkBlock w={104} h={11} style={{ display: 'block', margin: '0 18px 9px' }} />
+      <SkRows count={4} tail />
+    </div>
+  )
+}

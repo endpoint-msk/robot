@@ -31,7 +31,7 @@ export function GuestNote() {
 
   return (
     <Screen hasBottomBar>
-      <BackRow label={params.backLabel || 'Назад'} />
+      <BackRow />
       <Header title="Заметка" subtitle="Видна всем резидентам" />
       <div className="card">
         <div className="row">

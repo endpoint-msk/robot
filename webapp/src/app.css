@@ -49,6 +49,12 @@
        фиксированная альфа, читаемая на белой карточке, на #1c1c1e пропадает. */
     --attn: rgba(0, 122, 255, 0.11);
     --attn-strong: rgba(0, 122, 255, 0.18);
+    /* Тонированная синим подложка не-строки: чипы, бейджи, круглые иконки, кнопка
+       «Повторить». Отдельно от --attn: тот значит «здесь ждут действия», а это
+       просто акцентная плашка. Пара обязательна — литерал не получает добавки в
+       тёмной теме и оказывается там вдвое слабее соседей на токене. */
+    --blue-soft: rgba(0, 122, 255, 0.11);
+    --blue-soft-strong: rgba(0, 122, 255, 0.16);
     --warn-bg: rgba(255, 149, 0, 0.1);
     /* Штрих закрытого дня. Оранжевый, как и всё обратимое: день закрывают и открывают
        обратно одним тумблером. Альфа низкая — поверх штриховки должен читаться текст. */
@@ -102,6 +108,8 @@
     --gray: #636366;
     --attn: rgba(0, 122, 255, 0.24);
     --attn-strong: rgba(0, 122, 255, 0.34);
+    --blue-soft: rgba(0, 122, 255, 0.24);
+    --blue-soft-strong: rgba(0, 122, 255, 0.32);
     --warn-bg: #4a3416;
     /* На чёрной карточке тот же штрих почти не виден — берём чуть заметнее. */
     --hatch: rgba(255, 159, 20, 0.16);
@@ -293,7 +301,11 @@ body {
     font-weight: 800;
     letter-spacing: -0.4px;
     line-height: 1.15;
+    /* В заголовок приходит @username — неразрывный токен до 33 символов. Без
+       разрыва он вылезал за колонку и уводил вбок всю страницу. */
+    overflow-wrap: anywhere;
 }
+.header { min-width: 0; }
 .subtitle { font-size: 15px; color: var(--text-2); margin-top: 4px; }
 
 /* Дев-переключатель перспективы (только для DEV_USER_IDS) */
@@ -307,7 +319,7 @@ body {
     font-family: inherit;
     padding: 6px 11px;
     border-radius: 999px;
-    background: rgba(0, 122, 255, 0.1);
+    background: var(--blue-soft);
     color: var(--blue);
     font-size: 12px;
     font-weight: 700;
@@ -521,6 +533,18 @@ body {
 .row.today .date { font-weight: 600; }
 .row.day-empty .dow { color: var(--text-3); }
 .row.day-empty .date { color: var(--text-4); }
+/* Точка «здесь нужен хост». Своего токена не заводим: это тот же акцент действия,
+   что у --attn, только в полную силу — на 8px полупрозрачная заливка не читается. */
+.day-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--blue);
+    flex-shrink: 0;
+    margin-left: -2px;
+}
+.row.day-locked .day-dot { display: none; }
+
 .day-none { font-size: 15px; color: var(--text-4); }
 .day-count { font-size: 15px; color: var(--text); }
 /* «Активность»: метка ивента и список людей идут строками друг под другом —
@@ -641,10 +665,14 @@ body {
 .person-tap:active { opacity: 0.55; }
 
 .approver { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+/* Микро-заголовок, младшая ступень. Их в приложении шесть — «ХОСТ», «АДРЕС»,
+   «МЕТРО», «ИВЕНТ», «ВАШ ВЗНОС», подпись ответа в анкете, — и жили они в четырёх
+   кеглях с тремя трекингами: одинаковые по смыслу подписи читались как разные
+   сущности. Старшая ступень одна — .section-title (13/600/0.05em). */
 .approver-label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-3);
 }
@@ -668,8 +696,22 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.pill.mine { cursor: pointer; }
-.pill.mine .pill-x { font-size: 13px; color: var(--text-3); padding: 0 2px 0 0; line-height: 1; }
+/* Свой пилл одобрившего — кнопка «отменить хостинг», а не ссылка в профиль.
+   26px по высоте: зону тапа расширяем слоем, как у .note-flag и .host-btn, иначе
+   промах по единственному действию строки просто ничего не делает. Крестик
+   красный — так он читается как отмена, а не как «открыть профиль». */
+.pill.mine {
+    position: relative;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+}
+.pill.mine::after { content: ""; position: absolute; inset: -9px -6px; }
+.pill.mine:active { opacity: 0.6; }
+.pill.mine .pill-x { font-size: 13px; color: var(--red); padding: 0 2px 0 0; line-height: 1; }
+
+/* «Отозвать» внутри плашки своего предложения. */
+.pn-undo { margin-left: 6px; font-size: 13px; padding: 2px 0; }
 
 .host-btn {
     margin-left: auto;
@@ -837,7 +879,7 @@ body {
     flex-shrink: 0;
     padding: 3px 10px;
     border-radius: 999px;
-    background: rgba(0, 122, 255, 0.12);
+    background: var(--blue-soft);
     color: var(--blue);
     font-size: 12px;
     font-weight: 700;
@@ -1033,6 +1075,14 @@ body {
    начинают свои подписи с разного отступа. */
 .chips-legend .cl-row { display: grid; grid-template-columns: 14px 1fr; align-items: center; gap: 6px; }
 .chips-legend .cl-row > :first-child { justify-self: center; }
+/* Ивенты выбранного дня — под чипами, до легенды: это про конкретный день, а не
+   про то, как читать чипы. */
+.chips-events { margin: 10px 6px 0; display: flex; flex-direction: column; gap: 5px; }
+.ce-row { display: flex; align-items: center; gap: 7px; font-size: 13px; min-width: 0; }
+.ce-row .legend-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--purple); }
+.ce-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ce-time { flex: none; color: var(--text-2); }
+
 .chips-legend .legend-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--purple); }
 .chips-legend .legend-hatch {
     width: 12px;
@@ -1113,8 +1163,15 @@ body {
     appearance: none;
 }
 
-/* «Таблетка» времени — кнопка: тап открывает шторку с колесом (components/TimeField.tsx). */
-.time-field { cursor: pointer; line-height: 1.3; }
+/* «Таблетка» времени — кнопка: тап открывает шторку с колесом (components/TimeField.tsx).
+   Это обязательное поле формы, поэтому у него полноразмерная тач-цель, а не 33px
+   от паддингов .time-input. */
+.time-field {
+    cursor: pointer;
+    line-height: 1.3;
+    min-height: 44px;
+    padding: 11px 14px;
+}
 .time-field:active { opacity: 0.6; }
 
 /* Шторка пикера времени. z-index выше модалок (100) и лайтбокса (110): пикер
@@ -1135,7 +1192,9 @@ body {
     width: 100%;
     background: var(--card);
     border-radius: 20px 20px 0 0;
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    /* Единственное место, где отступ считался через env(): в вебвью Telegram он
+       отдаёт ноль, и низ шторки упирался в домашний индикатор. */
+    padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     transform: translateY(100%);
     transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -1459,14 +1518,16 @@ body {
     justify-content: center;
 }
 .week-square .ws-day { font-size: 15px; font-weight: 700; line-height: 1; }
-.week-square .ws-month {
+/* Подпись плитки даты. 9px на подложке --chip давало около 2.5:1 и просто не
+   читалось; трекинг тут же был задан в пикселях, в отличие от всех остальных. */
+.week-square .ws-month, .dt-sub {
     margin-top: 2px;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 600;
     line-height: 1;
     text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: rgba(var(--sec), 0.5);
+    letter-spacing: 0.06em;
+    color: var(--text-2);
 }
 .week-title { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .week-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
@@ -1486,6 +1547,17 @@ body {
 .row-label { font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-label .row-sublabel { display: block; font-size: 13px; color: var(--text-2); margin-top: 1px; }
 .row-label .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 14px; }
+
+/* Зона тапа тумблера. Размер самого тумблера нативный и менять его нельзя —
+   расширяем только область попадания: псевдоэлемент у .switch занят бегунком. */
+.switch-hit {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 7px 0;
+}
+.switch-hit .switch { margin-left: 0; }
 
 .switch {
     margin-left: auto;
@@ -1563,7 +1635,7 @@ body {
     height: 26px;
     flex-shrink: 0;
     border-radius: 50%;
-    background: rgba(0, 122, 255, 0.12);
+    background: var(--blue-soft);
     color: var(--blue);
     display: flex;
     align-items: center;
@@ -1595,7 +1667,7 @@ body {
     padding: 0 20px;
     border: none;
     border-radius: 12px;
-    background: rgba(0, 122, 255, 0.12);
+    background: var(--blue-soft);
     font-family: inherit;
     font-size: 15px;
     font-weight: 600;
@@ -1616,6 +1688,34 @@ body {
     color: var(--text-2);
     font-size: 15px;
 }
+
+/* Строка про вики под списком правил: не правило, а справка — поэтому вне карточки
+   и тем же кеглем, что сноски. */
+.rules-wiki {
+    margin: 14px 6px 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-2);
+}
+
+/* Корневая ошибка загрузки. Карточка, а не голый текст по центру: с этого экрана
+   некуда уйти навигацией, и кнопка «Повторить» здесь единственный выход. */
+.boot-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    max-width: 320px;
+    padding: 26px 22px 22px;
+    border-radius: var(--radius-card);
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+}
+.boot-error svg { margin-bottom: 8px; }
+.boot-error .be-title { font-size: 17px; font-weight: 600; color: var(--text); }
+/* Технический текст ответа: он нужен, но читается вторым — по нему пишут в поддержку. */
+.boot-error .be-text { font-size: 14px; line-height: 1.45; color: var(--text-2); }
 
 .spinner {
     width: 26px;
@@ -1651,7 +1751,7 @@ body.busy #busy-overlay { display: flex; }
 }
 .ev-head { display: flex; align-items: center; gap: 7px; }
 .ev-kicker {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -1852,12 +1952,12 @@ body.busy #busy-overlay { display: flex; }
 /* --- «Как пройти» ---------------------------------------------------------- */
 
 .route-address { align-items: center; }
-.route-pin { background: rgba(0, 122, 255, 0.16); border-radius: 10px; width: 34px; height: 34px; }
+.route-pin { background: var(--blue-soft-strong); border-radius: 10px; width: 34px; height: 34px; }
 .route-address-main { min-width: 0; flex: 1; }
 .route-label {
     font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-3);
 }
@@ -1904,28 +2004,58 @@ body.busy #busy-overlay { display: flex; }
 .route-door.tappable { cursor: pointer; }
 .route-door.tappable:active { opacity: 0.85; }
 
-.route-map-card { margin-top: 7px; overflow: hidden; }
-/* Тайлы позиционируются абсолютно внутри окна фиксированной высоты — мозаика
-   собрана под конкретную точку, поэтому окно не резиновое по высоте. */
-.route-map { position: relative; height: 210px; background: #14181d; overflow: hidden; }
-.route-map img { position: absolute; display: block; }
-.route-pin-mark {
-    position: absolute;
-    left: 185px;
-    top: 105px;
-    transform: translate(-50%, -100%);
-    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
+/* Карта района (screens/Route.tsx) — своя отрисовка по геометрии OpenStreetMap.
+   Палитра обычного светлого баземапа: серая земля, белые дороги. В тёмной теме
+   роли меняются местами — дороги светлее земли, иначе сетка улиц пропадает. */
+.route-map-wrap { position: relative; height: 210px; overflow: hidden; }
+.route-map { display: block; width: 100%; height: 100%; }
+.rs-bg { fill: #e9ebee; }
+.rs-water { fill: #cddff0; }
+.rs-build { fill: rgba(60, 60, 67, 0.13); }
+.rs-road { fill: none; stroke: #ffffff; stroke-linecap: round; stroke-linejoin: round; }
+.rs-service { stroke-width: 1.5; }
+.rs-residential, .rs-unclassified { stroke-width: 2.8; }
+.rs-tertiary { stroke-width: 4; }
+.rs-secondary { stroke-width: 4.6; }
+.rs-primary { stroke-width: 5.5; }
+/* Наш дом — единственное цветное пятно на карте. */
+.rs-here { fill: var(--blue); }
+/* Метка: своим цветом, иначе поверх синего дома читалась как его продолжение. */
+.rs-pin { fill: var(--red); stroke: #fff; }
+.rs-pin .rs-pin-dot { fill: #fff; stroke: none; }
+/* Подписи улиц — лайтово: мелко, приглушённо, с обводкой цвета земли, чтобы
+   не спорить с дорогами под ними. */
+.rs-name {
+    font-size: 7.5px;
+    font-weight: 600;
+    fill: rgba(60, 60, 67, 0.62);
+    paint-order: stroke;
+    stroke: #e9ebee;
+    stroke-width: 2.4;
+    stroke-linejoin: round;
 }
+:root[data-theme="dark"] .rs-name { fill: rgba(235, 235, 245, 0.5); stroke: #14181d; }
+
+:root[data-theme="dark"] .rs-bg { fill: #14181d; }
+:root[data-theme="dark"] .rs-water { fill: #16293c; }
+:root[data-theme="dark"] .rs-build { fill: rgba(235, 235, 245, 0.09); }
+:root[data-theme="dark"] .rs-road { stroke: #363b43; }
+
 .route-map-credit {
     position: absolute;
     right: 6px;
     bottom: 5px;
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.5);
-    background: rgba(0, 0, 0, 0.35);
-    padding: 2px 6px;
-    border-radius: 6px;
+    font-size: 8px;
+    color: rgba(var(--sec), 0.4);
 }
+
+.route-map-card { margin-top: 7px; overflow: hidden; }
+/* Тайлы позиционируются абсолютно внутри окна фиксированной высоты — мозаика
+   собрана под конкретную точку, поэтому окно не резиновое по высоте. */
+
+
+
+
 .route-map-open {
     display: flex;
     align-items: center;
@@ -2006,7 +2136,7 @@ body.busy #busy-overlay { display: flex; }
 .my-dues { border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
 .my-dues.unpaid { background: var(--warn-bg); box-shadow: none; }
 .my-dues.claimed { background: var(--card); box-shadow: var(--shadow-card); }
-.my-dues-kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.my-dues-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
 .my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
 .my-dues-sub { margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
 .my-dues .primary-btn { margin-top: 14px; }
@@ -2054,7 +2184,7 @@ body.busy #busy-overlay { display: flex; }
     font-weight: 700;
     line-height: 1.5;
 }
-.visit-chip.first { background: rgba(0, 122, 255, 0.16); color: var(--blue); }
+.visit-chip.first { background: var(--blue-soft-strong); color: var(--blue); }
 
 /* Прошедший визит в «Были раньше»: дата приглушена - это архив, а не то, за чем следят. */
 .req-name.past { color: var(--text-2); }
@@ -2354,7 +2484,7 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     justify-content: center;
 }
 .dt-num { font-size: 15px; font-weight: 700; line-height: 1; }
-.dt-sub { font-size: 9px; color: var(--text-3); }
+/* Вторая плитка даты (журнал) — та же геометрия и та же подпись, см. .ws-month. */
 
 /* Четыре показателя человека сеткой 2×2. */
 .stats-quad { margin-bottom: 18px; }
@@ -2713,7 +2843,7 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     background: var(--bg);
     border-radius: 14px;
 }
-.ea-answer .ea-q { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; color: rgba(var(--sec), 0.5); }
+.ea-answer .ea-q { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
 .ea-answer .ea-a { font-size: 16px; color: var(--text); margin-top: 3px; white-space: pre-wrap; line-height: 1.35; }
 .ea-a-empty { color: rgba(var(--sec), 0.4); }
 .ea-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }

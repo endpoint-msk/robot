@@ -115,13 +115,31 @@ export function setPerspective(p: Perspective): void {
 
 // --- Данные ---
 
+/**
+ * Когда пришёл bootstrap. `nowTime` в нём — снимок минуты, в которую загрузился
+ * миниапп, и без точки отсчёта его нельзя пересчитать на «сейчас»: сессия
+ * миниаппа короткая, но окно «Я на месте» открывается ровно по ходу того, как
+ * человек идёт к двери с уже открытым экраном.
+ */
+let dataAt = 0
+export const getDataAt = (): number => dataAt
+
 /** Обновление данных без навигации: экран не ремаунтится, скролл/фокус сохраняются. */
-export const setData = (data: Bootstrap): void => set({ data })
+export const setData = (data: Bootstrap): void => {
+  dataAt = Date.now()
+  set({ data })
+}
 
 // --- Busy-оверлей (как в старом миниаппе: класс на body, CSS показывает #busy-overlay) ---
 
+/**
+ * Счётчик, а не флаг: два перекрывающихся запроса снимали оверлей по первому
+ * завершившемуся, и экран оживал, пока второй ещё летел.
+ */
+let busyDepth = 0
 export const setBusy = (on: boolean): void => {
-  document.body.classList.toggle('busy', on)
+  busyDepth = Math.max(0, busyDepth + (on ? 1 : -1))
+  document.body.classList.toggle('busy', busyDepth > 0)
 }
 
 // --- Тема ---

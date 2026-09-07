@@ -163,7 +163,7 @@ export function DuesSettings() {
           <Switch
             label="Напоминать о сборе"
             on={dues.notify}
-            onToggle={() => void action('dues.notify', { enabled: !dues.notify })}
+            onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
           />
         </div>
       </div>

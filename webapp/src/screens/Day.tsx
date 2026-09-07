@@ -4,9 +4,10 @@ import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { confirmDialog, textPrompt } from '../modals'
 import { haptic } from '../telegram'
-import { push, useParams, useStore } from '../store'
+import { sec } from '../theme'
+import { pop, push, useParams, useStore } from '../store'
 import type { DayLock, HostingRequest } from '../types'
-import { BackRow, EmptyState, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, EmptyState, Footnote, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
 import { EventRow } from '../components/EventRow'
 import { RequestsCard } from '../components/RequestRow'
@@ -114,23 +115,49 @@ export function Day() {
   const { data } = useStore()
   const archive = Boolean(params.archive)
 
+  // День мог выпасть из окна обзора, пока экран был открыт (прежде всего — при
+  // переходе через полночь). Это не «заявок нет»: данных о дне у нас больше нет
+  // вовсе, и утверждать за него что-либо экран не вправе.
+  const liveDay = !archive ? data!.days.find((d) => d.dateKey === params.dateKey) : undefined
+  const dropped = !archive && !liveDay
+
   let requests: HostingRequest[]
   if (archive) {
     requests = (params.requests as HostingRequest[]) || []
   } else {
-    const day = data!.days.find((d) => d.dateKey === params.dateKey)
-    requests = (day && day.requests) || []
+    requests = (liveDay && liveDay.requests) || []
   }
   const approved = requests.filter((r) => r.status === 'approved')
   const pending = requests.filter((r) => r.status !== 'approved')
   const isToday = !archive && params.dateKey === data!.todayKey
 
   // Резиденты «я приду» + переключатель для себя (только в живом дне).
-  const dayObj = !archive ? data!.days.find((d) => d.dateKey === params.dateKey) : undefined
+  const dayObj = liveDay
   const residentsComing = !archive ? ((dayObj && dayObj.attendees) || []).filter((a) => a.resident) : []
   const iAmComing = residentsComing.some((a) => a.userId === data!.me.id)
   const events = (dayObj && dayObj.events) || []
   const lock = (dayObj && dayObj.lock) || null
+
+  if (dropped) {
+    return (
+      <Screen>
+        <BackRow label="Ближайшие дни" />
+        <Header title={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]} subtitle={fmtDayMonth(params.dateKey)} />
+        <div className="card">
+          <EmptyState
+            icon={icons.calendar(26, sec(0.3))}
+            title="Этот день больше не в обзоре"
+            text={`Обзор показывает ближайшие семь дней, и ${fmtDayMonth(params.dateKey)} из них вышло.`}
+          />
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '0 20px 22px' }}>
+            <button type="button" className="retry-btn" style={{ marginTop: 0 }} onClick={pop}>
+              К ближайшим дням
+            </button>
+          </div>
+        </div>
+      </Screen>
+    )
+  }
 
   return (
     <Screen>
@@ -216,6 +243,17 @@ export function Day() {
           <SectionTitle>{`Ждут ответа · ${pending.length}`}</SectionTitle>
           <RequestsCard list={pending} archive={archive} />
         </>
+      ) : null}
+      {/* Четыре действия резидента живут только в свайпе, и на экране не было ни
+          одного следа жеста: не зная про него, закрыть заявку или предложить
+          перенос физически нечем. Тот же приём и тот же компонент уже стоят в
+          «Взносах». */}
+      {requests.length > 0 ? (
+        <Footnote>
+          {archive
+            ? 'Свайп по строке влево — заметка о госте.'
+            : 'Свайп по строке влево: заметка, перенос, закрыть заявку, блокировка.'}
+        </Footnote>
       ) : null}
       {!archive ? (
         <>

@@ -70,7 +70,7 @@ const since = (sinceKey: string): string => {
 }
 
 export function StatsPerson() {
-  const { userId, backLabel } = useParams() as { userId: number; backLabel?: string }
+  const { userId } = useParams() as { userId: number }
   const { data: boot } = useStore()
   const { data, error, pending, reload } = useRemote(
     () => api<StatsPersonView>('stats.person', { userId, period: 'quarter' }),
@@ -81,7 +81,7 @@ export function StatsPerson() {
   // пропадает в том же кадре, в котором приходят данные.
   const frame = (body: ReactNode) => (
     <Screen>
-      <BackRow label={backLabel ?? 'Статистика'} />
+      <BackRow />
       <Swap loading={!data && !error} skeleton={pending ? <PersonSkeleton /> : null}>
         {body}
       </Swap>

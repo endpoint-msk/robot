@@ -9,6 +9,7 @@ import {
   AnonRow,
   DayChips,
   DayChipsLegend,
+  SelectedDayEvents,
   firstOpenDay,
   isPastForToday,
   PurposeInput,
@@ -61,10 +62,11 @@ export function EditRequest() {
 
   return (
     <Screen hasBottomBar>
-      <BackRow label="Визит" />
+      <BackRow />
       <Header title="Изменить заявку" />
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={day} onSelect={selectDay} />
+      <SelectedDayEvents days={days} selected={day} />
       <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">

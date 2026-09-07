@@ -1,11 +1,13 @@
 // Общие UI-атомы: шапка, карточки-строки, разделители, свитч, пустые состояния,
 // нижняя панель (в портал вне анимируемого экрана) и дев-чипы.
 
-import { useContext, type ReactNode } from 'react'
+import { useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BarContext } from '../barContext'
+import { cooldownSnapshot, subscribeCooldown } from '../cooldown'
 import { icons } from '../icons'
 import { pop, push, setPerspective, useStore } from '../store'
+import { screenTitle } from '../titles'
 
 export function Sep({ left }: { left?: number }) {
   return <div className="sep" style={left !== undefined ? { marginLeft: left } : undefined} />
@@ -25,11 +27,19 @@ export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?:
   )
 }
 
-export function BackRow({ label }: { label: string }) {
+/**
+ * Кнопка «назад». Без `label` подписывается заголовком экрана, на который
+ * возвращает: подпись — это навигация, и слово, которого нет в предыдущем
+ * заголовке, только сбивает. Явный `label` остаётся для случаев, где заголовок
+ * длиннее, чем нужно в строке.
+ */
+export function BackRow({ label }: { label?: string }) {
+  const { stack, data } = useStore()
+  const prev = stack[stack.length - 2]
   return (
     <button type="button" className="back-row" onClick={pop}>
       {icons.back()}
-      {label}
+      {label ?? (prev ? screenTitle(prev, data) : 'Назад')}
     </button>
   )
 }
@@ -85,16 +95,71 @@ export const ReadonlyBadge = () => (
 
 /** `label` обязателен: у тумблера нет ни текста, ни иконки, и без имени он
     озвучивается как «переключатель, включён» и ничего больше. */
-export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+export function Switch({
+  on,
+  onToggle,
+  label,
+}: {
+  on: boolean
+  onToggle: () => void | Promise<unknown>
+  label: string
+}) {
+  // Ползунок переключается сразу и держится до ответа сервера: раньше он ждал
+  // целый bootstrap под блокирующим оверлеем, то есть тап «не срабатывал»
+  // примерно полсекунды. Отказ откатывает его сам — данные не изменились.
+  const [pending, setPending] = useState<boolean | null>(null)
+  const shown = pending ?? on
+  useEffect(() => setPending(null), [on])
+
+  // Обёртка — только зона тапа: сам тумблер остаётся нативных 51×31, а промах
+  // чуть выше или ниже раньше не давал ничего (см. .switch-hit).
+  return (
+    <span className="switch-hit">
+      <button
+        type="button"
+        className={'switch' + (shown ? ' on' : '')}
+        role="switch"
+        aria-checked={shown}
+        aria-label={label}
+        onClick={async () => {
+          setPending(!shown)
+          try {
+            await onToggle()
+          } finally {
+            setPending(null)
+          }
+        }}
+      />
+    </span>
+  )
+}
+
+/**
+ * Главная кнопка экрана. Своя обёртка над `.primary-btn` ради одной вещи: после
+ * отказа по рейтлимиту кнопка обязана показывать отсчёт, а не выглядеть рабочей —
+ * иначе человек жмёт её по кругу и сам продлевает себе полку.
+ */
+export function PrimaryButton({
+  children,
+  onClick,
+  disabled,
+  className,
+}: {
+  children: ReactNode
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+}) {
+  const wait = useSyncExternalStore(subscribeCooldown, cooldownSnapshot, cooldownSnapshot)
   return (
     <button
       type="button"
-      className={'switch' + (on ? ' on' : '')}
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={onToggle}
-    />
+      className={'primary-btn' + (className ? ' ' + className : '')}
+      disabled={disabled || wait > 0}
+      onClick={onClick}
+    >
+      {wait > 0 ? `Подождите ${wait} с` : children}
+    </button>
   )
 }
 

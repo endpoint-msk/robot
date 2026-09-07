@@ -62,6 +62,18 @@ export const icons = {
       <rect x="4.3" y="8.6" width="11.4" height="8.2" rx="2.6" fill={color} />
     </svg>
   ),
+  /** Нет связи. Слэш идёт поверх дуг с подложкой цвета фона: без неё пересечения
+      читаются как ещё одна дуга, и на крупном размере иконка мылится в пятно. */
+  wifiOff: (size = 44, color = sec(0.34)): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      <path d="M3.6 15.4a26 26 0 0 1 36.8 0" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+      <path d="M10.4 22.6a16.4 16.4 0 0 1 23.2 0" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+      <path d="M16.8 29.6a7.4 7.4 0 0 1 10.4 0" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+      <circle cx="22" cy="36" r="2.2" fill={color} />
+      <path d="M7 7l30 30" stroke="var(--bg)" strokeWidth="6.4" strokeLinecap="round" />
+      <path d="M7 7l30 30" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+    </svg>
+  ),
   info: (): ReactElement => (
     <svg width="16" height="16" viewBox="0 0 16 16">
       <circle cx="8" cy="8" r="7" fill="none" stroke={sec(0.35)} strokeWidth="1.4" />

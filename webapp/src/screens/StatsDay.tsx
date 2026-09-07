@@ -144,7 +144,7 @@ function DaySkeleton() {
 }
 
 export function StatsDay() {
-  const { dateKey, backLabel } = useParams() as { dateKey: string; backLabel?: string }
+  const { dateKey } = useParams() as { dateKey: string }
   const { data, error, loading, pending, reload } = useRemote(
     () => api<StatsDayView>('stats.day', { dateKey }),
     [dateKey],
@@ -154,7 +154,7 @@ export function StatsDay() {
   // каркас гаснет поверх проявляющихся данных, а не исчезает рывком.
   const frame = (body: ReactNode) => (
     <Screen>
-      <BackRow label={backLabel ?? 'История по дням'} />
+      <BackRow />
       <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
       <Swap loading={loading && !data} skeleton={pending ? <DaySkeleton /> : null}>
         {body}

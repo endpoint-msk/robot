@@ -37,7 +37,7 @@ export function Dev() {
 
   return (
     <Screen hasBottomBar>
-      <BackRow label="Назад" />
+      <BackRow />
       <Header title="Dev" subtitle="Тестовые данные - резиденты не будут уведомлены" />
       <SectionTitle>Рассылка</SectionTitle>
       <div className="card">
