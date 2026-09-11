@@ -62,6 +62,8 @@ export type State = {
     hostingAttendance: Record<string, HostingAttendance>
     /** Дни, закрытые для заявок гостей. Ключ — dateKey ('YYYY-MM-DD' в поясе спейса). */
     hostingDayLocks: Record<string, DayLock>
+    /** Дни с переопределённой вместимостью. Ключ — dateKey. Нет записи — общий SPACE_CAPACITY. */
+    hostingDayCaps: Record<string, DayCap>
     /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
      *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
     hostingNotify: Record<string, HostingNotifyPrefs>
@@ -512,6 +514,22 @@ export type VisitReminder = {
     sentAt: string | null
 }
 
+/**
+ * Предложение передать хостинг подтверждённого визита другому резиденту.
+ *
+ * Отдельное состояние, а не молчаливая смена `approvedBy`: хост не вправе назначить
+ * кого-то вместо себя, тот должен согласиться. Живёт до ответа адресата или отзыва
+ * автором; принятое предложение переписывает `approvedBy` и исчезает.
+ */
+export type HostTransfer = {
+    /** Кому предложили взять визит. */
+    to: HostingUser
+    /** Текущий хост, который передаёт. */
+    by: HostingUser
+    /** Когда предложили (ISO). */
+    at: string
+}
+
 /** Заявка гостя на визит в спейс. */
 export type HostingRequest = {
     id: string
@@ -531,6 +549,8 @@ export type HostingRequest = {
     approvedAt: string | null
     /** Активное предложение переноса дня/времени. null/отсутствует — действуют `dateKey`/`time`. */
     proposal: RescheduleProposal | null
+    /** Активное предложение передать хостинг другому резиденту. null/отсутствует — никому не передают. */
+    transfer?: HostTransfer | null
     /**
      * Когда гость нажал «Я на месте» (ISO). null/отсутствует - не нажимал.
      *
@@ -596,6 +616,24 @@ export type DayLock = {
     /** Кто закрыл. Гостю не отдаём: это внутренняя кухня спейса. */
     by: HostingUser
     /** Когда закрыли (ISO). */
+    at: string
+}
+
+/**
+ * Вместимость конкретного дня, если она отличается от общей (`SPACE_CAPACITY`).
+ *
+ * Лимит мягкий: сервер ничего не запрещает, он только считает занятые места и
+ * предупреждает резидента, когда тот хостит сверх него. Переопределение нужно потому,
+ * что воркшоп и субботняя уборка вмещают разное число людей.
+ */
+export type DayCap = {
+    /** День 'YYYY-MM-DD' в поясе спейса. */
+    dateKey: string
+    /** Сколько человек помещается в этот день. */
+    cap: number
+    /** Кто поменял вместимость. */
+    by: HostingUser
+    /** Когда поменяли (ISO). */
     at: string
 }
 
@@ -691,6 +729,7 @@ export const emptyState = (): State => ({
     hostingRequests: {},
     hostingAttendance: {},
     hostingDayLocks: {},
+    hostingDayCaps: {},
     hostingNotify: {},
     eventNotify: {},
     hostingBoard: {},

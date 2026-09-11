@@ -21,6 +21,9 @@ export type RescheduleProposal = {
   at: string
 }
 
+/** Просьба хоста подхватить его визит. Приходит только резидентам: гостя это не касается. */
+export type HostTransfer = { to: User; by: User; at: string }
+
 export type RequestStatus = 'pending' | 'approved'
 
 /** За сколько до визита напомнить: за 30 минут, час, два, утром того же дня, вечером накануне. */
@@ -44,6 +47,8 @@ export type HostingRequest = {
   arrivedAt?: string | null
   /** Напоминание о визите. Приходит только в своих заявках: чужое напоминание не наше дело. */
   remind?: VisitReminder | null
+  /** Кому хост предлагает передать визит. Приходит только в резидентские списки. */
+  transfer?: HostTransfer | null
 }
 
 /** Сколько раз человек уже приходил - чип в строке заявки. Только резидентам. */
@@ -186,6 +191,22 @@ export type Day = {
   attendees: Attendee[]
   /** Ивенты дня: гостю — только открытые. */
   events: SpaceEvent[]
+  /** Мягкий лимит вместимости. Приходит только резидентам. */
+  capacity?: DayCapacity
+}
+
+/**
+ * Занятые места дня против вместимости. Занято = резиденты «я приду» + подтверждённые
+ * гости + принятые заявители ивентов; `pending` — заявки без хоста, они места не держат.
+ * `custom` — вместимость этого дня отличается от общей.
+ */
+export type DayCapacity = {
+  occupied: number
+  pending: number
+  cap: number
+  custom: boolean
+  /** Общая вместимость спейса — её называет подсказка при вводе своего числа. */
+  defaultCap: number
 }
 
 export type NotifyPrefs = { enabled: boolean; mode: 'today' | 'all' }

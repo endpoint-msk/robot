@@ -413,6 +413,10 @@ body {
 }
 .modal-btn:active { background: rgba(var(--sec), 0.06); }
 .modal-btn + .modal-btn { border-left: 0.5px solid var(--sep); }
+/* Выбор действия — кнопки столбиком: в ряд помещаются две, а третья ужимает подписи
+   до многоточий. Разделитель тут горизонтальный, поэтому вертикальный снимаем. */
+.modal-choices { display: flex; flex-direction: column; border-top: 0.5px solid var(--sep); }
+.modal-choices .modal-btn + .modal-btn { border-left: none; border-top: 0.5px solid var(--sep); }
 .modal-btn.primary { font-weight: 600; }
 .modal-btn.destructive { color: var(--red); }
 
@@ -454,6 +458,10 @@ body {
 }
 .card + .section-title, .footnote + .section-title, button + .section-title,
 .route-door + .section-title { margin-top: 22px; }
+/* Тот же отступ, когда между карточкой и заголовком стоит обёртка подмены: первый
+   заголовок внутри Swap соседом карточки не является, и правило выше его не ловило —
+   «РЕЗИДЕНТЫ» прилипали к полю поиска. */
+.card + .swap .section-title:first-child { margin-top: 22px; }
 
 /* Цель визита в истории гостя: одна строка с многоточием — там их десятки. */
 .guest-purpose { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -696,10 +704,11 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Свой пилл одобрившего — кнопка «отменить хостинг», а не ссылка в профиль.
-   26px по высоте: зону тапа расширяем слоем, как у .note-flag и .host-btn, иначе
-   промах по единственному действию строки просто ничего не делает. Крестик
-   красный — так он читается как отмена, а не как «открыть профиль». */
+/* Свой пилл одобрившего — кнопка с меню хостинга (передать другому, снять с себя),
+   а не ссылка в профиль. 26px по высоте: зону тапа расширяем слоем, как у .note-flag
+   и .host-btn, иначе промах по единственному действию строки просто ничего не делает.
+   Многоточие вместо крестика: действий за пиллом два, и красный крест обещал бы одно
+   конкретное — отмену. */
 .pill.mine {
     position: relative;
     cursor: pointer;
@@ -708,7 +717,7 @@ body {
 }
 .pill.mine::after { content: ""; position: absolute; inset: -9px -6px; }
 .pill.mine:active { opacity: 0.6; }
-.pill.mine .pill-x { font-size: 13px; color: var(--red); padding: 0 2px 0 0; line-height: 1; }
+.pill.mine .pill-x { font-size: 13px; font-weight: 700; color: var(--text-2); padding: 0 2px 0 0; line-height: 1; letter-spacing: 0.5px; }
 
 /* «Отозвать» внутри плашки своего предложения. */
 .pn-undo { margin-left: 6px; font-size: 13px; padding: 2px 0; }
@@ -1146,6 +1155,12 @@ body {
     font-size: 15px;
     color: var(--text-2);
 }
+
+/* Занято/вместимость в строке дня. Красный — сверх лимита, оранжевый — ровно под
+   завязку: число тут и есть предупреждение, отдельной плашки для него не нужно. */
+.cap-value { font-size: 15px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.cap-value.full { color: var(--orange); }
+.cap-value.over { color: var(--red); }
 
 /* --- Поля формы --- */
 

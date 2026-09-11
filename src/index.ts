@@ -31,6 +31,7 @@ import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } fro
 import { registerInlineHandlers, setInlineMiniappLink } from './inline.js'
 import { setEventAnnounceLink } from './events.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
+import { registerHostingTransferHandlers } from './hosting-transfer.js'
 import { registerVisitReminderHandlers, startVisitReminderScheduler } from './visit-reminder.js'
 import { registerBackupHandlers, startBackupScheduler } from './backup.js'
 import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './dues.js'
@@ -168,6 +169,8 @@ const main = async () => {
     // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
     if (webappConfig !== null) {
         registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
+        // Кнопки «Беру» / «Не смогу» под просьбой подхватить чужой визит.
+        registerHostingTransferHandlers(dp, { client: tg, storage, webappUrl: webappConfig.publicUrl })
         // Кнопки «Буду» / «Не смогу» под напоминанием о визите.
         registerVisitReminderHandlers(dp, { client: tg, storage, allowedChats, tzOffsetMinutes: hostingTzOffset })
         // Инлайн резидента: доска спейса и ничьи заявки — отправкой в любой чат.

@@ -7,6 +7,7 @@ import { html, InputMedia, type TelegramClient } from '@mtcute/node'
 import {
     acceptReschedule,
     acceptRules,
+    acceptTransfer,
     addDaysToKey,
     archiveWeeks,
     ARRIVAL_COOLDOWN_MS,
@@ -15,8 +16,11 @@ import {
     buildVisitIcs,
     cleanName,
     clearReschedule,
+    clearTransfer,
     createHostingRequest,
+    dayCapOverride,
     dayLockFor,
+    dayOccupancy,
     deleteHostingRequest,
     displayName,
     editHostingRequest,
@@ -29,6 +33,7 @@ import {
     listBlockedUsers,
     listGuestNotes,
     markArrived,
+    MAX_DAY_CAP,
     MAX_LOCK_REASON_LENGTH,
     MAX_NOTE_LENGTH,
     notifyArrival,
@@ -44,11 +49,14 @@ import {
     notifyProposalDroppedByEdit,
     notifyResidentsAboutRequest,
     notifyResidentRescheduleCountered,
+    offerTransfer,
     proposeReschedule,
     requestsForDay,
     requestsOfGuest,
     searchGuests,
+    setDayCap,
     setDayLock,
+    SPACE_CAPACITY,
     setGuestNote,
     setResidentAttendance,
     todayKey,
@@ -57,6 +65,12 @@ import {
     weekStartOf,
 } from './hosting.js'
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
+import {
+    notifyGuestHostChanged,
+    notifyTransferAccepted,
+    notifyTransferCancelled,
+    notifyTransferOffer,
+} from './hosting-transfer.js'
 import { isReminderChoice, mergeReminder, reminderFits, setVisitReminder } from './visit-reminder.js'
 import {
     announceEventToChats,
@@ -345,6 +359,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.apply.edit': 'write',
     'event.apply.cancel': 'write',
     'day.lock': 'write',
+    'day.cap': 'write',
     edit: 'write',
     'remind.set': 'write',
     attend: 'write',
@@ -376,6 +391,9 @@ const METHOD_CLASS: Record<string, RateClass> = {
     propose: 'dm',
     'proposal.accept': 'dm',
     'proposal.decline': 'dm',
+    'transfer.offer': 'dm',
+    'transfer.accept': 'dm',
+    'transfer.decline': 'dm',
     'event.create': 'dm',
     'event.update': 'dm',
     'event.delete': 'dm',
@@ -404,6 +422,8 @@ const METHOD_LIMITS: Record<string, RateRule> = {
     create: { limit: 12, windowMs: HOUR },
     // Зов = DM конкретному человеку; на день их зовут пачкой, отсюда запас.
     invite: { limit: 30, windowMs: HOUR },
+    // Передача = DM конкретному резиденту; предлагать одну и ту же заявку по кругу незачем.
+    'transfer.offer': { limit: 20, windowMs: HOUR },
     // Ивент = DM всем резидентам, как и заявка.
     'event.create': { limit: 10, windowMs: HOUR },
     // Бан во всех allowlist-чатах, откат — только через дева.
@@ -608,9 +628,10 @@ const MY_PAST_LIMIT = 3
 /**
  * Заявки для фронта. `viewerId` — кому мы их показываем: напоминание о визите это
  * личная настройка гостя, и в резидентских списках (дни, архив, карточка гостя) ему
- * делать нечего, поэтому поле едет только в своих заявках.
+ * делать нечего, поэтому поле едет только в своих заявках. `withTransfer` — наоборот,
+ * поле для резидентских списков: передача хостинга гостя не касается.
  */
-const requestsView = (list: HostingRequest[], viewerId?: number) =>
+const requestsView = (list: HostingRequest[], viewerId?: number, withTransfer = false) =>
     list.map((r) => ({
         id: r.id,
         dateKey: r.dateKey,
@@ -623,6 +644,9 @@ const requestsView = (list: HostingRequest[], viewerId?: number) =>
         proposal: r.proposal ? { ...r.proposal, user: userView(r.proposal.user) } : null,
         anon: r.anon === true,
         arrivedAt: r.arrivedAt ?? null,
+        // Передача хостинга — внутренняя кухня резидентов: гостю незачем видеть, что
+        // его визит пытаются передать. Поэтому поле едет только в резидентские списки.
+        ...(withTransfer && r.transfer ? { transfer: { ...r.transfer, to: userView(r.transfer.to), by: userView(r.transfer.by) } } : {}),
         ...(viewerId !== undefined && r.guest.userId === viewerId ? { remind: r.remind ?? null } : {}),
     }))
 
@@ -857,7 +881,20 @@ const buildBootstrap = (ctx: ApiContext) => {
             approved: requests.filter((r) => r.status === 'approved').length,
             // Детали заявок видят резиденты и dev-аккаунты (последним они нужны для
             // дев-меню — правка и удаление). Гостям — только счётчики.
-            ...(resident || isDevUser(ctx) ? { requests: requestsView(requests) } : {}),
+            ...(resident || isDevUser(ctx) ? { requests: requestsView(requests, undefined, true) } : {}),
+            // Мягкий лимит вместимости — резидентам: решение «брать или не брать» за
+            // ними, а «осталось два места» у гостя превратило бы заявку в гонку.
+            ...(resident
+                ? {
+                    capacity: {
+                        ...dayOccupancy(storage, dateKey),
+                        custom: dayCapOverride(storage, dateKey) !== null,
+                        // Общая вместимость едет рядом с дневной: подсказка «рекомендуем 15»
+                        // должна называть её и тогда, когда у дня стоит своё число.
+                        defaultCap: SPACE_CAPACITY,
+                    },
+                }
+                : {}),
             // Публичный список «кто придёт» — виден всем.
             attendees: attendeesForDay(storage, dateKey).map(userView),
             // Ивенты дня: гостю — только открытые, резиденту — все.
@@ -943,7 +980,8 @@ const buildBootstrap = (ctx: ApiContext) => {
 const AUDITED = new Set([
     'create', 'edit', 'cancel', 'approve', 'unapprove', 'close',
     'propose', 'proposal.accept', 'proposal.decline',
-    'day.lock', 'block', 'unblock', 'note.set',
+    'transfer.offer', 'transfer.accept', 'transfer.decline',
+    'day.lock', 'day.cap', 'block', 'unblock', 'note.set',
     'event.create', 'event.update', 'event.delete',
     'event.app.approve', 'event.app.decline',
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
@@ -1035,6 +1073,24 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             // Своё снял или чужое отклонил — для читателя журнала это разные события.
             const verb = p && p.user.userId === user.userId ? 'отозвал' : 'отклонил'
             return `${verb} перенос${target}${p ? `: ${slotOf(p.dateKey, p.time)}` : ''}`
+        }
+        case 'transfer.offer':
+            return `предложил передать${target} на ${reqSlot} резиденту ${idOf(body.userId)}`
+        case 'transfer.accept': {
+            const t = req?.transfer
+            return `взял${target} на ${reqSlot} на себя${t ? ` (от ${whoOf(t.by)})` : ''}`
+        }
+        case 'transfer.decline': {
+            const t = req?.transfer
+            // Автор отзывает своё предложение, адресат отказывается — события разные.
+            const verb = t && t.by.userId === user.userId ? 'отозвал передачу' : 'отказался подхватить'
+            return `${verb}${target} на ${reqSlot}`
+        }
+        case 'day.cap': {
+            const day = strOf(body.dateKey)
+            return typeof body.cap === 'number'
+                ? `поставил вместимость ${body.cap} на ${day}`
+                : `вернул общую вместимость на ${day}`
         }
         case 'day.lock': {
             const reason = strOf(body.reason).trim()
@@ -1317,6 +1373,24 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // Вместимость дня: мягкий лимит, сервер по нему ничего не запрещает — он только
+        // считает занятые места, а предупреждает о превышении миниапп при «Захостить».
+        case 'day.cap': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            // null — вернуть общую вместимость спейса.
+            const cap = typeof body.cap === 'number' ? body.cap : null
+            const result = await setDayCap(storage, tzOffsetMinutes, dateKey, cap, user)
+            if (!result.ok) {
+                sendError(res, 400, result.error, result.error === 'bad_cap'
+                    ? `Вместимость — целое число от 1 до ${MAX_DAY_CAP}.`
+                    : 'Менять вместимость можно только у дня из ближайшей недели.')
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
         // Кого можно позвать в спейс на день: резиденты + гости из заявок.
         case 'invite.list': {
             if (!requireResident()) return
@@ -1467,15 +1541,22 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_yours', 'Отменить хостинг может только тот, кто его одобрил.')
                 return
             }
+            // Хоста больше нет — висящая просьба подхватить визит теряет смысл вместе с ним.
+            const pendingTransfer = request.transfer ?? null
             await storage.update((s) => {
                 const r = s.hostingRequests[request.id]
                 if (r) {
                     r.status = 'pending'
                     r.approvedBy = null
                     r.approvedAt = null
+                    r.transfer = null
                 }
             })
             const updated = storage.get().hostingRequests[request.id]
+            if (updated && pendingTransfer) {
+                void notifyTransferCancelled(client, updated, pendingTransfer, true)
+                    .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
+            }
             if (updated) {
                 void notifyGuestUnapproved(client, config.publicUrl, updated)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя об отмене хостинга:', err))
@@ -1929,6 +2010,96 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     sides.counterpartId === result.request.guest.userId, actor,
                 ).catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
             }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Передать хостинг другому резиденту: хост просит подхватить свой подтверждённый
+        // визит. Именно просит — назначить вместо себя нельзя, адресат отвечает сам.
+        case 'transfer.offer': {
+            if (!requireResident()) return
+            const request = findRequest()
+            if (!request) return
+            const targetId = typeof body.userId === 'number' ? body.userId : Number(body.userId)
+            // Карточку берём из ростера: передавать можно только резиденту, и его имя
+            // должно быть тем же, что видит адресат в своих списках.
+            const target = (await residents.list()).users.find((u) => u.userId === targetId)
+            if (!target) {
+                sendError(res, 404, 'not_found', 'Передать визит можно только резиденту.')
+                return
+            }
+            const result = await offerTransfer(storage, request.id, target, user)
+            if (!result.ok) {
+                const messages = {
+                    not_found: 'Заявка не найдена.',
+                    not_approved: 'Передать можно только подтверждённый визит.',
+                    not_host: 'Передать визит может только его хост.',
+                    self: 'Этот визит и так на вас.',
+                    busy: 'По этой заявке уже ждём ответа другого резидента.',
+                } as const
+                const status = result.error === 'not_found' ? 404 : result.error === 'not_host' ? 403 : result.error === 'self' ? 400 : 409
+                sendError(res, status, result.error, messages[result.error])
+                return
+            }
+            const offered = result.request.transfer
+            if (offered) {
+                void notifyTransferOffer(client, config.publicUrl, result.request, offered)
+                    .catch((err) => console.error('[hosting] не удалось отправить просьбу о передаче:', err))
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Адресат берёт визит на себя: хостом становится он.
+        case 'transfer.accept': {
+            if (!requireResident()) return
+            const request = findRequest()
+            if (!request) return
+            const transfer = request.transfer ?? null
+            if (!transfer) {
+                sendError(res, 409, 'no_transfer', 'Эта просьба уже неактуальна.')
+                return
+            }
+            if (transfer.to.userId !== user.userId) {
+                sendError(res, 403, 'not_allowed', 'Эта просьба адресована другому резиденту.')
+                return
+            }
+            const result = await acceptTransfer(storage, request.id, user)
+            if (!result.ok) {
+                sendError(res, result.error === 'not_found' ? 404 : 409, result.error, 'Эта просьба уже неактуальна.')
+                return
+            }
+            void notifyTransferAccepted(client, result.request, user, result.from.userId)
+                .catch((err) => console.error('[hosting] не удалось уведомить прежнего хоста о передаче:', err))
+            void notifyGuestHostChanged(client, config.publicUrl, result.request)
+                .catch((err) => console.error('[hosting] не удалось уведомить гостя о смене хоста:', err))
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Снять просьбу: отказался адресат либо отозвал автор. Хостинг остаётся как был.
+        case 'transfer.decline': {
+            if (!requireResident()) return
+            const request = findRequest()
+            if (!request) return
+            const transfer = request.transfer ?? null
+            if (!transfer) {
+                sendError(res, 409, 'no_transfer', 'Эта просьба уже неактуальна.')
+                return
+            }
+            const withdrawn = transfer.by.userId === user.userId
+            if (!withdrawn && transfer.to.userId !== user.userId) {
+                sendError(res, 403, 'not_allowed', 'Эту передачу обсуждают два других резидента.')
+                return
+            }
+            const result = await clearTransfer(storage, request.id)
+            if (!result.ok) {
+                sendError(res, result.error === 'not_found' ? 404 : 409, result.error, 'Эта просьба уже неактуальна.')
+                return
+            }
+            void notifyTransferCancelled(client, result.request, result.transfer, withdrawn)
+                .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -2482,7 +2653,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 404, 'not_found', 'Заявок этого человека уже нет.')
                 return
             }
-            sendJson(res, 200, { user: userView(guest), requests: requestsView(requests) })
+            sendJson(res, 200, { user: userView(guest), requests: requestsView(requests, undefined, true) })
             return
         }
 
@@ -2497,7 +2668,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const days = []
             for (let i = 0; i < 7; i++) {
                 const dateKey = addDaysToKey(weekStart, i)
-                days.push({ dateKey, requests: requestsView(requestsForDay(storage, dateKey)) })
+                days.push({ dateKey, requests: requestsView(requestsForDay(storage, dateKey), undefined, true) })
             }
             sendJson(res, 200, { weekStart, days })
             return

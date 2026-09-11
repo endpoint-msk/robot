@@ -137,6 +137,14 @@ export const icons = {
       <path d="M15 11.5v5.2M12.4 14.1h5.2" stroke="#007aff" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   ),
+  /** Передача визита: человек и стрелка «дальше» — свой пилл хоста и плашка передачи. */
+  handoff: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <circle cx="6.4" cy="6.2" r="2.7" fill="none" stroke={color} strokeWidth="1.7" />
+      <path d="M1.7 16c0-2.6 2.1-4.3 4.7-4.3 1 0 1.9.2 2.7.6" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M11.4 11.6h5.9M14.8 8.9l2.8 2.7-2.8 2.7" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   // Флажок «о госте есть заметка» в строке заявки — рисуется мелко, поэтому
   // внутри только две строки текста: три на 13px сливаются в пятно.
   note: (size: number, color: string): ReactElement => (

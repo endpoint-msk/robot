@@ -2,11 +2,11 @@ import { Fragment } from 'react'
 import { action } from '../api'
 import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
-import { confirmDialog, textPrompt } from '../modals'
+import { confirmDialog, numberPrompt, textPrompt } from '../modals'
 import { haptic } from '../telegram'
 import { sec } from '../theme'
 import { pop, push, useParams, useStore } from '../store'
-import type { DayLock, HostingRequest } from '../types'
+import type { DayCapacity, DayLock, HostingRequest } from '../types'
 import { BackRow, EmptyState, Footnote, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
 import { AttendeesCard } from '../components/attendees'
 import { EventRow } from '../components/EventRow'
@@ -110,6 +110,64 @@ function LockCard({ dateKey, lock, requests }: { dateKey: string; lock: DayLock 
   )
 }
 
+/**
+ * Вместимость дня: мягкий лимит. Он ничего не запрещает — при «Захостить» сверх него
+ * приходит предупреждение с числами, а решать резиденту, который видит день целиком.
+ * Заявки без хоста в «занято» не входят: подтвердится из них не всё, и считать их
+ * занятыми значит упираться в потолок раньше времени.
+ */
+function CapacityCard({ dateKey, capacity }: { dateKey: string; capacity: DayCapacity }) {
+  const over = capacity.occupied > capacity.cap
+  const full = !over && capacity.occupied >= capacity.cap
+  const edit = async (): Promise<void> => {
+    const value = await numberPrompt({
+      text: 'Сколько человек помещается в этот день?',
+      initial: capacity.cap,
+      hint: `Рекомендуем ${capacity.defaultCap}: столько вмещает подвал. Лимит мягкий — захостить сверх него можно, бот только предупредит.`,
+      min: 1,
+      max: 200,
+      confirmLabel: 'Сохранить',
+    })
+    if (value === null || value === capacity.cap) return
+    const done = await action('day.cap', { dateKey, cap: value })
+    if (done) haptic('success')
+  }
+  const reset = async (): Promise<void> => {
+    const done = await action('day.cap', { dateKey, cap: null })
+    if (done) haptic('success')
+  }
+  return (
+    <div className="card">
+      <button type="button" className="row tappable" onClick={edit}>
+        <span className="row-label">
+          Вместимость
+          <span className="row-sublabel">
+            {`Занято ${capacity.occupied}`}
+            {capacity.pending > 0 ? `, ещё ${requestsWord(capacity.pending)} без хоста` : ''}
+          </span>
+        </span>
+        <div className="row-right">
+          <span className={'cap-value' + (over ? ' over' : full ? ' full' : '')}>
+            {`${capacity.occupied} / ${capacity.cap}`}
+          </span>
+          {icons.chevron()}
+        </div>
+      </button>
+      {capacity.custom ? (
+        <>
+          <Sep left={14} />
+          <button type="button" className="row tappable" onClick={reset}>
+            <span className="row-label">Вернуть общую</span>
+            <div className="row-right">
+              <span className="lock-reason">{String(capacity.defaultCap)}</span>
+            </div>
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 export function Day() {
   const params = useParams()
   const { data } = useStore()
@@ -137,6 +195,8 @@ export function Day() {
   const iAmComing = residentsComing.some((a) => a.userId === data!.me.id)
   const events = (dayObj && dayObj.events) || []
   const lock = (dayObj && dayObj.lock) || null
+  // Вместимость приходит только резидентам (см. bootstrap) — у гостя её нет вовсе.
+  const capacity = (dayObj && dayObj.capacity) || null
 
   if (dropped) {
     return (
@@ -252,13 +312,14 @@ export function Day() {
         <Footnote>
           {archive
             ? 'Свайп по строке влево — заметка о госте.'
-            : 'Свайп по строке влево: заметка, перенос, закрыть заявку, блокировка.'}
+            : 'Свайп по строке влево: заметка, перенос, закрыть заявку, блокировка. Тап по своему имени в «одобрил» — передать визит другому резиденту.'}
         </Footnote>
       ) : null}
       {!archive ? (
         <>
           <SectionTitle>День</SectionTitle>
           <LockCard dateKey={params.dateKey} lock={lock} requests={requests.length} />
+          {capacity ? <CapacityCard dateKey={params.dateKey} capacity={capacity} /> : null}
         </>
       ) : null}
     </Screen>

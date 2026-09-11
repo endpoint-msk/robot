@@ -63,7 +63,14 @@ type ImageInput = {
   src: string
   alt: string
 }
-type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | TextInput | DateInput | ImageInput
+/** Выбор одного действия из нескольких: кнопки столбиком, как в нативном action sheet. */
+type ChoiceInput = {
+  kind: 'choice'
+  text: string
+  options: { key: string; label: string; destructive?: boolean }[]
+  cancelLabel: string
+}
+type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | TextInput | DateInput | ImageInput | ChoiceInput
 type Modal = ModalInput & { id: number; resolve: (value: any) => void }
 
 let modals: Modal[] = []
@@ -465,6 +472,53 @@ function ImageCard({ modal }: { modal: Modal & { kind: 'image' } }) {
   )
 }
 
+/**
+ * Выбор действия: две-три кнопки столбиком. Нужен там, где за одним элементом стоит
+ * больше одного действия и прятать их в свайп некуда, — например у пилла хоста в
+ * строке заявки («передать другому» и «отменить хостинг»).
+ */
+function ChoiceCard({ modal }: { modal: Modal & { kind: 'choice' } }) {
+  const [shown, setShown] = useState(false)
+  const done = useRef(false)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  const close = (value: string | null): void => {
+    if (done.current) return
+    done.current = true
+    setShown(false)
+    modal.resolve(value)
+    setTimeout(() => remove(modal.id), 180)
+  }
+  return (
+    <div
+      className={'modal-overlay' + (shown ? ' shown' : '')}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close(null)
+      }}
+    >
+      <div className="modal-card">
+        <div className="modal-text">{modal.text}</div>
+        <div className="modal-choices">
+          {modal.options.map((o) => (
+            <button
+              key={o.key}
+              className={'modal-btn primary' + (o.destructive ? ' destructive' : '')}
+              onClick={() => close(o.key)}
+            >
+              {o.label}
+            </button>
+          ))}
+          <button className="modal-btn" onClick={() => close(null)}>
+            {modal.cancelLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ModalHost() {
   const list = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   return createPortal(
@@ -480,6 +534,8 @@ export function ModalHost() {
           <TextCard key={m.id} modal={m} />
         ) : m.kind === 'date' ? (
           <DateCard key={m.id} modal={m} />
+        ) : m.kind === 'choice' ? (
+          <ChoiceCard key={m.id} modal={m} />
         ) : (
           <ModalCard key={m.id} modal={m} />
         ),
@@ -508,6 +564,19 @@ export const confirmDialog = (
     confirmLabel: opts?.confirmLabel ?? 'Да',
     cancelLabel: opts?.cancelLabel ?? 'Отмена',
     destructive: opts?.destructive ?? false,
+  })
+
+/** Выбор действия: возвращает `key` выбранного варианта, null — отменили. */
+export const choiceDialog = (
+  message: string,
+  options: { key: string; label: string; destructive?: boolean }[],
+  opts?: { cancelLabel?: string },
+): Promise<string | null> =>
+  open<string | null>({
+    kind: 'choice',
+    text: message,
+    options,
+    cancelLabel: opts?.cancelLabel ?? 'Отмена',
   })
 
 export const timePrompt = (opts: { text?: string; initial?: string; confirmLabel?: string }): Promise<string | null> =>

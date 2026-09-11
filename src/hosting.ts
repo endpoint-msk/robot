@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { BlockedUser, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, RescheduleProposal, VisitReminder } from './types.js'
+import type { BlockedUser, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -327,6 +327,73 @@ export const requestsForDay = (storage: Storage, dateKey: string): HostingReques
     Object.values(storage.get().hostingRequests)
         .filter((r) => r.dateKey === dateKey)
         .sort((a, b) => (a.time === b.time ? a.createdAt.localeCompare(b.createdAt) : a.time.localeCompare(b.time)))
+
+// ---------------------------------------------------------------------------
+// Вместимость дня: мягкий лимит
+// ---------------------------------------------------------------------------
+
+/** Сколько человек помещается в спейс. Данные помещения, а не настройка — как адрес и правила. */
+export const SPACE_CAPACITY = 15
+
+/** Потолок вводимого значения: защита от опечатки, а не осмысленный предел. */
+export const MAX_DAY_CAP = 200
+
+/** Своя вместимость этого дня. null — действует общая. */
+export const dayCapOverride = (storage: Storage, dateKey: string): DayCap | null =>
+    storage.get().hostingDayCaps[dateKey] ?? null
+
+/** Сколько человек помещается в этот день: переопределение либо общая вместимость. */
+export const dayCapFor = (storage: Storage, dateKey: string): number =>
+    dayCapOverride(storage, dateKey)?.cap ?? SPACE_CAPACITY
+
+/**
+ * Занятые места дня и сколько заявок ещё ждут ответа.
+ *
+ * Занято = резиденты «я приду» + подтверждённые гости + принятые заявители ивентов,
+ * по головам (один человек мог и отметиться, и оставить заявку). Заявки без хоста в
+ * это число НЕ входят: подтвердится из них не всё, и считать их занятыми значит
+ * упираться в потолок раньше времени — предупреждение тогда врёт. Их показываем
+ * отдельным числом: «12 из 15, ещё 3 ждут ответа».
+ */
+export const dayOccupancy = (
+    storage: Storage,
+    dateKey: string,
+): { occupied: number; pending: number; cap: number } => {
+    const ids = new Set<number>(residentsAttendingDay(storage, dateKey).map((a) => a.user.userId))
+    let pending = 0
+    for (const r of requestsForDay(storage, dateKey)) {
+        if (r.status === 'approved') ids.add(r.guest.userId)
+        else pending++
+    }
+    for (const a of eventApplicantsForDay(storage, dateKey)) ids.add(a.userId)
+    return { occupied: ids.size, pending, cap: dayCapFor(storage, dateKey) }
+}
+
+/**
+ * Меняет вместимость дня. `cap = null` — вернуть общую. Окно то же, что у замков дня
+ * (сегодня..+6), прошедшие переопределения чистим при каждой записи: ключ дневной,
+ * руками их никто не уберёт.
+ */
+export const setDayCap = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    cap: number | null,
+    by: HostingUser,
+): Promise<{ ok: true; cap: DayCap | null } | { ok: false; error: 'bad_date' | 'bad_cap' }> => {
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    if (cap !== null && (!Number.isInteger(cap) || cap < 1 || cap > MAX_DAY_CAP)) return { ok: false, error: 'bad_cap' }
+    await storage.update((s) => {
+        for (const key of Object.keys(s.hostingDayCaps)) {
+            if (key < today) delete s.hostingDayCaps[key]
+        }
+        if (cap === null) delete s.hostingDayCaps[dateKey]
+        else s.hostingDayCaps[dateKey] = { dateKey, cap, by, at: new Date().toISOString() }
+    })
+    return { ok: true, cap: dayCapOverride(storage, dateKey) }
+}
 
 /**
  * Недели, в которых были заявки: ключ понедельника + счётчики. Включая текущую —
@@ -1062,6 +1129,80 @@ export const clearReschedule = async (
         if (r) r.proposal = null
     })
     return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
+}
+
+// ---------------------------------------------------------------------------
+// Передача хостинга другому резиденту
+// ---------------------------------------------------------------------------
+
+export type TransferError = 'not_found' | 'not_approved' | 'not_host' | 'self' | 'busy'
+
+/**
+ * Предлагает другому резиденту взять на себя уже подтверждённый визит.
+ *
+ * Только у одобренной заявки и только от её хоста: ничью заявку передавать некому,
+ * её и так может взять любой. Предложение одно на заявку — второе перезаписало бы
+ * первое, а адресат первого остался бы с кнопкой, которая ничего не делает.
+ */
+export const offerTransfer = async (
+    storage: Storage,
+    id: string,
+    to: HostingUser,
+    by: HostingUser,
+): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: TransferError }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+    if (existing.status !== 'approved' || !existing.approvedBy) return { ok: false, error: 'not_approved' }
+    if (existing.approvedBy.userId !== by.userId) return { ok: false, error: 'not_host' }
+    if (to.userId === by.userId) return { ok: false, error: 'self' }
+    const current = existing.transfer ?? null
+    if (current && current.to.userId !== to.userId) return { ok: false, error: 'busy' }
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (r) r.transfer = { to, by, at: new Date().toISOString() }
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]! }
+}
+
+/**
+ * Адресат берёт визит: хостом становится он. Висящее предложение переноса остаётся,
+ * но его адресат переезжает на нового хоста — иначе отвечать гостю станет некому.
+ */
+export const acceptTransfer = async (
+    storage: Storage,
+    id: string,
+    user: HostingUser,
+): Promise<{ ok: true; request: HostingRequest; from: HostingUser } | { ok: false; error: 'not_found' | 'no_transfer' | 'not_yours' }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+    const transfer = existing.transfer ?? null
+    if (!transfer) return { ok: false, error: 'no_transfer' }
+    if (transfer.to.userId !== user.userId) return { ok: false, error: 'not_yours' }
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (!r) return
+        r.approvedBy = user
+        r.approvedAt = new Date().toISOString()
+        r.transfer = null
+        if (r.proposal && r.proposal.to && r.proposal.to.userId === transfer.by.userId) r.proposal.to = user
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]!, from: transfer.by }
+}
+
+/** Снимает предложение передачи: адресат отказался либо автор отозвал. */
+export const clearTransfer = async (
+    storage: Storage,
+    id: string,
+): Promise<{ ok: true; request: HostingRequest; transfer: HostTransfer } | { ok: false; error: 'not_found' | 'no_transfer' }> => {
+    const existing = storage.get().hostingRequests[id]
+    if (!existing) return { ok: false, error: 'not_found' }
+    const transfer = existing.transfer ?? null
+    if (!transfer) return { ok: false, error: 'no_transfer' }
+    await storage.update((s) => {
+        const r = s.hostingRequests[id]
+        if (r) r.transfer = null
+    })
+    return { ok: true, request: storage.get().hostingRequests[id]!, transfer }
 }
 
 // ---------------------------------------------------------------------------

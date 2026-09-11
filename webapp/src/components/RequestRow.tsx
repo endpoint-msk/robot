@@ -1,16 +1,17 @@
 // Строка заявки в деталях дня (резидент): гость, время, цель; справа — одобривший
-// или «Захостить». Перенос и блокировка гостя — свайпом влево (см. SwipeRow).
+// или «Захостить». Перенос и блокировка гостя — свайпом влево (см. SwipeRow),
+// передача визита другому резиденту — тапом по своему пиллу хоста.
 
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { action } from '../api'
 import { fmtShortDate } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { confirmDialog, reschedulePrompt } from '../modals'
+import { choiceDialog, confirmDialog, reschedulePrompt } from '../modals'
 import { push, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
-import type { HostingRequest, RescheduleProposal } from '../types'
+import type { DayCapacity, HostingRequest, RescheduleProposal } from '../types'
 import { Avatar, Profile, userLabel } from './people'
 import { Sep } from './common'
 import { SwipeRow, type SwipeAction } from './SwipeRow'
@@ -92,6 +93,65 @@ async function blockGuest(r: HostingRequest): Promise<void> {
   if (done) haptic('warning')
 }
 
+/**
+ * Меню своего пилла хоста: передать визит другому резиденту или снять хостинг с себя.
+ *
+ * Передача живёт здесь, а не в свайпе: у хоста там уже четыре действия (заметка,
+ * перенос, закрыть, блокировка), а пятая иконка занимает почти всю ширину строки.
+ * Да и пилл — это и есть «кто хостит», передача меняет ровно его.
+ */
+async function hostMenu(r: HostingRequest): Promise<void> {
+  // Пока висит своя просьба, второго адресата назначить нельзя (сервер ответит busy),
+  // поэтому в меню на этом месте её отзыв.
+  const pending = r.transfer ?? null
+  const choice = await choiceDialog(
+    pending
+      ? `Ждём ответа ${userLabel(pending.to)} по визиту ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}.`
+      : `Визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time} на вас.`,
+    [
+      pending
+        ? { key: 'withdraw', label: 'Отозвать передачу' }
+        : { key: 'transfer', label: 'Передать другому резиденту' },
+      { key: 'unapprove', label: 'Отменить хостинг', destructive: true },
+    ],
+  )
+  if (choice === 'transfer') {
+    push('invite', { dateKey: r.dateKey, transferId: r.id, transferGuest: r.guest.name })
+    return
+  }
+  if (choice === 'withdraw') {
+    const done = await action('transfer.decline', { id: r.id })
+    if (done) haptic('warning')
+    return
+  }
+  if (choice !== 'unapprove') return
+  const ok = await confirmDialog(`Отменить хостинг? Заявка ${r.guest.name} снова будет ждать ответа.`, {
+    confirmLabel: 'Отменить хостинг',
+    cancelLabel: 'Оставить',
+  })
+  if (!ok) return
+  const done = await action('unapprove', { id: r.id })
+  if (done) haptic('warning')
+}
+
+/**
+ * Предупреждение о перегрузе дня. Лимит мягкий: он не запрещает хостить, а называет
+ * число — решение остаётся за резидентом, который видит день целиком. Заявки без хоста
+ * места не занимают (см. dayOccupancy), поэтому предупреждаем ровно в тот момент, когда
+ * место действительно занимают.
+ */
+async function confirmOverCapacity(r: HostingRequest, capacity: DayCapacity | undefined): Promise<boolean> {
+  const guest = `${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}`
+  const ask = `Захостить: ${guest}, ${fmtShortDate(r.dateKey)} к ${r.time}?`
+  const over = capacity && capacity.occupied + 1 > capacity.cap
+  if (!over) return confirmDialog(ask, { confirmLabel: 'Захостить', cancelLabel: 'Не сейчас' })
+  return confirmDialog(`В этот день уже ${capacity.occupied} из ${capacity.cap} — этот визит сверх вместимости. ${ask}`, {
+    confirmLabel: 'Всё равно захостить',
+    cancelLabel: 'Не сейчас',
+    destructive: true,
+  })
+}
+
 export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?: boolean }) {
   const data = useStore().data!
   const me = data.me
@@ -112,26 +172,14 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
   if (r.status === 'approved' && r.approvedBy) {
     const mine = !archive && r.approvedBy.userId === me.id
     const pill = mine ? (
-      <button
-        type="button"
-        className="pill mine"
-        aria-label="Отменить хостинг"
-        onClick={async () => {
-          const ok = await confirmDialog(`Отменить хостинг? Заявка ${r.guest.name} снова будет ждать ответа.`, {
-            confirmLabel: 'Отменить хостинг',
-            cancelLabel: 'Оставить',
-          })
-          if (!ok) return
-          const done = await action('unapprove', { id: r.id })
-          if (done) haptic('warning')
-        }}
-      >
+      // Многоточие, а не крестик: за пиллом теперь два действия — передать и снять с себя.
+      <button type="button" className="pill mine" aria-label="Действия с хостингом" onClick={() => hostMenu(r)}>
         <Avatar user={r.approvedBy} />
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
-        <span className="pill-x">✕</span>
+        <span className="pill-x">···</span>
       </button>
     ) : (
-      // Свой пилл занят отменой хостинга — в профиль ведут только чужие.
+      // Свой пилл занят меню хостинга — в профиль ведут только чужие.
       <Profile user={r.approvedBy} className="pill">
         <Avatar user={r.approvedBy} />
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
@@ -152,10 +200,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       <button
         className="host-btn"
         onClick={async () => {
-          const ok = await confirmDialog(
-            `Захостить: ${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}, ${fmtShortDate(r.dateKey)} к ${r.time}?`,
-            { confirmLabel: 'Захостить', cancelLabel: 'Не сейчас' },
-          )
+          const ok = await confirmOverCapacity(r, data.days.find((d) => d.dateKey === r.dateKey)?.capacity)
           if (!ok) return
           const done = await action('approve', { id: r.id })
           if (done) haptic('success')
@@ -195,6 +240,68 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         </button>
       </div>
     ) : null
+
+  // Просьба подхватить визит. В архиве её не показываем: он только для чтения, а
+  // отвечать на просьбу по прошедшему дню нечем.
+  const t = !archive ? r.transfer ?? null : null
+  const iAmTransferTo = Boolean(t && t.to.userId === me.id)
+  const iAmTransferBy = Boolean(t && t.by.userId === me.id)
+
+  // Ответ адресата — в самой строке, как «Принять {слот}» у переноса: за жестом такое
+  // не прячут, иначе просьбу просто не заметят.
+  const transferRow: ReactNode =
+    t && iAmTransferTo ? (
+      <div className="req-proposal-actions">
+        <button
+          className="accept-btn"
+          onClick={async () => {
+            const done = await action('transfer.accept', { id: r.id })
+            if (done) haptic('success')
+          }}
+        >
+          {icons.check(14, '#34c759', 2.4)}
+          Взять визит
+        </button>
+        <button
+          className="link-btn"
+          onClick={async () => {
+            const done = await action('transfer.decline', { id: r.id })
+            if (done) haptic('warning')
+          }}
+        >
+          Не смогу
+        </button>
+      </div>
+    ) : null
+
+  const transferNote: ReactNode = t ? (
+    <div className={'proposal-note' + (iAmTransferBy ? ' mine' : '')}>
+      {icons.handoff(14, sec(0.5))}
+      {iAmTransferTo ? (
+        <span>
+          <span className="pn-time">{userLabel(t.by)}</span> просит подхватить визит
+        </span>
+      ) : iAmTransferBy ? (
+        <span>
+          передаёте <span className="pn-time">{userLabel(t.to)}</span> · ждём ответа
+          <button
+            className="link-btn pn-undo"
+            onClick={async () => {
+              const done = await action('transfer.decline', { id: r.id })
+              if (done) haptic('warning')
+            }}
+          >
+            Отозвать
+          </button>
+        </span>
+      ) : (
+        // Чужие переговоры: показываем, чтобы второй раз никого не звали на тот же визит.
+        <span>
+          {userLabel(t.by)} передаёт визит <span className="pn-time">{userLabel(t.to)}</span>
+        </span>
+      )}
+    </div>
+  ) : null
 
   // Действия свайпа — иконками: подписи втроём занимали почти всю ширину строки.
   const swipeActions: SwipeAction[] = []
@@ -310,7 +417,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       </div>
     ) : null
 
-  const hasExtra = Boolean(note) || Boolean(proposalRow)
+  const hasExtra = Boolean(note) || Boolean(proposalRow) || Boolean(transferNote) || Boolean(transferRow)
   return (
     <SwipeRow actions={swipeActions}>
       <div className="row req-row">
@@ -319,6 +426,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           <div className="req-extra">
             {note}
             {proposalRow}
+            {transferNote}
+            {transferRow}
           </div>
         ) : null}
       </div>
