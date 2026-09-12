@@ -123,7 +123,7 @@ function CapacityCard({ dateKey, capacity }: { dateKey: string; capacity: DayCap
     const value = await numberPrompt({
       text: 'Сколько человек помещается в этот день?',
       initial: capacity.cap,
-      hint: `Рекомендуем ${capacity.defaultCap}: столько вмещает подвал. Лимит мягкий — захостить сверх него можно, бот только предупредит.`,
+      hint: `Рекомендуем ${capacity.defaultCap}: это комфортное количество человек в подвале. Захостить сверх лимита можно, бот предупредит об этом.`,
       min: 1,
       max: 200,
       confirmLabel: 'Сохранить',
