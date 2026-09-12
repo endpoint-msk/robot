@@ -113,7 +113,7 @@ export function SelectedDayEvents({ days, selected }: { days: Day[]; selected: s
     <div className="chips-events">
       {events.map((e) => (
         <div className="ce-row" key={e.id}>
-          <i className="legend-dot" />
+          <span className="ce-ico">{icons.calendar(15, '#bf5af2')}</span>
           <span className="ce-title">{e.title}</span>
           <span className="ce-time">{`в ${e.time}`}</span>
         </div>
