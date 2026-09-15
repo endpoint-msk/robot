@@ -257,6 +257,7 @@ export type DuesPeriod = {
      * закрытая личка выглядела бы как молчаливый должник.
      */
     notifyFailed: Record<string, string>
+    reminded?: Record<string, true>
 }
 
 /** Резидент в снимке периода: ник на тот момент и ставка, по которой с него спрашивали. */

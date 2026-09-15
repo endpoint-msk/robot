@@ -427,6 +427,63 @@ export const retryFailedDuesNotifications = async (client: TelegramClient, stora
     }
 }
 
+const REMIND_LEAD_MS = 10 * 24 * 60 * 60_000
+const DAY_MS = 24 * 60 * 60_000
+
+const remindMemberBeforeDeadline = async (
+    client: TelegramClient,
+    dues: DuesState,
+    member: DuesMember,
+    periodKey: string,
+    daysLeft: number,
+): Promise<void> => {
+    const cur = html.escape(dues.currency)
+    const days = `${daysLeft} ${plural(daysLeft, ['день', 'дня', 'дней'])}`
+    const lines = [
+        `⏳ <b>Остаётся ${days} на взнос за ${duesPeriodLabel(periodKey).toLowerCase()} — ${formatMoney(member.amount)} ${cur}.</b>`,
+    ]
+    if (dues.requisites.trim()) {
+        lines.push('')
+        for (const line of dues.requisites.split('\n')) lines.push(html.escape(line))
+    }
+    lines.push('')
+    lines.push('Перевёл? Нажми «Я внёс», перевод будет рассмотрен.')
+    await client.sendText(member.userId, html(lines.join('<br>')), {
+        replyMarkup: claimKeyboard(periodKey),
+        disableWebPreview: true,
+    })
+}
+
+/** Метка `reminded` ставится и при недоставке: без неё пинг уходил бы каждую минуту всего окна. */
+export const remindUnpaidBeforeDeadline = async (
+    client: TelegramClient,
+    storage: Storage,
+    tzOffsetMinutes: number,
+): Promise<void> => {
+    const dues = duesOf(storage)
+    const period = activeDuesPeriod(dues)
+    if (!period) return
+    const nextOpenAt = duesAnchorOf(nextMonthKey(period.periodKey), dues.day, tzOffsetMinutes).getTime()
+    const now = Date.now()
+    if (now < nextOpenAt - REMIND_LEAD_MS || now >= nextOpenAt) return
+    const daysLeft = Math.max(1, Math.ceil((nextOpenAt - now) / DAY_MS))
+
+    for (const member of Object.values(period.roster)) {
+        const key = String(member.userId)
+        if ((period.reminded ?? {})[key]) continue
+        if (dues.notifyOff[key] || member.amount <= 0) continue
+        if (period.marks[key]) continue
+        try {
+            await remindMemberBeforeDeadline(client, dues, member, period.periodKey, daysLeft)
+        } catch {}
+        await storage.update((s) => {
+            const p = s.dues.periods[period.periodKey]
+            if (!p) return
+            ;(p.reminded ??= {})[key] = true
+        })
+    }
+}
+
 /** DM девам: кто-то заявил взнос, нужна сверка. */
 export const notifyDevsAboutClaim = async (
     client: TelegramClient,
@@ -810,6 +867,7 @@ export const startDuesScheduler = (
         if (!dues.enabled) return
         // Повторы недоставленных писем идут независимо от того, пора ли открывать период.
         await retryFailedDuesNotifications(client, storage)
+        await remindUnpaidBeforeDeadline(client, storage, tzOffsetMinutes)
         // Ростер — снимок состава, и человек, вышедший из чата резидентов, остаётся в нём
         // должником до чьего-нибудь тапа по «Я внёс»: остальные вызовы `syncDuesRoster`
         // висят на ручках миниаппа. `list()` кэширован на пять минут, так что час сверки —
