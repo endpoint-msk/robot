@@ -144,9 +144,9 @@ const collectDir = async (dir: string, prefix: string): Promise<TarEntry[]> => {
 /**
  * Документ-архив со всем стейтом: `data.json` (из in-memory снимка — он всегда
  * консистентен, в отличие от возможной гонки с tmp+rename), сырой журнал присутствия
- * (`presence-log/`), афиши ивентов (`event-photos/`) и журнал действий (`audit/`).
- * Раньше уходил только JSON, и сессии журнала с картинками в бэкап не попадали.
- * Один и тот же для ручной и авто-отправки.
+ * (`presence-log/`), афиши ивентов (`event-photos/`), журнал действий (`audit/`) и
+ * журнал ошибок (`errors/`). Раньше уходил только JSON, и сессии журнала с картинками
+ * в бэкап не попадали. Один и тот же для ручной и авто-отправки.
  */
 export const buildBackupArchive = async (storage: Storage, now: Date, caption: string) => {
     const dataName = `${path.basename(storage.path()).replace(/\.json$/i, '') || 'data'}.json`
@@ -156,6 +156,7 @@ export const buildBackupArchive = async (storage: Storage, now: Date, caption: s
         ...(await collectDir(path.join(stateDir, 'presence-log'), 'presence-log')),
         ...(await collectDir(path.join(stateDir, 'event-photos'), 'event-photos')),
         ...(await collectDir(path.join(stateDir, 'audit'), 'audit')),
+        ...(await collectDir(path.join(stateDir, 'errors'), 'errors')),
     ]
     const gz = buildTarGz(entries)
     const sizeKb = Math.max(1, Math.round(gz.length / 1024))

@@ -1,4 +1,5 @@
 import type { TelegramClient } from '@mtcute/node'
+import { logError } from './error-log.js'
 
 /** Максимальная длина отчёта в личку (Telegram режет на 4096; оставляем запас под стектрейс). */
 const MAX_REPORT_LEN = 3500
@@ -6,6 +7,14 @@ const MAX_REPORT_LEN = 3500
 const DEDUP_MS = 60_000
 /** Префикс собственных ошибок репортера: такие в личку НЕ форвардим, иначе рекурсия при сбое отправки. */
 const SELF_PREFIX = '[errors]'
+/**
+ * В личку идёт только критичное - остальное молча копится в журнале (/errors).
+ * Критичное = процесс умирает (uncaughtException/unhandledRejection) или бьётся стейт
+ * ([storage]: битый data.json / сбой записи). Роутер, dispatcher, недоступный принтер и
+ * прочие внешние сбои - в журнал без личек: они шумели больше всего, а лечатся сами.
+ */
+const CRITICAL_PREFIXES = ['[uncaughtException]', '[unhandledRejection]', '[storage]']
+const isCritical = (text: string): boolean => CRITICAL_PREFIXES.some((p) => text.startsWith(p))
 
 const formatArg = (a: unknown): string => {
     if (a instanceof Error) return a.stack ?? `${a.name}: ${a.message}`
@@ -25,12 +34,13 @@ const withTimeout = async (p: Promise<unknown>, ms: number): Promise<void> => {
 }
 
 /**
- * Перенаправляет ВСЕ `console.error` (по соглашению проекта это единственный канал ошибок)
- * в личку dev-пользователям из DEV_USER_IDS, не ломая обычный вывод в консоль.
+ * Перехватывает ВСЕ `console.error` (по соглашению проекта это единственный канал ошибок):
+ * пишет каждую в журнал (`error-log.ts`, читается командой /errors), а в личку dev'ам
+ * форвардит только критичное (`isCritical`) - не ломая обычный вывод в консоль.
  * Плюс ловит process-level ошибки (`unhandledRejection`/`uncaughtException`).
  *
- * Пустой список dev'ов отключает только пересылку в личку: process-хендлеры ставятся
- * всегда, иначе поведение процесса зависело бы от того, кому идут отчёты.
+ * Пустой список dev'ов отключает только пересылку в личку: журнал и process-хендлеры
+ * ставятся всегда, иначе поведение процесса зависело бы от того, кому идут отчёты.
  */
 export const installErrorReporting = (
     client: TelegramClient,
@@ -66,8 +76,10 @@ export const installErrorReporting = (
     console.error = (...args: unknown[]) => {
         origError(...args)
         const text = args.map(formatArg).join(' ')
+        // Свои сбои отправки не журналируем и не форвардим — иначе рекурсия при мёртвой сети.
         if (text.startsWith(SELF_PREFIX)) return
-        void dm(text)
+        logError(text)
+        if (isCritical(text)) void dm(text)
     }
 
     process.on('unhandledRejection', (reason) => {
@@ -85,8 +97,12 @@ export const installErrorReporting = (
      */
     process.on('uncaughtException', (err) => {
         origError('[uncaughtException]', err)
+        const text = `[uncaughtException] ${formatArg(err)}`
+        // Журналируем явно: этот путь идёт мимо перехваченного console.error, а падение —
+        // ровно та ошибка, ради которой журнал переживает рестарт.
+        logError(text)
         void (async () => {
-            await withTimeout(dm(`[uncaughtException] ${formatArg(err)}`), FATAL_GRACE_MS)
+            await withTimeout(dm(text), FATAL_GRACE_MS)
             if (onFatal) await withTimeout(onFatal(), FATAL_GRACE_MS)
             process.exit(1)
         })()

@@ -38,6 +38,7 @@ import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './d
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { drainAudit, initAuditLog } from './audit.js'
+import { drainErrorLog, initErrorLog, readRecentErrors } from './error-log.js'
 import { installErrorReporting } from './errors.js'
 import { parseHostingTzOffset } from './hosting.js'
 import { setPresenceLogTz } from './presence-log.js'
@@ -110,6 +111,9 @@ const main = async () => {
     // Журнал действий — рядом со стейтом, то есть в примонтированном томе. Включаем до
     // логина: первое же действие может случиться на первой минуте работы.
     initAuditLog(dataFile, hostingTzOffset)
+    // Журнал ошибок - тоже рядом со стейтом. Копит всё, что ловит errors.ts; в личку
+    // оттуда идёт только критичное, читается накопленное командой /errors.
+    initErrorLog(dataFile)
     // Репо для чтения GitHub-релизов в дев-анонсах (публичное, токен не нужен).
     const githubRepo = process.env.GITHUB_REPO?.trim() || 'endpoint-msk/robot'
     // Табло донатов (GET /board). Без токена ручка не поднимается вовсе: она отдаёт
@@ -276,12 +280,13 @@ const main = async () => {
     installErrorReporting(tg, devUserIds, async () => {
         await storage.drain()
         await drainAudit()
+        await drainErrorLog()
     })
     // Жалобы загрузки стейта копятся до этого момента: сама загрузка идёт раньше логина,
     // и console.error там ушёл бы только в докер-лог (см. Storage.takeWarnings).
     for (const w of storage.takeWarnings()) console.error('[storage]', w)
     if (devUserIds.size > 0) {
-        console.log(`[errors] отчёты об ошибках идут в личку: ${[...devUserIds].join(', ')}`)
+        console.log(`[errors] критичные ошибки идут в личку (остальное — в журнал /errors): ${[...devUserIds].join(', ')}`)
     }
 
     // Список команд, который Telegram показывает по / в меню.
@@ -409,6 +414,34 @@ const main = async () => {
         })
     }
 
+    // Дев-команда: последние ошибки из журнала. В личку форвардится только критичное,
+    // остальное (роутер, dispatcher, внешние сбои) копится молча и смотрится отсюда.
+    if (devUserIds.size > 0) {
+        const ERRORS_LIMIT = 20
+        const ERROR_LINE_LEN = 220
+        const fmtAt = (iso: string): string => {
+            const shifted = new Date(new Date(iso).getTime() + hostingTzOffset * 60_000).toISOString()
+            return `${shifted.slice(8, 10)}.${shifted.slice(5, 7)} ${shifted.slice(11, 16)}`
+        }
+        dp.onNewMessage(filters.and(filters.chat('user'), filters.command('errors')), async (msg) => {
+            if (!msg.sender || msg.sender.type !== 'user') return
+            if (!devUserIds.has(msg.sender.id)) return
+            const entries = await readRecentErrors(ERRORS_LIMIT)
+            if (entries.length === 0) {
+                await msg.answerText('Журнал ошибок пуст.')
+                return
+            }
+            const lines = entries.map((e) => {
+                // Первая строка текста: у стек-трейсов это само сообщение, детали — в файле.
+                const head = (e.text.split('\n')[0] ?? '').trim()
+                const short = head.length > ERROR_LINE_LEN ? `${head.slice(0, ERROR_LINE_LEN)}…` : head
+                return `${fmtAt(e.at)}  ${short}`
+            })
+            await msg.answerText([`Последние ошибки (${entries.length}):`, '', ...lines].join('\n'))
+        })
+        console.log(`[error-log] /errors enabled for dev users: ${[...devUserIds].join(', ')}`)
+    }
+
     // Дев-команда: форсировать опрос Keenetic и пересчёт авто-отметок прямо сейчас.
     if (devUserIds.size > 0) {
         dp.onNewMessage(filters.and(filters.chat('user'), filters.command('forcemacupdate')), async (msg) => {
@@ -449,7 +482,7 @@ const main = async () => {
         // Записи в Storage поставлены в очередь и могут быть ещё в полёте: без ожидания
         // подтверждённая пользователю правка (донат, одобренный визит, чек-ин) терялась.
         await Promise.race([
-            Promise.all([storage.drain(), drainAudit()]),
+            Promise.all([storage.drain(), drainAudit(), drainErrorLog()]),
             new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
         ])
         await tg.destroy()
