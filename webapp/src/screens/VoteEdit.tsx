@@ -12,6 +12,7 @@ import { DateField } from '../components/DateField'
 import { TimeField } from '../components/TimeField'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Screen } from '../components/Screen'
+import { usePasteImages } from '../usePasteImages'
 import { VotePoster } from './Vote'
 
 const MAX_TITLE = 120
@@ -61,11 +62,13 @@ export function VoteEdit() {
   const removeOption = (id: string): void => setOptions((prev) => prev.filter((o) => o.id !== id))
   const addOption = (): void => setOptions((prev) => [...prev, { id: uid(), label: '' }])
 
-  const addPhotos = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const picked = Array.from(e.target.files ?? [])
-    e.target.value = ''
+  const addFiles = async (picked: File[]): Promise<void> => {
     if (picked.length === 0) return
     const room = MAX_PHOTOS - photos.length
+    if (room <= 0) {
+      showAlert(`Можно приложить не больше ${MAX_PHOTOS} фото.`)
+      return
+    }
     setBusy(true)
     try {
       const added: string[] = []
@@ -79,6 +82,16 @@ export function VoteEdit() {
       setBusy(false)
     }
   }
+
+  const addPhotos = (e: ChangeEvent<HTMLInputElement>): void => {
+    const picked = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    void addFiles(picked)
+  }
+
+  // Вставка картинок из буфера (Ctrl/Cmd+V) на десктопе. Правку варианты-с-голосами
+  // не блокируем: афиши правятся всегда.
+  usePasteImages(addFiles)
 
   const save = async (): Promise<void> => {
     if (!canSave) return

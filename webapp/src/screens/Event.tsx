@@ -17,6 +17,7 @@ import { DateField } from '../components/DateField'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Screen } from '../components/Screen'
+import { usePasteImages } from '../usePasteImages'
 
 const MAX_TITLE = 120
 const MAX_DESCRIPTION = 2000
@@ -93,17 +94,42 @@ export function Event() {
   const [photos, setPhotos] = useState<string[]>(existing?.photos ?? (draft?.hasPhoto ? [`draft-${data!.me.id}`] : []))
   const canSave = title.trim().length > 0
 
+  const addFiles = async (picked: File[]): Promise<void> => {
+    if (picked.length === 0) return
+    const room = MAX_PHOTOS - photos.length
+    if (room <= 0) {
+      showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
+      return
+    }
+    setBusy(true)
+    try {
+      const added: string[] = []
+      for (const file of picked.slice(0, room)) added.push(await uploadEventPhoto(await compressImage(file)))
+      setPhotos((prev) => [...prev, ...added])
+      haptic('success')
+      if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
+    } catch (err) {
+      showAlert(err instanceof Error && err.message ? err.message : 'Не получилось загрузить фото.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Правку и удаление сервер отдаёт автору либо деву (canEditEvent) — чужой ивент
   // открывается на чтение, иначе резидент правил бы его до отказа сервера.
-  if (existing && (asGuest || (existing.host.userId !== data!.me.id && !data!.me.isDev))) {
+  const readOnly = Boolean(existing) && (asGuest || (existing!.host.userId !== data!.me.id && !data!.me.isDev))
+  // Вставка картинок из буфера (Ctrl/Cmd+V) на десктопе; в режиме чтения не нужна.
+  usePasteImages(addFiles, !readOnly)
+
+  if (readOnly) {
     return (
       <Screen>
         <BackRow />
         <Header
-          title={existing.title}
-          subtitle={`${fmtShortDate(existing.dateKey)} · в ${existing.time}`}
+          title={existing!.title}
+          subtitle={`${fmtShortDate(existing!.dateKey)} · в ${existing!.time}`}
         />
-        <EventCard event={existing} calendar actions />
+        <EventCard event={existing!} calendar actions />
         {!asGuest ? <Footnote>Править ивент может только тот, кто его создал.</Footnote> : null}
       </Screen>
     )
@@ -130,24 +156,11 @@ export function Event() {
     if (canStep(deltaSteps)) setTime(fromMinutes(toMinutes(time) + deltaSteps * STEP_MINUTES))
   }
 
-  const addPhotos = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+  const addPhotos = (e: ChangeEvent<HTMLInputElement>): void => {
     const picked = Array.from(e.target.files ?? [])
     // Сбрасываем input сразу: иначе тот же файл вторым разом не выберется — значение не меняется.
     e.target.value = ''
-    if (picked.length === 0) return
-    const room = MAX_PHOTOS - photos.length
-    setBusy(true)
-    try {
-      const added: string[] = []
-      for (const file of picked.slice(0, room)) added.push(await uploadEventPhoto(await compressImage(file)))
-      setPhotos((prev) => [...prev, ...added])
-      haptic('success')
-      if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
-    } catch (err) {
-      showAlert(err instanceof Error && err.message ? err.message : 'Не получилось загрузить фото.')
-    } finally {
-      setBusy(false)
-    }
+    void addFiles(picked)
   }
 
   const save = async (): Promise<void> => {
