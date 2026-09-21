@@ -362,6 +362,8 @@ export type Bootstrap = {
   eventDraft?: EventDraft | null
   /** Взносы текущего периода — только резидентам. null: выключены или сборов ещё не было. */
   dues?: DuesSnapshot | null
+  /** Активные голосования — только резидентам. Архив грузится отдельной ручкой. */
+  votes?: VoteView[]
 }
 
 /** Статус взноса: не отмечен, заявлен резидентом, подтверждён dev. */
@@ -445,6 +447,37 @@ export type DuesPerson = {
   missed: number
   debt: number
 }
+
+export type VoteOptionView = { id: string; label: string; count: number }
+
+/**
+ * Голосование. У анонимного `myVote` всегда null и `voters` не приходит — маппинг
+ * «кто как» сервер не отдаёт вовсе; `voted` говорит лишь, участвовал ли зритель.
+ */
+export type VoteView = {
+  id: string
+  title: string
+  description: string
+  photos: string[]
+  multi: boolean
+  anon: boolean
+  author: User
+  createdAt: string
+  endsAt: string | null
+  /** Срок в местном времени спейса — для редактора. null — без срока. */
+  endsAtLocal: { dateKey: string; time: string } | null
+  closedAt: string | null
+  status: 'open' | 'closed'
+  options: VoteOptionView[]
+  totalVoters: number
+  myVote: string[] | null
+  voted: boolean
+  canManage: boolean
+  /** Только у неанонимных: userId проголосовавших по каждому варианту. */
+  voters?: Record<string, User[]>
+}
+
+export type VoteArchiveResponse = { votes: VoteView[] }
 
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }
 export type ArchiveResponse = { weeks: ArchiveWeekSummary[] }

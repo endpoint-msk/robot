@@ -30,6 +30,7 @@ import {
 import { setHostingBoardLink, startHostingBoardScheduler, syncHostingBoard } from './hosting-board.js'
 import { registerInlineHandlers, setInlineMiniappLink } from './inline.js'
 import { setEventAnnounceLink } from './events.js'
+import { setVoteAnnounceLink, startVoteScheduler } from './votes.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
 import { registerHostingTransferHandlers } from './hosting-transfer.js'
 import { registerVisitReminderHandlers, startVisitReminderScheduler } from './visit-reminder.js'
@@ -239,6 +240,7 @@ const main = async () => {
             tzOffsetMinutes: hostingTzOffset,
             githubRepo,
             boardToken,
+            residentsChatId,
         })
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
@@ -248,6 +250,7 @@ const main = async () => {
             setHostingBoardLink(deepLink)
             setInlineMiniappLink(deepLink)
             setEventAnnounceLink(deepLink)
+            setVoteAnnounceLink(`https://t.me/${self.username}?startapp=votes`)
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })
@@ -360,6 +363,8 @@ const main = async () => {
     const visitReminders = webappConfig !== null
         ? startVisitReminderScheduler(tg, storage, hostingTzOffset, webappConfig.publicUrl)
         : null
+    // Авто-закрытие голосований по сроку и пост итогов в чат резидентов.
+    const votes = webappConfig !== null ? startVoteScheduler(tg, storage, residentsChatId, hostingTzOffset) : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
@@ -476,6 +481,7 @@ const main = async () => {
         presence.stop()
         hostingBoard?.stop()
         visitReminders?.stop()
+        votes?.stop()
         printerWatcher?.stop()
         macPoller?.stop()
         webappServer?.stop()

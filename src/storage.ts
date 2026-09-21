@@ -143,6 +143,7 @@ export class Storage {
             // первый же расчёт статистики на стейте из прошлой версии споткнётся.
             presenceStats: { days: parsed.presenceStats?.days ?? {} },
             residentSince: parsed.residentSince ?? {},
+            votes: parsed.votes ?? {},
         }
     }
 

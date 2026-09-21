@@ -51,6 +51,14 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return 'Заявки на ивент'
     case 'announce':
       return 'Анонс'
+    case 'votes':
+      return 'Голосования'
+    case 'voteArchive':
+      return 'Архив голосований'
+    case 'voteVoters':
+      return 'Кто голосовал'
+    case 'voteEdit':
+      return p.vote ? 'Голосование' : 'Новое голосование'
     case 'dev':
       return 'Dev'
     case 'devEdit':
@@ -79,6 +87,8 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return p.name ?? 'Взносы'
     case 'statsPerson':
       return p.name ?? 'Статистика'
+    case 'vote':
+      return p.vote?.title ?? 'Голосование'
     case 'event':
       return p.event?.title ?? 'Ивент'
     case 'eventApply':

@@ -258,6 +258,13 @@ export const icons = {
       <path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" fill="none" stroke="#007aff" strokeWidth="1.7" strokeLinejoin="round" />
     </svg>
   ),
+  /** Бюллетень — раздел голосований. Галочка в рамке. */
+  ballot: (size = 17, color = '#fff'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <rect x="3" y="3.5" width="14" height="13" rx="3" fill="none" stroke={color} strokeWidth="1.7" />
+      <path d="M6.6 9.6l2.1 2.1 4.3-4.5" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   github: (size = 13, color?: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 16 16">
       <path

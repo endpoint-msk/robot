@@ -131,6 +131,46 @@ export type State = {
      * способ её поправить - руками.
      */
     residentSince: Record<string, string>
+    votes: Record<string, Vote>
+}
+
+export type VoteOption = {
+    id: string
+    label: string
+}
+
+export type VoteBallot = {
+    optionIds: string[]
+    user: HostingUser
+    at: string
+}
+
+/**
+ * У анонимного голосования маппинг «кто как» не хранится вовсе — только счётчики по
+ * вариантам (`tally`) и множество проголосовавших (`voters`, чтобы не дать
+ * проголосовать дважды). Иначе он утёк бы деву в бэкапе. Плата за это — анонимный
+ * голос нельзя переголосовать: старый выбор неоткуда вычесть. Неанонимные голоса
+ * живут в `ballots` целиком и переголосовываются.
+ */
+export type Vote = {
+    id: string
+    title: string
+    description: string
+    options: VoteOption[]
+    multi: boolean
+    anon: boolean
+    photos?: string[]
+    hasPhoto: boolean
+    author: HostingUser
+    createdAt: string
+    /** Момент авто-закрытия (ISO). null — закрывается только вручную. */
+    endsAt: string | null
+    /** null — голосование идёт. */
+    closedAt: string | null
+    ballots: Record<string, VoteBallot>
+    tally?: Record<string, number>
+    voters?: string[]
+    announcedClose?: boolean
 }
 
 /**
@@ -750,6 +790,7 @@ export const emptyState = (): State => ({
     presenceNoLog: {},
     presenceStats: { days: {} },
     residentSince: {},
+    votes: {},
 })
 
 /** Дефолт взносов: подсистема выключена, ставки хакерспейса, сбор 1-го числа. */

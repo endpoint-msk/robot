@@ -12,6 +12,7 @@ import {
     archiveWeeks,
     ARRIVAL_COOLDOWN_MS,
     attendeesForDay,
+    dayKeyOf,
     blockUser,
     buildVisitIcs,
     cleanName,
@@ -115,6 +116,28 @@ import {
     type EventError,
     type EventInput,
 } from './events.js'
+import {
+    activeVotes,
+    announceVoteClosed,
+    announceVoteOpened,
+    archivedVotes,
+    ballotCount,
+    canManageVote,
+    castVote,
+    closeVote,
+    createVote,
+    deleteVote,
+    isVoteOpen,
+    MAX_VOTE_OPTIONS,
+    optionCount,
+    syncVotePhotos,
+    updateVote,
+    voteForPhoto,
+    votePhotoIds,
+    votersOf,
+    type VoteError,
+    type VoteInput,
+} from './votes.js'
 import { syncHostingBoard } from './hosting-board.js'
 import { healthSnapshot } from './health.js'
 import {
@@ -158,7 +181,7 @@ import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
+import type { EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent, Vote } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
 const INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60
@@ -354,6 +377,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.history': 'read',
     'dues.person': 'read',
     'event.apps': 'read',
+    'vote.archive': 'read',
 
     'rules.accept': 'write',
     'event.apply.edit': 'write',
@@ -380,6 +404,9 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.rate': 'write',
     'dues.settings': 'write',
     'dues.notify': 'write',
+    'vote.cast': 'write',
+    'vote.update': 'write',
+    'vote.delete': 'write',
 
     create: 'dm',
     invite: 'dm',
@@ -401,6 +428,8 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.app.approve': 'dm',
     'event.app.decline': 'dm',
     'dues.claim': 'dm',
+    'vote.create': 'dm',
+    'vote.close': 'dm',
 
     'invite.list': 'heavy',
     'dev.seed': 'heavy',
@@ -426,6 +455,8 @@ const METHOD_LIMITS: Record<string, RateRule> = {
     'transfer.offer': { limit: 20, windowMs: HOUR },
     // Ивент = DM всем резидентам, как и заявка.
     'event.create': { limit: 10, windowMs: HOUR },
+    // Голосование = пост в чат резидентов.
+    'vote.create': { limit: 10, windowMs: HOUR },
     // Бан во всех allowlist-чатах, откат — только через дева.
     block: { limit: 10, windowMs: HOUR },
     // Выгрузка = файл со всей таблицей взносов в личку.
@@ -573,6 +604,8 @@ export type WebappDeps = {
     githubRepo: string
     /** Токен табло донатов (BOARD_TOKEN). null — ручка GET /board выключена. */
     boardToken: string | null
+    /** Чат резидентов: туда бот постит открытие и итоги голосований. null — постинг выключен. */
+    residentsChatId: number | null
 }
 
 type ApiContext = WebappDeps & {
@@ -708,6 +741,76 @@ const eventView = (e: SpaceEvent, ctx: ApiContext) => {
             : {}),
     }
 }
+
+/**
+ * Карточка голосования для миниаппа. У анонимного не отдаём `voters` и свой выбор
+ * (`myVote`): маппинг «кто как» не покидает сервер вовсе — только итоги. Вместо него
+ * `voted` — участвовал ли зритель (одноразовость анонимного голоса).
+ */
+const voteView = (v: Vote, ctx: ApiContext) => {
+    const total = ballotCount(v)
+    const options = v.options.map((o) => ({ id: o.id, label: o.label, count: optionCount(v, o.id) }))
+    const tz = ctx.tzOffsetMinutes
+    const base = {
+        id: v.id,
+        title: v.title,
+        description: v.description,
+        photos: votePhotoIds(v),
+        multi: v.multi,
+        anon: v.anon,
+        author: userView(v.author),
+        createdAt: v.createdAt,
+        endsAt: v.endsAt,
+        // Срок в местном времени спейса — редактор правит его чипами дня/времени.
+        endsAtLocal: v.endsAt
+            ? { dateKey: dayKeyOf(new Date(v.endsAt), tz), time: nowTimeKey(tz, new Date(v.endsAt)) }
+            : null,
+        closedAt: v.closedAt,
+        status: (isVoteOpen(v) ? 'open' : 'closed') as 'open' | 'closed',
+        options,
+        totalVoters: total,
+        canManage: canManageVote(v, ctx.user.userId, isDevUser(ctx)),
+    }
+    if (v.anon) {
+        return { ...base, myVote: null, voted: (v.voters ?? []).includes(String(ctx.user.userId)) }
+    }
+    const voters: Record<string, ReturnType<typeof userView>[]> = {}
+    for (const o of v.options) voters[o.id] = votersOf(v, o.id).map(userView)
+    return {
+        ...base,
+        myVote: v.ballots[String(ctx.user.userId)]?.optionIds ?? null,
+        voted: Boolean(v.ballots[String(ctx.user.userId)]),
+        voters,
+    }
+}
+
+const VOTE_ERRORS: Record<VoteError, string> = {
+    not_found: 'Голосование не найдено — обновите экран.',
+    bad_title: 'Без вопроса голосование не понять — впиши его.',
+    bad_options: `Нужно от 2 до ${MAX_VOTE_OPTIONS} вариантов.`,
+    bad_deadline: 'Срок окончания должен быть в будущем и в пределах года.',
+    not_yours: 'Управлять голосованием может тот, кто его завёл.',
+    has_votes: 'Кто-то уже проголосовал — варианты менять нельзя.',
+}
+
+const voteInputFrom = (body: Record<string, unknown>): VoteInput => ({
+    title: typeof body.title === 'string' ? body.title : '',
+    description: typeof body.description === 'string' ? body.description : '',
+    options: Array.isArray(body.options)
+        ? body.options
+              .filter((o): o is { id?: string; label: string } => Boolean(o) && typeof o === 'object')
+              .map((o) => ({ id: typeof o.id === 'string' ? o.id : undefined, label: typeof o.label === 'string' ? o.label : '' }))
+        : [],
+    multi: body.multi === true,
+    anon: body.anon === true,
+    deadline:
+        body.deadline && typeof body.deadline === 'object'
+            ? {
+                  dateKey: typeof (body.deadline as { dateKey?: unknown }).dateKey === 'string' ? (body.deadline as { dateKey: string }).dateKey : '',
+                  time: typeof (body.deadline as { time?: unknown }).time === 'string' ? (body.deadline as { time: string }).time : '',
+              }
+            : null,
+})
 
 const EVENT_ERRORS: Record<EventError, string> = {
     not_found: 'Ивент не найден — обновите экран.',
@@ -965,6 +1068,8 @@ const buildBootstrap = (ctx: ApiContext) => {
         // короткий (десяток человек), поэтому едет в bootstrap, а не отдельной ручкой —
         // так все мутации обновляют экран одним ответом, как везде.
         ...(resident ? { dues: duesSnapshot(ctx) } : {}),
+        // Активные голосования — раздел резидентский. Архив грузится отдельной ручкой.
+        ...(resident ? { votes: activeVotes(storage).map((v) => voteView(v, ctx)) } : {}),
     }
 }
 
@@ -986,11 +1091,12 @@ const AUDITED = new Set([
     'event.app.approve', 'event.app.decline',
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
     'announce.send', 'stats.residentSince',
+    'vote.create', 'vote.update', 'vote.close', 'vote.delete',
     'dev.seed', 'dev.update', 'dev.delete',
 ])
 
 /** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
-type AuditBefore = { request: HostingRequest | null; event: SpaceEvent | null; application: EventApplication | null }
+type AuditBefore = { request: HostingRequest | null; event: SpaceEvent | null; application: EventApplication | null; vote: Vote | null }
 
 /**
  * Снимок берётся ДО `handleApi`: `close`, `cancel`, `dev.delete` и `event.delete`
@@ -1006,10 +1112,12 @@ const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
     const event = state.events[id]
     // Для методов разбора заявок `body.id` — id заявки на ивент (её decline удаляет).
     const application = state.eventApplications[id]
+    const vote = state.votes[id]
     return {
         request: request ? { ...request } : null,
         event: event ? { ...event } : null,
         application: application ? { ...application } : null,
+        vote: vote ? { ...vote } : null,
     }
 }
 
@@ -1127,6 +1235,14 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             const verb = method === 'event.app.approve' ? 'принял' : 'отклонил'
             return `${verb} заявку ${whoOf(app.guest)} на ${title}`
         }
+        case 'vote.create':
+            return `завёл голосование «${strOf(body.title)}»`
+        case 'vote.update':
+            return before.vote ? `поправил голосование «${before.vote.title}»` : `поправил голосование ${id}`
+        case 'vote.close':
+            return before.vote ? `закрыл голосование «${before.vote.title}»` : `закрыл голосование ${id}`
+        case 'vote.delete':
+            return before.vote ? `удалил голосование «${before.vote.title}»` : `удалил голосование ${id}`
         case 'dues.claim':
             return 'отметил свой взнос'
         case 'dues.confirm':
@@ -2714,6 +2830,114 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // --- Голосования резидентов -----------------------------------------
+        // Заводят, голосуют и видят итоги только резиденты. При открытии и закрытии
+        // бот постит в чат резидентов (ctx.residentsChatId).
+
+        case 'vote.create': {
+            if (!requireResident()) return
+            const created = await createVote(storage, tzOffsetMinutes, user, voteInputFrom(body))
+            if (!created.ok) {
+                sendError(res, 400, created.error, VOTE_ERRORS[created.error])
+                return
+            }
+            await syncVotePhotos(storage, storage.path(), created.vote.id, photosFrom(body), user.userId)
+            const vote = storage.get().votes[created.vote.id]
+            if (vote) {
+                void announceVoteOpened(client, ctx.residentsChatId, storage.path(), vote, tzOffsetMinutes)
+                    .catch((err) => console.error('[votes] не удалось анонсировать открытие:', err))
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'vote.update': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const existing = storage.get().votes[id]
+            if (!existing) {
+                sendError(res, 404, 'not_found', VOTE_ERRORS.not_found)
+                return
+            }
+            if (!canManageVote(existing, user.userId, isDevUser(ctx))) {
+                sendError(res, 403, 'not_yours', VOTE_ERRORS.not_yours)
+                return
+            }
+            const updated = await updateVote(storage, tzOffsetMinutes, id, voteInputFrom(body))
+            if (!updated.ok) {
+                sendError(res, updated.error === 'not_found' ? 404 : 400, updated.error, VOTE_ERRORS[updated.error])
+                return
+            }
+            await syncVotePhotos(storage, storage.path(), id, photosFrom(body), user.userId)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'vote.cast': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const result = await castVote(storage, id, user, body.optionIds)
+            if (!result.ok) {
+                const messages: Record<string, [number, string]> = {
+                    not_found: [404, VOTE_ERRORS.not_found],
+                    closed: [409, 'Голосование уже закрыто.'],
+                    bad_option: [400, 'Выберите вариант.'],
+                    already_voted: [409, 'В анонимном голосовании переголосовать нельзя.'],
+                }
+                const [status, message] = messages[result.error] ?? [400, 'Не получилось.']
+                sendError(res, status, result.error, message)
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'vote.close': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const existing = storage.get().votes[id]
+            if (!existing) {
+                sendError(res, 404, 'not_found', VOTE_ERRORS.not_found)
+                return
+            }
+            if (!canManageVote(existing, user.userId, isDevUser(ctx))) {
+                sendError(res, 403, 'not_yours', VOTE_ERRORS.not_yours)
+                return
+            }
+            const closed = await closeVote(storage, id)
+            if (!closed) {
+                sendError(res, 409, 'already_closed', 'Голосование уже закрыто.')
+                return
+            }
+            void announceVoteClosed(client, ctx.residentsChatId, closed)
+                .catch((err) => console.error('[votes] не удалось анонсировать закрытие:', err))
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'vote.delete': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const existing = storage.get().votes[id]
+            if (!existing) {
+                sendError(res, 404, 'not_found', VOTE_ERRORS.not_found)
+                return
+            }
+            if (!canManageVote(existing, user.userId, isDevUser(ctx))) {
+                sendError(res, 403, 'not_yours', VOTE_ERRORS.not_yours)
+                return
+            }
+            await deleteVote(storage, storage.path(), id)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'vote.archive': {
+            if (!requireResident()) return
+            sendJson(res, 200, { votes: archivedVotes(storage).map((v) => voteView(v, ctx)) })
+            return
+        }
+
         default:
             sendError(res, 404, 'unknown_method', 'Неизвестный метод API.')
     }
@@ -3154,6 +3378,44 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 // что скрыто галочкой «только резидентам».
                 const visible = event ? access.resident || !event.residentsOnly : false
                 if (!isOwnDraft && !visible) {
+                    res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
+                    return
+                }
+                const bytes = await readEventPhoto(deps.storage.path(), id)
+                if (!bytes) {
+                    res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
+                    return
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'image/jpeg',
+                    'Cache-Control': 'private, max-age=3600',
+                }).end(bytes)
+                return
+            }
+
+            // Афиша голосования: лежит в том же каталоге, что и афиши ивентов, но
+            // раздел резидентский целиком — гостю не отдаём вовсе. Заливка идёт через
+            // общий POST /event-photo.jpg (стейджинг там не привязан к ивентам).
+            if (pathname === '/vote-photo.jpg') {
+                if (req.method !== 'GET' && req.method !== 'HEAD') {
+                    res.writeHead(405).end()
+                    return
+                }
+                const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
+                if (!viewer) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
+                    res.writeHead(401).end()
+                    return
+                }
+                if (!allow(res, 'photo', viewer.userId, LIMITS.photo, false)) return
+                const access = await deps.residents.access(viewer.userId)
+                if (isBlocked(deps.storage, viewer.userId) || access.banned || !access.resident) {
+                    res.writeHead(access.resident ? 403 : 404).end()
+                    return
+                }
+                const id = url.searchParams.get('id') ?? ''
+                const visible = isStagedPhotoOf(id, viewer.userId) || voteForPhoto(deps.storage, id) !== null
+                if (!visible) {
                     res.writeHead(404, { 'Cache-Control': 'no-store' }).end()
                     return
                 }

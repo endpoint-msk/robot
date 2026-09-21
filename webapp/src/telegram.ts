@@ -3,7 +3,7 @@
 
 interface TelegramWebApp {
   initData: string
-  initDataUnsafe?: { user?: { id?: number; allows_write_to_pm?: boolean } }
+  initDataUnsafe?: { user?: { id?: number; allows_write_to_pm?: boolean }; start_param?: string }
   colorScheme?: 'light' | 'dark'
   ready(): void
   expand(): void
