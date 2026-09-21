@@ -130,6 +130,10 @@ export type EventApplication = {
 export type EventAppsResponse = { applications: EventApplication[] }
 export type ReviewersResponse = { people: User[] }
 
+/** Кандидат в ответственные за ивент: резидент или известный боту гость. */
+export type ResponsibleCandidate = User & { resident: boolean }
+export type EventPeopleResponse = { people: ResponsibleCandidate[] }
+
 /** Ивент спейса: воркшоп, ремонт-кафе, демо-день. Заводит резидент, видят все (если не resOnly). */
 export type SpaceEvent = {
   id: string
@@ -144,6 +148,8 @@ export type SpaceEvent = {
   /** Пост канала, из которого сделан ивент, — только у заведённых пересылкой. */
   sourceUrl?: string
   host: User
+  /** Ответственные за ивент. Приходит только резидентам (гостю — undefined). */
+  responsibles?: User[]
   createdAt: string
   /**
    * Форма-заявка. null — ивент без заявок (анонс + «Хочу прийти»). Гостю приходят только

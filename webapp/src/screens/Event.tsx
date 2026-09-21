@@ -11,10 +11,11 @@ import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { haptic, initData, openUrl, tg } from '../telegram'
 import { pop, push, setBusy, useParams, useStore } from '../store'
-import type { ReviewerScope, SpaceEvent } from '../types'
+import type { ReviewerScope, SpaceEvent, User } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Switch } from '../components/common'
 import { DateField } from '../components/DateField'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
+import { ResponsibleSheet } from '../components/ResponsiblePicker'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Screen } from '../components/Screen'
 import { usePasteImages } from '../usePasteImages'
@@ -79,6 +80,11 @@ export function Event() {
   // слота, как форма заявки (defaultTimeFor).
   const [time, setTime] = useState(existing?.time ?? defaultTimeFor(initialDay))
   const [residentsOnly, setResidentsOnly] = useState(existing?.residentsOnly ?? false)
+
+  // Ответственные — резиденты или гости; храним полными объектами (нужны для превью),
+  // на сервер уходят id. Пикер разворачиваем по кнопке, чтобы не дёргать список на каждый вход.
+  const [responsibles, setResponsibles] = useState<User[]>(existing?.responsibles ?? [])
+  const [pickOpen, setPickOpen] = useState(false)
 
   // Форма-заявка: включена, если у ивента она уже есть. reviewers приходит только автору
   // (canReview), поэтому для чужого ивента редактор всё равно недоступен.
@@ -166,7 +172,16 @@ export function Event() {
   const save = async (): Promise<void> => {
     if (!canSave) return
     // Сервер сам нормализует форму (обрежет пустые блоки/варианты; пустая → null).
-    const payload = { dateKey, time, title, description, residentsOnly, photos, form: formOn ? form : null }
+    const payload = {
+      dateKey,
+      time,
+      title,
+      description,
+      residentsOnly,
+      photos,
+      form: formOn ? form : null,
+      responsibles: responsibles.map((u) => u.userId),
+    }
     const done = existing
       ? await action('event.update', { id: existing.id, ...payload })
       : await action('event.create', { ...payload, fromDraft: Boolean(draft) })
@@ -311,6 +326,22 @@ export function Event() {
         </Footnote>
       ) : null}
 
+      <SectionTitle>Ответственные</SectionTitle>
+      <button className="card row tappable" style={{ width: '100%' }} onClick={() => setPickOpen(true)}>
+        <span className="row-label">
+          Кто отвечает за ивент
+          <span className="row-sublabel">
+            {responsibles.length
+              ? responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')
+              : 'Резиденты или гости — видят только резиденты'}
+          </span>
+        </span>
+        <div className="row-right">{icons.chevron()}</div>
+      </button>
+      {pickOpen ? (
+        <ResponsibleSheet selected={responsibles} onChange={setResponsibles} onClose={() => setPickOpen(false)} />
+      ) : null}
+
       <SectionTitle>Заявки на ивент</SectionTitle>
       {existing?.canReview && existing.form ? (
         <button
@@ -347,6 +378,7 @@ export function Event() {
           residentsOnly,
           photos,
           host: existing?.host ?? { userId: data!.me.id, username: data!.me.username, name: data!.me.name },
+          responsibles,
           createdAt: '',
         }}
         dimTitle={title.trim().length === 0}
@@ -476,6 +508,12 @@ export function EventCard({
         </button>
       ) : null}
       {actions && event.form ? <EventFormActions event={event} /> : null}
+      {/* Ответственные приходят только резидентам (сервер режет поле гостю) — блок сам скрыт для гостя. */}
+      {event.responsibles && event.responsibles.length ? (
+        <div className="ev-responsibles">
+          Отвечают: {event.responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')}
+        </div>
+      ) : null}
       <div className="ev-host">
         <span>создал {event.host.username ? `@${event.host.username}` : event.host.name}</span>
       </div>

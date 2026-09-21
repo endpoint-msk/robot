@@ -11,9 +11,12 @@ import {
     icsEscape,
     icsFold,
     icsStamp,
+    isBlocked,
+    isFakeUserId,
     isPastSlot,
     isValidDayKey,
     isValidTime,
+    listKnownGuests,
     mentionLabel,
     slotStartUtc,
     todayKey,
@@ -57,6 +60,8 @@ export const MAX_FIELD_LABEL = 200
 export const MAX_ANSWER_TEXT = 1000
 export const MAX_WRITE_IN = 200
 export const MAX_CIRCLE_REVIEWERS = 40
+/** Сколько ответственных можно навесить на ивент: это подпись «с кого спрашивать», а не список гостей. */
+export const MAX_RESPONSIBLES = 20
 
 /**
  * Каталог афиш — рядом с файлом стейта, а не внутри него: JSON переписывается целиком
@@ -201,6 +206,8 @@ export type EventInput = {
     sourceUrl?: string
     /** Форма-заявка (уже нормализованная сервером). null — без формы, анонс как раньше. */
     form?: EventForm | null
+    /** Ответственные (уже разрешённые сервером в `HostingUser`, см. `resolveResponsibles`). */
+    responsibles?: HostingUser[]
 }
 
 const clip = (value: unknown, max: number): string =>
@@ -238,6 +245,7 @@ export const createEvent = async (
         photos: [],
         ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
         host,
+        responsibles: input.responsibles ?? [],
         createdAt: new Date().toISOString(),
         form: input.form ?? null,
     }
@@ -265,6 +273,7 @@ export const updateEvent = async (
         e.description = clip(input.description, MAX_EVENT_DESCRIPTION)
         e.residentsOnly = input.residentsOnly === true
         e.form = input.form ?? null
+        e.responsibles = input.responsibles ?? []
     })
     return { ok: true, event: storage.get().events[id]! }
 }
@@ -309,6 +318,63 @@ export const eventsLater = (storage: Storage, tzOffsetMinutes: number, forReside
 /** Может ли этот человек править ивент: автор или любой dev (дев чинит чужое). */
 export const canEditEvent = (event: SpaceEvent, userId: number, isDev: boolean): boolean =>
     isDev || event.host.userId === userId
+
+/** Кандидат в ответственные: резидент или известный боту гость. */
+export type ResponsibleCandidate = HostingUser & { resident: boolean }
+
+/**
+ * Кого можно назначить ответственным: резиденты + гости, которых бот знает по заявкам
+ * (на визит и на ивенты). Резиденты идут первыми, дальше — гости; дубли и фейки дев-сида
+ * отсеиваются. Неполный состав резидентов (`complete: false`) не беда: список просто
+ * окажется короче, назначение — ручное разовое действие.
+ */
+export const listResponsibleCandidates = async (
+    storage: Storage,
+    directory: ResidentDirectory,
+): Promise<ResponsibleCandidate[]> => {
+    const residents = (await directory.list()).users
+    const seen = new Set(residents.map((r) => r.userId))
+    const out: ResponsibleCandidate[] = residents.map((r) => ({ ...r, resident: true }))
+    const guests: HostingUser[] = [
+        ...listKnownGuests(storage),
+        ...Object.values(storage.get().eventApplications).map((a) => a.guest),
+    ]
+    for (const g of guests) {
+        if (isFakeUserId(g.userId) || seen.has(g.userId) || isBlocked(storage, g.userId)) continue
+        seen.add(g.userId)
+        out.push({ userId: g.userId, username: g.username, name: displayName(g.name), resident: false })
+    }
+    return out
+}
+
+/**
+ * Разрешает присланные клиентом id ответственных в `HostingUser`: имена берём с сервера,
+ * а не из тела запроса, и назначить можно только того, кого бот и так знает (резидент или
+ * гость из заявок). Неизвестные id молча выпадают, порядок клиента сохраняется.
+ *
+ * `keep` — уже назначенные ответственные ивента: гость мог выпасть из пула кандидатов
+ * (его заявки ушли в архив), но раз он уже отвечает за ивент, при правке его терять нельзя.
+ */
+export const resolveResponsibles = async (
+    storage: Storage,
+    directory: ResidentDirectory,
+    ids: number[],
+    keep: HostingUser[] = [],
+): Promise<HostingUser[]> => {
+    if (ids.length === 0) return []
+    const pool = new Map((await listResponsibleCandidates(storage, directory)).map((u) => [u.userId, u as HostingUser]))
+    for (const u of keep) if (!pool.has(u.userId)) pool.set(u.userId, u)
+    const out: HostingUser[] = []
+    const seen = new Set<number>()
+    for (const id of ids) {
+        if (seen.has(id) || out.length >= MAX_RESPONSIBLES) continue
+        const u = pool.get(id)
+        if (!u) continue
+        seen.add(id)
+        out.push({ userId: u.userId, username: u.username, name: u.name })
+    }
+    return out
+}
 
 // ---------------------------------------------------------------------------
 // Форма-заявка на ивент

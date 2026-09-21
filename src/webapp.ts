@@ -103,6 +103,8 @@ import {
     eventsLater,
     feedEvents,
     isStagedPhotoOf,
+    listResponsibleCandidates,
+    resolveResponsibles,
     notifyEventCancelled,
     notifyEventMoved,
     notifyResidentsAboutEvent,
@@ -438,6 +440,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.export': 'heavy',
     'announce.latest': 'heavy',
     reviewers: 'heavy',
+    'event.people': 'heavy',
 
     'announce.send': 'broadcast',
 }
@@ -724,7 +727,13 @@ const proposalSides = (
  * - `canReview`/`applicationsPending` — только рецензенту: кнопка «Заявки · N».
  */
 const eventView = (e: SpaceEvent, ctx: ApiContext) => {
-    const base = { ...e, photos: eventPhotoIds(e), host: userView(e.host) }
+    const base = {
+        ...e,
+        photos: eventPhotoIds(e),
+        host: userView(e.host),
+        // Ответственные — резидентское поле: гостю не отдаём вовсе (undefined выпадает из JSON).
+        responsibles: ctx.resident ? (e.responsibles ?? []).map(userView) : undefined,
+    }
     if (!e.form) return { ...base, form: null }
     const canReview = canReviewEvent(e, ctx.user.userId, ctx.resident, isDevUser(ctx))
     const mine = applicationOf(ctx.storage, e.id, ctx.user.userId)
@@ -825,6 +834,12 @@ const EVENT_ERRORS: Record<EventError, string> = {
 const photosFrom = (body: Record<string, unknown>): string[] =>
     Array.isArray(body.photos)
         ? body.photos.filter((id): id is string => typeof id === 'string').slice(0, MAX_EVENT_PHOTOS)
+        : []
+
+/** id ответственных из тела: сервер сам разрешит их в `HostingUser` (`resolveResponsibles`). */
+const responsibleIdsFrom = (body: Record<string, unknown>): number[] =>
+    Array.isArray(body.responsibles)
+        ? body.responsibles.filter((id): id is number => Number.isInteger(id))
         : []
 
 const eventInputFrom = (body: Record<string, unknown>): EventInput => ({
@@ -1710,9 +1725,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Ссылку на исходный пост берём из заготовки, а не из тела запроса: в чате
             // она уходит в доску гиперссылкой, и клиент не должен решать, куда та ведёт.
             const draft = body.fromDraft === true ? eventDraftFor(storage, user.userId) : null
+            const responsibles = await resolveResponsibles(storage, residents, responsibleIdsFrom(body))
             const created = await createEvent(storage, tzOffsetMinutes, user, {
                 ...eventInputFrom(body),
                 ...(draft?.postUrl ? { sourceUrl: draft.postUrl } : {}),
+                responsibles,
             })
             if (!created.ok) {
                 sendError(res, 400, created.error, EVENT_ERRORS[created.error])
@@ -1750,7 +1767,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Слот снимаем ДО правки: `existing` - живая ссылка на объект стейта, после
             // updateEvent старых значений в ней уже нет (тот же приём, что с proposal).
             const before = { dateKey: existing.dateKey, time: existing.time }
-            const updated = await updateEvent(storage, tzOffsetMinutes, id, eventInputFrom(body))
+            const responsibles = await resolveResponsibles(
+                storage, residents, responsibleIdsFrom(body), existing.responsibles ?? [],
+            )
+            const updated = await updateEvent(storage, tzOffsetMinutes, id, { ...eventInputFrom(body), responsibles })
             if (!updated.ok) {
                 sendError(res, 400, updated.error, EVENT_ERRORS[updated.error])
                 return
@@ -1799,6 +1819,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const { users } = await residents.list()
             sendJson(res, 200, { people: users.map(userView) })
+            return
+        }
+
+        // Кандидаты в ответственные за ивент: резиденты + известные боту гости.
+        case 'event.people': {
+            if (!requireResident()) return
+            const people = await listResponsibleCandidates(storage, residents)
+            sendJson(res, 200, { people: people.map((u) => ({ ...userView(u), resident: u.resident })) })
             return
         }
 
