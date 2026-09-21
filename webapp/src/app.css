@@ -817,12 +817,15 @@ body {
 /* Строка-плашка под заявкой с активным предложением времени. */
 .proposal-note {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 6px;
     margin-top: 4px;
     font-size: 13px;
+    line-height: 1.35;
     color: var(--text-2);
 }
+/* Иконка часов держится первой строки текста, а не центра плашки, когда та переносится. */
+.proposal-note > svg { flex-shrink: 0; margin-top: 1px; }
 .proposal-note .pn-time { font-weight: 700; color: var(--text); }
 .proposal-note.mine .pn-time { color: var(--blue); }
 
