@@ -187,6 +187,15 @@ import { audit } from './audit.js'
 import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
+import {
+    RESIDENT_TAG,
+    grantAdmin,
+    readMemberState,
+    revokeAdmin,
+    setMemberTag,
+    type AdminTarget,
+    type AdminTargetKind,
+} from './resident-admin.js'
 import type { Storage } from './storage.js'
 import type { EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent, Vote } from './types.js'
 
@@ -447,6 +456,11 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'announce.latest': 'heavy',
     reviewers: 'heavy',
     'event.people': 'heavy',
+    'admin.residents': 'heavy',
+    'admin.status': 'heavy',
+    'admin.grant': 'heavy',
+    'admin.revoke': 'heavy',
+    'admin.tag': 'heavy',
 
     'announce.send': 'broadcast',
 }
@@ -615,6 +629,8 @@ export type WebappDeps = {
     boardToken: string | null
     /** Чат резидентов: туда бот постит открытие и итоги голосований. null — постинг выключен. */
     residentsChatId: number | null
+    /** Цели выдачи прав резиденту (dev): «чат», канал анонсов, лайв-канал. Пусто — раздел скрыт. */
+    adminTargets: AdminTarget[]
 }
 
 type ApiContext = WebappDeps & {
@@ -985,6 +1001,37 @@ const duesSnapshot = (ctx: ApiContext, periodKey?: string) => {
     }
 }
 
+/** Статус одной цели для карточки резидента: где он состоит, где админ, стоит ли тег. */
+type AdminTargetStatus = {
+    key: string
+    label: string
+    kind: AdminTargetKind
+    present: boolean
+    creator: boolean
+    admin: boolean
+    canTag: boolean
+    tag: string | null
+}
+
+/**
+ * Статус человека по всем целям выдачи прав. Дёргает Telegram (`getChatMember` на каждую
+ * цель), поэтому метод отнесён к классу `heavy`. Заодно раскрываем userId для `/avatar.jpg`,
+ * чтобы карточка нарисовалась с аватаркой.
+ */
+const adminStatusPayload = async (
+    ctx: ApiContext,
+    userId: number,
+): Promise<{ userId: number; targets: AdminTargetStatus[] }> => {
+    discloseUser(userId)
+    const targets = await Promise.all(
+        ctx.adminTargets.map(async (t): Promise<AdminTargetStatus> => {
+            const s = await readMemberState(ctx.client, t.chatId, userId)
+            return { key: t.key, label: t.label, kind: t.kind, canTag: t.canTag, ...s }
+        }),
+    )
+    return { userId, targets }
+}
+
 /** Общий снапшот для фронта: 7 дней обзора, свои заявки, настройки (резиденту). */
 const buildBootstrap = (ctx: ApiContext) => {
     const { storage, tzOffsetMinutes, user, resident } = ctx
@@ -1115,6 +1162,7 @@ const AUDITED = new Set([
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
     'announce.send', 'stats.residentSince',
     'vote.create', 'vote.update', 'vote.close', 'vote.delete',
+    'admin.grant', 'admin.revoke', 'admin.tag',
     'dev.seed', 'dev.update', 'dev.delete',
 ])
 
@@ -1288,6 +1336,13 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return `[dev] поправил${target}: ${reqSlot} → ${slotOf(strOf(body.dateKey), strOf(body.time))}`
         case 'dev.delete':
             return `[dev] удалил${target} на ${reqSlot}`
+        case 'admin.grant':
+        case 'admin.revoke': {
+            const label = ctx.adminTargets.find((t) => t.key === strOf(body.target))?.label ?? strOf(body.target)
+            return `${method === 'admin.grant' ? 'выдал админку' : 'снял админку'} «${label}» — ${idOf(body.userId)}`
+        }
+        case 'admin.tag':
+            return `${body.on === true ? 'поставил' : 'снял'} тег резидента — ${idOf(body.userId)}`
         default:
             return null
     }
@@ -2999,6 +3054,88 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'vote.archive': {
             if (!requireResident()) return
             sendJson(res, 200, { votes: archivedVotes(storage).map((v) => voteView(v, ctx)) })
+            return
+        }
+
+        // --- Права резидента (dev) -----------------------------------------------
+        // Выдача админки в «чате»/каналах и member tag «resident». По умолчанию ничего не
+        // выдаётся: только этими ручками и только dev. Всё идёт через общий mtcute-клиент
+        // (класс 'heavy' в METHOD_CLASS), поэтому вызовы гейтятся рейтлимитом.
+
+        // Ростер резидентов для дев-списка «Резиденты» → карточка человека.
+        case 'admin.residents': {
+            if (!requireDev()) return
+            const { users } = await residents.list()
+            sendJson(res, 200, { people: users.map(userView) })
+            return
+        }
+
+        // Статус человека по всем целям: где состоит, где админ, стоит ли тег.
+        case 'admin.status': {
+            if (!requireDev()) return
+            const targetUser = Number(body.userId)
+            if (!Number.isSafeInteger(targetUser) || targetUser <= 0) {
+                sendError(res, 400, 'bad_user', 'Не указан пользователь.')
+                return
+            }
+            sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
+            return
+        }
+
+        // Выдать/снять админку в одной цели. Нет в чате — 409, чтобы фронт попросил зайти.
+        case 'admin.grant':
+        case 'admin.revoke': {
+            if (!requireDev()) return
+            const targetUser = Number(body.userId)
+            const targetKey = typeof body.target === 'string' ? body.target : ''
+            const target = ctx.adminTargets.find((t) => t.key === targetKey)
+            if (!Number.isSafeInteger(targetUser) || targetUser <= 0 || !target) {
+                sendError(res, 400, 'bad_target', 'Неизвестная цель или пользователь.')
+                return
+            }
+            const state = await readMemberState(client, target.chatId, targetUser)
+            if (!state.present) {
+                sendError(res, 409, 'not_in_chat', `Резидента нет в «${target.label}» — попросите его зайти и повторите.`)
+                return
+            }
+            if (state.creator) {
+                sendError(res, 409, 'is_creator', 'Это владелец чата — его права меняет только Telegram.')
+                return
+            }
+            try {
+                if (method === 'admin.grant') await grantAdmin(client, target, targetUser, state.tag)
+                else await revokeAdmin(client, target, targetUser)
+            } catch (err) {
+                console.error('[admin] не удалось изменить права:', err)
+                sendError(res, 502, 'telegram_error', 'Telegram отклонил операцию. Бот должен быть админом цели с правом добавлять админов.')
+                return
+            }
+            sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
+            return
+        }
+
+        // Поставить/снять member tag «resident». Только в «чате» (единственная цель с canTag).
+        case 'admin.tag': {
+            if (!requireDev()) return
+            const targetUser = Number(body.userId)
+            const target = ctx.adminTargets.find((t) => t.canTag)
+            if (!Number.isSafeInteger(targetUser) || targetUser <= 0 || !target) {
+                sendError(res, 400, 'bad_target', 'Тег ставить некуда: не задан MAIN_CHAT_ID.')
+                return
+            }
+            const state = await readMemberState(client, target.chatId, targetUser)
+            if (!state.present) {
+                sendError(res, 409, 'not_in_chat', `Резидента нет в «${target.label}» — попросите его зайти и повторите.`)
+                return
+            }
+            try {
+                await setMemberTag(client, target.chatId, targetUser, body.on === true ? RESIDENT_TAG : null)
+            } catch (err) {
+                console.error('[admin] не удалось изменить тег:', err)
+                sendError(res, 502, 'telegram_error', 'Telegram отклонил операцию. Боту нужно право «изменение тегов участников».')
+                return
+            }
+            sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
             return
         }
 

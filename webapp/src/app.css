@@ -54,6 +54,7 @@
        просто акцентная плашка. Пара обязательна — литерал не получает добавки в
        тёмной теме и оказывается там вдвое слабее соседей на токене. */
     --blue-soft: rgba(0, 122, 255, 0.11);
+    --green-soft: rgba(52, 199, 89, 0.13);
     --blue-soft-strong: rgba(0, 122, 255, 0.16);
     --warn-bg: rgba(255, 149, 0, 0.1);
     /* Штрих закрытого дня. Оранжевый, как и всё обратимое: день закрывают и открывают
@@ -109,6 +110,7 @@
     --attn: rgba(0, 122, 255, 0.24);
     --attn-strong: rgba(0, 122, 255, 0.34);
     --blue-soft: rgba(0, 122, 255, 0.24);
+    --green-soft: rgba(52, 199, 89, 0.22);
     --blue-soft-strong: rgba(0, 122, 255, 0.32);
     --warn-bg: #4a3416;
     /* На чёрной карточке тот же штрих почти не виден — берём чуть заметнее. */
@@ -1715,6 +1717,31 @@ body {
 }
 .small-btn.blue { background: var(--blue); color: #fff; }
 .small-btn.gray { background: var(--chip); color: var(--text); }
+
+/* Пилюля-действие в карточке резидента: серо-синяя «Выдать» ↔ зелёная «выдано ✓».
+   Одна и та же пилюля и статус, и кнопка (тап переключает), как .host-btn. */
+.perm-pill {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 13px;
+    border: none;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--chip);
+    color: var(--blue);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.perm-pill:active { opacity: 0.6; }
+.perm-pill[disabled] { opacity: 0.55; }
+.perm-pill.on { background: var(--green-soft); color: var(--green); }
+/* «Не в чате» / «владелец» — не действие, а состояние: приглушённый текст, без пилюли. */
+.perm-state { margin-left: auto; flex-shrink: 0; font-size: 14px; font-weight: 500; color: var(--text-3); }
 
 /* --- Пустые состояния, загрузка, ошибки --- */
 

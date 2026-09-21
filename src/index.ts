@@ -44,6 +44,7 @@ import { installErrorReporting } from './errors.js'
 import { parseHostingTzOffset } from './hosting.js'
 import { setPresenceLogTz } from './presence-log.js'
 import { parseWebappConfig, startWebappServer } from './webapp.js'
+import { buildAdminTargets } from './resident-admin.js'
 
 const required = (name: string): string => {
     const v = process.env[name]
@@ -85,6 +86,11 @@ const main = async () => {
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
     // Канал анонсов: пересланный оттуда пост бот предлагает превратить в ивент.
     const announceChannelId = parseChatId(process.env.ANNOUNCE_CHANNEL_ID)
+    // Цели выдачи прав резиденту (dev-меню миниаппа): «чат» (супергруппа) + канал анонсов
+    // + лайв-канал. LIVE_CHANNEL_ID — отдельная сущность, не путать с LIVE_CHAT_ID-гардом.
+    const mainChatId = parseChatId(process.env.MAIN_CHAT_ID)
+    const liveChannelId = parseChatId(process.env.LIVE_CHANNEL_ID)
+    const adminTargets = buildAdminTargets({ mainChatId, announceChannelId, liveChannelId })
     // Чат резидентов: его участники и есть резиденты. Не задан — откат на прежнее
     // правило «админ любого allowlist-чата», иначе забытая переменная выключила бы полбота.
     const residentsChatId = parseChatId(process.env.RESIDENTS_CHAT_ID)
@@ -129,6 +135,12 @@ const main = async () => {
         console.warn('[warn] RESIDENTS_CHAT_ID не задан — резидентами считаются админы любого allowlist-чата.')
     } else {
         console.log(`[residents] резиденты — участники чата ${residentsChatId}`)
+    }
+
+    if (adminTargets.length > 0) {
+        console.log(`[admin] выдача прав резидентам включена для: ${adminTargets.map((t) => t.key).join(', ')}`)
+    } else {
+        console.warn('[warn] MAIN_CHAT_ID / LIVE_CHANNEL_ID не заданы — выдача прав резидентам в миниаппе выключена.')
     }
 
     if ((forwardFrom === null) !== (forwardTo === null)) {
@@ -241,6 +253,7 @@ const main = async () => {
             githubRepo,
             boardToken,
             residentsChatId,
+            adminTargets,
         })
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App

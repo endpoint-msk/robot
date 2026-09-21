@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { icons } from '../icons'
 import { confirmDialog, showAlert } from '../modals'
-import { setTheme, useStore } from '../store'
+import { push, setTheme, useStore } from '../store'
 import { haptic, openUrl } from '../telegram'
 import type { NotifyPrefs, Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
@@ -294,6 +294,20 @@ export function Settings() {
     <Screen>
       <BackRow label="Ближайшие дни" />
       <Header title="Настройки" />
+      <SectionTitle>Профиль</SectionTitle>
+      <div className="card">
+        <button
+          type="button"
+          className="row tappable"
+          onClick={() => push('residentProfile', { userId: data!.me.id, name: data!.me.name, username: data!.me.username })}
+        >
+          <span className="row-label">
+            Мой профиль
+            <span className="row-sublabel">Права и интеграции</span>
+          </span>
+          {icons.chevron()}
+        </button>
+      </div>
       <ThemeSection />
       <CalendarSection />
       <SectionTitle>Уведомления о заявках</SectionTitle>

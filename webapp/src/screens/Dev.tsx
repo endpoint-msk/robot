@@ -39,6 +39,16 @@ export function Dev() {
     <Screen hasBottomBar>
       <BackRow />
       <Header title="Dev" subtitle="Тестовые данные - резиденты не будут уведомлены" />
+      <SectionTitle>Резиденты</SectionTitle>
+      <div className="card">
+        <button type="button" className="row tappable" onClick={() => push('residents')}>
+          <span className="row-label">
+            Резиденты
+            <span className="row-sublabel">Выдать админку в чатах и тег «resident»</span>
+          </span>
+          {icons.chevron()}
+        </button>
+      </div>
       <SectionTitle>Рассылка</SectionTitle>
       <div className="card">
         <button type="button" className="row tappable" onClick={() => push('announce')}>

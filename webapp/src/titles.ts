@@ -63,6 +63,10 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return 'Dev'
     case 'devEdit':
       return 'Правка заявки'
+    case 'residents':
+      return 'Резиденты'
+    case 'residentProfile':
+      return p.name ?? 'Резидент'
 
     // Дальше — экраны, у которых заголовок собирается из данных. Промах любого
     // поиска даёт разумный запасной вариант: подпись «назад» не то место, ради

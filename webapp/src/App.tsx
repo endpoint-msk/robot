@@ -37,6 +37,8 @@ import { EventApps } from './screens/EventApps'
 import { Route } from './screens/Route'
 import { Dev } from './screens/Dev'
 import { DevEdit } from './screens/DevEdit'
+import { Residents } from './screens/Residents'
+import { ResidentProfile } from './screens/ResidentProfile'
 import { Announce } from './screens/Announce'
 import { Votes } from './screens/Votes'
 import { Vote } from './screens/Vote'
@@ -74,6 +76,8 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   route: Route,
   dev: Dev,
   devEdit: DevEdit,
+  residents: Residents,
+  residentProfile: ResidentProfile,
   announce: Announce,
   votes: Votes,
   vote: Vote,

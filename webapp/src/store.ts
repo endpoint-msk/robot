@@ -37,6 +37,8 @@ export type ScreenName =
   | 'route'
   | 'dev'
   | 'devEdit'
+  | 'residents'
+  | 'residentProfile'
   | 'announce'
   | 'votes'
   | 'vote'

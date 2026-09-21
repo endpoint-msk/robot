@@ -326,6 +326,27 @@ export type StatsPersonView = {
   lastVisits: StatsPersonVisit[]
 }
 
+// --- Права резидента (dev, src/resident-admin.ts) --------------------------
+
+export type AdminTargetKind = 'group' | 'channel'
+
+/** Положение резидента в одной цели: где состоит, где админ, стоит ли тег. */
+export type AdminTargetStatus = {
+  key: string
+  label: string
+  kind: AdminTargetKind
+  present: boolean
+  creator: boolean
+  admin: boolean
+  /** В этой цели можно ставить member tag (только «чат»). */
+  canTag: boolean
+  /** Текущий тег (поле rank). null — нет. */
+  tag: string | null
+}
+
+export type AdminStatus = { userId: number; targets: AdminTargetStatus[] }
+export type ResidentsListResponse = { people: User[] }
+
 export type Me = {
   id: number
   username: string | null
