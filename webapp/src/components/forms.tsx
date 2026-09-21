@@ -86,7 +86,6 @@ export function DayChips({
             ) : showCounts ? (
               d.total > 0 ? (
                 <div className="dc-counts">
-                  <span>{String(d.total)}</span>
                   {icons.check(10, d.dateKey === selected ? '#fff' : '#34c759', 2.2)}
                   <span className="dc-approved">{String(d.approved)}</span>
                 </div>
