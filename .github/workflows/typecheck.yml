@@ -1,10 +1,11 @@
 name: Typecheck
 
-# Пуши в main проверяет deploy.yml — иначе tsc гонялся бы дважды на коммит.
+# Пуши в main проверяет deploy.yml, а в dev — deploy-dev.yml. Иначе tsc гонялся бы
+# дважды на коммит в этих ветках.
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+    branches-ignore: [main, dev]
 
 jobs:
   typecheck:

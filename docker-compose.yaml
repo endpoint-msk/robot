@@ -1,7 +1,10 @@
 version: "3.9"
 services:
   bot:
-    hostname: endpoint-webapp
+    # Имя в сети public, по которому caddy находит контейнер. Дев крутится на том же
+    # хосте, поэтому его .env задаёт WEBAPP_HOSTNAME=endpoint-webapp-dev — иначе два
+    # контейнера делили бы одно имя. Прод переменную не задаёт → остаётся дефолт.
+    hostname: ${WEBAPP_HOSTNAME:-endpoint-webapp}
     build:
       context: .
       args:

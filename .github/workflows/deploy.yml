@@ -1,13 +1,16 @@
 name: Deploy
 
+# Один воркфлоу на обе ветки, чтобы CI-конфиг не расходился между main и dev.
+# main -> прод (DEPLOY_PATH, scripts/deploy.sh), dev -> дев-стенд на том же хосте
+# (DEPLOY_DEV_PATH, scripts/dev-seed-and-run.sh: копия прод-БД + подъём контейнера).
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
-# Параллельные деплои подрались бы за docker compose в одной директории.
+# Свой лок на ветку: прод и дев деплоятся параллельно, но каждый сам с собой — нет.
 concurrency:
-  group: deploy
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -43,8 +46,21 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd ${{ secrets.DEPLOY_PATH }}
-            git fetch --prune origin
-            # Жёстко на конкретный коммит: хост — не место для локальных правок.
-            git reset --hard ${{ github.sha }}
-            bash scripts/deploy.sh
+            # Ветвимся явно: без else в прод стрелять нельзя — иначе ручной dispatch
+            # на чужой ветке задеплоил бы её код на боевой хост. if/elif вместо case:
+            # удалённый логин-шелл — zsh, а case ... ;; esac он парсит иначе.
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              cd ${{ secrets.DEPLOY_PATH }}
+              git fetch --prune origin
+              # Жёстко на конкретный коммит: хост — не место для локальных правок.
+              git reset --hard ${{ github.sha }}
+              bash scripts/deploy.sh
+            elif [ "${{ github.ref_name }}" = "dev" ]; then
+              cd ${{ secrets.DEPLOY_DEV_PATH }}
+              git fetch --prune origin
+              git reset --hard ${{ github.sha }}
+              bash scripts/dev-seed-and-run.sh
+            else
+              echo "Ветка ${{ github.ref_name }} не деплоится." >&2
+              exit 1
+            fi
