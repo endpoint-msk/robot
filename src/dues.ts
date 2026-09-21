@@ -427,8 +427,13 @@ export const retryFailedDuesNotifications = async (client: TelegramClient, stora
     }
 }
 
-const REMIND_LEAD_MS = 10 * 24 * 60 * 60_000
 const DAY_MS = 24 * 60 * 60_000
+/** Ступени пинга по убыванию упреждения: за 10 дней до дедлайна и за сутки. */
+const REMIND_STAGES: readonly number[] = [10, 1]
+
+/** Легаси-значение `true` = сработала прежняя единственная ступень (10 дней). */
+const remindedLead = (v: number | true | undefined): number =>
+    v === undefined ? Infinity : v === true ? 10 : v
 
 const remindMemberBeforeDeadline = async (
     client: TelegramClient,
@@ -454,7 +459,7 @@ const remindMemberBeforeDeadline = async (
     })
 }
 
-/** Метка `reminded` ставится и при недоставке: без неё пинг уходил бы каждую минуту всего окна. */
+/** Метка `reminded` ставится и при недоставке: без неё пинг уходил бы каждую минуту всей ступени. */
 export const remindUnpaidBeforeDeadline = async (
     client: TelegramClient,
     storage: Storage,
@@ -465,21 +470,23 @@ export const remindUnpaidBeforeDeadline = async (
     if (!period) return
     const nextOpenAt = duesAnchorOf(nextMonthKey(period.periodKey), dues.day, tzOffsetMinutes).getTime()
     const now = Date.now()
-    if (now < nextOpenAt - REMIND_LEAD_MS || now >= nextOpenAt) return
+    if (now >= nextOpenAt) return
     const daysLeft = Math.max(1, Math.ceil((nextOpenAt - now) / DAY_MS))
 
     for (const member of Object.values(period.roster)) {
         const key = String(member.userId)
-        if ((period.reminded ?? {})[key]) continue
         if (dues.notifyOff[key] || member.amount <= 0) continue
         if (period.marks[key]) continue
+        const sent = remindedLead((period.reminded ?? {})[key])
+        const stage = REMIND_STAGES.find((lead) => now >= nextOpenAt - lead * DAY_MS && lead < sent)
+        if (stage === undefined) continue
         try {
             await remindMemberBeforeDeadline(client, dues, member, period.periodKey, daysLeft)
         } catch {}
         await storage.update((s) => {
             const p = s.dues.periods[period.periodKey]
             if (!p) return
-            ;(p.reminded ??= {})[key] = true
+            ;(p.reminded ??= {})[key] = stage
         })
     }
 }
