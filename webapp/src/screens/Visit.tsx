@@ -233,7 +233,12 @@ export function Visit() {
           <span className="status-card-title">Заявка ждёт ответа</span>
         </div>
         <div className="status-card-note">
-          Резиденты видят вашу заявку. Как только кто-то возьмётся захостить - бот напишет вам в личку.
+          Резиденты видят вашу заявку.
+          <br />
+          <span className="note-warn">
+            {icons.warning()}
+            Одобрение заявки обязательно для посещения.
+          </span>
         </div>
       </div>
     )

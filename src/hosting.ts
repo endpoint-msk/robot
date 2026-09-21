@@ -1214,7 +1214,7 @@ export const clearTransfer = async (
  * едет только версия: поднимаем её вместе с правкой текста — и согласие спрашивается
  * заново у всех, кто соглашался со старой редакцией.
  */
-export const HOSTING_RULES_VERSION = 1
+export const HOSTING_RULES_VERSION = 2
 
 /** Гость уже согласился с актуальной редакцией правил. */
 export const hasAcceptedRules = (storage: Storage, userId: number): boolean =>

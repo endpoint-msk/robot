@@ -80,6 +80,12 @@ export const icons = {
       <path d="M8 7v4M8 5h.01" stroke={sec(0.45)} strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  warning: (size = 15, color = '#ff3b30'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <path d="M8 1.6 15 14H1z" fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M8 6v3.3M8 11.4h.01" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
   archiveBox: (): ReactElement => (
     <svg width="16" height="16" viewBox="0 0 18 18">
       <rect x="2.5" y="3" width="13" height="4" rx="1.2" fill="none" stroke="#fff" strokeWidth="1.7" />

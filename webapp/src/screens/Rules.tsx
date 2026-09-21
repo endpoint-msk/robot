@@ -10,9 +10,10 @@ import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
 
 const RULES = [
+  'Не приходите без одобренной заявки',
   'Ведите себя адекватно',
   'Не трогайте чужие вещи без прямого согласия резидента или владельца',
-  'Не рушьте духовный порядок места — если вы чем-то воспользовались, верните на место',
+  'Не рушьте духовный порядок места: если вы чем-то воспользовались, верните на место',
 ]
 
 export function Rules() {
@@ -45,8 +46,12 @@ export function Rules() {
         ))}
       </div>
       <div className="rules-wiki">
-        Подробнее про спейс — в вики:{' '}
-        <button type="button" className="link-btn" onClick={() => openUrl('https://wiki.endpoint.moscow')}>
+        Полные правила спейса:{' '}
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => openUrl('https://wiki.endpoint.moscow/s/public/doc/pravila-i-principy-soobshestva-oA7WZg3nWS')}
+        >
           wiki.endpoint.moscow
         </button>
       </div>
