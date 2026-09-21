@@ -168,6 +168,28 @@ function CapacityCard({ dateKey, capacity }: { dateKey: string; capacity: DayCap
   )
 }
 
+/**
+ * Подписка на день: пока включена, резиденту приходят в личку уведомления о том, что
+ * на этом дне кто-то кого-то захостил, отметился «я приду» или перенёс визит.
+ */
+function SubscribeCard({ dateKey, on }: { dateKey: string; on: boolean }) {
+  const toggle = async (): Promise<void> => {
+    const done = await action('day.subscribe', { dateKey, on: !on })
+    if (done) haptic(on ? 'warning' : 'success')
+  }
+  return (
+    <div className="card">
+      <div className="row">
+        <span className="row-label">
+          Уведомления о дне
+          <span className="row-sublabel">Кто кого захостил, «я приду» и переносы — в личку</span>
+        </span>
+        <Switch on={on} onToggle={toggle} label="Уведомления о дне" />
+      </div>
+    </div>
+  )
+}
+
 export function Day() {
   const params = useParams()
   const { data } = useStore()
@@ -197,6 +219,7 @@ export function Day() {
   const lock = (dayObj && dayObj.lock) || null
   // Вместимость приходит только резидентам (см. bootstrap) — у гостя её нет вовсе.
   const capacity = (dayObj && dayObj.capacity) || null
+  const subscribed = Boolean(dayObj && dayObj.subscribed)
 
   if (dropped) {
     return (
@@ -318,6 +341,7 @@ export function Day() {
       {!archive ? (
         <>
           <SectionTitle>День</SectionTitle>
+          {data!.me.isResident ? <SubscribeCard dateKey={params.dateKey} on={subscribed} /> : null}
           <LockCard dateKey={params.dateKey} lock={lock} requests={requests.length} />
           {capacity ? <CapacityCard dateKey={params.dateKey} capacity={capacity} /> : null}
         </>

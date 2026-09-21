@@ -225,16 +225,17 @@ export const setResidentAttendance = async (
     dateKey: string,
     user: HostingUser,
     coming: boolean,
-): Promise<{ ok: true } | { ok: false; error: 'bad_date' }> => {
+): Promise<{ ok: true; changed: boolean } | { ok: false; error: 'bad_date' }> => {
     const today = todayKey(tzOffsetMinutes)
     const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
     if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    const key = attendanceKey(dateKey, user.userId)
+    const existed = key in storage.get().hostingAttendance
     await storage.update((s) => {
-        const key = attendanceKey(dateKey, user.userId)
         if (coming) s.hostingAttendance[key] = { dateKey, user, at: new Date().toISOString() }
         else delete s.hostingAttendance[key]
     })
-    return { ok: true }
+    return { ok: true, changed: coming ? !existed : existed }
 }
 
 /** Резиденты, отметившиеся «я приду» на день, в порядке отметки. */
@@ -242,6 +243,112 @@ export const residentsAttendingDay = (storage: Storage, dateKey: string): Hostin
     Object.values(storage.get().hostingAttendance)
         .filter((a) => a.dateKey === dateKey)
         .sort((a, b) => a.at.localeCompare(b.at))
+
+// ---------------------------------------------------------------------------
+// Подписка резидента на день
+// ---------------------------------------------------------------------------
+
+/**
+ * Резидент подписывается на день, чтобы получать в личку, что на нём происходит:
+ * кто кого захостил, кто отметился «я приду», перенос слота. Окно — как у заявок
+ * (сегодня..+6); прошедшие подписки чистятся при каждой записи.
+ */
+export const setDaySubscription = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    userId: number,
+    on: boolean,
+): Promise<{ ok: true } | { ok: false; error: 'bad_date' }> => {
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    await storage.update((s) => {
+        for (const key of Object.keys(s.hostingDaySubs)) {
+            if (key < today) delete s.hostingDaySubs[key]
+        }
+        const next = (s.hostingDaySubs[dateKey] ?? []).filter((id) => id !== userId)
+        if (on) next.push(userId)
+        if (next.length > 0) s.hostingDaySubs[dateKey] = next
+        else delete s.hostingDaySubs[dateKey]
+    })
+    return { ok: true }
+}
+
+export const isDaySubscribed = (storage: Storage, dateKey: string, userId: number): boolean =>
+    (storage.get().hostingDaySubs[dateKey] ?? []).includes(userId)
+
+/**
+ * Шлёт подписчикам дня(ей) уведомление о событии на нём. Автора события
+ * (`exceptUserId`) пропускаем — он и так знает, что сделал. Закрытая личка не фатальна.
+ */
+export const notifyDaySubscribers = async (
+    client: TelegramClient,
+    storage: Storage,
+    webappUrl: string,
+    dateKeys: string[],
+    text: string,
+    exceptUserId: number,
+): Promise<void> => {
+    const recipients = new Set<number>()
+    for (const dateKey of dateKeys) {
+        for (const userId of storage.get().hostingDaySubs[dateKey] ?? []) {
+            if (userId !== exceptUserId) recipients.add(userId)
+        }
+    }
+    if (recipients.size === 0) return
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть', webappUrl)]])
+    for (const userId of recipients) {
+        try {
+            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+        } catch {
+            // личка закрыта — пропускаем
+        }
+    }
+}
+
+/** Подписчикам дня: резидент захостил гостя. */
+export const notifySubsHosted = async (
+    client: TelegramClient,
+    storage: Storage,
+    webappUrl: string,
+    request: HostingRequest,
+    host: HostingUser,
+): Promise<void> => {
+    const text = `✅ ${await mentionLabel(client, host)} захостил ${await mentionLabel(client, request.guest)} — ${slotLabel(request.dateKey, request.time)}.`
+    await notifyDaySubscribers(client, storage, webappUrl, [request.dateKey], text, host.userId)
+}
+
+/** Подписчикам дня: резидент отметился «я приду». */
+export const notifySubsAttending = async (
+    client: TelegramClient,
+    storage: Storage,
+    webappUrl: string,
+    dateKey: string,
+    resident: HostingUser,
+): Promise<void> => {
+    const text = `🙋 ${await mentionLabel(client, resident)} придёт — <b>${formatDayKey(dateKey)}</b>.`
+    await notifyDaySubscribers(client, storage, webappUrl, [dateKey], text, resident.userId)
+}
+
+/** Подписчикам дня(ей): визит перенесён. Уведомляем и старый день, и новый. */
+export const notifySubsRescheduled = async (
+    client: TelegramClient,
+    storage: Storage,
+    webappUrl: string,
+    request: HostingRequest,
+    oldDateKey: string,
+    oldTime: string,
+    actorId: number,
+): Promise<void> => {
+    const guest = await mentionLabel(client, request.guest)
+    const dayChanged = oldDateKey !== request.dateKey
+    const from = dayChanged ? slotLabel(oldDateKey, oldTime) : oldTime
+    const to = dayChanged ? slotLabel(request.dateKey, request.time) : request.time
+    const text = `🔁 Перенос визита ${guest}: ${from} → ${to}.`
+    const days = dayChanged ? [oldDateKey, request.dateKey] : [request.dateKey]
+    await notifyDaySubscribers(client, storage, webappUrl, days, text, actorId)
+}
 
 /** Одна строка публичного списка «кто придёт»: резидент «я приду» или подтверждённый неанонимный гость. */
 export type DayAttendee = {
@@ -748,9 +855,15 @@ export const remindAboutTodayRequests = async (
     userId: number,
 ): Promise<void> => {
     if (!notifyPrefsFor(storage, userId).enabled) return
-    const pending = requestsForDay(storage, todayKey(tzOffsetMinutes))
+    const today = todayKey(tzOffsetMinutes)
+    // Один раз за визит: повторный чек-ин или мигание MAC-отметки в тот же день не дублируют напоминание.
+    if (storage.get().hostingRemindedDay[String(userId)] === today) return
+    const pending = requestsForDay(storage, today)
         .filter((r) => r.status === 'pending' && r.guest.userId !== userId)
     if (pending.length === 0) return
+    await storage.update((s) => {
+        s.hostingRemindedDay[String(userId)] = today
+    })
     const lines = [
         pending.length === 1
             ? '👋 Ты в спейсе — на сегодня есть заявка без хоста:'

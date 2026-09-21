@@ -64,9 +64,16 @@ export type State = {
     hostingDayLocks: Record<string, DayLock>
     /** Дни с переопределённой вместимостью. Ключ — dateKey. Нет записи — общий SPACE_CAPACITY. */
     hostingDayCaps: Record<string, DayCap>
+    /** Резиденты, подписанные на уведомления о событиях дня (кто кого захостил, «я приду»,
+     *  перенос). Ключ — dateKey, значение — userId подписчиков. Прошедшие дни чистятся при записи. */
+    hostingDaySubs: Record<string, number[]>
     /** Настройки уведомлений о новых заявках per-резидент. Ключ — userId.
      *  Отсутствие записи = дефолт: включено, только заявки на сегодня (см. DEFAULT_HOSTING_NOTIFY). */
     hostingNotify: Record<string, HostingNotifyPrefs>
+    /** Последний день, за который резиденту уже отправили напоминание про ничьи заявки при
+     *  появлении в спейсе. Ключ — userId, значение — dateKey. Гейт «один раз за визит»:
+     *  повторный чек-ин или мигание MAC-отметки в тот же день напоминание не дублируют. */
+    hostingRemindedDay: Record<string, string>
     /** Настройки уведомлений о новых ивентах per-резидент. Ключ — userId. Отдельный тумблер
      *  от заявок: это разные потоки, и один нужен не всем, кому нужен другой.
      *  Отсутствие записи = дефолт: включено, ивенты на любой день (см. DEFAULT_EVENT_NOTIFY). */
@@ -778,7 +785,9 @@ export const emptyState = (): State => ({
     hostingAttendance: {},
     hostingDayLocks: {},
     hostingDayCaps: {},
+    hostingDaySubs: {},
     hostingNotify: {},
+    hostingRemindedDay: {},
     eventNotify: {},
     hostingBoard: {},
     hostingBoardMuted: {},

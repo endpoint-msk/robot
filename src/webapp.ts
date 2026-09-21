@@ -50,6 +50,11 @@ import {
     notifyProposalDroppedByEdit,
     notifyResidentsAboutRequest,
     notifyResidentRescheduleCountered,
+    notifySubsHosted,
+    notifySubsAttending,
+    notifySubsRescheduled,
+    isDaySubscribed,
+    setDaySubscription,
     offerTransfer,
     proposeReschedule,
     requestsForDay,
@@ -386,6 +391,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.apply.cancel': 'write',
     'day.lock': 'write',
     'day.cap': 'write',
+    'day.subscribe': 'write',
     edit: 'write',
     'remind.set': 'write',
     attend: 'write',
@@ -1011,6 +1017,8 @@ const buildBootstrap = (ctx: ApiContext) => {
                         // должна называть её и тогда, когда у дня стоит своё число.
                         defaultCap: SPACE_CAPACITY,
                     },
+                    // Подписан ли резидент на события этого дня — резидентская фича.
+                    subscribed: isDaySubscribed(storage, dateKey, user.userId),
                 }
                 : {}),
             // Публичный список «кто придёт» — виден всем.
@@ -1476,6 +1484,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, result.error, 'Выберите день в пределах ближайшей недели.')
                 return
             }
+            // Только на реальный приход (не на повторный тап и не на снятие отметки).
+            if (coming && result.changed) {
+                void notifySubsAttending(client, storage, config.publicUrl, dateKey, user)
+                    .catch((err) => console.error('[hosting] не удалось уведомить подписчиков дня:', err))
+            }
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -1516,6 +1529,20 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, result.error, result.error === 'bad_cap'
                     ? `Вместимость — целое число от 1 до ${MAX_DAY_CAP}.`
                     : 'Менять вместимость можно только у дня из ближайшей недели.')
+                return
+            }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Подписка резидента на события дня: DM о хостинге, отметках «я приду» и переносах.
+        case 'day.subscribe': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const on = body.on === true
+            const result = await setDaySubscription(storage, tzOffsetMinutes, dateKey, user.userId, on)
+            if (!result.ok) {
+                sendError(res, 400, result.error, 'Подписаться можно только на день из ближайшей недели.')
                 return
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -1654,6 +1681,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (updated) {
                 void notifyGuestApproved(client, config.publicUrl, updated)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя об одобрении:', err))
+                void notifySubsHosted(client, storage, config.publicUrl, updated, user)
+                    .catch((err) => console.error('[hosting] не удалось уведомить подписчиков дня:', err))
             }
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
@@ -2092,6 +2121,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_allowed', 'Это предложение адресовано другой стороне.')
                 return
             }
+            // Слот до переноса: request — живая ссылка, acceptReschedule перезапишет его поля.
+            const prevDateKey = request.dateKey
+            const prevTime = request.time
             const result = await acceptReschedule(storage, tzOffsetMinutes, request.id)
             if (!result.ok) {
                 const status = result.error === 'not_found' ? 404 : 409
@@ -2109,6 +2141,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             } else {
                 void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true, user)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
+            }
+            if (result.request.dateKey !== prevDateKey || result.request.time !== prevTime) {
+                void notifySubsRescheduled(client, storage, config.publicUrl, result.request, prevDateKey, prevTime, user.userId)
+                    .catch((err) => console.error('[hosting] не удалось уведомить подписчиков дня о переносе:', err))
             }
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
