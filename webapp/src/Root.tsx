@@ -160,10 +160,6 @@ export function Root() {
         if (wantsDraft && data.me.isResident && data.eventDraft) {
           push('event', { fromDraft: true, backLabel: 'Обзор' })
         }
-        // Кнопка «Открыть голосование» из чата резидентов ведёт сюда с startapp=votes.
-        if (tg?.initDataUnsafe?.start_param === 'votes' && data.me.isResident) {
-          push('votes')
-        }
         setPhase('ready')
       })
       .catch((e) => {

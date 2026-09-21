@@ -69,7 +69,6 @@ export function Overview() {
   const total = days.reduce((sum, d) => sum + d.total, 0)
   const first = days[0]!.dateKey
   const last = days[days.length - 1]!.dateKey
-  const votesOpen = data!.votes?.length ?? 0
 
   return (
     <Screen>
@@ -100,17 +99,6 @@ export function Overview() {
           </div>
           <span className="row-label">Статистика</span>
           <div className="row-right">{icons.chevron()}</div>
-        </button>
-        <Sep left={54} />
-        <button type="button" className="row tappable" onClick={() => push('votes')}>
-          <div className="row-icon" style={{ background: 'var(--purple)' }}>
-            {icons.ballot()}
-          </div>
-          <span className="row-label">Голосования</span>
-          <div className="row-right">
-            {votesOpen > 0 ? <span className="ev-count">{votesOpen}</span> : null}
-            {icons.chevron()}
-          </div>
         </button>
         <Sep left={54} />
         <DuesRow />

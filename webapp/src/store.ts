@@ -40,11 +40,6 @@ export type ScreenName =
   | 'residents'
   | 'residentProfile'
   | 'announce'
-  | 'votes'
-  | 'vote'
-  | 'voteEdit'
-  | 'voteArchive'
-  | 'voteVoters'
 
 export type NavParams = Record<string, any>
 export type NavEntry = { name: ScreenName; params: NavParams }
