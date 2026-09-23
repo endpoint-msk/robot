@@ -1,4 +1,4 @@
-import { tl, type TelegramClient } from '@mtcute/node'
+import { tl, type ChatMember, type TelegramClient } from '@mtcute/node'
 
 /**
  * Выдача резиденту прав в чатах спейса — руками dev'а, по умолчанию ничего.
@@ -30,7 +30,7 @@ export type AdminTarget = {
 
 type Rights = Omit<tl.RawChatAdminRights, '_'>
 
-/** Права админа-резидента в супергруппе (скрин 1): чистка, бан, инвайты, пины. */
+/** Права админа-резидента в супергруппе: чистка, бан, инвайты, пины. */
 const GROUP_RIGHTS: Rights = {
     deleteMessages: true,
     banUsers: true,
@@ -39,18 +39,15 @@ const GROUP_RIGHTS: Rights = {
 }
 
 /**
- * Права админа-резидента в broadcast-канале (скрин 2): постинг, инвайты, трансляции, бан.
- *
- * «Доступ к сообщениям канала» со скрина намеренно не включён: это новое право на монофорум
- * личных сообщений канала (`manageDirectMessages`), которого у обычного канала и у самого бота
- * обычно нет, а `channels.editAdmin` отклоняет ВЕСЬ вызов, если просить право, которого нет у
- * бота (`RIGHT_FORBIDDEN`) — то есть один лишний флаг ронял бы всю выдачу админки.
+ * Права админа-резидента в broadcast-канале. Бот сам должен иметь каждое из них, включая
+ * `manageDirectMessages`: `channels.editAdmin` отклоняет весь вызов (`RIGHT_FORBIDDEN`),
+ * если просить право, которого нет у бота.
  */
 const CHANNEL_RIGHTS: Rights = {
     postMessages: true,
     inviteUsers: true,
-    manageCall: true,
     banUsers: true,
+    manageDirectMessages: true,
 }
 
 const rightsFor = (kind: AdminTargetKind): Rights => (kind === 'group' ? GROUP_RIGHTS : CHANNEL_RIGHTS)
@@ -82,33 +79,63 @@ export type MemberState = {
     creator: boolean
     /** Уже админ (не владелец). */
     admin: boolean
+    /** Telegram даёт боту править только назначенных им самим админов. */
+    canEdit: boolean
     /** Текущий тег (поле `rank`). null — тега нет. */
     tag: string | null
+    /** Код ошибки Telegram, если статус прочитать не удалось. */
+    error: string | null
 }
 
+const errorText = (err: unknown): string => {
+    const text = (err as { text?: unknown } | null)?.text
+    return typeof text === 'string' ? text : 'UNKNOWN'
+}
+
+const toState = (m: ChatMember): MemberState => {
+    const status = m.status
+    const raw = m.raw as { _: string; canEdit?: boolean }
+    return {
+        present: status === 'member' || status === 'restricted' || status === 'admin' || status === 'creator',
+        creator: status === 'creator',
+        admin: status === 'admin',
+        canEdit: status !== 'admin' || raw._ !== 'channelParticipantAdmin' || raw.canEdit === true,
+        tag: m.title,
+        error: null,
+    }
+}
+
+const ABSENT: MemberState = { present: false, creator: false, admin: false, canEdit: true, tag: null, error: null }
+
 /**
- * Читает статус человека в чате. Не участник (`USER_NOT_PARTICIPANT`) или нет доступа —
- * возвращаем `present: false`, а не бросаем: «его тут нет» это нормальный ответ, на
- * котором строится ветка «попроси зайти».
+ * Одиночный `getChatMember` страхуется списком админов: он идёт другим методом и видит
+ * админов, назначенных не ботом. Ошибка обоих — не «его тут нет», а `error`, иначе
+ * вызывающий попросил бы зайти человека, который уже в чате.
  */
 export const readMemberState = async (
     client: TelegramClient,
     chatId: number,
     userId: number,
 ): Promise<MemberState> => {
+    let single: MemberState | null = null
+    let failure: unknown = null
     try {
         const m = await client.getChatMember({ chatId, userId })
-        const status = m?.status ?? null
-        const present = status === 'member' || status === 'restricted' || status === 'admin' || status === 'creator'
-        return {
-            present,
-            creator: status === 'creator',
-            admin: status === 'admin',
-            tag: m?.title ?? null,
-        }
-    } catch {
-        return { present: false, creator: false, admin: false, tag: null }
+        single = m ? toState(m) : ABSENT
+        if (single.present) return single
+    } catch (err) {
+        failure = err
     }
+    try {
+        const admins = await client.getChatMembers(chatId, { type: 'admins' })
+        const found = admins.find((m) => m.user.id === userId)
+        if (found) return toState(found)
+    } catch (err) {
+        failure ??= err
+    }
+    if (single) return single
+    console.error(`[admin] не удалось прочитать статус ${userId} в ${chatId}:`, failure)
+    return { ...ABSENT, error: errorText(failure) }
 }
 
 /**

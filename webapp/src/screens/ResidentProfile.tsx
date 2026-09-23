@@ -95,10 +95,14 @@ export function ResidentProfile() {
             {i > 0 ? <Sep left={14} /> : null}
             <div className="row">
               <span className="row-label">{t.label}</span>
-              {t.creator ? (
+              {t.error ? (
+                <span className="perm-state">нет доступа</span>
+              ) : t.creator ? (
                 <span className="perm-state">владелец</span>
               ) : !t.present ? (
                 <span className="perm-state">не в чате</span>
+              ) : t.admin && !t.canEdit ? (
+                <span className="perm-state">админ, выдал не бот</span>
               ) : t.admin ? (
                 <button type="button" className="perm-pill on" disabled={busy} onClick={() => run('admin.revoke', { target: t.key })}>
                   Админ
@@ -120,7 +124,9 @@ export function ResidentProfile() {
           <div className="card">
             <div className="row">
               <span className="row-label">Тег в чате</span>
-              {!tagTarget.present ? (
+              {tagTarget.error ? (
+                <span className="perm-state">нет доступа</span>
+              ) : !tagTarget.present ? (
                 <span className="perm-state">не в чате</span>
               ) : tagTarget.tag ? (
                 <button type="button" className="perm-pill on" disabled={busy} onClick={() => run('admin.tag', { on: false })}>

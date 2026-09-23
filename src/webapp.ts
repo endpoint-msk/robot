@@ -907,8 +907,10 @@ type AdminTargetStatus = {
     present: boolean
     creator: boolean
     admin: boolean
+    canEdit: boolean
     canTag: boolean
     tag: string | null
+    error: string | null
 }
 
 /**
@@ -2871,12 +2873,20 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             const state = await readMemberState(client, target.chatId, targetUser)
+            if (state.error) {
+                sendError(res, 502, 'telegram_error', `Не удалось узнать статус в «${target.label}» (${state.error}). Бот должен быть админом цели.`)
+                return
+            }
             if (!state.present) {
                 sendError(res, 409, 'not_in_chat', `Резидента нет в «${target.label}» — попросите его зайти и повторите.`)
                 return
             }
             if (state.creator) {
                 sendError(res, 409, 'is_creator', 'Это владелец чата — его права меняет только Telegram.')
+                return
+            }
+            if (!state.canEdit) {
+                sendError(res, 409, 'not_editable', `Админку в «${target.label}» выдал не бот — поменять её может только тот, кто выдал, или владелец.`)
                 return
             }
             try {
@@ -2901,6 +2911,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             const state = await readMemberState(client, target.chatId, targetUser)
+            if (state.error) {
+                sendError(res, 502, 'telegram_error', `Не удалось узнать статус в «${target.label}» (${state.error}). Бот должен быть админом цели.`)
+                return
+            }
             if (!state.present) {
                 sendError(res, 409, 'not_in_chat', `Резидента нет в «${target.label}» — попросите его зайти и повторите.`)
                 return

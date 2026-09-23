@@ -338,10 +338,12 @@ export type AdminTargetStatus = {
   present: boolean
   creator: boolean
   admin: boolean
+  canEdit: boolean
   /** В этой цели можно ставить member tag (только «чат»). */
   canTag: boolean
   /** Текущий тег (поле rank). null — нет. */
   tag: string | null
+  error: string | null
 }
 
 export type AdminStatus = { userId: number; targets: AdminTargetStatus[] }
