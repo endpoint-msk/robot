@@ -2092,6 +2092,7 @@ body.busy #busy-overlay { display: flex; }
     color: var(--text);
     overflow-wrap: anywhere;
 }
+.route-sub { font-size: 14px; color: var(--text-2); margin-top: 1px; }
 .route-copy {
     width: 34px;
     height: 34px;

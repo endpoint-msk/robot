@@ -13,6 +13,7 @@ import { Screen } from '../components/Screen'
 
 /** Адрес нужен и на карточке визита — там он и есть ответ на «куда идти». */
 export const ADDRESS = 'ул. Литвина-Седого, 7'
+export const ENTRANCE = '3 подъезд'
 
 const METRO = [
   { icon: '/metro-mck.webp', line: 'МЦК', station: 'Шелепиха' },
@@ -187,6 +188,7 @@ export function Route() {
           <div className="route-address-main">
             <div className="route-label">Адрес</div>
             <div className="route-value">{ADDRESS}</div>
+            <div className="route-sub">{ENTRANCE}</div>
           </div>
           <div className="row-right">
             <div className={'route-copy' + (copied ? ' done' : '')}>
