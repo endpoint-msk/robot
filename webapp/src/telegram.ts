@@ -5,6 +5,8 @@ interface TelegramWebApp {
   initData: string
   initDataUnsafe?: { user?: { id?: number; allows_write_to_pm?: boolean }; start_param?: string }
   colorScheme?: 'light' | 'dark'
+  /** 'ios' | 'android' | 'macos' | 'tdesktop' | 'weba' | 'webk' | ... */
+  platform?: string
   ready(): void
   expand(): void
   disableVerticalSwipes?(): void
@@ -13,6 +15,7 @@ interface TelegramWebApp {
   openLink(url: string): void
   openTelegramLink(url: string): void
   requestWriteAccess?(callback: (granted: boolean) => void): void
+  switchInlineQuery?(query: string, chooseChatTypes?: string[]): void
   onEvent(event: string, callback: () => void): void
   HapticFeedback?: { notificationOccurred(kind: string): void; selectionChanged?(): void }
   BackButton: { show(): void; hide(): void; onClick(callback: () => void): void }
@@ -58,6 +61,33 @@ export function openUrl(url: string): void {
     /* не в Telegram или старый клиент */
   }
   window.open(url, '_blank', 'noopener')
+}
+
+/** Раздел бота по диплинку `t.me/<бот>?start=<раздел>`: параметр разбирает меню бота (src/menu.ts). */
+export function openBotSection(bot: string, section: string): void {
+  openUrl(`https://t.me/${bot}?start=${encodeURIComponent(section)}`)
+}
+
+/** Инлайн бота в чате, который человек выберет сам. false: клиент так не умеет. */
+export function switchInline(): boolean {
+  try {
+    if (tg?.switchInlineQuery) {
+      tg.switchInlineQuery('', ['users', 'groups', 'channels'])
+      return true
+    }
+  } catch {
+    /* старый клиент */
+  }
+  return false
+}
+
+/** Цвет шапки Telegram. Только #RRGGBB: rgba и имена цветов понимают не все клиенты. */
+export function setHeaderColor(hex: string): void {
+  try {
+    tg?.setHeaderColor(hex)
+  } catch {
+    /* старый клиент */
+  }
 }
 
 // Профиль открывается только по @нику: ссылки t.me на человека без ника не существует.

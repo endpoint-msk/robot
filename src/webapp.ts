@@ -162,6 +162,14 @@ import {
 } from './stats.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { audit } from './audit.js'
+import {
+    doorCodeOf,
+    isValidDoorCode,
+    MAX_DOOR_NOTE_LENGTH,
+    normalizeDoorCode,
+    setDoorCode,
+} from './door.js'
+import { markOnboardingDone, onboardingOf, shouldShowOnboarding } from './onboarding.js'
 import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -371,6 +379,8 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.history': 'read',
     'dues.person': 'read',
     'event.apps': 'read',
+    'onboarding.done': 'write',
+    'door.set': 'write',
 
     'rules.accept': 'write',
     'event.apply.edit': 'write',
@@ -429,6 +439,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     reviewers: 'heavy',
     'event.people': 'heavy',
     'admin.residents': 'heavy',
+    'onboarding.people': 'heavy',
     'admin.status': 'heavy',
     'admin.grant': 'heavy',
     'admin.revoke': 'heavy',
@@ -599,6 +610,10 @@ export type WebappDeps = {
     boardToken: string | null
     /** Цели выдачи прав резиденту (dev): «чат», канал анонсов, лайв-канал. Пусто — раздел скрыт. */
     adminTargets: AdminTarget[]
+    /** Подключён ли принтер (PRINTER_URL): без него знакомство не зовёт в /printer. */
+    hasPrinter: boolean
+    /** Бот, как его видят в чатах: ник для диплинков из знакомства, имя для сцен в нём. */
+    bot: { username: string | null; name: string }
 }
 
 type ApiContext = WebappDeps & {
@@ -1038,7 +1053,27 @@ const buildBootstrap = (ctx: ApiContext) => {
         // короткий (десяток человек), поэтому едет в bootstrap, а не отдельной ручкой —
         // так все мутации обновляют экран одним ответом, как везде.
         ...(resident ? { dues: duesSnapshot(ctx) } : {}),
+        // Знакомство с ботом: открыть ли его само и что показывать в его шагах.
+        ...(resident
+            ? {
+                onboarding: {
+                    show: shouldShowOnboarding(storage, user.userId),
+                    joinedAt: onboardingOf(storage, user.userId)?.joinedAt ?? null,
+                    printer: ctx.hasPrinter,
+                    bot: ctx.bot.username,
+                    botName: ctx.bot.name,
+                },
+            }
+            : {}),
+        // Код домофона - ключ от подъезда: только резидентам и дев-аккаунтам, которые
+        // его правят. Гостю не уходит никогда.
+        ...(resident || isDevUser(ctx) ? { door: doorView(ctx) } : {}),
     }
+}
+
+const doorView = (ctx: ApiContext) => {
+    const door = doorCodeOf(ctx.storage)
+    return door ? { code: door.code, note: door.note } : null
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,6 +1096,7 @@ const AUDITED = new Set([
     'announce.send', 'stats.residentSince',
     'admin.grant', 'admin.revoke', 'admin.tag',
     'dev.seed', 'dev.update', 'dev.delete',
+    'onboarding.done', 'door.set',
 ])
 
 /** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
@@ -1230,6 +1266,11 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
         }
         case 'admin.tag':
             return `${body.on === true ? 'поставил' : 'снял'} тег резидента — ${idOf(body.userId)}`
+        case 'onboarding.done':
+            return 'прошёл знакомство с ботом'
+        // Сам код в журнал не пишем: ключ от подъезда не должен оседать в файлах на сервере.
+        case 'door.set':
+            return strOf(body.code).trim() ? 'поменял код домофона' : 'убрал код домофона'
         default:
             return null
     }
@@ -2494,6 +2535,50 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 })
                 syncBoard()
             }
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // --- Знакомство с ботом ---------------------------------------------------
+
+        // Люди для сот на обложке: все резиденты, кроме самого человека. «В спейсе» -
+        // только у отметившихся с ником: отметка «без ника» прячет, кто внутри, и
+        // подпись в сотах не должна её раскрывать.
+        case 'onboarding.people': {
+            if (!requireResident()) return
+            const { users } = await residents.list()
+            const presence = storage.get().presence
+            const people = users
+                .filter((u) => u.userId !== user.userId)
+                .map((u) => ({ ...userView(u), inside: (presence[String(u.userId)]?.username ?? null) !== null }))
+            // Сколько внутри всего, вместе с отметками «без ника»: это число и так
+            // стоит на доске в чате, а сцена знакомства повторяет доску.
+            sendJson(res, 200, { people, insideTotal: Object.keys(presence).length })
+            return
+        }
+
+        case 'onboarding.done': {
+            if (!requireResident()) return
+            await markOnboardingDone(storage, user.userId)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Код домофона правит только dev: это ключ от подъезда, и право его менять
+        // незачем раздавать всем резидентам. Пустой код снимает строку совсем.
+        case 'door.set': {
+            if (!requireDev()) return
+            const code = normalizeDoorCode(typeof body.code === 'string' ? body.code : '')
+            const note = (typeof body.note === 'string' ? body.note : '').replace(/\s+/g, ' ').trim()
+            if (code && !isValidDoorCode(code)) {
+                sendError(res, 400, 'bad_code', 'Код: цифры и буквы клавиш панели, до 16 символов.')
+                return
+            }
+            if (note.length > MAX_DOOR_NOTE_LENGTH) {
+                sendError(res, 400, 'bad_note', `Подсказка: не длиннее ${MAX_DOOR_NOTE_LENGTH} символов.`)
+                return
+            }
+            await setDoorCode(storage, code, note, user)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }

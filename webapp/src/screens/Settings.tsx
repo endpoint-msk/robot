@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import { action, api } from '../api'
+import { action, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
-import { confirmDialog, showAlert } from '../modals'
+import { confirmDialog } from '../modals'
 import { push, setTheme, useStore } from '../store'
 import { haptic, openUrl } from '../telegram'
 import type { NotifyPrefs, Settings as SettingsData, ThemeChoice } from '../types'
@@ -111,15 +111,8 @@ function CalendarSection() {
           onClick={async () => {
             if (busy) return
             setBusy(true)
-            try {
-              const { token } = await api<{ token: string }>('calendar.link')
-              haptic('success')
-              openUrl(`${location.origin}/events-subscribe?token=${encodeURIComponent(token)}`)
-            } catch (err) {
-              showAlert((err as Error).message)
-            } finally {
-              setBusy(false)
-            }
+            await subscribeToEvents()
+            setBusy(false)
           }}
         >
           <div className="row-icon" style={{ background: 'var(--purple)' }}>
@@ -304,6 +297,14 @@ export function Settings() {
           <span className="row-label">
             Мой профиль
             <span className="row-sublabel">Права и интеграции</span>
+          </span>
+          {icons.chevron()}
+        </button>
+        <Sep left={14} />
+        <button type="button" className="row tappable" onClick={() => void openOnboarding()}>
+          <span className="row-label">
+            Знакомство с ботом
+            <span className="row-sublabel">Что умеет бот для резидентов</span>
           </span>
           {icons.chevron()}
         </button>

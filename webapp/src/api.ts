@@ -2,10 +2,10 @@
 // возвращающая свежий bootstrap: обновляет стор и перерисовывает экран.
 
 import { left as cooldownLeft, startCooldown } from './cooldown'
-import { setBusy, setData } from './store'
-import { haptic, initData } from './telegram'
+import { push, setBusy, setData } from './store'
+import { haptic, initData, openUrl } from './telegram'
 import { showAlert } from './modals'
-import { ApiError, type Bootstrap } from './types'
+import { ApiError, type Bootstrap, type OnboardingPeople } from './types'
 
 /** Сбой сети — такая же ошибка приложения, как и отказ сервера: без этого наружу
     летел техтекст браузера («Failed to fetch») и попадал прямо в алерт. */
@@ -112,4 +112,36 @@ export async function action(
   } finally {
     if (!quiet) setBusy(false)
   }
+}
+
+/**
+ * Подписка календаря на ивенты. Ссылка ведёт на `/events-subscribe`, а тот
+ * редиректит на неё же схемой `webcal://`: только так календарь заводит подписку,
+ * а не разово импортирует файл (из вебвью `webcal://` не открыть).
+ */
+export async function subscribeToEvents(): Promise<void> {
+  try {
+    const { token } = await api<{ token: string }>('calendar.link')
+    haptic('success')
+    openUrl(`${location.origin}/events-subscribe?token=${encodeURIComponent(token)}`)
+  } catch (err) {
+    showAlert((err as Error).message)
+  }
+}
+
+/** Люди для сот знакомства. Не загрузились - знакомство откроется и так, с вами одним в центре. */
+export async function loadOnboardingPeople(): Promise<OnboardingPeople> {
+  try {
+    return await api<OnboardingPeople>('onboarding.people')
+  } catch {
+    return { people: [], insideTotal: 0 }
+  }
+}
+
+/** Знакомство из настроек: поверх текущего экрана, «назад» с обложки вернёт обратно. */
+export async function openOnboarding(): Promise<void> {
+  setBusy(true)
+  const people = await loadOnboardingPeople()
+  setBusy(false)
+  push('onboarding', people)
 }

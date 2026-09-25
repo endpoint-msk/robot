@@ -10,6 +10,8 @@ import {
     renderPresenceText,
 } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
+import { doorAlertText, doorCodeOf } from './door.js'
+import { inviteOnStart } from './onboarding.js'
 import {
     ACTIVE_STATES,
     fetchPrinterStatus,
@@ -31,10 +33,14 @@ const CB_MAC = 'menu:mac'
 const CB_PRINTER = 'menu:printer'
 const CB_PRINTER_PREVIEW = 'menu:printer:preview'
 const CB_PRINTER_CAMERA = 'menu:printer:camera'
+const CB_DOOR = 'menu:door'
 
 const BACK_ROW = [BotKeyboard.callback('⬅️ Назад', CB_ROOT)]
 
-/** Корневое меню. Галочка у «Отметиться» отражает, отмечен ли резидент. Принтер — только если подключён. */
+/**
+ * Корневое меню. Галочка у «Отметиться» отражает, отмечен ли резидент. Принтер - только
+ * если подключён, домофон - только если код задан.
+ */
 const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean, webappUrl: string | null) => {
     const present = storage.get().presence[String(userId)] !== undefined
     const rows: Parameters<typeof BotKeyboard.inline>[0] = [
@@ -43,6 +49,7 @@ const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean, web
         [BotKeyboard.callback('Авто-отметка по MAC', CB_MAC)],
     ]
     if (hasPrinter) rows.push([BotKeyboard.callback('3D-принтер', CB_PRINTER)])
+    if (doorCodeOf(storage)) rows.push([BotKeyboard.callback('Домофон', CB_DOOR)])
     // web_app-кнопка (в личке разрешена): миниапп с заявками гостей на визит.
     if (webappUrl) rows.push([BotKeyboard.webView('🚪 Хостинг гостей', webappUrl)])
     return BotKeyboard.inline(rows)
@@ -208,7 +215,43 @@ export const registerMenuHandlers = (
     const { client, storage, residents, printerUrl, printerAuth, webappUrl } = deps
     const hasPrinter = printerUrl !== null
 
-    const openMenu = async (msg: Parameters<Parameters<Dispatcher['onNewMessage']>[1]>[0]) => {
+    type MenuMessage = Parameters<Parameters<Dispatcher['onNewMessage']>[1]>[0]
+
+    /**
+     * Раздел меню по диплинку `t.me/<бот>?start=<раздел>`: так в него ведут строки
+     * знакомства в миниаппе. false - раздела нет, открываем корень.
+     */
+    const openSection = async (msg: MenuMessage, userId: number, section: string): Promise<boolean> => {
+        switch (section) {
+            case 'presence': {
+                const s = presenceSection(storage, userId)
+                await msg.answerText(html(s.text), { replyMarkup: s.keyboard, disableWebPreview: true })
+                return true
+            }
+            case 'inside':
+                await msg.answerText(html(renderPresenceText(storage)), {
+                    replyMarkup: BotKeyboard.inline([BACK_ROW]),
+                    disableWebPreview: true,
+                })
+                return true
+            case 'printer': {
+                if (printerUrl === null) return false
+                const screen = await buildPrinterScreen(printerUrl, printerAuth, 'preview')
+                if (screen.kind === 'text') {
+                    await msg.answerText(html(screen.text), { replyMarkup: screen.keyboard, disableWebPreview: true })
+                } else {
+                    await msg.answerMedia(InputMedia.photo(screen.photo, { caption: html(screen.caption) }), {
+                        replyMarkup: screen.keyboard,
+                    })
+                }
+                return true
+            }
+            default:
+                return false
+        }
+    }
+
+    const openMenu = async (msg: MenuMessage) => {
         if (!msg.sender || msg.sender.type !== 'user') return
         const adminChats = await residents.presenceChats(msg.sender.id)
         if (adminChats.length === 0) {
@@ -223,6 +266,9 @@ export const registerMenuHandlers = (
             await msg.answerText('Этот бот доступен только резидентам (участникам чата резидентов).')
             return
         }
+        await inviteOnStart(client, storage, msg.sender.id, webappUrl)
+        const section = msg.text.trim().split(/\s+/)[1] ?? ''
+        if (section && (await openSection(msg, msg.sender.id, section))) return
         await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter, webappUrl) })
     }
 
@@ -309,6 +355,13 @@ export const registerMenuHandlers = (
             case CB_MAC: {
                 await replaceScreen(ctx, { kind: 'text', text: macSection(storage, userId), keyboard: macKeyboard() })
                 await ctx.answer({})
+                return
+            }
+            // Всплывающим окном, а не сообщением: окно исчезает, и в истории лички
+            // (её тоже скриншотят) код не остаётся.
+            case CB_DOOR: {
+                const door = doorCodeOf(storage)
+                await ctx.answer({ text: door ? doorAlertText(door) : 'Код домофона пока не задан.', alert: true })
                 return
             }
             case CB_PRINTER:

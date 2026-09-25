@@ -40,6 +40,7 @@ export type ScreenName =
   | 'residents'
   | 'residentProfile'
   | 'announce'
+  | 'onboarding'
 
 export type NavParams = Record<string, any>
 export type NavEntry = { name: ScreenName; params: NavParams }
@@ -103,6 +104,14 @@ export function pop(): void {
 export function resetRoot(): void {
   const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
   set({ stack: [{ name: root, params: {} }], navId: state.navId + 1, anim: 'in-fade' })
+}
+
+/**
+ * Знакомство, открытое само, встаёт корнем стека: с обложки «назад» вести некуда,
+ * и Telegram показывает на её месте «Закрыть».
+ */
+export function openOnboardingRoot(params: NavParams): void {
+  set({ stack: [{ name: 'onboarding', params }], navId: state.navId + 1, anim: 'in-fade' })
 }
 
 /** Новая заявка: до первой из них гость проходит через экран правил (сервер это тоже проверяет). */

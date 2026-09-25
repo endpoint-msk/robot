@@ -40,6 +40,7 @@ import { DevEdit } from './screens/DevEdit'
 import { Residents } from './screens/Residents'
 import { ResidentProfile } from './screens/ResidentProfile'
 import { Announce } from './screens/Announce'
+import { Onboarding } from './screens/Onboarding'
 
 const SCREENS: Record<ScreenName, ComponentType> = {
   overview: Overview,
@@ -74,6 +75,7 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   residents: Residents,
   residentProfile: ResidentProfile,
   announce: Announce,
+  onboarding: Onboarding,
 }
 
 function BusyOverlay() {

@@ -10,6 +10,77 @@ import { DayChips, defaultTimeFor } from '../components/forms'
 import { Screen } from '../components/Screen'
 import { TimeField } from '../components/TimeField'
 
+/**
+ * Код домофона. Живёт в стейте бота, а не в коде: репозиторий публичный. Пустой
+ * код снимает строку с главной и кнопку из меню бота.
+ */
+function DoorSection() {
+  const { data } = useStore()
+  const door = data!.door ?? null
+  const [code, setCode] = useState(door?.code ?? '')
+  const [note, setNote] = useState(door?.note ?? '')
+  const dirty = code.replace(/\s+/g, '').toUpperCase() !== (door?.code ?? '') || note.trim() !== (door?.note ?? '')
+
+  const save = async (nextCode: string, nextNote: string): Promise<void> => {
+    const res = await action('door.set', { code: nextCode, note: nextNote })
+    if (!res) return
+    haptic('success')
+    setCode(res.door?.code ?? '')
+    setNote(res.door?.note ?? '')
+  }
+
+  return (
+    <>
+      <SectionTitle>Домофон</SectionTitle>
+      <div className="card">
+        <div className="row">
+          <input
+            className="text-input mono"
+            placeholder="Код с панели"
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={16}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+        </div>
+        <Sep left={14} />
+        <div className="row">
+          <input
+            className="text-input"
+            placeholder="Подсказка: подъезд, панель"
+            autoComplete="off"
+            maxLength={60}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+        <div className="inline-form-actions">
+          <button className="small-btn blue" disabled={!dirty} onClick={() => void save(code, note)}>
+            Сохранить
+          </button>
+          {door ? (
+            <button
+              className="small-btn gray"
+              onClick={async () => {
+                const ok = await confirmDialog('Убрать код домофона? Строка пропадёт с главной и из меню бота.', {
+                  confirmLabel: 'Убрать код',
+                  cancelLabel: 'Оставить',
+                  destructive: true,
+                })
+                if (ok) await save('', '')
+              }}
+            >
+              Убрать
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // Dev-меню: сид фейковых заявок + правка/удаление любых заявок. Доступ только у
 // DEV_USER_IDS (сервер проверяет сам, чип лишь прячет вход).
 export function Dev() {
@@ -59,6 +130,7 @@ export function Dev() {
           {icons.chevron()}
         </button>
       </div>
+      <DoorSection />
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={selected} onSelect={setSelected} />
       <SectionTitle>Детали</SectionTitle>

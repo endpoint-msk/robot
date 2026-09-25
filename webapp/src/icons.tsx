@@ -259,6 +259,76 @@ export const icons = {
       <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   ),
+  /** Дверь подъезда: строка домофона. */
+  door: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M5 17.2V4.1c0-.7.6-1.3 1.3-1.3h7.4c.7 0 1.3.6 1.3 1.3v13.1M3 17.2h14" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="10.4" r="1.1" fill={color} />
+    </svg>
+  ),
+  /** Перечёркнутый глаз, «невидимка». Черта идёт поверх подложки цвета плашки. */
+  eyeOff: (size: number, color: string, plate: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" fill="none" stroke={color} strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="2.4" fill="none" stroke={color} strokeWidth="1.7" />
+      <path d="M3.5 3.5l13 13" stroke={plate} strokeWidth="4" strokeLinecap="round" />
+      <path d="M3.5 3.5l13 13" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
+  /** Стрелки вверх-вниз у всплывающего меню iOS. */
+  updown: (): ReactElement => (
+    <svg width="10" height="16" viewBox="0 0 10 16">
+      <path d="M2 6l3-3 3 3M2 10l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  /** Индикатор подключения из настроек iOS. */
+  spinner: (size: number): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <g stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M10 2.2v3.6" />
+        <path d="M15.5 4.5l-2.5 2.5" opacity=".87" />
+        <path d="M17.8 10h-3.6" opacity=".74" />
+        <path d="M15.5 15.5L13 13" opacity=".61" />
+        <path d="M10 17.8v-3.6" opacity=".48" />
+        <path d="M4.5 15.5L7 13" opacity=".36" />
+        <path d="M2.2 10h3.6" opacity=".25" />
+        <path d="M4.5 4.5L7 7" opacity=".16" />
+      </g>
+    </svg>
+  ),
+  /** Сила сигнала Wi-Fi в строке сети. */
+  wifiFull: (): ReactElement => (
+    <svg width="17" height="13" viewBox="0 0 18 13">
+      <path d="M9 12.6l2.6-2.9a3.7 3.7 0 0 0-5.2 0zM4.4 7.5a6.6 6.6 0 0 1 9.2 0l1.7-1.9a9.2 9.2 0 0 0-12.6 0zM.7 3.3a12.2 12.2 0 0 1 16.6 0L18 2.5A13.4 13.4 0 0 0 0 2.5z" fill="currentColor" />
+    </svg>
+  ),
+  /** Замок защищённой сети. */
+  lockSmall: (): ReactElement => (
+    <svg width="11" height="13" viewBox="0 0 14 16">
+      <rect x="1.5" y="6.5" width="11" height="8" rx="2" fill="currentColor" />
+      <path d="M4 6.8V4.9a3 3 0 0 1 6 0v1.9" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  ),
+  /** «i» в кружке: кнопка подробностей сети в iOS. */
+  infoCircle: (size: number): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 9v5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="10" cy="6.2" r="1.05" fill="currentColor" />
+    </svg>
+  ),
+  /** Бумажный самолётик Telegram на значке уведомления. */
+  plane: (): ReactElement => (
+    <svg width="9" height="9" viewBox="0 0 12 12">
+      <path d="M1.2 5.6l8.9-3.5c.4-.2.8.2.7.6L9.3 9.9c-.1.4-.6.6-.9.3L6.2 8.5 5 9.7c-.2.2-.5.1-.5-.2V7.8l3.8-3.6-4.7 2.9L1.3 6.4c-.4-.2-.4-.7-.1-.8z" fill="#fff" />
+    </svg>
+  ),
+  /** Две галочки «прочитано» у исходящего сообщения. */
+  ticks: (): ReactElement => (
+    <svg width="15" height="10" viewBox="0 0 18 12">
+      <path d="M1.5 6.5l3 3 6-7M7.5 9.5l.5.5 6.5-8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   pencil: (): ReactElement => (
     <svg width="17" height="17" viewBox="0 0 20 20">
       <path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" fill="none" stroke="#007aff" strokeWidth="1.7" strokeLinejoin="round" />

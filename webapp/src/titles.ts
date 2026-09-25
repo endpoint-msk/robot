@@ -51,6 +51,8 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return 'Заявки на ивент'
     case 'announce':
       return 'Анонс'
+    case 'onboarding':
+      return 'Знакомство'
     case 'dev':
       return 'Dev'
     case 'devEdit':

@@ -2,13 +2,13 @@
 // Соответствует boot() из старого миниаппа.
 
 import { useCallback, useEffect, useState } from 'react'
-import { api } from './api'
+import { api, loadOnboardingPeople } from './api'
 import { App } from './App'
 import { Swap } from './components/Swap'
 import { BootSkeleton } from './components/skeleton'
 import { icons } from './icons'
 import { closeTopOverlay } from './overlays'
-import { bump, getState, pop, push, setData, setPerspective } from './store'
+import { bump, getState, openOnboardingRoot, pop, push, setData, setPerspective } from './store'
 import { applyTheme } from './theme'
 import { tg } from './telegram'
 import { ApiError, type Bootstrap } from './types'
@@ -63,6 +63,15 @@ type Phase = 'notg' | 'loading' | 'ready' | 'error'
 const wantsEventDraft = (): boolean => {
   try {
     return new URLSearchParams(location.search).get('draft') === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Кнопка «Открыть знакомство» из лички ведёт сюда с ?onboarding=1 (см. src/onboarding.ts). */
+const wantsOnboarding = (): boolean => {
+  try {
+    return new URLSearchParams(location.search).get('onboarding') === '1'
   } catch {
     return false
   }
@@ -148,26 +157,36 @@ export function Root() {
   useEffect(() => {
     if (!tg || !tg.initData) return
     const wantsDraft = wantsEventDraft()
+    const wantsIntro = wantsOnboarding()
     let cancelled = false
-    api<Bootstrap>('bootstrap')
-      .then((data) => {
-        if (cancelled) return
-        setData(data)
-        setPerspective(data.me.isResident ? 'resident' : 'guest')
-        // Кнопка «Создать ивент» из лички ведёт сюда с ?draft=1 — открываем редактор
-        // с уже вставленным текстом поста. Проверяем и саму заготовку: её могли
-        // отработать с другого устройства, и тогда открывать нечего.
-        if (wantsDraft && data.me.isResident && data.eventDraft) {
-          push('event', { fromDraft: true, backLabel: 'Обзор' })
-        }
-        setPhase('ready')
-      })
-      .catch((e) => {
+    void (async () => {
+      let data: Bootstrap
+      try {
+        data = await api<Bootstrap>('bootstrap')
+      } catch (e) {
         if (cancelled) return
         setErr((e as Error).message)
         setErrCode((e as ApiError).code)
         setPhase('error')
-      })
+        return
+      }
+      if (cancelled) return
+      setData(data)
+      setPerspective(data.me.isResident ? 'resident' : 'guest')
+      // Кнопка «Создать ивент» из лички ведёт сюда с ?draft=1 — открываем редактор
+      // с уже вставленным текстом поста. Проверяем и саму заготовку: её могли
+      // отработать с другого устройства, и тогда открывать нечего.
+      if (wantsDraft && data.me.isResident && data.eventDraft) {
+        push('event', { fromDraft: true, backLabel: 'Обзор' })
+      } else if (data.me.isResident && (wantsIntro || data.onboarding?.show)) {
+        // Знакомство открывается само один раз, пока его не прошли, и по кнопке из
+        // лички. Люди для сот грузятся до показа: обложка без них пустая.
+        const people = await loadOnboardingPeople()
+        if (cancelled) return
+        openOnboardingRoot(people)
+      }
+      setPhase('ready')
+    })()
 
     return () => {
       cancelled = true

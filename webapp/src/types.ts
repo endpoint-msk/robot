@@ -393,7 +393,35 @@ export type Bootstrap = {
   eventDraft?: EventDraft | null
   /** Взносы текущего периода — только резидентам. null: выключены или сборов ещё не было. */
   dues?: DuesSnapshot | null
+  /** Знакомство с ботом. Только резидентам. */
+  onboarding?: OnboardingInfo
+  /** Код домофона. Только резидентам и dev; null: не задан. */
+  door?: DoorCode | null
 }
+
+export type OnboardingInfo = {
+  /** Открыть знакомство само: человек его ещё не проходил. */
+  show: boolean
+  /** Когда бот увидел вступление в чат резидентов. null: раньше знакомства или пока бот лежал. */
+  joinedAt: string | null
+  /** Подключён ли принтер: только тогда шаг «Бот» зовёт в /printer. */
+  printer: boolean
+  /** Ник бота для диплинков. */
+  bot: string | null
+  /** Имя бота, как его видно в чате. */
+  botName: string
+}
+
+/** Резидент в сотах на обложке знакомства. inside: отмечен в спейсе с ником. */
+export type OnboardingPerson = User & { inside: boolean }
+export type OnboardingPeople = {
+  people: OnboardingPerson[]
+  /** Сколько сейчас внутри всего, вместе с отметками «без ника». */
+  insideTotal: number
+}
+
+/** Код домофона и подсказка к нему (подъезд, панель). */
+export type DoorCode = { code: string; note: string }
 
 /** Статус взноса: не отмечен, заявлен резидентом, подтверждён dev. */
 export type DuesStatus = 'none' | 'claimed' | 'paid'

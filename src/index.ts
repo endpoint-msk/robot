@@ -9,6 +9,7 @@ import { parseChatId, registerForwarder } from './forwarder.js'
 import { registerLiveChatGuard } from './livechat.js'
 import { registerEventIntake } from './event-intake.js'
 import { registerMenuHandlers } from './menu.js'
+import { registerOnboardingHandlers, startOnboardingSeeder } from './onboarding.js'
 import {
     normalizePrinterUrl,
     parsePrinterAuth,
@@ -191,6 +192,8 @@ const main = async () => {
         registerVisitReminderHandlers(dp, { client: tg, storage, allowedChats, tzOffsetMinutes: hostingTzOffset })
         // Инлайн резидента: доска спейса и ничьи заявки — отправкой в любой чат.
         registerInlineHandlers(dp, { storage, residents, tzOffsetMinutes: hostingTzOffset })
+        // Вступил в чат резидентов - бот сам зовёт в знакомство, оно живёт в миниаппе.
+        registerOnboardingHandlers(dp, { client: tg, storage, residents, residentsChatId, webappUrl: webappConfig.publicUrl })
     }
     // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
     // поэтому без WEBAPP_URL приёмник бесполезен.
@@ -252,6 +255,8 @@ const main = async () => {
             githubRepo,
             boardToken,
             adminTargets,
+            hasPrinter: printerUrl !== null,
+            bot: { username: self.username ?? null, name: self.displayName },
         })
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
@@ -373,6 +378,9 @@ const main = async () => {
     const visitReminders = webappConfig !== null
         ? startVisitReminderScheduler(tg, storage, hostingTzOffset, webappConfig.publicUrl)
         : null
+    // Знакомство живёт в миниаппе. Включается один раз: всех нынешних резидентов
+    // записываем прошедшими, иначе оно разом открылось бы у всего спейса.
+    const onboardingSeeder = webappConfig !== null ? startOnboardingSeeder(storage, residents) : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
@@ -489,6 +497,7 @@ const main = async () => {
         presence.stop()
         hostingBoard?.stop()
         visitReminders?.stop()
+        onboardingSeeder?.stop()
         printerWatcher?.stop()
         macPoller?.stop()
         webappServer?.stop()

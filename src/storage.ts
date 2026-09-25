@@ -145,6 +145,9 @@ export class Storage {
             // первый же расчёт статистики на стейте из прошлой версии споткнётся.
             presenceStats: { days: parsed.presenceStats?.days ?? {} },
             residentSince: parsed.residentSince ?? {},
+            residentOnboarding: parsed.residentOnboarding ?? {},
+            onboardingSince: typeof parsed.onboardingSince === 'string' ? parsed.onboardingSince : '',
+            door: parsed.door ?? null,
         }
     }
 
