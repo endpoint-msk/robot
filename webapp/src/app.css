@@ -3145,8 +3145,11 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .ob-dots { position: absolute; z-index: 5; left: 0; right: 0; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
 .ob-dots i { width: 6px; height: 6px; border-radius: 3px; background: rgba(var(--sec), 0.2); }
 
-.ob-var-wrap { position: relative; }
-.ob-var-done { position: absolute; left: 0; right: 0; top: 0; opacity: 0; }
+.ob-var-wrap { position: relative; display: grid; }
+/* Варианты шага лежат стопкой в одной ячейке, а не абсолютом: иначе привязанный
+   вариант не входит в высоту слайда, и его нечем прокрутить. */
+.ob-var-wrap > .ob-var { grid-area: 1 / 1; min-width: 0; }
+.ob-var-done { opacity: 0; }
 .ob-text { padding: 22px 20px 0; }
 .ob-stage.cover + .ob-var-wrap .ob-text { padding-bottom: 14px; }
 .ob-title { margin: 0; font-size: 28px; line-height: 1.14; font-weight: 800; letter-spacing: -0.022em; }

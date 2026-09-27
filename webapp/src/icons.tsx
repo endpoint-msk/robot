@@ -298,7 +298,7 @@ export const icons = {
   ),
   /** Сила сигнала Wi-Fi в строке сети. */
   wifiFull: (): ReactElement => (
-    <svg width="17" height="13" viewBox="0 0 18 13">
+    <svg width="17" height="14" viewBox="0 -1.5 18 14.5">
       <path d="M9 12.6l2.6-2.9a3.7 3.7 0 0 0-5.2 0zM4.4 7.5a6.6 6.6 0 0 1 9.2 0l1.7-1.9a9.2 9.2 0 0 0-12.6 0zM.7 3.3a12.2 12.2 0 0 1 16.6 0L18 2.5A13.4 13.4 0 0 0 0 2.5z" fill="currentColor" />
     </svg>
   ),
