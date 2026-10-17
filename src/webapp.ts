@@ -70,6 +70,7 @@ import {
     updateHostingRequest,
     weekStartOf,
 } from './hosting.js'
+import { guestAttendPrefsFor } from './attend-alerts.js'
 import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
 import {
     notifyGuestHostChanged,
@@ -397,6 +398,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'note.set': 'write',
     notify: 'write',
     'notify.events': 'write',
+    'notify.attend': 'write',
     'calendar.link': 'write',
     'presence.log': 'write',
     'stats.residentSince': 'write',
@@ -1037,6 +1039,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         myRequests: requestsView(myRequests, user.userId),
         myPast: requestsView(myPast, user.userId),
         settings,
+        // Гостевая настройка, но едет всем: перспектива «гость» у дева читает этот же
+        // bootstrap, а сервер про перспективу не знает.
+        attendNotify: guestAttendPrefsFor(storage, user.userId),
         // Какой это по счёту визит человека - резидентская информация: она отвечает на
         // вопрос «кого я пускаю», а гостю чужая история визитов не полагается.
         ...(resident ? { guestStats: guestVisitStats(storage, today) } : {}),
@@ -2352,6 +2357,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const mode = body.mode === 'today' ? 'today' : 'all'
             await storage.update((s) => {
                 s.eventNotify[String(user.userId)] = { enabled, mode }
+            })
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Подписка гостя на отметки резидентов «я приду». Гейта резидентства нет: это
+        // гостевая настройка, рассылкой занимается attend-alerts.ts.
+        case 'notify.attend': {
+            const enabled = body.enabled === true
+            const mode = body.mode === 'week' ? 'week' : 'near'
+            await storage.update((s) => {
+                s.guestAttendNotify[String(user.userId)] = { enabled, mode }
             })
             sendJson(res, 200, buildBootstrap(ctx))
             return

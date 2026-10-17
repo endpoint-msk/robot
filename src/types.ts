@@ -78,6 +78,17 @@ export type State = {
      *  от заявок: это разные потоки, и один нужен не всем, кому нужен другой.
      *  Отсутствие записи = дефолт: включено, ивенты на любой день (см. DEFAULT_EVENT_NOTIFY). */
     eventNotify: Record<string, HostingNotifyPrefs>
+    /** Подписка гостей на отметки резидентов «я приду». Ключ - userId.
+     *  Отсутствие записи = выключено (см. DEFAULT_GUEST_ATTEND_NOTIFY). */
+    guestAttendNotify: Record<string, GuestAttendNotify>
+    /**
+     * Отметки «я приду», о которых гостям уже написали. Ключ - dateKey, значение -
+     * userId резидентов. Прошедшие дни чистятся при записи.
+     *
+     * Живёт отдельно от `hostingAttendance`, потому что должно пережить снятие отметки:
+     * иначе «приду / не приду / приду» рассылалось бы гостям на каждый тап.
+     */
+    hostingAttendAnnounced: Record<string, number[]>
     /** Закреплённая доска «кто сегодня в спейсе» по чатам (ключ — chatId как строка). */
     hostingBoard: Record<string, HostingBoardMessage>
     /** Чаты, где доска «кто сегодня в спейсе» отключена (ключ — chatId как строка).
@@ -716,6 +727,13 @@ export type HostingNotifyPrefs = {
     mode: 'today' | 'all'
 }
 
+/** Подписка гостя на отметки резидентов «я приду». */
+export type GuestAttendNotify = {
+    enabled: boolean
+    /** 'near' — отметки на сегодня и завтра; 'week' — на любой день окна обзора. */
+    mode: 'near' | 'week'
+}
+
 /** MAC-адреса устройств резидента для авто-отметок присутствия. */
 export type ResidentMacs = {
     userId: number
@@ -795,6 +813,8 @@ export const emptyState = (): State => ({
     hostingNotify: {},
     hostingRemindedDay: {},
     eventNotify: {},
+    guestAttendNotify: {},
+    hostingAttendAnnounced: {},
     hostingBoard: {},
     hostingBoardMuted: {},
     announceMuted: {},

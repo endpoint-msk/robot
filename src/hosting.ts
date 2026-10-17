@@ -1392,9 +1392,10 @@ export const listBlockedUsers = (storage: Storage): BlockedUser[] =>
     Object.values(storage.get().blockedUsers).sort((a, b) => b.at.localeCompare(a.at))
 
 /**
- * Блокирует участника: пишет запись в стейт, стирает все его заявки/отметки/присутствие
- * и банит во всех allowlist-чатах. Бан по чатам fire-and-safe: недоступный/уже вышедший
- * участник просто логируется и не роняет остальные чаты.
+ * Блокирует участника: пишет запись в стейт, стирает все его заявки/отметки/присутствие/
+ * подписку на отметки резидентов и банит во всех allowlist-чатах. Бан по чатам
+ * fire-and-safe: недоступный/уже вышедший участник просто логируется и не роняет
+ * остальные чаты.
  */
 export const blockUser = async (
     client: TelegramClient,
@@ -1419,6 +1420,7 @@ export const blockUser = async (
         }
         // Заметку о госте намеренно оставляем: она объясняет резидентам, почему он в блоке.
         delete s.presence[String(target.userId)]
+        delete s.guestAttendNotify[String(target.userId)]
     })
     for (const chatId of allowedChats) {
         try {

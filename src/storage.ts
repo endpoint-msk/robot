@@ -123,6 +123,8 @@ export class Storage {
             hostingNotify: parsed.hostingNotify ?? {},
             hostingRemindedDay: parsed.hostingRemindedDay ?? {},
             eventNotify: parsed.eventNotify ?? {},
+            guestAttendNotify: parsed.guestAttendNotify ?? {},
+            hostingAttendAnnounced: parsed.hostingAttendAnnounced ?? {},
             hostingBoard: parsed.hostingBoard ?? {},
             hostingBoardMuted: parsed.hostingBoardMuted ?? {},
             announceMuted: parsed.announceMuted ?? {},

@@ -34,6 +34,7 @@ import { setEventAnnounceLink } from './events.js'
 import { registerHostingInviteHandlers } from './hosting-invite.js'
 import { registerHostingTransferHandlers } from './hosting-transfer.js'
 import { registerVisitReminderHandlers, startVisitReminderScheduler } from './visit-reminder.js'
+import { startAttendAlertScheduler } from './attend-alerts.js'
 import { registerBackupHandlers, startBackupScheduler } from './backup.js'
 import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './dues.js'
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
@@ -378,6 +379,10 @@ const main = async () => {
     const visitReminders = webappConfig !== null
         ? startVisitReminderScheduler(tg, storage, hostingTzOffset, webappConfig.publicUrl)
         : null
+    // Гостям про отметки резидентов «я приду»: подписываются они в миниаппе.
+    const attendAlerts = webappConfig !== null
+        ? startAttendAlertScheduler(tg, storage, residents, devUserIds, hostingTzOffset, webappConfig.publicUrl)
+        : null
     // Знакомство живёт в миниаппе. Включается один раз: всех нынешних резидентов
     // записываем прошедшими, иначе оно разом открылось бы у всего спейса.
     const onboardingSeeder = webappConfig !== null ? startOnboardingSeeder(storage, residents) : null
@@ -497,6 +502,7 @@ const main = async () => {
         presence.stop()
         hostingBoard?.stop()
         visitReminders?.stop()
+        attendAlerts?.stop()
         onboardingSeeder?.stop()
         printerWatcher?.stop()
         macPoller?.stop()

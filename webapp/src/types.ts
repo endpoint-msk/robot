@@ -218,6 +218,8 @@ export type DayCapacity = {
 }
 
 export type NotifyPrefs = { enabled: boolean; mode: 'today' | 'all' }
+/** Подписка гостя на отметки резидентов «я приду»: на сегодня и завтра или на всю неделю. */
+export type AttendNotifyPrefs = { enabled: boolean; mode: 'near' | 'week' }
 export type MacEntry = { mac: string; label: string }
 
 export type Settings = {
@@ -381,8 +383,10 @@ export type Bootstrap = {
   myPast: HostingRequest[]
   /** Ключ - userId гостя. Только резидентам: чужая история визитов гостю не полагается. */
   guestStats?: Record<string, GuestVisitStats>
-  /** null у гостя: уведомления и MAC — только резидентам. */
+  /** null у гостя: уведомления о заявках и ивентах и MAC — только резидентам. */
   settings: Settings | null
+  /** Гостевая настройка, но приходит всем: её читает и дев в перспективе «гость». */
+  attendNotify: AttendNotifyPrefs
   /** create/edit возвращают ещё и саму созданную/изменённую заявку. */
   request?: HostingRequest
   /** Список заблокированных — только dev-аккаунтам (для дев-меню). */

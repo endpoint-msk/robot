@@ -193,5 +193,6 @@ export const dsFixture: Bootstrap = {
     macPresenceActive: true,
     logVisits: true,
   },
+  attendNotify: { enabled: false, mode: 'near' },
   notes: [guestNote],
 }

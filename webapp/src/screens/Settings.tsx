@@ -3,8 +3,8 @@ import { action, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
 import { confirmDialog } from '../modals'
 import { push, setTheme, useStore } from '../store'
-import { haptic, openUrl } from '../telegram'
-import type { NotifyPrefs, Settings as SettingsData, ThemeChoice } from '../types'
+import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
+import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -33,38 +33,39 @@ function ThemeSection() {
   )
 }
 
-// Одна карточка на оба потока уведомлений (заявки и ивенты): у них общая форма
-// настройки — тумблер + выбор дня, — но разные ручки и разные дефолты на сервере.
-function NotifyCard({
+type NotifyOption<M extends string> = { mode: M; label: string; sublabel: string }
+
+// Одна карточка на все потоки уведомлений (заявки, ивенты, отметки резидентов для
+// гостя): у них общая форма настройки — тумблер + выбор дней, — но разные ручки и
+// разные дефолты на сервере.
+function NotifyCard<M extends string>({
   prefs,
   method,
   title,
   color,
-  todaySublabel,
-  allLabel,
-  allSublabel,
+  options,
+  beforeEnable,
 }: {
-  prefs: NotifyPrefs
+  prefs: { enabled: boolean; mode: M }
   method: string
   title: string
   color: string
-  todaySublabel: string
-  allLabel: string
-  allSublabel: string
+  options: NotifyOption<M>[]
+  beforeEnable?: () => Promise<unknown>
 }) {
-  const radioRow = (label: string, sublabel: string, mode: 'today' | 'all'): ReactNode => (
+  const radioRow = (o: NotifyOption<M>): ReactNode => (
     <button
       type="button"
       className="row tappable"
       onClick={() => {
-        if (prefs.mode !== mode) void action(method, { enabled: prefs.enabled, mode }, { quiet: true })
+        if (prefs.mode !== o.mode) void action(method, { enabled: prefs.enabled, mode: o.mode }, { quiet: true })
       }}
     >
       <span className="row-label">
-        {label}
-        <span className="row-sublabel">{sublabel}</span>
+        {o.label}
+        <span className="row-sublabel">{o.sublabel}</span>
       </span>
-      <div className="radio-check">{prefs.mode === mode ? icons.check(16, '#007aff', 2.2) : null}</div>
+      <div className="radio-check">{prefs.mode === o.mode ? icons.check(16, '#007aff', 2.2) : null}</div>
     </button>
   )
   return (
@@ -77,16 +78,46 @@ function NotifyCard({
         <Switch
           label={title}
           on={prefs.enabled}
-          onToggle={() => action(method, { enabled: !prefs.enabled, mode: prefs.mode }, { quiet: true })}
+          onToggle={async () => {
+            if (!prefs.enabled && beforeEnable) await beforeEnable()
+            return action(method, { enabled: !prefs.enabled, mode: prefs.mode }, { quiet: true })
+          }}
         />
       </div>
       <Sep left={54} />
       <div className={prefs.enabled ? undefined : 'rows-disabled'}>
-        {radioRow('Только на сегодня', todaySublabel, 'today')}
-        <Sep left={14} />
-        {radioRow(allLabel, allSublabel, 'all')}
+        {options.map((o, i) => (
+          <Fragment key={o.mode}>
+            {i > 0 ? <Sep left={14} /> : null}
+            {radioRow(o)}
+          </Fragment>
+        ))}
       </div>
     </div>
+  )
+}
+
+function AttendNotifySection() {
+  const { data } = useStore()
+  return (
+    <>
+      <SectionTitle>Уведомления</SectionTitle>
+      <NotifyCard
+        prefs={data!.attendNotify}
+        method="notify.attend"
+        title="Придут резиденты"
+        color="var(--green)"
+        options={[
+          { mode: 'near', label: 'Сегодня и завтра', sublabel: 'Кто собрался на ближайшие два дня' },
+          { mode: 'week', label: 'Вся неделя', sublabel: 'Кто собрался на любой день' },
+        ]}
+        // Гость, открывший миниапп из чата без /start, иначе подписался бы на тишину:
+        // писать ему в личку бот не может.
+        beforeEnable={async () => {
+          if (!botCanWrite()) await requestWriteAccess()
+        }}
+      />
+    </>
   )
 }
 
@@ -265,9 +296,10 @@ function MacCard({ s }: { s: SettingsData }) {
 }
 
 export function Settings() {
-  // s === null у гостя: уведомления и MAC — только резидентам, а тема нужна всем.
-  // Сервер присылает settings по реальному резидентству и про перспективу не знает,
-  // поэтому дев-вид «как гость» гасим здесь — иначе он бы не был честным.
+  // s === null у гостя: уведомления о заявках и ивентах и MAC — только резидентам, а
+  // тема нужна всем. Сервер присылает settings по реальному резидентству и про
+  // перспективу не знает, поэтому дев-вид «как гость» гасим здесь — иначе он бы не
+  // был честным.
   const { data, perspective } = useStore()
   const s = perspective === 'guest' ? null : data!.settings
 
@@ -278,6 +310,7 @@ export function Settings() {
         <Header title="Настройки" />
         <ThemeSection />
         <CalendarSection />
+        <AttendNotifySection />
         <BuildSign />
       </Screen>
     )
@@ -317,9 +350,10 @@ export function Settings() {
         method="notify"
         title="Новые заявки"
         color="var(--orange)"
-        todaySublabel="Заявки на текущий день"
-        allLabel="Все заявки"
-        allSublabel="На любой день"
+        options={[
+          { mode: 'today', label: 'Только на сегодня', sublabel: 'Заявки на текущий день' },
+          { mode: 'all', label: 'Все заявки', sublabel: 'На любой день' },
+        ]}
       />
       <Footnote>Придут в личку бота. По умолчанию - только заявки на сегодня.</Footnote>
       <SectionTitle>Уведомления об ивентах</SectionTitle>
@@ -328,9 +362,10 @@ export function Settings() {
         method="notify.events"
         title="Новые ивенты"
         color="var(--purple)"
-        todaySublabel="Ивенты на текущий день"
-        allLabel="Все ивенты"
-        allSublabel="На любой день"
+        options={[
+          { mode: 'today', label: 'Только на сегодня', sublabel: 'Ивенты на текущий день' },
+          { mode: 'all', label: 'Все ивенты', sublabel: 'На любой день' },
+        ]}
       />
       <Footnote>Придут в личку бота, когда резидент заводит ивент. По умолчанию - на любой день.</Footnote>
       <SectionTitle>Авто-отметка по MAC</SectionTitle>
