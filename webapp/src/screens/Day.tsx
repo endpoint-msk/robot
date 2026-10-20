@@ -739,9 +739,6 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       render()
     }
 
-    // Листает весь экран, кроме строк заявок: у них свой свайп с действиями, и жест
-    // принадлежит строке. Касания у левого края не берём, там системный «назад» в iOS.
-    // Направление решается по первым 8px, вертикаль отдаётся прокрутке.
     // За краем недели резинка UIScrollView: в первые пиксели отзывчивая, дальше упирается.
     const edge = (raw: number, w: number): number => {
       const last = live.current.days.length - 1
@@ -750,6 +747,30 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       return raw
     }
 
+    // Ось жеста пальцем решается по touchmove, а не по pointer: при `touch-action: pan-y`
+    // браузер сам ведёт вертикальную составляющую, и наискось экран листался бы и
+    // прокручивался разом. Решили «вбок» — гасим прокрутку до конца жеста.
+    const isOwn = (t: EventTarget | null): boolean => !(t as Element).closest('.swipe-row, input, textarea')
+    let touch: { x: number; y: number; axis: 0 | 1 | 2 } | null = null
+    const onTouchStart = (e: TouchEvent): void => {
+      const t = e.touches[0]
+      touch = e.touches.length === 1 && t && isOwn(e.target) && t.clientX >= 20 ? { x: t.clientX, y: t.clientY, axis: 0 } : null
+    }
+    const onTouchMove = (e: TouchEvent): void => {
+      const t = e.touches[0]
+      if (!touch || !t) return
+      if (touch.axis === 0) {
+        const dx = Math.abs(t.clientX - touch.x)
+        const dy = Math.abs(t.clientY - touch.y)
+        if (dx < 6 && dy < 6) return
+        touch.axis = dx > dy ? 1 : 2
+      }
+      if (touch.axis === 1 && e.cancelable) e.preventDefault()
+    }
+
+    // Листает весь экран, кроме строк заявок: у них свой свайп с действиями, и жест
+    // принадлежит строке. Касания у левого края не берём, там системный «назад» в iOS.
+    // Направление решается по первым 8px, вертикаль отдаётся прокрутке.
     const vt = tracker()
     const onDown = (e: PointerEvent): void => {
       if (e.button > 0 || S.drag) return
@@ -766,7 +787,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       const dy = e.clientY - d.y0
       if (d.dir === 0) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
-        if (Math.abs(dy) >= Math.abs(dx)) {
+        if (touch ? touch.axis === 2 : Math.abs(dy) >= Math.abs(dx)) {
           S.drag = null
           return
         }
@@ -856,6 +877,8 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       render()
     })
 
+    root.addEventListener('touchstart', onTouchStart, { passive: true })
+    root.addEventListener('touchmove', onTouchMove, { passive: false })
     root.addEventListener('pointerdown', onDown)
     root.addEventListener('pointermove', onMove)
     root.addEventListener('pointerup', onUp)
@@ -872,6 +895,8 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       if (S.raf) cancelAnimationFrame(S.raf)
       S.raf = 0
       ro.disconnect()
+      root.removeEventListener('touchstart', onTouchStart)
+      root.removeEventListener('touchmove', onTouchMove)
       root.removeEventListener('pointerdown', onDown)
       root.removeEventListener('pointermove', onMove)
       root.removeEventListener('pointerup', onUp)
