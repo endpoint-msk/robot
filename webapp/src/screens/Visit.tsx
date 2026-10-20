@@ -6,7 +6,8 @@ import { linkedText } from '../linkify'
 import { confirmDialog, reschedulePrompt, showAlert } from '../modals'
 import { getDataAt, pop, push, setBusy, setData, useParams, useStore } from '../store'
 import { sec } from '../theme'
-import { haptic, initData, tg } from '../telegram'
+import { useIcsLink } from '../links'
+import { haptic } from '../telegram'
 import type { Bootstrap } from '../types'
 import { BackRow, Header, Sep, SectionTitle } from '../components/common'
 import { RemindCard } from '../components/forms'
@@ -97,6 +98,7 @@ export function Visit() {
   useEffect(() => {
     if (!r) pop()
   }, [r])
+  const openIcs = useIcsLink('visit', r?.id ?? '', !!r && !isPast)
   if (!r) return <Screen />
 
   const approved = r.status === 'approved' && !!r.approvedBy
@@ -342,21 +344,9 @@ export function Visit() {
         </div>
       )}
       {isPast ? null : (
-      <button
-        className="secondary-btn"
-        onClick={() => {
-          // .ics отдаёт сервер (см. /visit.ics): подписанная ссылка, которую открывает
-          // системный браузер — оттуда файл уходит в календарь.
-          const url =
-            `${location.origin}/visit.ics?id=${encodeURIComponent(r.id)}` +
-            `&initData=${encodeURIComponent(initData())}`
-          try {
-            tg!.openLink(url)
-          } catch {
-            window.open(url, '_blank')
-          }
-        }}
-      >
+      // .ics отдаёт сервер (см. /visit.ics): разовая ссылка, которую открывает
+      // системный браузер — оттуда файл уходит в календарь.
+      <button className="secondary-btn" onClick={() => void openIcs()}>
         {icons.calendarPlus()}
         Добавить в календарь
       </button>

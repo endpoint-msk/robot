@@ -373,6 +373,8 @@ export type Bootstrap = {
   me: Me
   /** null, если бот не знает своего коммита (нет ни GIT_COMMIT, ни git рядом). */
   build: BuildInfo | null
+  /** Токен для `src` картинок (/avatar.jpg, /event-photo.jpg) вместо initData в URL. */
+  mediaToken: string
   todayKey: string
   nowTime: string
   days: Day[]

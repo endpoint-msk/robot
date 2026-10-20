@@ -32,7 +32,8 @@ import {
 import { pushOverlay } from '../overlays'
 import { getState, resetRoot, setData, useParams, useStore } from '../store'
 import { applyTheme, sec } from '../theme'
-import { haptic, initData, openBotSection, setHeaderColor, switchInline, tg } from '../telegram'
+import { eventPhotoUrl } from '../links'
+import { haptic, openBotSection, setHeaderColor, switchInline, tg } from '../telegram'
 import type { Bootstrap, NotifyPrefs, OnboardingPerson, User } from '../types'
 import { Sep, Switch } from '../components/common'
 import { AnimContext } from '../components/Screen'
@@ -466,7 +467,7 @@ const pickEvent = (d: Bootstrap): EventCardData => {
     when: `${fmtShortDate(dateKey)} к ${time}`,
     desc: desc.length > 140 ? `${desc.slice(0, 140).trimEnd()}…` : desc,
     photo: photoId
-      ? `${location.origin}/event-photo.jpg?id=${encodeURIComponent(photoId)}&initData=${encodeURIComponent(initData())}`
+      ? eventPhotoUrl(photoId)
       : null,
   }
 }

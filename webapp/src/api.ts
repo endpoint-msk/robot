@@ -45,9 +45,10 @@ export async function api<T = any>(method: string, params?: Record<string, unkno
 export async function uploadEventPhoto(blob: Blob): Promise<string> {
   let res: Response
   try {
-    res = await fetch('/event-photo.jpg?initData=' + encodeURIComponent(initData()), {
+    // initData в заголовке, а не в query: URL оседает в логах туннеля.
+    res = await fetch('/event-photo.jpg', {
       method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg' },
+      headers: { 'Content-Type': 'image/jpeg', Authorization: 'tma ' + initData() },
       body: blob,
     })
   } catch {

@@ -9,7 +9,8 @@ import { icons } from '../icons'
 import { compressImage } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
-import { haptic, initData, openUrl, tg } from '../telegram'
+import { eventPhotoUrl, useIcsLink } from '../links'
+import { haptic, openUrl } from '../telegram'
 import { pop, push, setBusy, useParams, useStore } from '../store'
 import type { ReviewerScope, SpaceEvent, User } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Switch } from '../components/common'
@@ -45,7 +46,7 @@ const fromMinutes = (total: number): string =>
  * что-то (адрес, схему, состав) иначе нельзя.
  */
 export function EventPoster({ photoId, className }: { photoId: string; className?: string }) {
-  const src = `${location.origin}/event-photo.jpg?id=${encodeURIComponent(photoId)}&initData=${encodeURIComponent(initData())}`
+  const src = eventPhotoUrl(photoId)
   return (
     <img
       className={className || 'event-poster'}
@@ -461,6 +462,7 @@ export function EventCard({
   actions?: boolean
 }) {
   const photos = event.photos ?? []
+  const openIcs = useIcsLink('event', event.id, calendar)
   return (
     <div className="event-card">
       <div className="ev-head">
@@ -488,21 +490,9 @@ export function EventCard({
           Пост в канале
         </button>
       ) : null}
-      {/* .ics отдаёт сервер (GET /event.ics) - та же подписанная ссылка, что у визита. */}
+      {/* .ics отдаёт сервер (GET /event.ics) - разовая ссылка, как у визита. */}
       {calendar ? (
-        <button
-          className="ev-source"
-          onClick={() => {
-            const url =
-              `${location.origin}/event.ics?id=${encodeURIComponent(event.id)}` +
-              `&initData=${encodeURIComponent(initData())}`
-            try {
-              tg!.openLink(url)
-            } catch {
-              window.open(url, '_blank')
-            }
-          }}
-        >
+        <button className="ev-source" onClick={() => void openIcs()}>
           {icons.calendarPlus(15, '#bf5af2')}
           В календарь
         </button>

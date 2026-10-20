@@ -2,7 +2,8 @@
 // открытия профиля в Telegram по тапу.
 
 import { useState, type ReactNode } from 'react'
-import { hasProfile, initData, openProfile } from '../telegram'
+import { avatarUrl } from '../links'
+import { hasProfile, openProfile } from '../telegram'
 import type { User } from '../types'
 
 const GRADIENTS = [
@@ -33,7 +34,7 @@ export function Avatar({
   const letter = ((user.name || user.username || '?').trim().charAt(0) || '?').toUpperCase()
   // Настоящее фото кладём поверх буквы (см. /avatar.jpg): нет фото или не
   // загрузилось — картинка убирается, остаётся градиент с буквой.
-  const base = `${location.origin}/avatar.jpg?id=${encodeURIComponent(user.userId)}&initData=${encodeURIComponent(initData())}`
+  const base = avatarUrl(user.userId)
   const src = retried ? base + '&r=1' : base
 
   const tappable = profile && hasProfile(user)

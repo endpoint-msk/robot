@@ -258,6 +258,60 @@ export const validateInitData = (initData: string, botToken: string, now: Date =
 }
 
 // ---------------------------------------------------------------------------
+// Токены ссылок для GET-ручек (.ics, картинки)
+// ---------------------------------------------------------------------------
+
+/**
+ * initData в URL класть нельзя: адрес оседает в истории системного браузера, в логах
+ * туннеля и уходит целиком, если ссылку переслать, а подпись initData открывает весь
+ * `/api/*` на сутки. Поэтому у GET-ссылок свой токен: подписан сервером, привязан к
+ * области (`scope`) и живёт недолго. Ключ выведен из токена бота, но отличается от
+ * ключа initData — подпись ссылки нельзя выдать за подпись Telegram и наоборот.
+ */
+const linkKey = (botToken: string): Buffer => createHmac('sha256', 'RobotLink').update(botToken).digest()
+
+const linkSig = (botToken: string, scope: string, userId: number, exp: number): string =>
+    createHmac('sha256', linkKey(botToken)).update(`${scope}|${userId}|${exp}`).digest('hex')
+
+export const signLink = (botToken: string, scope: string, userId: number, exp: number): string =>
+    `${userId}.${exp}.${linkSig(botToken, scope, userId, exp)}`
+
+/** Чей это токен в области `scope`. null — подделан, протух или из другой области. */
+export const verifyLink = (botToken: string, scope: string, token: string, now: Date = new Date()): number | null => {
+    const m = /^(\d{1,16})\.(\d{1,12})\.([0-9a-f]{64})$/.exec(token)
+    if (!m) return null
+    const userId = Number(m[1])
+    const exp = Number(m[2])
+    const expected = Buffer.from(linkSig(botToken, scope, userId, exp), 'hex')
+    if (!timingSafeEqual(expected, Buffer.from(m[3]!, 'hex'))) return null
+    if (now.getTime() / 1000 > exp) return null
+    return userId
+}
+
+/** `.ics` открывают сразу после выдачи ссылки; запас — на экран, который держат открытым. */
+const ICS_LINK_TTL_SEC = 15 * 60
+/**
+ * Токен картинок едет в bootstrap и сидит в `src` у каждой аватарки. Срок квантуем
+ * окном: внутри окна URL не меняется и браузерный кэш картинок работает, а каждый
+ * свежий bootstrap с новым сроком перекачивал бы все аватарки заново.
+ */
+const MEDIA_LINK_WINDOW_SEC = 6 * 60 * 60
+
+export const mediaLinkToken = (botToken: string, userId: number, now: Date = new Date()): string => {
+    const slot = Math.floor(now.getTime() / 1000 / MEDIA_LINK_WINDOW_SEC)
+    return signLink(botToken, 'media', userId, (slot + 2) * MEDIA_LINK_WINDOW_SEC)
+}
+
+const icsScope = (kind: 'visit' | 'event', id: string): string => `ics:${kind}:${id}`
+
+/** Заливка афиши — запись, поэтому полный initData, но в заголовке, а не в URL. */
+const initDataFromHeader = (req: IncomingMessage): string => {
+    const header = req.headers.authorization ?? ''
+    const m = /^tma\s+(.+)$/i.exec(header.trim())
+    return m?.[1] ?? ''
+}
+
+// ---------------------------------------------------------------------------
 // HTTP-сервер: статика миниаппа + JSON API
 // ---------------------------------------------------------------------------
 
@@ -400,6 +454,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'notify.events': 'write',
     'notify.attend': 'write',
     'calendar.link': 'write',
+    'ics.link': 'read',
     'presence.log': 'write',
     'stats.residentSince': 'write',
     'mac.add': 'write',
@@ -1021,6 +1076,7 @@ const buildBootstrap = (ctx: ApiContext) => {
         build: commit
             ? { commit: commit.slice(0, 7), url: `https://github.com/${ctx.githubRepo}/commit/${commit}` }
             : null,
+        mediaToken: mediaLinkToken(ctx.botToken, user.userId),
         me: {
             id: user.userId,
             username: user.username,
@@ -2351,6 +2407,28 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        // Ссылка на .ics визита или ивента. Права проверяются здесь и ещё раз на самой
+        // GET-ручке: токен лишь говорит, кто и что попросил.
+        case 'ics.link': {
+            const kind = body.kind === 'visit' || body.kind === 'event' ? body.kind : null
+            const id = typeof body.id === 'string' ? body.id : ''
+            const state = storage.get()
+            const visible =
+                kind === 'visit'
+                    ? Object.hasOwn(state.hostingRequests, id) && state.hostingRequests[id]!.guest.userId === user.userId
+                    : kind === 'event'
+                      ? Object.hasOwn(state.events, id) && (resident || !state.events[id]!.residentsOnly)
+                      : false
+            if (!kind || !visible) {
+                sendError(res, 404, 'not_found', kind === 'event' ? 'Ивент не найден.' : 'Заявка не найдена.')
+                return
+            }
+            const exp = Math.floor(Date.now() / 1000) + ICS_LINK_TTL_SEC
+            const token = signLink(ctx.botToken, icsScope(kind, id), user.userId, exp)
+            sendJson(res, 200, { url: `/${kind}.ics?id=${encodeURIComponent(id)}&t=${token}`, exp })
+            return
+        }
+
         case 'notify.events': {
             if (!requireResident()) return
             const enabled = body.enabled === true
@@ -3282,29 +3360,31 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             }
 
             // Файл календаря отдаём отдельным GET-путём (не под /api/, там только POST):
-            // ссылку открывает системный браузер, поэтому initData едет в query, а не в
-            // теле. Подпись и срок жизни проверяем ровно так же, как в API.
+            // ссылку открывает системный браузер, поэтому гейт едет в query. Не initData,
+            // а токен ссылки из `ics.link` (см. signLink): он открывает только этот файл.
             if (pathname === '/visit.ics') {
                 if (req.method !== 'GET') {
                     res.writeHead(405).end()
                     return
                 }
-                const user = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
-                if (!user) {
+                const id = url.searchParams.get('id') ?? ''
+                const userId = verifyLink(deps.botToken, icsScope('visit', id), url.searchParams.get('t') ?? '')
+                if (userId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
                         .end('Ссылка устарела — открой миниапп заново.')
                     return
                 }
                 // Полка до `residents.access`: на холодном кэше он ходит в Telegram.
-                if (!allow(res, 'ics', user.userId, LIMITS.ics, false)) return
-                if (isBlocked(deps.storage, user.userId) || (await deps.residents.access(user.userId)).banned) {
+                if (!allow(res, 'ics', userId, LIMITS.ics, false)) return
+                if (isBlocked(deps.storage, userId) || (await deps.residents.access(userId)).banned) {
                     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
                     return
                 }
-                const request = deps.storage.get().hostingRequests[url.searchParams.get('id') ?? '']
+                const requests = deps.storage.get().hostingRequests
+                const request = Object.hasOwn(requests, id) ? requests[id] : undefined
                 // Только свой визит: в файле цель визита и кто хостит.
-                if (!request || request.guest.userId !== user.userId) {
+                if (!request || request.guest.userId !== userId) {
                     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Заявка не найдена.')
                     return
                 }
@@ -3316,28 +3396,30 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
-            // Ивент в календарь - тот же приём, что у визита: GET вне /api/, initData в
-            // query, подпись и TTL те же. Гейт видимости свой: резидентский ивент гостю
-            // не отдаём и по прямой ссылке (мимо handleApi этот путь не проходит).
+            // Ивент в календарь - тот же приём, что у визита: GET вне /api/, токен ссылки
+            // в query. Гейт видимости свой: резидентский ивент гостю не отдаём и по
+            // прямой ссылке (мимо handleApi этот путь не проходит).
             if (pathname === '/event.ics') {
                 if (req.method !== 'GET') {
                     res.writeHead(405).end()
                     return
                 }
-                const user = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
-                if (!user) {
+                const id = url.searchParams.get('id') ?? ''
+                const userId = verifyLink(deps.botToken, icsScope('event', id), url.searchParams.get('t') ?? '')
+                if (userId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
                         .end('Ссылка устарела - открой миниапп заново.')
                     return
                 }
-                if (!allow(res, 'ics', user.userId, LIMITS.ics, false)) return
-                const access = await deps.residents.access(user.userId)
-                if (isBlocked(deps.storage, user.userId) || access.banned) {
+                if (!allow(res, 'ics', userId, LIMITS.ics, false)) return
+                const access = await deps.residents.access(userId)
+                if (isBlocked(deps.storage, userId) || access.banned) {
                     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
                     return
                 }
-                const event = deps.storage.get().events[url.searchParams.get('id') ?? '']
+                const events = deps.storage.get().events
+                const event = Object.hasOwn(events, id) ? events[id] : undefined
                 if (!event || (event.residentsOnly && !access.resident)) {
                     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ивент не найден.')
                     return
@@ -3418,21 +3500,24 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
-            // Афиша ивента: тоже <img>, поэтому GET и initData в query, как у аватарок.
-            // Файл лежит рядом со стейтом (см. events.ts), в JSON его нет.
+            // Афиша ивента: тоже <img>, поэтому GET и токен картинок в query, как у
+            // аватарок. Файл лежит рядом со стейтом (см. events.ts), в JSON его нет.
             if (pathname === '/event-photo.jpg') {
                 if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
                     res.writeHead(405).end()
                     return
                 }
-                const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
-                if (!viewer) {
-                    if (!allow(res, 'authFail', ip, LIMITS.authFail, req.method === 'POST')) return
+                // Заливка (POST) считается отдельно от показа: она пишет до 4 МБ на диск.
+                const uploading = req.method === 'POST'
+                const viewerId = uploading
+                    ? (validateInitData(initDataFromHeader(req), deps.botToken)?.userId ?? null)
+                    : verifyLink(deps.botToken, 'media', url.searchParams.get('t') ?? '')
+                if (viewerId === null) {
+                    if (!allow(res, 'authFail', ip, LIMITS.authFail, uploading)) return
                     res.writeHead(401).end()
                     return
                 }
-                // Заливка (POST) считается отдельно от показа: она пишет до 4 МБ на диск.
-                const uploading = req.method === 'POST'
+                const viewer = { userId: viewerId }
                 const photoRule = uploading ? LIMITS.photoUpload : LIMITS.photo
                 if (!allow(res, uploading ? 'photo.upload' : 'photo', viewer.userId, photoRule, uploading)) return
                 const access = await deps.residents.access(viewer.userId)
@@ -3488,19 +3573,20 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             }
 
             // Аватарки — тоже GET вне /api/: их грузит <img>, тело не отправить,
-            // поэтому initData едет в query (как в /visit.ics). Нет фото — 404,
-            // фронт остаётся на градиентной заглушке с буквой.
+            // поэтому гейт едет в query — токен картинок из bootstrap, не initData.
+            // Нет фото — 404, фронт остаётся на градиентной заглушке с буквой.
             if (pathname === '/avatar.jpg') {
                 if (req.method !== 'GET' && req.method !== 'HEAD') {
                     res.writeHead(405).end()
                     return
                 }
-                const viewer = validateInitData(url.searchParams.get('initData') ?? '', deps.botToken)
-                if (!viewer) {
+                const viewerId = verifyLink(deps.botToken, 'media', url.searchParams.get('t') ?? '')
+                if (viewerId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401).end()
                     return
                 }
+                const viewer = { userId: viewerId }
                 if (!allow(res, 'avatar', viewer.userId, LIMITS.avatar, false)) return
                 // Гейт blocked — тот же, что у /visit.ics выше. Живой `access` (бан в чате)
                 // тут намеренно не зовём: это getChatMember на каждый <img>, а список
