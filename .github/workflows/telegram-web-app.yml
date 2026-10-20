@@ -1,0 +1,74 @@
+name: Telegram Web App script
+
+# Миниапп грузит telegram-web-app.js из своей сборки (webapp/public), а не с telegram.org:
+# у части гостей из России telegram.org не открывается. Раз в сутки сверяем копию с
+# оригиналом и, если Telegram его обновил, коммитим новую версию в main и dev и деплоим.
+on:
+  schedule:
+    # 03:17 по Москве: деплой перезапускает бота, ночью это никого не задевает.
+    - cron: '17 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-web-app
+  cancel-in-progress: false
+
+# Токен в репо по умолчанию только на чтение. contents нужен для пуша, actions для запуска деплоя.
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  update:
+    # Расписание срабатывает и в форках, а коммитить и деплоить оттуда нечего.
+    if: github.repository == 'endpoint-msk/robot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # Нужна история dev: перед пушем проверяем, что она не ушла вперёд main.
+          fetch-depth: 0
+
+      - name: Download
+        run: curl -fsSL --retry 3 --max-time 60 -o "$RUNNER_TEMP/telegram-web-app.js" https://telegram.org/js/telegram-web-app.js
+
+      - name: Sanity check
+        run: |
+          set -euo pipefail
+          f="$RUNNER_TEMP/telegram-web-app.js"
+          # Пустой ответ, страница ошибки или обрезанный файл не должны уехать в прод.
+          # Пустой ловит размер, остальные node --check.
+          size=$(stat -c%s "$f")
+          if [ "$size" -lt 20000 ] || [ "$size" -gt 2000000 ]; then
+            echo "Подозрительный размер скрипта: $size байт" >&2
+            exit 1
+          fi
+          grep -q 'window.Telegram' "$f" || { echo "В скрипте нет window.Telegram" >&2; exit 1; }
+          node --check "$f"
+
+      - name: Commit and deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dest=webapp/public/telegram-web-app.js
+          if cmp -s "$RUNNER_TEMP/telegram-web-app.js" "$dest"; then
+            echo "Скрипт не менялся."
+            exit 0
+          fi
+          # Пуш идёт в обе ветки, и коммит должен лечь в обе fast-forward'ом. Если dev
+          # впереди main, там неотпущенная работа: ждём следующего запуска, а не разводим ветки.
+          if ! git merge-base --is-ancestor origin/dev HEAD; then
+            echo "::warning::dev ушёл вперёд main, обновление скрипта отложено до следующего запуска."
+            exit 0
+          fi
+          cp "$RUNNER_TEMP/telegram-web-app.js" "$dest"
+          git --no-pager diff --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Update Telegram Web App script' -- "$dest"
+          git push --atomic origin HEAD:main HEAD:dev
+          # Пуш от GITHUB_TOKEN не запускает другие воркфлоу, а workflow_dispatch запускает.
+          gh workflow run deploy.yml --ref main
+          gh workflow run deploy.yml --ref dev

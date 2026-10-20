@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="format-detection" content="telephone=no">
 <title>Хостинг · endpoint</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Своя копия, а не telegram.org: у части гостей из России он не открывается, а вебвью
+     ходит в сеть мимо прокси, через который у них работает сам Telegram. Копию раз в сутки
+     сверяет с оригиналом .github/workflows/telegram-web-app.yml. -->
+<script src="/telegram-web-app.js"></script>
 </head>
 <body>
 <div id="app"></div>
