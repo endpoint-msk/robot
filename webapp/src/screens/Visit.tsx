@@ -13,7 +13,7 @@ import { BackRow, Header, Sep, SectionTitle } from '../components/common'
 import { RemindCard } from '../components/forms'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
-import { ADDRESS } from './Route'
+import { ADDRESS, ENTRANCE } from './Route'
 
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
 function minuteOfDay(hhmm: string): number {
@@ -78,7 +78,7 @@ function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null 
         disabled={waiting}
         onClick={async () => {
           const done = await action('arrived', { id })
-          if (done) haptic('success')
+          if (done) haptic.notify('success')
         }}
       >
         {waiting ? `Сообщить ещё раз можно через ${countdown(left)}` : sent ? 'Сообщить ещё раз' : 'Я на месте'}
@@ -152,7 +152,7 @@ export function Visit() {
             className="primary-btn"
             onClick={async () => {
               const done = await action('proposal.accept', { id: r.id })
-              if (done) haptic('success')
+              if (done) haptic.notify('success')
             }}
           >
             Принять
@@ -167,7 +167,7 @@ export function Visit() {
               })
               if (!slot) return
               const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
-              if (done) haptic('success')
+              if (done) haptic.notify('success')
             }}
           >
             Своё
@@ -177,8 +177,8 @@ export function Visit() {
           className="link-btn"
           style={{ marginTop: 12 }}
           onClick={async () => {
-            const done = await action('proposal.decline', { id: r.id })
-            if (done) haptic('warning')
+            haptic.impact('light')
+            await action('proposal.decline', { id: r.id })
           }}
         >
           Оставить как есть ({slotLabel(r.dateKey, r.time)})
@@ -210,7 +210,7 @@ export function Visit() {
               })
               if (!slot) return
               const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
-              if (done) haptic('success')
+              if (done) haptic.notify('success')
             }}
           >
             Изменить
@@ -218,8 +218,8 @@ export function Visit() {
           <button
             className="chip-btn"
             onClick={async () => {
-              const done = await action('proposal.decline', { id: r.id })
-              if (done) haptic('warning')
+              haptic.impact('light')
+              await action('proposal.decline', { id: r.id })
             }}
           >
             Отозвать
@@ -285,7 +285,7 @@ export function Visit() {
             // Оставили слот как есть — переносить нечего (сервер тоже это гасит).
             if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
             const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
-            if (done) haptic('success')
+            if (done) haptic.notify('success')
           }}
         >
           {icons.clock(17, '#007aff')}
@@ -313,6 +313,7 @@ export function Visit() {
               <div className="row-right">
                 <span className="kv-val" style={{ marginLeft: 0 }}>
                   {ADDRESS}
+                  <span className="kv-sub">{ENTRANCE}</span>
                 </span>
                 {icons.chevron()}
               </div>
@@ -337,8 +338,7 @@ export function Visit() {
             choice={r.remind?.choice ?? null}
             sentAt={r.remind?.sentAt}
             onChange={async (choice) => {
-              const done = await action('remind.set', { id: r.id, choice: choice ?? 'off' })
-              if (done) haptic('success')
+              await action('remind.set', { id: r.id, choice: choice ?? 'off' })
             }}
           />
         </div>
@@ -365,7 +365,6 @@ export function Visit() {
           setBusy(true)
           try {
             setData(await api<Bootstrap>('cancel', { id: r.id }))
-            haptic('warning')
             pop()
           } catch (err) {
             showAlert((err as Error).message)

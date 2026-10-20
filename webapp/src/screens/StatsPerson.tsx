@@ -104,7 +104,7 @@ export function StatsPerson() {
   const setSince = async (dateKey: string | null) => {
     const done = await action('stats.residentSince', { userId, dateKey: dateKey ?? '' })
     if (done) {
-      haptic('success')
+      haptic.notify('success')
       reload()
     }
   }

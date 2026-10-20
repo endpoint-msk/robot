@@ -110,7 +110,7 @@ export function EventApps() {
     try {
       // action обновляет общий стор (счётчики на карточках), затем перечитываем список.
       await action(approve ? 'event.app.approve' : 'event.app.decline', { id: app.id })
-      haptic(approve ? 'success' : 'warning')
+      if (approve) haptic.notify('success')
       reload()
     } catch (err) {
       showAlert((err as Error).message)

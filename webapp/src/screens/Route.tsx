@@ -165,7 +165,7 @@ export function Route() {
   const copyAddress = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(ADDRESS)
-      haptic('success')
+      haptic.impact('light')
       // Ответ — сменой иконки в самой кнопке: модалка ради «скопировано» слишком громкая.
       setCopied(true)
       window.clearTimeout(timer.current ?? undefined)

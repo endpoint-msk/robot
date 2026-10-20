@@ -31,7 +31,7 @@ export function DevEdit() {
     }
     const res = await action('dev.update', { id: r.id, dateKey: selected, time, purpose })
     if (res) {
-      haptic('success')
+      haptic.notify('success')
       pop()
     }
   }

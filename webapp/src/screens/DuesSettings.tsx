@@ -7,7 +7,6 @@ import { money } from '../format'
 import { icons } from '../icons'
 import { numberPrompt } from '../modals'
 import { useStore } from '../store'
-import { haptic } from '../telegram'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -30,9 +29,7 @@ export function DuesSettings() {
   }
 
   const save = async (patch: Record<string, unknown>) => {
-    const done = await action('dues.settings', patch)
-    if (done) haptic('success')
-    return Boolean(done)
+    return Boolean(await action('dues.settings', patch))
   }
 
   const askNumber = async (title: string, current: number, field: string) => {

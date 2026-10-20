@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { pushOverlay } from '../overlays'
-import { hapticTick } from '../telegram'
+import { haptic } from '../telegram'
 
 /** Высота строки колеса; должна совпадать с --tp-item-h в app.css. */
 const ITEM_H = 40
@@ -63,7 +63,7 @@ function Wheel({
     const i = Math.min(values.length - 1, Math.max(0, Math.round(el.scrollTop / ITEM_H)))
     if (i !== active) {
       setActive(i)
-      hapticTick()
+      haptic.tick()
     }
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => {

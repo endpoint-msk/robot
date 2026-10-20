@@ -10,6 +10,7 @@ import { TimeField } from './components/TimeField'
 import { icons } from './icons'
 import { pushOverlay } from './overlays'
 import { getState } from './store'
+import { haptic } from './telegram'
 
 type ConfirmInput = {
   kind: 'confirm'
@@ -182,7 +183,10 @@ function ModalCard({ modal }: { modal: Modal & { kind: 'confirm' | 'time' } }) {
           ) : null}
           <button
             className={'modal-btn primary' + (modal.destructive ? ' destructive' : '')}
-            onClick={() => close(true)}
+            onClick={() => {
+              if (modal.destructive) haptic.impact('rigid')
+              close(true)
+            }}
           >
             {modal.confirmLabel}
           </button>
@@ -506,7 +510,10 @@ function ChoiceCard({ modal }: { modal: Modal & { kind: 'choice' } }) {
             <button
               key={o.key}
               className={'modal-btn primary' + (o.destructive ? ' destructive' : '')}
-              onClick={() => close(o.key)}
+              onClick={() => {
+                if (o.destructive) haptic.impact('rigid')
+                close(o.key)
+              }}
             >
               {o.label}
             </button>

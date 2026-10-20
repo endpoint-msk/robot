@@ -146,14 +146,14 @@ export function Invite() {
         // «передаёте @x», поэтому возвращаемся туда сразу.
         const done = await action('transfer.offer', { id: transferId, userId: p.userId })
         if (done) {
-          haptic('success')
+          haptic.notify('success')
           pop()
         }
         return
       }
       await api('invite', { dateKey, userId: p.userId })
       setInvited((prev) => new Set(prev).add(p.userId))
-      haptic('success')
+      haptic.notify('success')
     } catch (err) {
       showAlert((err as Error).message)
     } finally {

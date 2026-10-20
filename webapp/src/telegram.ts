@@ -17,7 +17,12 @@ interface TelegramWebApp {
   requestWriteAccess?(callback: (granted: boolean) => void): void
   switchInlineQuery?(query: string, chooseChatTypes?: string[]): void
   onEvent(event: string, callback: () => void): void
-  HapticFeedback?: { notificationOccurred(kind: string): void; selectionChanged?(): void }
+  isVersionAtLeast?(version: string): boolean
+  HapticFeedback?: {
+    impactOccurred?(style: ImpactStyle): void
+    notificationOccurred(kind: NotifyKind): void
+    selectionChanged?(): void
+  }
   BackButton: { show(): void; hide(): void; onClick(callback: () => void): void }
 }
 
@@ -31,23 +36,44 @@ export const tg: TelegramWebApp | null = window.Telegram?.WebApp ?? null
 
 export const initData = (): string => (tg ? tg.initData : '')
 
-export type HapticKind = 'success' | 'warning' | 'error'
+export type ImpactStyle = 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'
+export type NotifyKind = 'success' | 'warning' | 'error'
 
-export function haptic(kind: HapticKind): void {
+// Без проверки версии клиент до 6.1 пишет предупреждение в консоль на каждый тик.
+const hapticsOn = !!tg?.HapticFeedback && (tg.isVersionAtLeast?.('6.1') ?? false)
+const IMPACT_RANK: Record<ImpactStyle, number> = { soft: 2, light: 2, medium: 3, rigid: 4, heavy: 4 }
+let lastAt = 0
+let lastRank = 0
+
+// Один тап часто зовёт два отклика подряд (тумблер и вызывающий, тик и удар), и они
+// сливаются в дребезг. В пределах 40 мс звучит только более сильный.
+function play(rank: number, fire: (h: NonNullable<TelegramWebApp['HapticFeedback']>) => void): void {
+  if (!hapticsOn) return
+  const now = performance.now()
+  if (now - lastAt < 40 && rank <= lastRank) return
+  lastAt = now
+  lastRank = rank
   try {
-    tg?.HapticFeedback?.notificationOccurred(kind)
+    fire(tg!.HapticFeedback!)
   } catch {
-    /* старый клиент */
+    /* своя копия telegram-web-app.js бросает на неизвестный стиль */
   }
 }
 
-/** Щелчок прокрутки колеса времени: у нативных пикеров iOS он есть, без него жест мёртвый. */
-export function hapticTick(): void {
-  try {
-    tg?.HapticFeedback?.selectionChanged?.()
-  } catch {
-    /* старый клиент */
-  }
+/**
+ * Словарь отклика. Отклик только дополняет картинку: на десктопе его нет вовсе, а на
+ * Android без управления амплитудой удар и тик молчат.
+ */
+export const haptic = {
+  /** Значение сменилось под пальцем: колесо, день листалки, порог свайпа, пункт меню. */
+  tick: (): void => play(1, (h) => h.selectionChanged?.()),
+  /**
+   * Свой тап, в момент касания, а не после сервера. light меняет на месте, soft снимает,
+   * medium задевает других (чужая личка, деньги), rigid подтверждает необратимое.
+   */
+  impact: (style: ImpactStyle = 'light'): void => play(IMPACT_RANK[style], (h) => h.impactOccurred?.(style)),
+  /** Исход, которого глаз ещё не видел. Единственный отклик, что доходит почти везде, поэтому редкий. */
+  notify: (kind: NotifyKind): void => play(5, (h) => h.notificationOccurred(kind)),
 }
 
 /** Ссылку наружу открывает клиент Telegram: t.me — внутри приложения

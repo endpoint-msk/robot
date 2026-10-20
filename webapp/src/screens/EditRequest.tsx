@@ -55,7 +55,7 @@ export function EditRequest() {
       remind: reminderFor(day, time, remind),
     })
     if (done) {
-      haptic('success')
+      haptic.notify('success')
       pop()
     }
   }

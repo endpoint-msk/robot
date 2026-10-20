@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addDays, dayNum, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
-import { hapticTick } from '../telegram'
+import { haptic } from '../telegram'
 
 const monthStart = (key: string): string => key.slice(0, 8) + '01'
 
@@ -66,7 +66,7 @@ function DateSheet({
   const shift = (n: number): void => {
     const next = addMonths(month, n)
     if (next < monthStart(min) || next > monthStart(max)) return
-    hapticTick()
+    haptic.tick()
     setMonth(next)
   }
 
@@ -121,7 +121,7 @@ function DateSheet({
                 className={'dp-cell' + (key === value ? ' selected' : '')}
                 disabled={key < min || key > max}
                 onClick={() => {
-                  hapticTick()
+                  haptic.tick()
                   setValue(key)
                 }}
               >

@@ -24,7 +24,7 @@ export function GuestNote() {
   const save = async (value: string): Promise<void> => {
     const done = await action('note.set', { userId: guest.userId, text: value })
     if (done) {
-      haptic('success')
+      haptic.notify('success')
       pop()
     }
   }

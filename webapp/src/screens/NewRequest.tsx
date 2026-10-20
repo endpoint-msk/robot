@@ -56,7 +56,7 @@ export function NewRequest() {
       if (!botCanWrite()) await requestWriteAccess()
       const boot = await api<Bootstrap>('create', { dateKey: day, time, purpose, anon, remind: reminderFor(day, time, remind) })
       setData(boot)
-      haptic('success')
+      haptic.notify('success')
       // Не в корень, а на карточку созданной заявки: там сразу написано «ждёт
       // ответа» и что бот напишет в личку. Раньше форма молча сменялась списком,
       // где новая строка ничем не отличалась от остальных, — момента отправки

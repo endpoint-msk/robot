@@ -2,17 +2,20 @@
 // тот же для текущего сбора (данные из bootstrap) и для прошлого, открытого из
 // истории (грузится ручкой dues.period) — форма ответа у них общая.
 
-import { Fragment, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay, monthsWord } from '../dates'
 import { money } from '../format'
 import { icons } from '../icons'
+import { markOwnTap, ownTapRecent } from '../motion'
 import { showAlert } from '../modals'
 import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
-import type { DuesRow, DuesSnapshot } from '../types'
+import type { DuesRow, DuesSnapshot, DuesStatus } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
+import { Collapse } from '../components/Collapse'
+import { Flip } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
@@ -38,7 +41,10 @@ const RATE_LABEL: Record<string, string> = { student: 'СТУДЕНТ', custom: 
 /** Ставка 0 — человек освобождён от взноса: ни суммы, ни просрочки, ни строки в счётчике. */
 const isExempt = (row: DuesRow): boolean => row.amount <= 0
 
-function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnapshot; onChanged: () => void }) {
+/** Смена отметки девом: экран держит строку на месте и сам ведёт её в новую секцию. */
+type Mark = (row: DuesRow, to: DuesStatus) => void
+
+function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow; snap: DuesSnapshot; mark: Mark; meId: number; flash?: boolean }) {
   const left =
     row.status === 'paid' ? (
       <div className="dues-mark ok">{icons.check(13, '#fff', 2.2)}</div>
@@ -60,7 +66,11 @@ function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnaps
             : ''
 
   const body = (
-    <button type="button" className="row" onClick={() => push('duesPerson', { userId: row.userId })}>
+    <button
+      type="button"
+      className={'row' + (flash || (row.userId === meId && row.status === 'claimed' && ownTapRecent()) ? ' row-flash' : '')}
+      onClick={() => push('duesPerson', { userId: row.userId })}
+    >
       {left}
       <div className="dues-main">
         <div className="dues-name-line">
@@ -87,73 +97,114 @@ function DuesPersonRow({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnaps
 
   if (!snap.canEdit) return body
 
-  const run = async (method: string, params: Record<string, unknown>) => {
-    const done = await action(method, { periodKey: snap.periodKey, ...params })
-    if (done) {
-      haptic('success')
-      onChanged()
-    }
-  }
   const actions: SwipeAction[] = [
     { key: 'rate', label: 'Ставка', icon: icons.tag(19, '#fff'), tone: 'neutral', onSelect: () => push('duesPerson', { userId: row.userId }) },
     row.status === 'paid'
-      ? { key: 'undo', label: 'Снять отметку', icon: icons.undo(19, '#fff'), tone: 'red', onSelect: () => run('dues.clear', { userId: row.userId }) }
-      : { key: 'ok', label: 'Отметить взнос', icon: icons.check(18, '#fff', 2), onSelect: () => run('dues.confirm', { userId: row.userId }) },
+      ? { key: 'undo', label: 'Снять отметку', icon: icons.undo(19, '#fff'), tone: 'red', onSelect: () => mark(row, 'none') }
+      : { key: 'ok', label: 'Отметить взнос', icon: icons.check(18, '#fff', 2), onSelect: () => mark(row, 'paid') },
   ]
   return <SwipeRow actions={actions}>{body}</SwipeRow>
 }
 
-function DuesList({ rows, snap, onChanged }: { rows: DuesRow[]; snap: DuesSnapshot; onChanged: () => void }) {
-  return (
-    <div className="card">
-      {rows.map((row, i) => (
-        <Fragment key={row.userId}>
-          {i > 0 ? <Sep left={row.status === 'none' ? 64 : 46} /> : null}
-          <DuesPersonRow row={row} snap={snap} onChanged={onChanged} />
-        </Fragment>
-      ))}
-    </div>
-  )
-}
-
 /** Ответ dev на чужую заявку. Инлайн, не за свайпом: это решение по чужому действию. */
-function Verdict({ row, snap, onChanged }: { row: DuesRow; snap: DuesSnapshot; onChanged: () => void }) {
-  if (!snap.canEdit) return null
-  const run = async (method: string) => {
-    const done = await action(method, { periodKey: snap.periodKey, userId: row.userId })
-    if (done) {
-      haptic('success')
-      onChanged()
-    }
+function Verdict({ row, mark, done }: { row: DuesRow; mark: Mark; done: boolean }) {
+  if (done) {
+    return (
+      <div className="dues-verdict done">
+        {icons.check(13, 'var(--green)', 2.4)}
+        Подтверждено
+      </div>
+    )
   }
   return (
     <div className="dues-verdict">
-      <button className="small-btn" style={{ background: 'var(--green)', color: '#fff' }} onClick={() => void run('dues.confirm')}>
+      <button className="small-btn" style={{ background: 'var(--green)', color: '#fff' }} onClick={() => mark(row, 'paid')}>
         Подтвердить
       </button>
-      <button className="small-btn gray" onClick={() => void run('dues.clear')}>
+      <button className="small-btn gray" onClick={() => mark(row, 'none')}>
         Отклонить
       </button>
     </div>
   )
 }
 
+/** Строка, которую дев только что отметил: где стояла, где стоит сейчас и как выглядит. */
+type Hold = { row: DuesRow; from: DuesStatus; to: DuesStatus; index: number; phase: 'stand' | 'leave' }
+type Item = { row: DuesRow; leaving: boolean; entering: boolean; held: boolean }
+
+/**
+ * Секция состава. Строка, ушедшая после своего тапа, сворачивается на прежнем месте,
+ * пришедшая вырастает с подсветкой. Секция, у которой ушла последняя строка, сворачивается
+ * вместе с заголовком.
+ */
+function DuesSection({
+  title,
+  items,
+  snap,
+  mark,
+  meId,
+  verdicts = false,
+}: {
+  title: string
+  items: Item[]
+  snap: DuesSnapshot
+  mark: Mark
+  meId: number
+  verdicts?: boolean
+}) {
+  const live = items.filter((x) => !x.leaving).length
+  return (
+    <Collapse open={live > 0}>
+      <SectionTitle>
+        {`${title} · `}
+        <Flip value={live} />
+      </SectionTitle>
+      <div className="card">
+        {items.map((x, i) => (
+          <Collapse key={x.row.userId} open={!x.leaving} appear={x.entering}>
+            {i > 0 ? <Sep left={verdicts || x.row.status !== 'none' ? 46 : 64} /> : null}
+            <DuesPersonRow row={x.row} snap={snap} mark={mark} meId={meId} flash={x.entering} />
+            {verdicts && snap.canEdit ? <Verdict row={x.row} mark={mark} done={x.held} /> : null}
+          </Collapse>
+        ))}
+      </div>
+    </Collapse>
+  )
+}
+
+/**
+ * Свой взнос: одна карточка на все три состояния, как сцена взносов в знакомстве.
+ * «Я внёс» переводит её в «Ждёт сверки» сразу, не дожидаясь ответа: запрос идёт без
+ * оверлея, отказ возвращает карточку как было. Сверку делает dev, а резидент в этот
+ * момент на экран не смотрит, поэтому «Внесён» встаёт без движения.
+ */
 function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void }) {
   const [copied, setCopied] = useState(false)
+  const [claiming, setClaiming] = useState(false)
+  const [moving, setMoving] = useState(false)
+  useEffect(() => setClaiming(false), [snap.me.status])
+  useEffect(() => {
+    if (!moving) return
+    const timer = setTimeout(() => setMoving(false), 700)
+    return () => clearTimeout(timer)
+  }, [moving])
   if (!snap.me.inRoster) return null
 
   const claim = async () => {
-    const done = await action('dues.claim')
-    if (done) {
-      haptic('success')
-      onChanged()
-    }
+    if (claiming) return
+    haptic.impact('medium')
+    markOwnTap()
+    setMoving(true)
+    setClaiming(true)
+    const done = await action('dues.claim', undefined, { quiet: true })
+    if (done) onChanged()
+    else setClaiming(false)
   }
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(snap.requisites)
       setCopied(true)
-      haptic('success')
+      haptic.impact('light')
       setTimeout(() => setCopied(false), 1600)
     } catch {
       showAlert('Не получилось скопировать. Выделите текст вручную.')
@@ -171,35 +222,68 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
     )
   }
 
-  // Взнос подтверждён — плашки нет вовсе. Она существует ради действия («Я внёс»)
-  // и реквизитов; закрытый взнос действия не требует, а «внесён» и так написано
-  // в строке «Взносы» на главной и в составе периода.
-  if (snap.me.status === 'paid') return null
-
-  const cls = snap.me.status === 'claimed' ? 'claimed' : 'unpaid'
+  // Подтверждённый взнос остаётся зелёной карточкой до конца периода: о сверке
+  // резиденту ничего не приходит, и это единственное место, где он про неё узнаёт.
+  const status = claiming && snap.me.status === 'none' ? 'claimed' : snap.me.status
+  const paidOn = status === 'paid' && snap.me.at ? ` ${fmtIsoDay(snap.me.at)}` : ''
   return (
-    <div className={'my-dues ' + cls}>
-      <div className="my-dues-kicker">Мой взнос</div>
-      <div className="my-dues-sum">{money(snap.me.amount, snap.currency)}</div>
-      {snap.me.status === 'claimed' ? (
-        <div className="my-dues-sub">Отмечен{snap.me.at ? ` ${fmtIsoDay(snap.me.at)}` : ''}, ждёт сверки с выпиской</div>
-      ) : (
-        <>
-          {snap.requisites ? (
-            <div className="my-dues-req">
-              <div className="mdr-text">{snap.requisites}</div>
-              <button className="mdr-copy" aria-label="Скопировать реквизиты" onClick={() => void copy()}>
-                {copied ? icons.check(17, '#34c759', 2.2) : icons.copy(17, '#007aff')}
-              </button>
+    <div className={`my-dues md-card md-${status}` + (moving ? ' md-moving' : '')}>
+      <div className="md-tint" aria-hidden="true">
+        <i className="md-s" data-s="none" />
+        <i className="md-s" data-s="claimed" />
+        <i className="md-s" data-s="paid" />
+      </div>
+      <div className="md-body">
+        <div className="md-top">
+          <div className="my-dues-kicker">Мой взнос</div>
+          <span className="md-tags">
+            <span className="ob-tag warn md-s" data-s="none">
+              Не внесён
+            </span>
+            <span className="ob-tag gray md-s" data-s="claimed">
+              Ждёт сверки
+            </span>
+            <span className="ob-tag green md-s" data-s="paid">
+              Внесён
+            </span>
+          </span>
+        </div>
+        <div className="my-dues-sum">{money(snap.me.amount, snap.currency)}</div>
+        {/* Реквизиты нужны только до перевода; после тапа они сворачиваются по
+            высоте, а не пропадают одним кадром. */}
+        {snap.requisites && (status === 'none' || moving) ? (
+          <div className="md-req">
+            <div className="md-req-in">
+              <div className="my-dues-req">
+                <div className="mdr-text">{snap.requisites}</div>
+                <button className="mdr-copy" aria-label="Скопировать реквизиты" onClick={() => void copy()}>
+                  {copied ? icons.check(17, '#34c759', 2.2) : icons.copy(17, '#007aff')}
+                </button>
+              </div>
             </div>
-          ) : null}
-          <div className="my-dues-sub">Отметьте, когда переведёте: перевод будет рассмотрен.</div>
-          <button className="primary-btn" onClick={() => void claim()}>
+          </div>
+        ) : null}
+        <div className="md-act">
+          <button
+            className="primary-btn md-s"
+            data-s="none"
+            disabled={status !== 'none'}
+            tabIndex={status === 'none' ? 0 : -1}
+            onClick={() => void claim()}
+          >
             {icons.check(18, '#fff', 2)}
             Я внёс
           </button>
-        </>
-      )}
+          <div className="ob-pay-line md-s" data-s="claimed">
+            {icons.clock(16, 'currentColor')}
+            Отметка ушла на сверку
+          </div>
+          <div className="ob-pay-line ok md-s" data-s="paid">
+            {icons.check(15, 'currentColor', 2.2)}
+            {`Сверено с выпиской${paidOn}`}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -209,9 +293,11 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
   const left = expected - collected
   return (
-    <div className="card dues-summary">
+    <div className={'card dues-summary' + (ownTapRecent() ? ' ds-moving' : '')}>
       <div className="dues-figure">
-        <span className="df-main">{paid}</span>
+        <span className="df-main">
+          <Flip value={paid} />
+        </span>
         <span className="df-of">{`из ${total} подтверждено`}</span>
         <span className="df-sum">{money(collected, snap.currency)}</span>
       </div>
@@ -225,11 +311,13 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
         <div className="dues-split">
           <span>
             <i style={{ background: 'var(--green)' }} />
-            {`подтверждено ${paid}`}
+            {'подтверждено '}
+            <Flip value={paid} />
           </span>
           <span>
             <i style={{ background: 'var(--orange)' }} />
-            {`ждут сверки ${claimed}`}
+            {'ждут сверки '}
+            <Flip value={claimed} />
           </span>
         </div>
       ) : null}
@@ -292,6 +380,44 @@ export function DuesScreen() {
     if (periodKey) remote.reload()
   }
 
+  // Дев сверяет переводы подряд по выписке, поэтому под пальцем не должна оказываться
+  // чужая строка. Подтверждённая полсекунды стоит на месте уже зелёной, потом
+  // сворачивается и вырастает во «Внесли»; отказ и снятие уходят сразу. Строку держим,
+  // пока сервер не ответил: свежий bootstrap переставил бы её в первом же кадре.
+  const [holds, setHolds] = useState<Record<number, Hold>>({})
+  const dropHold = (id: number): void =>
+    setHolds((h) => {
+      if (!h[id]) return h
+      const next = { ...h }
+      delete next[id]
+      return next
+    })
+  const mark: Mark = (row, to) => {
+    if (!snap || holds[row.userId]) return
+    const confirm = to === 'paid'
+    haptic.impact(confirm ? 'medium' : 'light')
+    markOwnTap()
+    const from = row.status
+    const index = snap.rows.filter((r) => r.status === from).findIndex((r) => r.userId === row.userId)
+    const me = data!.me
+    const shown: DuesRow = confirm
+      ? { ...row, status: 'paid', at: new Date().toISOString(), by: { username: me.username, name: me.name } }
+      : { ...row, status: 'none', at: null, by: null }
+    const stand = confirm && from !== 'paid'
+    setHolds((h) => ({ ...h, [row.userId]: { row: shown, from, to, index, phase: stand ? 'stand' : 'leave' } }))
+    if (stand) setTimeout(() => setHolds((h) => (h[row.userId] ? { ...h, [row.userId]: { ...h[row.userId]!, phase: 'leave' } } : h)), 500)
+    const t0 = performance.now()
+    void (async () => {
+      const done = await action(confirm ? 'dues.confirm' : 'dues.clear', { periodKey: snap.periodKey, userId: row.userId }, { quiet: true })
+      if (done) {
+        onChanged()
+        const wait = (stand ? 1000 : 520) - (performance.now() - t0)
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+      }
+      dropHold(row.userId)
+    })()
+  }
+
   // Шапка одна на все состояния, меняется только тело — его и подменяет Swap: каркас
   // гаснет поверх проявившегося списка, а не пропадает в том же кадре.
   // Скелет только на первой загрузке: перезапрос после отметки должен обновлять
@@ -344,37 +470,37 @@ export function DuesScreen() {
     )
   }
 
-  const unpaid = snap.rows.filter((r) => r.status === 'none' && !isExempt(r))
-  const exempt = snap.rows.filter((r) => r.status === 'none' && isExempt(r))
-  const claimed = snap.rows.filter((r) => r.status === 'claimed')
-  const paid = snap.rows.filter((r) => r.status === 'paid')
-  // У dev очередь на сверку идёт первой: это его список дел, а не справка.
-  const sections: ReactNode[] = []
-  const listOf = (title: string, rows: DuesRow[], verdicts = false) =>
-    rows.length === 0 ? null : (
-      <Fragment key={title}>
-        <SectionTitle>{`${title} · ${rows.length}`}</SectionTitle>
-        {verdicts && snap.canEdit ? (
-          <div className="card">
-            {rows.map((row, i) => (
-              <Fragment key={row.userId}>
-                {i > 0 ? <Sep left={46} /> : null}
-                <DuesPersonRow row={row} snap={snap} onChanged={onChanged} />
-                <Verdict row={row} snap={snap} onChanged={onChanged} />
-              </Fragment>
-            ))}
-          </div>
-        ) : (
-          <DuesList rows={rows} snap={snap} onChanged={onChanged} />
-        )}
-      </Fragment>
-    )
-  if (snap.canEdit) {
-    sections.push(listOf('Ждут подтверждения', claimed, true), listOf('Не внесли', unpaid), listOf('Внесли', paid))
-  } else {
-    sections.push(listOf('Не внесли', unpaid), listOf('Ждут подтверждения', claimed), listOf('Внесли', paid))
+  const meId = data!.me.id
+  const statusOf = (r: DuesRow): DuesStatus => {
+    const h = holds[r.userId]
+    return h ? (h.phase === 'stand' ? h.from : h.to) : r.status
   }
-  sections.push(listOf('Не платят', exempt))
+  const itemsOf = (st: DuesStatus, keep: (r: DuesRow) => boolean = () => true): Item[] => {
+    const items: Item[] = snap.rows
+      .filter((r) => statusOf(r) === st && keep(r))
+      .map((r) => {
+        const h = holds[r.userId]
+        return { row: h ? h.row : r, leaving: false, entering: Boolean(h && h.phase === 'leave'), held: Boolean(h) }
+      })
+    for (const h of Object.values(holds)) {
+      if (h.phase === 'leave' && h.from === st && keep(h.row)) {
+        items.splice(Math.min(h.index, items.length), 0, { row: h.row, leaving: true, entering: false, held: true })
+      }
+    }
+    return items
+  }
+  const unpaid = itemsOf('none', (r) => !isExempt(r))
+  const exempt = itemsOf('none', isExempt)
+  const claimed = itemsOf('claimed')
+  const paid = itemsOf('paid')
+  // У dev очередь на сверку идёт первой: это его список дел, а не справка.
+  const section = (title: string, items: Item[], verdicts = false) => (
+    <DuesSection key={title} title={title} items={items} snap={snap} mark={mark} meId={meId} verdicts={verdicts} />
+  )
+  const sections: ReactNode[] = snap.canEdit
+    ? [section('Ждут подтверждения', claimed, true), section('Не внесли', unpaid), section('Внесли', paid)]
+    : [section('Не внесли', unpaid), section('Ждут подтверждения', claimed), section('Внесли', paid)]
+  sections.push(section('Не платят', exempt))
 
   return frame(
     `${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`,
@@ -405,11 +531,7 @@ export function DuesScreen() {
           ) : null}
         </div>
       ) : null}
-      <Footnote>
-        {snap.canEdit
-          ? 'Свайп по строке: ставка человека и отметка наличными. У подтверждённого — снять отметку.'
-          : 'Чужие строки только на чтение: подтверждает dev. Свой взнос отмечается кнопкой выше.'}
-      </Footnote>
+      {snap.canEdit ? null : <Footnote>Чужие строки только на чтение: подтверждает dev. Свой взнос отмечается кнопкой выше.</Footnote>}
     </>,
   )
 }

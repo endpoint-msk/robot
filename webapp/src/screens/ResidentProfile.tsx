@@ -56,9 +56,9 @@ export function ResidentProfile() {
     try {
       const s = await api<AdminStatus>(method, { userId, ...body })
       setStatus(s)
-      haptic('success')
+      haptic.notify('success')
     } catch (e) {
-      haptic('error')
+      haptic.notify('error')
       showAlert((e as Error).message)
     } finally {
       setBusy(false)

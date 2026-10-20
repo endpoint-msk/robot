@@ -3,96 +3,10 @@
 // ref'ы: кадр обложки - это под сорок трансформов, и перерисовывать ради них
 // дерево React незачем. Разметка сцен - в components/OnboardingScenes.tsx.
 
-import { resolvedTheme } from './theme'
+import { clamp, E, mix, pr, pulse } from './motion'
 
-// --- кривые -------------------------------------------------------------------
-
-export const clamp = (x: number, a: number, b: number): number => Math.min(b, Math.max(a, x))
-export const mix = (a: number, b: number, p: number): number => a + (b - a) * p
-
-export type Ease = (p: number) => number
-
-export const E: Record<'out' | 'inOut' | 'back', Ease> = {
-  out: (p) => 1 - Math.pow(1 - p, 3),
-  inOut: (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2),
-  back: (p) => {
-    const c1 = 1.4
-    const c3 = c1 + 1
-    return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)
-  },
-}
-
-/** Прогресс участка [a; a + d] в момент t, через кривую. */
-export const pr = (t: number, a: number, d: number, e: Ease = E.out): number => e(clamp((t - a) / d, 0, 1))
-
-/** Горб 0 → 1 → 0 на участке [a; a + d]. */
-const pulse = (t: number, a: number, d: number): number => Math.sin(Math.PI * clamp((t - a) / d, 0, 1))
-
-// --- цвет ---------------------------------------------------------------------
-
-type Rgba = [number, number, number, number]
-
-const parseColor = (c: string): Rgba => {
-  if (c.startsWith('#')) {
-    let h = c.slice(1)
-    if (h.length === 3) h = h.replace(/./g, '$&$&')
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1]
-  }
-  const m = (c.match(/[\d.]+/g) ?? []).map(Number)
-  return [m[0] ?? 0, m[1] ?? 0, m[2] ?? 0, m[3] ?? 1]
-}
-
-export const mixc = (a: string, b: string, p: number): string => {
-  const A = parseColor(a)
-  const B = parseColor(b)
-  return `rgba(${Math.round(mix(A[0], B[0], p))},${Math.round(mix(A[1], B[1], p))},${Math.round(mix(A[2], B[2], p))},${mix(A[3], B[3], p).toFixed(3)})`
-}
-
-/** Непрозрачный цвет в виде #RRGGBB: другой setHeaderColor не понимает. */
-export const toHex = (c: string): string => {
-  const [r, g, b] = parseColor(c)
-  return '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
-}
-
-export type Tone = 'blue' | 'green' | 'indigo' | 'orange' | 'purple' | 'gray'
-
-export type Palette = {
-  bg: string
-  /** Доля тона в подложке сцены: на чёрном тон приходится брать гуще. */
-  mixp: number
-  tones: Record<Tone, string>
-  /** Обои Telegram под сценой шага «Бот». */
-  wall: string
-  /** Основной тон радужной подложки под картой резидента на «Готово». */
-  pass: string
-  text2: string
-  dotOff: string
-}
-
-const TONES = { blue: '#007aff', green: '#34c759', indigo: '#5856d6', orange: '#ff9500', purple: '#bf5af2' }
-
-// Копия токенов app.css: сцену перекрашивает каждый кадр, и читать цвета из
-// вычисленных стилей на каждом кадре дороже, чем держать их здесь.
-const LIGHT: Palette = {
-  bg: '#f2f2f7',
-  mixp: 0.12,
-  tones: { ...TONES, gray: '#8e8e93' },
-  wall: '#a9cc9c',
-  pass: '#e9ecf8',
-  text2: 'rgba(60,60,67,.6)',
-  dotOff: 'rgba(60,60,67,.2)',
-}
-const DARK: Palette = {
-  bg: '#000000',
-  mixp: 0.21,
-  tones: { ...TONES, gray: '#636366' },
-  wall: '#0e1621',
-  pass: '#08090f',
-  text2: 'rgba(235,235,245,.6)',
-  dotOff: 'rgba(235,235,245,.22)',
-}
-
-export const palette = (): Palette => (resolvedTheme() === 'dark' ? DARK : LIGHT)
+// Кривые и палитра общие для всех экранов (motion.ts); Onboarding.tsx импортирует их отсюда.
+export { clamp, E, mix, mixc, palette, pr, toHex, type Ease, type Palette, type Tone } from './motion'
 
 // --- DOM ----------------------------------------------------------------------
 

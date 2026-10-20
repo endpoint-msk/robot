@@ -74,7 +74,7 @@ function WriteAccessBanner() {
       onClick={async () => {
         const ok = await requestWriteAccess()
         if (ok) {
-          haptic('success')
+          haptic.notify('success')
           bump()
         }
       }}

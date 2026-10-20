@@ -86,7 +86,7 @@ export async function action(
   // продлит её. Кнопки в это время показывают отсчёт (useCooldown).
   const wait = cooldownLeft()
   if (wait > 0) {
-    haptic('error')
+    haptic.notify('warning')
     showAlert(`Слишком часто. Попробуйте через ${wait} с.`)
     return null
   }
@@ -100,7 +100,7 @@ export async function action(
     const e = err as ApiError
     // Отказ сервера должен ощущаться, а не только читаться: успех отзывался
     // haptic'ом, а «слот занят» и «нет связи» приходили молча.
-    haptic('error')
+    haptic.notify('error')
     showAlert(e.message)
     if (e.code && RESYNC_CODES.includes(e.code)) {
       try {
@@ -123,7 +123,6 @@ export async function action(
 export async function subscribeToEvents(): Promise<void> {
   try {
     const { token } = await api<{ token: string }>('calendar.link')
-    haptic('success')
     openUrl(`${location.origin}/events-subscribe?token=${encodeURIComponent(token)}`)
   } catch (err) {
     showAlert((err as Error).message)

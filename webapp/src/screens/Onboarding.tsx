@@ -8,7 +8,7 @@
 
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { action, api, subscribeToEvents } from '../api'
-import { addDays, fmtShortDate, MONTHS_GEN, MONTHS_NOM, weekdayIdx } from '../dates'
+import { fmtShortDate, MONTHS_GEN, MONTHS_NOM } from '../dates'
 import { money } from '../format'
 import { icons } from '../icons'
 import {
@@ -29,6 +29,7 @@ import {
   type SceneName,
   type Tone,
 } from '../onboarding'
+import { CHOICE_LABEL, choiceOf, DEMO_EVENT, nextSaturday, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
 import { pushOverlay } from '../overlays'
 import { getState, resetRoot, setData, useParams, useStore } from '../store'
 import { applyTheme, sec } from '../theme'
@@ -446,11 +447,6 @@ function createEngine(o: EngineOpts): Engine {
 
 // --- данные шагов --------------------------------------------------------------
 
-/** Ближайшая суббота от сегодняшнего дня (сегодня, если суббота). */
-const nextSaturday = (today: string): string => addDays(today, (5 - weekdayIdx(today) + 7) % 7)
-
-const DEMO_EVENT = { title: 'Грокаем алгоритмы', desc: 'Собираемся дружной компанией и решаем задачи тысячелетия', time: '16:00' }
-
 /**
  * Ивент для сцены: настоящий, если он и правда сделан из поста канала, иначе пример.
  * Настоящий без поста на этой сцене соврал бы: она показывает, как пост становится ивентом.
@@ -508,10 +504,6 @@ const notifySummary = (s: { notify: NotifyPrefs; eventNotify: NotifyPrefs }, due
   const text = parts.join(', ')
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
 }
-
-type NotifyChoice = 'today' | 'all' | 'off'
-const choiceOf = (p: NotifyPrefs): NotifyChoice => (p.enabled ? p.mode : 'off')
-const CHOICE_LABEL: Record<NotifyChoice, string> = { today: 'Только сегодня', all: 'Любой день', off: 'Выкл' }
 
 /** Строки знакомства: иконка слева, подпись с пояснением, справа стрелка или значение. */
 function InfoRow({ icon, color, label, sub, right }: { icon: ReactNode; color: string; label: string; sub?: string; right?: ReactNode }) {
@@ -718,10 +710,9 @@ export function Onboarding() {
     if (!settings || !menuFor) return
     const method = menuFor === 'req' ? 'notify' : 'notify.events'
     const cur = menuFor === 'req' ? settings.notify : settings.eventNotify
-    const next = choice === 'off' ? { enabled: false, mode: cur.mode } : { enabled: true, mode: choice }
-    haptic('success')
+    haptic.tick()
     setTimeout(() => setMenuFor(null), 140)
-    void action(method, next, { quiet: true })
+    void action(method, prefsFor(choice, cur), { quiet: true })
   }
 
   // --- данные для сцен ---
@@ -737,24 +728,7 @@ export function Onboarding() {
 
   const banners: Banner[] = settings
     ? [
-        {
-          key: 'req',
-          time: 'сейчас',
-          text:
-            settings.notify.mode === 'today'
-              ? `🚪 Новая заявка на визит: ${fmtShortDate(d.todayKey)} к 18:30 (сегодня). Гость: Оля.`
-              : `🚪 Новая заявка на визит: ${fmtShortDate(addDays(d.todayKey, 2))} к 14:00. Гость: Дима.`,
-          off: !settings.notify.enabled,
-        },
-        {
-          key: 'ev',
-          time: '1 ч назад',
-          text:
-            settings.eventNotify.mode === 'today'
-              ? '📅 Новый ивент: Кино в спейсе. Сегодня к 20:00.'
-              : `📅 Новый ивент: ${DEMO_EVENT.title}. ${fmtShortDate(nextSaturday(d.todayKey))} к ${DEMO_EVENT.time}.`,
-          off: !settings.eventNotify.enabled,
-        },
+        ...notifyBanners(settings, d.todayKey),
         ...(duesStep && dues
           ? [
               {

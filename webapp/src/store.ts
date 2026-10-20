@@ -101,6 +101,17 @@ export function pop(): void {
   }
 }
 
+/**
+ * Новые параметры верхнего экрана без навигации: navId не растёт, экран не ремаунтится
+ * и не уезжает в начало. Так листается день: пролистанный день заменяет текущий, а не
+ * ложится в стек, иначе «назад» прошёл бы по всем пролистанным дням.
+ */
+export function setTopParams(params: NavParams): void {
+  const top = state.stack[state.stack.length - 1]
+  if (!top) return
+  set({ stack: [...state.stack.slice(0, -1), { name: top.name, params }] })
+}
+
 export function resetRoot(): void {
   const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
   set({ stack: [{ name: root, params: {} }], navId: state.navId + 1, anim: 'in-fade' })

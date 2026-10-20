@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
 import { pop, push, useStore } from '../store'
-import { haptic, openUrl } from '../telegram'
+import { openUrl } from '../telegram'
 import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -23,7 +23,6 @@ export function Rules() {
   const submit = async (): Promise<void> => {
     const done = await action('rules.accept')
     if (!done) return
-    haptic('success')
     // Экран правил из стека убираем: назад с формы заявки надо возвращаться к визитам.
     pop()
     push('newRequest')

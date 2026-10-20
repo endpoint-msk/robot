@@ -208,7 +208,7 @@ export function MacScene({ board }: { board: BoardData }) {
 
 export type Banner = { key: string; time: string; text: string; off: boolean }
 
-function Notification({ botName, time, text, className }: { botName: string; time: string; text: string; className: string }) {
+export function Notification({ botName, time, text, className }: { botName: string; time: string; text: string; className: string }) {
   return (
     <div className={className}>
       <span className="ob-nb-av">

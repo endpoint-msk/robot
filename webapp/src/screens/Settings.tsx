@@ -2,10 +2,13 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { action, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
 import { confirmDialog } from '../modals'
+import { CHOICE_LABEL, choiceOf, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
+import { pushOverlay } from '../overlays'
 import { push, setTheme, useStore } from '../store'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { Notification } from '../components/OnboardingScenes'
 import { Screen } from '../components/Screen'
 
 function ThemeSection() {
@@ -94,6 +97,102 @@ function NotifyCard<M extends string>({
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * Уведомления о заявках и ивентах одной карточкой, как шаг «Что присылать» в
+ * знакомстве: две строки с меню, над ними баннеры, какими эти сообщения придут.
+ * Выключенный поток гасит свой баннер, поэтому сноски про личку не нужны.
+ */
+function NotifySection({ s }: { s: SettingsData }) {
+  const { data } = useStore()
+  const [menuFor, setMenuFor] = useState<'req' | 'ev' | null>(null)
+  const [menuTop, setMenuTop] = useState(0)
+  const hostRef = useRef<HTMLDivElement>(null)
+
+  // Меню закрывается тапом мимо и системной «Назад».
+  useEffect(() => {
+    if (!menuFor) return
+    const onDown = (e: PointerEvent): void => {
+      if (!(e.target as Element).closest('.ob-menu, .ob-popup')) setMenuFor(null)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    const un = pushOverlay(() => setMenuFor(null))
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true)
+      un()
+    }
+  }, [menuFor])
+
+  const openMenu = (key: 'req' | 'ev', btn: HTMLElement): void => {
+    if (menuFor === key) {
+      setMenuFor(null)
+      return
+    }
+    const host = hostRef.current?.getBoundingClientRect()
+    const r = btn.getBoundingClientRect()
+    setMenuTop(host ? r.bottom - host.top + 4 : 0)
+    setMenuFor(key)
+  }
+
+  const pick = (choice: NotifyChoice): void => {
+    if (!menuFor) return
+    const cur = menuFor === 'req' ? s.notify : s.eventNotify
+    haptic.tick()
+    setTimeout(() => setMenuFor(null), 140)
+    if (choiceOf(cur) === choice) return
+    void action(menuFor === 'req' ? 'notify' : 'notify.events', prefsFor(choice, cur), { quiet: true })
+  }
+
+  const botName = data!.onboarding?.botName || 'Endpoint Robot'
+  const row = (key: 'req' | 'ev', label: string, color: string, prefs: SettingsData['notify']): ReactNode => (
+    <div className="row">
+      <div className="row-icon" style={{ background: color }}>
+        {icons.bell()}
+      </div>
+      <span className="row-label">{label}</span>
+      <button
+        type="button"
+        className="ob-popup"
+        aria-haspopup="menu"
+        aria-expanded={menuFor === key}
+        onClick={(e) => openMenu(key, e.currentTarget)}
+      >
+        {CHOICE_LABEL[choiceOf(prefs)]}
+        {icons.updown()}
+      </button>
+    </div>
+  )
+  const cur = menuFor === 'ev' ? s.eventNotify : s.notify
+
+  return (
+    <>
+      <SectionTitle>Уведомления</SectionTitle>
+      <div className="nt-host" ref={hostRef}>
+        <div className="nt-stage" aria-hidden="true">
+          {notifyBanners(s, data!.todayKey).map((b) => (
+            <Notification key={b.key} botName={botName} time={b.time} text={b.text} className={'ob-nb' + (b.off ? ' off' : '')} />
+          ))}
+        </div>
+        <div className="card">
+          {row('req', 'Новые заявки', 'var(--orange)', s.notify)}
+          <Sep left={54} />
+          {row('ev', 'Новые ивенты', 'var(--purple)', s.eventNotify)}
+        </div>
+        <div className={'ob-menu' + (menuFor ? ' open' : '')} style={{ top: menuTop }} role="menu">
+          {(['today', 'all', 'off'] as NotifyChoice[]).map((c) => (
+            <Fragment key={c}>
+              {c === 'off' ? <div className="ob-menu-gap" /> : null}
+              <button type="button" role="menuitemradio" aria-checked={choiceOf(cur) === c} onClick={() => pick(c)}>
+                <span className="ob-mk">{icons.check(14, 'currentColor', 2.2)}</span>
+                {CHOICE_LABEL[c]}
+              </button>
+            </Fragment>
+          ))}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -276,7 +375,7 @@ function MacCard({ s }: { s: SettingsData }) {
                 }
                 const done = await action('mac.add', { mac: value, label })
                 if (done) {
-                  haptic('success')
+                  haptic.notify('success')
                   setShowForm(false)
                   setMac('')
                   setLabel('')
@@ -344,30 +443,7 @@ export function Settings() {
       </div>
       <ThemeSection />
       <CalendarSection />
-      <SectionTitle>Уведомления о заявках</SectionTitle>
-      <NotifyCard
-        prefs={s.notify}
-        method="notify"
-        title="Новые заявки"
-        color="var(--orange)"
-        options={[
-          { mode: 'today', label: 'Только на сегодня', sublabel: 'Заявки на текущий день' },
-          { mode: 'all', label: 'Все заявки', sublabel: 'На любой день' },
-        ]}
-      />
-      <Footnote>Придут в личку бота. По умолчанию - только заявки на сегодня.</Footnote>
-      <SectionTitle>Уведомления об ивентах</SectionTitle>
-      <NotifyCard
-        prefs={s.eventNotify}
-        method="notify.events"
-        title="Новые ивенты"
-        color="var(--purple)"
-        options={[
-          { mode: 'today', label: 'Только на сегодня', sublabel: 'Ивенты на текущий день' },
-          { mode: 'all', label: 'Все ивенты', sublabel: 'На любой день' },
-        ]}
-      />
-      <Footnote>Придут в личку бота, когда резидент заводит ивент. По умолчанию - на любой день.</Footnote>
+      <NotifySection s={s} />
       <SectionTitle>Авто-отметка по MAC</SectionTitle>
       <div className="card" style={{ marginBottom: 8 }}>
         <div className="row">

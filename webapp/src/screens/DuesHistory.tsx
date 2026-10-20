@@ -41,7 +41,7 @@ export function DuesHistory() {
     setBusy(true)
     try {
       await api('dues.export')
-      haptic('success')
+      haptic.notify('success')
       showAlert('Отправил таблицу в личку от бота.')
     } catch (err) {
       showAlert((err as ApiError).message)

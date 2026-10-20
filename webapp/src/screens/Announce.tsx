@@ -45,7 +45,7 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
         text: t,
         version: (info.release && info.release.version) || '',
       })
-      haptic('success')
+      haptic.notify('success')
       const tail = res.failed ? `, не дошло в ${res.failed}` : ''
       showAlert(`Отправлено в ${res.sent} ${plural(res.sent, 'чат', 'чата', 'чатов')}${tail}.`)
       pop()

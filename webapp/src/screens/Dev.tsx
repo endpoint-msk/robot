@@ -24,7 +24,7 @@ function DoorSection() {
   const save = async (nextCode: string, nextNote: string): Promise<void> => {
     const res = await action('door.set', { code: nextCode, note: nextNote })
     if (!res) return
-    haptic('success')
+    haptic.notify('success')
     setCode(res.door?.code ?? '')
     setNote(res.door?.note ?? '')
   }
@@ -97,7 +97,7 @@ export function Dev() {
     }
     const res = await action('dev.seed', { dateKey: selected, time, purpose })
     if (res) {
-      haptic('success')
+      haptic.notify('success')
       setPurpose('')
     }
   }
@@ -215,7 +215,7 @@ export function Dev() {
                     })
                     if (ok) {
                       const res = await action('unblock', { userId: b.userId })
-                      if (res) haptic('success')
+                      if (res) haptic.notify('success')
                     }
                   }}
                 >

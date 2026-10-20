@@ -113,7 +113,7 @@ export function Event() {
       const added: string[] = []
       for (const file of picked.slice(0, room)) added.push(await uploadEventPhoto(await compressImage(file)))
       setPhotos((prev) => [...prev, ...added])
-      haptic('success')
+      haptic.notify('success')
       if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
     } catch (err) {
       showAlert(err instanceof Error && err.message ? err.message : 'Не получилось загрузить фото.')
@@ -187,7 +187,7 @@ export function Event() {
       ? await action('event.update', { id: existing.id, ...payload })
       : await action('event.create', { ...payload, fromDraft: Boolean(draft) })
     if (done) {
-      haptic('success')
+      haptic.notify('success')
       pop()
     }
   }
@@ -201,10 +201,7 @@ export function Event() {
     })
     if (!ok) return
     const done = await action('event.delete', { id: existing.id })
-    if (done) {
-      haptic('warning')
-      pop()
-    }
+    if (done) pop()
   }
 
   return (

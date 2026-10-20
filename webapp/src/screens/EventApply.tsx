@@ -45,7 +45,7 @@ export function EventApply() {
       ? await action('event.apply.edit', { id: app.id, answers })
       : await action('event.apply', { eventId: event.id, answers })
     if (done) {
-      haptic('success')
+      haptic.notify('success')
       pop()
     }
   }
@@ -59,10 +59,7 @@ export function EventApply() {
     })
     if (!ok) return
     const done = await action('event.apply.cancel', { id: app.id })
-    if (done) {
-      haptic('warning')
-      pop()
-    }
+    if (done) pop()
   }
 
   const title = app ? (readOnly ? 'Вы участвуете' : 'Ваша заявка') : 'Заявка на ивент'

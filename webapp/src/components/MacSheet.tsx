@@ -179,7 +179,7 @@ export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: 
     const res = await action('mac.add', { mac: mac.trim(), label: label.trim() })
     setSending(false)
     if (!res) return
-    haptic('success')
+    haptic.notify('success')
     close(onBound)
   }
 

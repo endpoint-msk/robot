@@ -458,8 +458,11 @@ body {
     color: var(--text-2);
     margin: 0 18px 7px;
 }
+/* Заголовок «Ждут ответа», под которым остались только что одобренные (экран дня). */
+.section-title { transition: opacity 0.22s ease-out; }
+.section-title.sec-dim { opacity: 0; }
 .card + .section-title, .footnote + .section-title, button + .section-title,
-.route-door + .section-title { margin-top: 22px; }
+.route-door + .section-title, .nt-host + .section-title { margin-top: 22px; }
 /* Тот же отступ, когда между карточкой и заголовком стоит обёртка подмены: первый
    заголовок внутри Swap соседом карточки не является, и правило выше его не ловило —
    «РЕЗИДЕНТЫ» прилипали к полю поиска. */
@@ -675,6 +678,14 @@ body {
 .person-tap:active { opacity: 0.55; }
 
 .approver { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+/* Свой «Захостить»: пилл встаёт на место кнопки, аватарка с перелётом, как в «Я приду». */
+.approver.host-in { animation: host-in 0.22s ease-out both; }
+.approver.host-in .avatar { animation: host-pop 0.56s cubic-bezier(0.34, 1.56, 0.64, 1) 0.06s both; }
+@keyframes host-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes host-pop { from { transform: scale(0); } }
+@media (prefers-reduced-motion: reduce) {
+    .approver.host-in, .approver.host-in .avatar { animation: none; }
+}
 /* Микро-заголовок, младшая ступень. Их в приложении шесть — «ХОСТ», «АДРЕС»,
    «МЕТРО», «ИВЕНТ», «ВАШ ВЗНОС», подпись ответа в анкете, — и жили они в четырёх
    кеглях с тремя трекингами: одинаковые по смыслу подписи читались как разные
@@ -924,6 +935,107 @@ body {
 .attend-btn:active { opacity: 0.6; }
 .attend-btn.on { background: var(--green); color: #fff; box-shadow: none; }
 
+/* --- Экран дня листается (screens/Day.tsx) ---
+   Полоса под шапкой в тон дня, как сцена шага в знакомстве. Её цвет и высоту, сдвиг
+   страниц и точки рисует листалка прямыми правками style; здесь раскладка в покое. */
+.dpg { position: relative; }
+.dpg-band {
+    position: absolute;
+    z-index: 0;
+    left: -16px;
+    right: -16px;
+    top: calc(-12px - var(--tg-content-safe-area-inset-top, 0px));
+    background: var(--bg);
+    pointer-events: none;
+}
+.dpg-hatch {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
+}
+.dpg > .back-row, .dpg-dots, .dpg-track { position: relative; z-index: 1; }
+.dpg-dots { display: flex; justify-content: center; margin: -6px 0 0; touch-action: pan-y; }
+.dpg-dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+.dpg-dot i { display: block; width: 6px; height: 6px; border-radius: 3px; background: rgba(var(--sec), 0.2); }
+/* Дорожка шире колонки на поля экрана: страница уезжает за край экрана, а не за край
+   колонки. */
+.dpg-track { margin: 0 -16px; overflow: hidden; touch-action: pan-y; }
+.dpg-page { padding: 0 16px; }
+.dpg-page:not(.active) { position: absolute; top: 0; left: 0; right: 0; }
+.dpg-head { padding-bottom: 16px; user-select: none; -webkit-user-select: none; }
+.dpg-head .header { margin-bottom: 0; }
+.dpg-body { padding-top: 18px; }
+.dpg-events + .dpg-acts { margin-top: 12px; }
+.dpg-coming { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 14px 4px 0; }
+.dpg-faces { display: flex; align-items: center; flex-shrink: 0; }
+.dpg-faces .avatar { position: relative; z-index: 1; width: 34px; height: 34px; font-size: 14px; box-shadow: 0 0 0 2px var(--dpg-ring, var(--bg)); }
+.dpg-faces > * + * { margin-left: -9px; }
+.dpg-face { display: block; width: 34px; height: 34px; flex-shrink: 0; }
+/* Первое место в ряду всегда ваше: пунктир, пока не собираетесь, аватарка поверх
+   соседей, когда собрались. Соседи поэтому никогда не сдвигаются. */
+.dpg-myslot { position: relative; z-index: 0; width: 34px; height: 34px; flex-shrink: 0; }
+.dpg-myslot.on { z-index: 2; }
+.dpg-slot { position: absolute; inset: 0; border-radius: 50%; border: 1.6px dashed rgba(var(--sec), 0.3); }
+.dpg-myslot.on .dpg-slot { opacity: 0; }
+.dpg-me { position: absolute; inset: 0; border-radius: 50%; }
+.dpg-coming-text { flex: 1; min-width: 0; }
+.dpg-coming-k { font-size: 15px; font-weight: 700; }
+.dpg-coming-s { margin-top: 1px; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Обе подписи лежат в одной ячейке: ширина кнопки не прыгает, а смена подписи
+   перетекает, как подпись кнопки в знакомстве. Нажатие сразу, возврат с перелётом. */
+.dpg-pill {
+    flex-shrink: 0;
+    display: inline-grid;
+    height: 36px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 999px;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--blue);
+    cursor: pointer;
+    transition: background-color 0.28s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.28s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.dpg-pill:active { transform: scale(0.95); transition-duration: 0.28s, 0.28s, 0.08s; }
+.dpg-pill.on { background: var(--green); box-shadow: none; }
+.dpg-pill-l {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: opacity 0.22s cubic-bezier(0.33, 1, 0.68, 1), transform 0.26s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.dpg-pill-on { color: #fff; opacity: 0; transform: translateY(8px); }
+.dpg-pill.on .dpg-pill-off { opacity: 0; transform: translateY(-8px); }
+.dpg-pill.on .dpg-pill-on { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+    .dpg-pill, .dpg-pill-l { transition: none; }
+}
+
+/* Подпись, перетекающая после своего тапа (XText в components/Flip.tsx). */
+.xtext { display: inline-grid; vertical-align: top; }
+.xtext > * { grid-area: 1 / 1; }
+/* Блок, вырастающий по высоте (components/Collapse.tsx). Отступ заголовка внутри
+   него и заголовка сразу после него тот же, что у соседних секций. */
+.collapse { overflow: hidden; }
+.collapse > .section-title:first-child, .collapse + .section-title { margin-top: 22px; }
+
 /* --- Мои визиты (гость) --- */
 
 .status-square {
@@ -1020,6 +1132,7 @@ body {
 
 .kv-key { font-size: 16px; color: var(--text-2); }
 .kv-val { margin-left: auto; font-size: 16px; font-weight: 600; text-align: right; }
+.kv-sub { display: block; margin-top: 1px; font-size: 14px; font-weight: 400; color: var(--text-2); }
 .kv-block { padding: 11px 14px; }
 .kv-block .kv-cap { font-size: 13px; color: rgba(var(--sec), 0.5); margin-bottom: 3px; }
 .kv-block .kv-text { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
@@ -1884,6 +1997,37 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ActionButton: подпись обёрнута в .pend-label и наследует раскладку кнопки, чтобы
+   иконка, текст и отступы стояли как без обёртки. */
+.pend { position: relative; }
+.pend-label {
+    display: inherit;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: inherit;
+    justify-content: inherit;
+    gap: inherit;
+    transition: opacity 0.15s;
+}
+.pending { pointer-events: none; }
+.pending > .pend-label { opacity: 0.4; animation: pend-label 0.15s 320ms forwards; }
+.pend-spin {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    opacity: 0;
+    pointer-events: none;
+}
+.pending > .pend-spin { animation: spin 0.8s linear infinite, pend-spin 0.15s 320ms forwards; }
+@keyframes pend-label { to { opacity: 0; } }
+@keyframes pend-spin { to { opacity: 0.85; } }
+
 body.busy #app { pointer-events: none; }
 #busy-overlay {
     position: fixed;
@@ -2264,6 +2408,20 @@ body.busy #busy-overlay { display: flex; }
 .dues-split span { display: flex; align-items: center; gap: 5px; }
 .dues-split i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .dues-note { margin-top: 11px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.dues-summary.ds-moving .dues-bar > i { transition: width 0.42s cubic-bezier(0.65, 0, 0.35, 1); }
+
+/* Счётчик, перещёлкнувшийся после своего тапа (components/Flip.tsx). Обрезка через
+   clip-path, а не overflow: inline-block со скрытым переполнением теряет базовую
+   линию, и число в строке съезжает вниз. */
+.flip { position: relative; display: inline-block; clip-path: inset(0 -1em); }
+.flip-sp { visibility: hidden; }
+.flip-a, .flip-b { position: absolute; left: 0; top: 0; white-space: nowrap; }
+/* Своя строка, только что переехавшая в другой список: подсветка гаснет на месте. */
+.row-flash { animation: row-flash 1.2s ease-out; }
+@keyframes row-flash {
+    from { background-color: rgba(52, 199, 89, 0.2); }
+    to { background-color: transparent; }
+}
 
 /* Строка человека в списке взносов. */
 .dues-main { min-width: 0; flex: 1; }
@@ -2305,11 +2463,37 @@ body.busy #busy-overlay { display: flex; }
 /* Ответ на чужую заявку: инлайн, а не свайпом — прятать за жест решение по чужому
    действию нельзя (так же оставлена инлайновой кнопка «Принять слот» в заявках). */
 .dues-verdict { display: flex; gap: 8px; padding: 0 14px 12px 46px; }
+/* Ответ на «Подтвердить»: кнопки сменяет строка той же высоты, ничего ниже не сдвигается. */
+.dues-verdict.done { align-items: center; gap: 6px; min-height: 33px; font-size: 14px; font-weight: 600; color: var(--green); animation: host-in 0.22s ease-out both; }
 
 /* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
-.my-dues { border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
-.my-dues.unpaid { background: var(--warn-bg); box-shadow: none; }
-.my-dues.claimed { background: var(--card); box-shadow: var(--shadow-card); }
+.my-dues { position: relative; border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
+/* Три состояния живут в одной карточке слоями, как в сцене взносов знакомства: «Я внёс»
+   перекрашивает подложку и меняет метку на месте, а не подменяет карточку другой. */
+.my-dues.md-card { overflow: hidden; background: none; box-shadow: none; }
+.my-dues.md-card.md-claimed { box-shadow: var(--shadow-card); }
+.md-tint, .md-tint > i { position: absolute; inset: 0; }
+.md-tint > i[data-s="none"] { background: var(--warn-bg); }
+.md-tint > i[data-s="claimed"] { background: var(--card); }
+.md-tint > i[data-s="paid"] { background: var(--ok-soft-bg); }
+.md-body { position: relative; }
+.md-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; }
+.md-tags { display: grid; justify-items: end; }
+.md-tags > .ob-tag, .md-act > * { grid-area: 1 / 1; }
+/* Специфичнее .primary-btn[disabled]: погашенная «Я внёс» иначе просвечивает на 0.55. */
+.my-dues.md-card .md-s { opacity: 0; pointer-events: none; }
+.my-dues.md-none .md-s[data-s="none"],
+.my-dues.md-claimed .md-s[data-s="claimed"],
+.my-dues.md-paid .md-s[data-s="paid"] { opacity: 1; pointer-events: auto; }
+/* Переход играет только после своего тапа: статус от сверки dev встаёт без движения. */
+.my-dues.md-moving .md-s { transition: opacity 0.22s cubic-bezier(0.33, 1, 0.68, 1); }
+.md-req { display: grid; grid-template-rows: 1fr; }
+.my-dues:not(.md-none) .md-req { grid-template-rows: 0fr; opacity: 0; }
+.my-dues.md-moving .md-req { transition: grid-template-rows 0.42s cubic-bezier(0.65, 0, 0.35, 1), opacity 0.3s ease; }
+.md-req-in { min-height: 0; overflow: hidden; }
+.md-act { display: grid; margin-top: 14px; }
+.my-dues .md-act .primary-btn { margin-top: 0; }
+.md-act .ob-pay-line { position: static; min-height: 50px; border-radius: var(--radius-btn); }
 .my-dues-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
 .my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
 .my-dues-sub { margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
@@ -3800,7 +3984,23 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .ob-field-msg.warn { color: var(--ob-warn-ink); }
 .ob-sheet-body > .primary-btn { margin-top: 8px; }
 
+/* Настройки: уведомления одной карточкой, как шаг «Что присылать» (screens/Settings.tsx).
+   Баннеры над строками показывают, что придёт в личку; выключенный поток гаснет. */
+.nt-host { position: relative; }
+.nt-stage {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: var(--radius-card);
+    background: var(--bg);
+    background: color-mix(in srgb, var(--indigo) var(--ob-mix), var(--bg));
+}
+.nt-host .ob-menu { right: 8px; }
+
 @media (prefers-reduced-motion: reduce) {
     .ob.ob-in { animation: none; }
     .ob-tip, .ob-menu, .ob-sheet, .ob-sheet-overlay { transition-duration: 0.01s; }
+    .row-flash { animation: none; }
+    .my-dues.md-moving .md-s, .my-dues.md-moving .md-req, .dues-summary.ds-moving .dues-bar > i { transition: none; }
 }

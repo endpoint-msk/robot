@@ -1,12 +1,13 @@
 // Общие UI-атомы: шапка, карточки-строки, разделители, свитч, пустые состояния,
 // нижняя панель (в портал вне анимируемого экрана) и дев-чипы.
 
-import { useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BarContext } from '../barContext'
 import { cooldownSnapshot, subscribeCooldown } from '../cooldown'
 import { icons } from '../icons'
 import { pop, push, setPerspective, useStore } from '../store'
+import { haptic } from '../telegram'
 import { screenTitle } from '../titles'
 
 export function Sep({ left }: { left?: number }) {
@@ -122,6 +123,7 @@ export function Switch({
         aria-checked={shown}
         aria-label={label}
         onClick={async () => {
+          haptic.impact(shown ? 'soft' : 'light')
           setPending(!shown)
           try {
             await onToggle()
@@ -159,6 +161,60 @@ export function PrimaryButton({
       onClick={onClick}
     >
       {wait > 0 ? `Подождите ${wait} с` : children}
+    </button>
+  )
+}
+
+/**
+ * Кнопка, которая ждёт сервер сама, вместо оверлея на весь экран: ответ меняет одну
+ * строку, и гасить ради неё интерфейс значит прятать то, на что человек смотрит.
+ * Подпись тускнеет сразу, крутилка встаёт через 320 мс, как каркас (SKELETON_DELAY_MS):
+ * быстрый ответ её не покажет. Ждёт, только если onClick вернул промис.
+ */
+export function ActionButton({
+  className,
+  onClick,
+  children,
+  disabled,
+  label,
+}: {
+  className: string
+  onClick: () => unknown
+  children: ReactNode
+  disabled?: boolean
+  label?: string
+}) {
+  const [pending, setPending] = useState(false)
+  // Успешный ответ часто уносит кнопку вместе со строкой.
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+  return (
+    <button
+      type="button"
+      className={className + ' pend' + (pending ? ' pending' : '')}
+      disabled={disabled}
+      aria-busy={pending || undefined}
+      aria-label={label}
+      title={label}
+      onClick={async () => {
+        if (pending) return
+        const r = onClick()
+        if (!(r instanceof Promise)) return
+        setPending(true)
+        try {
+          await r
+        } finally {
+          if (alive.current) setPending(false)
+        }
+      }}
+    >
+      <span className="pend-label">{children}</span>
+      <span className="pend-spin" aria-hidden="true" />
     </button>
   )
 }

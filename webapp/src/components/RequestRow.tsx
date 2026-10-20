@@ -62,7 +62,7 @@ async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
   // Согласованный слот не изменился — предлагать нечего (сервер тоже это гасит).
   if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
   const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
-  if (done) haptic('success')
+  if (done) haptic.notify('success')
 }
 
 /**
@@ -78,8 +78,7 @@ async function closeRequest(r: HostingRequest): Promise<void> {
     { confirmLabel: 'Закрыть заявку', cancelLabel: 'Оставить', destructive: true },
   )
   if (!ok) return
-  const done = await action('close', { id: r.id })
-  if (done) haptic('warning')
+  await action('close', { id: r.id })
 }
 
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
@@ -89,8 +88,7 @@ async function blockGuest(r: HostingRequest): Promise<void> {
     { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true },
   )
   if (!ok) return
-  const done = await action('block', { id: r.id })
-  if (done) haptic('warning')
+  await action('block', { id: r.id })
 }
 
 /**
@@ -120,8 +118,8 @@ async function hostMenu(r: HostingRequest): Promise<void> {
     return
   }
   if (choice === 'withdraw') {
-    const done = await action('transfer.decline', { id: r.id })
-    if (done) haptic('warning')
+    haptic.impact('light')
+    await action('transfer.decline', { id: r.id })
     return
   }
   if (choice !== 'unapprove') return
@@ -130,8 +128,7 @@ async function hostMenu(r: HostingRequest): Promise<void> {
     cancelLabel: 'Оставить',
   })
   if (!ok) return
-  const done = await action('unapprove', { id: r.id })
-  if (done) haptic('warning')
+  await action('unapprove', { id: r.id })
 }
 
 /**
@@ -140,19 +137,32 @@ async function hostMenu(r: HostingRequest): Promise<void> {
  * места не занимают (см. dayOccupancy), поэтому предупреждаем ровно в тот момент, когда
  * место действительно занимают.
  */
-async function confirmOverCapacity(r: HostingRequest, capacity: DayCapacity | undefined): Promise<boolean> {
+export async function confirmOverCapacity(r: HostingRequest, capacity: DayCapacity | undefined): Promise<boolean> {
   const guest = `${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}`
   const ask = `Захостить: ${guest}, ${fmtShortDate(r.dateKey)} к ${r.time}?`
   const over = capacity && capacity.occupied + 1 > capacity.cap
   if (!over) return confirmDialog(ask, { confirmLabel: 'Захостить', cancelLabel: 'Не сейчас' })
-  return confirmDialog(`В этот день уже ${capacity.occupied} из ${capacity.cap} — этот визит сверх вместимости. ${ask}`, {
+  haptic.notify('warning')
+  return confirmDialog(`В этот день уже ${capacity.occupied} из ${capacity.cap}: этот визит сверх вместимости. ${ask}`, {
     confirmLabel: 'Всё равно захостить',
     cancelLabel: 'Не сейчас',
     destructive: true,
   })
 }
 
-export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?: boolean }) {
+export function RequestRow({
+  r,
+  archive = false,
+  onHost,
+  justHosted = false,
+}: {
+  r: HostingRequest
+  archive?: boolean
+  /** Свой «Захостить»: после подтверждения экран дня ставит одобрение сразу, строка остаётся на месте. */
+  onHost?: (r: HostingRequest) => void
+  /** Только что захостили отсюда: пилл встаёт на место кнопки с перелётом. */
+  justHosted?: boolean
+}) {
   const data = useStore().data!
   const me = data.me
   const p = r.proposal
@@ -186,7 +196,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       </Profile>
     )
     right = (
-      <div className="approver">
+      <div className={'approver' + (justHosted ? ' host-in' : '')}>
         <span className="approver-label">одобрил</span>
         {pill}
       </div>
@@ -200,10 +210,11 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
       <button
         className="host-btn"
         onClick={async () => {
+          if (onHost) return onHost(r)
           const ok = await confirmOverCapacity(r, data.days.find((d) => d.dateKey === r.dateKey)?.capacity)
           if (!ok) return
-          const done = await action('approve', { id: r.id })
-          if (done) haptic('success')
+          haptic.impact('medium')
+          await action('approve', { id: r.id })
         }}
       >
         Захостить
@@ -221,7 +232,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           className="accept-btn"
           onClick={async () => {
             const done = await action('proposal.accept', { id: r.id })
-            if (done) haptic('success')
+            if (done) haptic.notify('success')
           }}
         >
           {icons.check(14, '#34c759', 2.4)}
@@ -232,8 +243,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         <button
           className="link-btn"
           onClick={async () => {
-            const done = await action('proposal.decline', { id: r.id })
-            if (done) haptic('warning')
+            haptic.impact('light')
+            await action('proposal.decline', { id: r.id })
           }}
         >
           Оставить {r.time}
@@ -256,7 +267,7 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           className="accept-btn"
           onClick={async () => {
             const done = await action('transfer.accept', { id: r.id })
-            if (done) haptic('success')
+            if (done) haptic.notify('success')
           }}
         >
           {icons.check(14, '#34c759', 2.4)}
@@ -265,8 +276,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
         <button
           className="link-btn"
           onClick={async () => {
-            const done = await action('transfer.decline', { id: r.id })
-            if (done) haptic('warning')
+            haptic.impact('light')
+            await action('transfer.decline', { id: r.id })
           }}
         >
           Не смогу
@@ -287,8 +298,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
           <button
             className="link-btn pn-undo"
             onClick={async () => {
-              const done = await action('transfer.decline', { id: r.id })
-              if (done) haptic('warning')
+              haptic.impact('light')
+              await action('transfer.decline', { id: r.id })
             }}
           >
             Отозвать
@@ -405,8 +416,8 @@ export function RequestRow({ r, archive = false }: { r: HostingRequest; archive?
               <button
                 className="link-btn pn-undo"
                 onClick={async () => {
-                  const done = await action('proposal.decline', { id: r.id })
-                  if (done) haptic('warning')
+                  haptic.impact('light')
+                  await action('proposal.decline', { id: r.id })
                 }}
               >
                 Отозвать
