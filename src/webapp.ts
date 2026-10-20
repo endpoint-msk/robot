@@ -185,6 +185,7 @@ import {
 } from './resident-admin.js'
 import type { Storage } from './storage.js'
 import type { EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
+import { own } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
 const INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60
@@ -892,7 +893,7 @@ const duesSnapshot = (ctx: ApiContext, periodKey?: string) => {
     const { storage, user } = ctx
     const dues = duesOf(storage)
     const dev = isDevUser(ctx)
-    const period = periodKey ? dues.periods[periodKey] : activeDuesPeriod(dues)
+    const period = periodKey ? own(dues.periods, periodKey) : activeDuesPeriod(dues)
     // Выключенный сбор (и включённый, но ещё без периодов) для обычного резидента
     // это пустое место, а dev'у нужен вход в настройки — иначе, выключив сбор, он
     // остался бы без способа включить его обратно.
@@ -1173,10 +1174,10 @@ const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
     if (!AUDITED.has(method)) return null
     const id = typeof ctx.body.id === 'string' ? ctx.body.id : ''
     const state = ctx.storage.get()
-    const request = state.hostingRequests[id]
-    const event = state.events[id]
+    const request = own(state.hostingRequests, id)
+    const event = own(state.events, id)
     // Для методов разбора заявок `body.id` — id заявки на ивент (её decline удаляет).
-    const application = state.eventApplications[id]
+    const application = own(state.eventApplications, id)
     return {
         request: request ? { ...request } : null,
         event: event ? { ...event } : null,
@@ -1215,7 +1216,7 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return `оставил заявку на ${slotOf(strOf(body.dateKey), strOf(body.time))}`
         case 'edit': {
             if (!req) return `поправил заявку ${id}`
-            const now = storage.get().hostingRequests[id]
+            const now = own(storage.get().hostingRequests, id)
             const to = now ? slotOf(now.dateKey, now.time) : slotOf(strOf(body.dateKey), strOf(body.time))
             return to === reqSlot ? `поправил свою заявку на ${to}` : `перенёс свою заявку ${reqSlot} → ${to}`
         }
@@ -1229,7 +1230,7 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return `закрыл${target} на ${reqSlot}`
         case 'propose': {
             const asked = slotOf(strOf(body.dateKey) || (req?.dateKey ?? ''), strOf(body.time))
-            const now = storage.get().hostingRequests[id]
+            const now = own(storage.get().hostingRequests, id)
             // Встречное предложение тем же слотом сервер засчитывает как согласие:
             // предложения после вызова уже нет, а слот заявки стал предложенным.
             if (req?.proposal && now && !now.proposal) return `принял перенос${target}: ${slotOf(now.dateKey, now.time)}`
@@ -1280,7 +1281,7 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return `завёл ивент «${strOf(body.title)}» на ${slotOf(strOf(body.dateKey), strOf(body.time))}`
         case 'event.update': {
             if (!ev) return `поправил ивент ${id}`
-            const now = storage.get().events[id]
+            const now = own(storage.get().events, id)
             const from = slotOf(ev.dateKey, ev.time)
             const to = now ? slotOf(now.dateKey, now.time) : from
             return to !== from
@@ -1293,7 +1294,7 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
         case 'event.app.decline': {
             const app = before.application
             if (!app) return method === 'event.app.approve' ? `принял заявку на ивент ${id}` : `отклонил заявку на ивент ${id}`
-            const evt = storage.get().events[app.eventId]
+            const evt = own(storage.get().events, app.eventId)
             const title = evt ? `«${evt.title}»` : `ивент ${app.eventId}`
             const verb = method === 'event.app.approve' ? 'принял' : 'отклонил'
             return `${verb} заявку ${whoOf(app.guest)} на ${title}`
@@ -1375,7 +1376,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
     }
     const findRequest = (): HostingRequest | null => {
         const id = typeof body.id === 'string' ? body.id : ''
-        const request = storage.get().hostingRequests[id]
+        const request = own(storage.get().hostingRequests, id)
         if (!request) sendError(res, 404, 'not_found', 'Заявка не найдена — возможно, её уже отменили.')
         return request ?? null
     }
@@ -1721,7 +1722,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     r.proposal = null
                 }
             })
-            const updated = storage.get().hostingRequests[request.id]
+            const updated = own(storage.get().hostingRequests, request.id)
             if (updated) {
                 void notifyGuestApproved(client, config.publicUrl, updated)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя об одобрении:', err))
@@ -1756,7 +1757,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     r.transfer = null
                 }
             })
-            const updated = storage.get().hostingRequests[request.id]
+            const updated = own(storage.get().hostingRequests, request.id)
             if (updated && pendingTransfer) {
                 void notifyTransferCancelled(client, updated, pendingTransfer, true)
                     .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
@@ -1828,7 +1829,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'event.update': {
             if (!requireResident()) return
             const id = typeof body.id === 'string' ? body.id : ''
-            const existing = storage.get().events[id]
+            const existing = own(storage.get().events, id)
             if (!existing) {
                 sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
@@ -1860,7 +1861,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'event.delete': {
             if (!requireResident()) return
             const id = typeof body.id === 'string' ? body.id : ''
-            const existing = storage.get().events[id]
+            const existing = own(storage.get().events, id)
             if (!existing) {
                 sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
@@ -1906,7 +1907,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         // Гость (или резидент) подаёт заявку на ивент по его форме.
         case 'event.apply': {
             const id = typeof body.eventId === 'string' ? body.eventId : ''
-            const event = storage.get().events[id]
+            const event = own(storage.get().events, id)
             if (!event) {
                 sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
@@ -1954,12 +1955,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'event.app.decline': {
             if (!requireResident()) return
             const id = typeof body.id === 'string' ? body.id : ''
-            const app = storage.get().eventApplications[id]
+            const app = own(storage.get().eventApplications, id)
             if (!app) {
                 sendError(res, 404, 'not_found', 'Заявка не найдена — обновите экран.')
                 return
             }
-            const event = storage.get().events[app.eventId]
+            const event = own(storage.get().events, app.eventId)
             if (!event) {
                 sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
@@ -1987,7 +1988,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'event.apps': {
             if (!requireResident()) return
             const id = typeof body.eventId === 'string' ? body.eventId : ''
-            const event = storage.get().events[id]
+            const event = own(storage.get().events, id)
             if (!event) {
                 sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
                 return
@@ -2415,9 +2416,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const state = storage.get()
             const visible =
                 kind === 'visit'
-                    ? Object.hasOwn(state.hostingRequests, id) && state.hostingRequests[id]!.guest.userId === user.userId
+                    ? Object.hasOwn(state.hostingRequests, id) && own(state.hostingRequests, id)!.guest.userId === user.userId
                     : kind === 'event'
-                      ? Object.hasOwn(state.events, id) && (resident || !state.events[id]!.residentsOnly)
+                      ? Object.hasOwn(state.events, id) && (resident || !own(state.events, id)!.residentsOnly)
                       : false
             if (!kind || !visible) {
                 sendError(res, 404, 'not_found', kind === 'event' ? 'Ивент не найден.' : 'Заявка не найдена.')
@@ -2724,7 +2725,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const dues = duesOf(storage)
             const periodKey = typeof body.periodKey === 'string' && body.periodKey ? body.periodKey : activeDuesPeriod(dues)?.periodKey
             const targetId = Number(body.userId)
-            if (!periodKey || !dues.periods[periodKey] || !Number.isFinite(targetId)) {
+            if (!periodKey || !own(dues.periods, periodKey) || !Number.isFinite(targetId)) {
                 sendError(res, 400, 'no_period', 'Период не найден.')
                 return
             }

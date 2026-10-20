@@ -20,6 +20,7 @@ import { displayName } from './hosting.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { DuesMark, DuesMember, DuesPeriod, DuesRate, DuesState, HostingUser } from './types.js'
+import { own } from './types.js'
 
 export const MIN_DUES_DAY = 1
 /** 29, 30 и 31 есть не в каждом месяце: ограничиваем, чтобы день сбора не «плавал». */
@@ -170,7 +171,7 @@ export const missedPeriods = (dues: DuesState, activeKey: string, userId: number
     const key = String(userId)
     const missed: string[] = []
     for (const periodKey of periodKeysOf(dues).filter((k) => k < activeKey).reverse()) {
-        const period = dues.periods[periodKey]!
+        const period = own(dues.periods, periodKey)!
         const member = period.roster[key]
         if (!member) break
         // Нулевая ставка это освобождение от взноса: такой месяц не долг, но и счёт
@@ -533,7 +534,7 @@ export const openDuesPeriod = async (
     periodKey: string,
 ): Promise<void> => {
     const now = new Date()
-    const existed = duesOf(storage).periods[periodKey] !== undefined
+    const existed = own(duesOf(storage).periods, periodKey) !== undefined
     await storage.update((s) => {
         if (s.dues.periods[periodKey]) return
         s.dues.periods[periodKey] = { periodKey, postedAt: now.toISOString(), roster: {}, marks: {}, notifyFailed: {} }
@@ -541,7 +542,7 @@ export const openDuesPeriod = async (
     await syncDuesRoster(storage, directory, periodKey)
 
     const dues = duesOf(storage)
-    const period = dues.periods[periodKey]
+    const period = own(dues.periods, periodKey)
     if (!period) return
 
     // Пустой ростер - это не «резидентов нет», а «состав прочитать не удалось» (бот не
@@ -571,7 +572,7 @@ export const claimDues = async (
     periodKey: string,
     userId: number,
 ): Promise<{ ok: true; member: DuesMember } | { ok: false; error: DuesMutationError }> => {
-    const period = duesOf(storage).periods[periodKey]
+    const period = own(duesOf(storage).periods, periodKey)
     if (!period) return { ok: false, error: 'no_period' }
     const key = String(userId)
     const member = period.roster[key]
@@ -602,7 +603,7 @@ export const confirmDues = async (
     userId: number,
     by: number,
 ): Promise<{ ok: true } | { ok: false; error: DuesMutationError }> => {
-    const period = duesOf(storage).periods[periodKey]
+    const period = own(duesOf(storage).periods, periodKey)
     if (!period) return { ok: false, error: 'no_period' }
     const key = String(userId)
     const member = period.roster[key]
@@ -629,7 +630,7 @@ export const clearDuesMark = async (
     periodKey: string,
     userId: number,
 ): Promise<{ ok: true } | { ok: false; error: DuesMutationError }> => {
-    const period = duesOf(storage).periods[periodKey]
+    const period = own(duesOf(storage).periods, periodKey)
     if (!period) return { ok: false, error: 'no_period' }
     const key = String(userId)
     if (!period.marks[key]) return { ok: false, error: 'no_mark' }

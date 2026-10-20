@@ -3,6 +3,7 @@ import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { BlockedUser, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder } from './types.js'
+import { own } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
 export const HOSTING_DAYS_AHEAD = 7
@@ -63,10 +64,10 @@ export const isValidTime = (raw: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/
 export const MAX_LOCK_REASON_LENGTH = 120
 
 export const dayLockFor = (storage: Storage, dateKey: string): DayLock | null =>
-    storage.get().hostingDayLocks[dateKey] ?? null
+    own(storage.get().hostingDayLocks, dateKey) ?? null
 
 export const isDayLocked = (storage: Storage, dateKey: string): boolean =>
-    storage.get().hostingDayLocks[dateKey] !== undefined
+    own(storage.get().hostingDayLocks, dateKey) !== undefined
 
 /**
  * Закрывает/открывает день для гостевых заявок. Окно то же, что у заявок
@@ -182,7 +183,7 @@ export const editHostingRequest = async (
     guestUserId: number,
     patch: { dateKey: string; time: string; purpose: string; anon: boolean; remind?: VisitReminder | null },
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: EditRequestError }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing || existing.guest.userId !== guestUserId) return { ok: false, error: 'not_found' }
     if (existing.status !== 'pending') return { ok: false, error: 'not_pending' }
 
@@ -209,7 +210,7 @@ export const editHostingRequest = async (
         r.proposal = null
         if (patch.remind !== undefined) r.remind = patch.remind
     })
-    return { ok: true, request: storage.get().hostingRequests[id]! }
+    return { ok: true, request: own(storage.get().hostingRequests, id)! }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +277,7 @@ export const setDaySubscription = async (
 }
 
 export const isDaySubscribed = (storage: Storage, dateKey: string, userId: number): boolean =>
-    (storage.get().hostingDaySubs[dateKey] ?? []).includes(userId)
+    (own(storage.get().hostingDaySubs, dateKey) ?? []).includes(userId)
 
 /**
  * Шлёт подписчикам дня(ей) уведомление о событии на нём. Автора события
@@ -292,7 +293,7 @@ export const notifyDaySubscribers = async (
 ): Promise<void> => {
     const recipients = new Set<number>()
     for (const dateKey of dateKeys) {
-        for (const userId of storage.get().hostingDaySubs[dateKey] ?? []) {
+        for (const userId of own(storage.get().hostingDaySubs, dateKey) ?? []) {
             if (userId !== exceptUserId) recipients.add(userId)
         }
     }
@@ -447,7 +448,7 @@ export const MAX_DAY_CAP = 200
 
 /** Своя вместимость этого дня. null — действует общая. */
 export const dayCapOverride = (storage: Storage, dateKey: string): DayCap | null =>
-    storage.get().hostingDayCaps[dateKey] ?? null
+    own(storage.get().hostingDayCaps, dateKey) ?? null
 
 /** Сколько человек помещается в этот день: переопределение либо общая вместимость. */
 export const dayCapFor = (storage: Storage, dateKey: string): number =>
@@ -748,7 +749,7 @@ export const markArrived = async (
     requestId: string,
     userId: number,
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: ArrivalError }> => {
-    const request = storage.get().hostingRequests[requestId]
+    const request = own(storage.get().hostingRequests, requestId)
     if (!request || request.guest.userId !== userId) return { ok: false, error: 'not_yours' }
     if (request.status !== 'approved' || !request.approvedBy) return { ok: false, error: 'not_approved' }
     const now = Date.now()
@@ -1103,7 +1104,7 @@ export const updateHostingRequest = async (
     id: string,
     patch: { dateKey: string; time: string; purpose: string },
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: UpdateRequestError }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
 
     const today = todayKey(tzOffsetMinutes)
@@ -1122,12 +1123,12 @@ export const updateHostingRequest = async (
         r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
         if (moved && r.remind) r.remind.sentAt = null
     })
-    return { ok: true, request: storage.get().hostingRequests[id]! }
+    return { ok: true, request: own(storage.get().hostingRequests, id)! }
 }
 
 /** Удаляет заявку. true — если она была. */
 export const deleteHostingRequest = async (storage: Storage, id: string): Promise<boolean> => {
-    if (!storage.get().hostingRequests[id]) return false
+    if (!own(storage.get().hostingRequests, id)) return false
     await storage.update((s) => {
         delete s.hostingRequests[id]
     })
@@ -1156,7 +1157,7 @@ export const proposeReschedule = async (
     id: string,
     input: { dateKey: string; time: string; by: 'resident' | 'guest'; user: HostingUser },
 ): Promise<{ ok: true; request: HostingRequest; recipientId: number | null } | { ok: false; error: ProposeError }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
     const today = todayKey(tzOffsetMinutes)
     const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
@@ -1178,7 +1179,7 @@ export const proposeReschedule = async (
         const r = s.hostingRequests[id]
         if (r) r.proposal = { dateKey: input.dateKey, time: input.time, by: input.by, user: input.user, to, at: new Date().toISOString() }
     })
-    return { ok: true, request: storage.get().hostingRequests[id]!, recipientId: to?.userId ?? null }
+    return { ok: true, request: own(storage.get().hostingRequests, id)!, recipientId: to?.userId ?? null }
 }
 
 export type AcceptError = 'not_found' | 'no_proposal' | 'stale'
@@ -1193,7 +1194,7 @@ export const acceptReschedule = async (
     tzOffsetMinutes: number,
     id: string,
 ): Promise<{ ok: true; request: HostingRequest; proposal: RescheduleProposal } | { ok: false; error: AcceptError }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
     const proposal = existing.proposal
     if (!proposal) return { ok: false, error: 'no_proposal' }
@@ -1225,7 +1226,7 @@ export const acceptReschedule = async (
             if (moved && r.remind) r.remind.sentAt = null
         }
     })
-    return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
+    return { ok: true, request: own(storage.get().hostingRequests, id)!, proposal }
 }
 
 /** Снимает активное предложение без смены слота (отклонили или отозвали). */
@@ -1233,7 +1234,7 @@ export const clearReschedule = async (
     storage: Storage,
     id: string,
 ): Promise<{ ok: true; request: HostingRequest; proposal: RescheduleProposal } | { ok: false; error: 'not_found' | 'no_proposal' }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
     if (!existing.proposal) return { ok: false, error: 'no_proposal' }
     const proposal = existing.proposal
@@ -1241,7 +1242,7 @@ export const clearReschedule = async (
         const r = s.hostingRequests[id]
         if (r) r.proposal = null
     })
-    return { ok: true, request: storage.get().hostingRequests[id]!, proposal }
+    return { ok: true, request: own(storage.get().hostingRequests, id)!, proposal }
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,7 +1264,7 @@ export const offerTransfer = async (
     to: HostingUser,
     by: HostingUser,
 ): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: TransferError }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
     if (existing.status !== 'approved' || !existing.approvedBy) return { ok: false, error: 'not_approved' }
     if (existing.approvedBy.userId !== by.userId) return { ok: false, error: 'not_host' }
@@ -1274,7 +1275,7 @@ export const offerTransfer = async (
         const r = s.hostingRequests[id]
         if (r) r.transfer = { to, by, at: new Date().toISOString() }
     })
-    return { ok: true, request: storage.get().hostingRequests[id]! }
+    return { ok: true, request: own(storage.get().hostingRequests, id)! }
 }
 
 /**
@@ -1286,7 +1287,7 @@ export const acceptTransfer = async (
     id: string,
     user: HostingUser,
 ): Promise<{ ok: true; request: HostingRequest; from: HostingUser } | { ok: false; error: 'not_found' | 'no_transfer' | 'not_yours' }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
     const transfer = existing.transfer ?? null
     if (!transfer) return { ok: false, error: 'no_transfer' }
@@ -1299,7 +1300,7 @@ export const acceptTransfer = async (
         r.transfer = null
         if (r.proposal && r.proposal.to && r.proposal.to.userId === transfer.by.userId) r.proposal.to = user
     })
-    return { ok: true, request: storage.get().hostingRequests[id]!, from: transfer.by }
+    return { ok: true, request: own(storage.get().hostingRequests, id)!, from: transfer.by }
 }
 
 /** Снимает предложение передачи: адресат отказался либо автор отозвал. */
@@ -1307,7 +1308,7 @@ export const clearTransfer = async (
     storage: Storage,
     id: string,
 ): Promise<{ ok: true; request: HostingRequest; transfer: HostTransfer } | { ok: false; error: 'not_found' | 'no_transfer' }> => {
-    const existing = storage.get().hostingRequests[id]
+    const existing = own(storage.get().hostingRequests, id)
     if (!existing) return { ok: false, error: 'not_found' }
     const transfer = existing.transfer ?? null
     if (!transfer) return { ok: false, error: 'no_transfer' }
@@ -1315,7 +1316,7 @@ export const clearTransfer = async (
         const r = s.hostingRequests[id]
         if (r) r.transfer = null
     })
-    return { ok: true, request: storage.get().hostingRequests[id]!, transfer }
+    return { ok: true, request: own(storage.get().hostingRequests, id)!, transfer }
 }
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ import { syncHostingBoard } from './hosting-board.js'
 import { startHeartbeatInterval } from './health.js'
 import type { Storage } from './storage.js'
 import type { HostingRequest, VisitReminder, VisitReminderChoice } from './types.js'
+import { own } from './types.js'
 
 /** Сроки в порядке показа в миниаппе. */
 export const REMINDER_CHOICES = ['m30', 'h1', 'h2', 'morning', 'evening'] as const
@@ -107,7 +108,7 @@ export const setVisitReminder = async (
     userId: number,
     choice: VisitReminderChoice | null,
 ): Promise<{ ok: true } | { ok: false; error: ReminderError }> => {
-    const request = storage.get().hostingRequests[id]
+    const request = own(storage.get().hostingRequests, id)
     if (!request) return { ok: false, error: 'not_found' }
     if (request.guest.userId !== userId) return { ok: false, error: 'not_yours' }
     if (choice !== null && !reminderFits(request.dateKey, request.time, choice, tzOffsetMinutes)) {
@@ -231,7 +232,7 @@ export const registerVisitReminderHandlers = (
         if (!ctx.dataStr?.startsWith(CB_CANCEL)) return PropagationAction.Continue
         const id = ctx.dataStr.slice(CB_CANCEL.length)
 
-        const request = storage.get().hostingRequests[id]
+        const request = own(storage.get().hostingRequests, id)
         if (!request || request.guest.userId !== ctx.user.id) {
             await ctx.answer({ text: 'Заявки уже нет.', alert: true })
             return

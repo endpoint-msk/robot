@@ -11,6 +11,7 @@ import { PropagationAction } from '@mtcute/dispatcher'
 import { acceptTransfer, clearTransfer, displayName, formatDayKey, mentionLabel } from './hosting.js'
 import type { Storage } from './storage.js'
 import type { HostingRequest, HostingUser, HostTransfer } from './types.js'
+import { own } from './types.js'
 
 const CB_TAKE = 'hosttransfer:take:'
 const CB_PASS = 'hosttransfer:pass:'
@@ -120,7 +121,7 @@ export const registerHostingTransferHandlers = (
         const take = data.startsWith(CB_TAKE)
         const id = data.slice((take ? CB_TAKE : CB_PASS).length)
 
-        const request = storage.get().hostingRequests[id]
+        const request = own(storage.get().hostingRequests, id)
         const transfer = request?.transfer ?? null
         if (!request || !transfer) {
             await ctx.answer({ text: 'Эта просьба уже неактуальна.', alert: true })

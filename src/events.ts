@@ -36,6 +36,7 @@ import type {
     ReviewerScope,
     SpaceEvent,
 } from './types.js'
+import { own } from './types.js'
 
 export const MAX_EVENT_TITLE = 120
 /**
@@ -165,7 +166,7 @@ export const syncEventPhotos = async (
     wanted: string[],
     userId: number,
 ): Promise<void> => {
-    const event = storage.get().events[eventId]
+    const event = own(storage.get().events, eventId)
     if (!event) return
     const current = eventPhotoIds(event)
     const next: string[] = []
@@ -261,7 +262,7 @@ export const updateEvent = async (
     id: string,
     input: EventInput,
 ): Promise<{ ok: true; event: SpaceEvent } | { ok: false; error: EventError }> => {
-    if (!storage.get().events[id]) return { ok: false, error: 'not_found' }
+    if (!own(storage.get().events, id)) return { ok: false, error: 'not_found' }
     const bad = validate(input, tzOffsetMinutes, true)
     if (bad) return { ok: false, error: bad }
     await storage.update((s) => {
@@ -275,11 +276,11 @@ export const updateEvent = async (
         e.form = input.form ?? null
         e.responsibles = input.responsibles ?? []
     })
-    return { ok: true, event: storage.get().events[id]! }
+    return { ok: true, event: own(storage.get().events, id)! }
 }
 
 export const deleteEvent = async (storage: Storage, dataFile: string, id: string): Promise<boolean> => {
-    const existing = storage.get().events[id]
+    const existing = own(storage.get().events, id)
     if (!existing) return false
     const photos = eventPhotoIds(existing)
     await storage.update((s) => {
@@ -547,10 +548,10 @@ export const editApplication = async (
     userId: number,
     rawAnswers: unknown,
 ): Promise<{ ok: true; app: EventApplication } | { ok: false; error: ApplicationError }> => {
-    const app = storage.get().eventApplications[appId]
+    const app = own(storage.get().eventApplications, appId)
     if (!app || app.guest.userId !== userId) return { ok: false, error: 'not_found' }
     if (app.status !== 'pending') return { ok: false, error: 'not_pending' }
-    const event = storage.get().events[app.eventId]
+    const event = own(storage.get().events, app.eventId)
     if (!event?.form) return { ok: false, error: 'no_form' }
     const built = buildAnswers(event.form, rawAnswers)
     if (!built.ok) return { ok: false, error: 'required' }
@@ -558,12 +559,12 @@ export const editApplication = async (
         const a = s.eventApplications[appId]
         if (a) a.answers = built.answers
     })
-    return { ok: true, app: storage.get().eventApplications[appId]! }
+    return { ok: true, app: own(storage.get().eventApplications, appId)! }
 }
 
 /** Отмена заявки гостем — удаление (как отмена визита). Возвращает удалённую для DM. */
 export const cancelApplication = async (storage: Storage, appId: string, userId: number): Promise<EventApplication | null> => {
-    const app = storage.get().eventApplications[appId]
+    const app = own(storage.get().eventApplications, appId)
     if (!app || app.guest.userId !== userId) return null
     await storage.update((s) => {
         delete s.eventApplications[appId]
@@ -572,7 +573,7 @@ export const cancelApplication = async (storage: Storage, appId: string, userId:
 }
 
 export const approveApplication = async (storage: Storage, appId: string, reviewer: HostingUser): Promise<EventApplication | null> => {
-    if (!storage.get().eventApplications[appId]) return null
+    if (!own(storage.get().eventApplications, appId)) return null
     await storage.update((s) => {
         const a = s.eventApplications[appId]
         if (!a) return
@@ -580,12 +581,12 @@ export const approveApplication = async (storage: Storage, appId: string, review
         a.approvedBy = reviewer
         a.approvedAt = new Date().toISOString()
     })
-    return storage.get().eventApplications[appId] ?? null
+    return own(storage.get().eventApplications, appId) ?? null
 }
 
 /** Отклонение рецензентом — удаление заявки (гость может подать заново). Возвращает её для DM. */
 export const declineApplication = async (storage: Storage, appId: string): Promise<EventApplication | null> => {
-    const app = storage.get().eventApplications[appId]
+    const app = own(storage.get().eventApplications, appId)
     if (!app) return null
     await storage.update((s) => {
         delete s.eventApplications[appId]

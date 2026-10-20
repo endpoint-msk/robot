@@ -796,6 +796,14 @@ export type ResidentPresence = {
     lastSeenOnlineAt: string | null
 }
 
+/**
+ * Значение словаря стейта по ключу, пришедшему снаружи (тело запроса, callback-data).
+ * Голый `map[key]` на ключе `__proto__`/`constructor` возвращает служебный объект, а не
+ * undefined, и проверка `if (!x)` его пропускает.
+ */
+export const own = <T>(map: Record<string, T>, key: string): T | undefined =>
+    Object.hasOwn(map, key) ? map[key] : undefined
+
 export const emptyState = (): State => ({
     fundraisers: {},
     lastMessages: {},
