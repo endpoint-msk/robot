@@ -6,8 +6,9 @@ import { confirmDialog, numberPrompt, textPrompt } from '../modals'
 import { haptic } from '../telegram'
 import { sec } from '../theme'
 import { pop, push, useParams, useStore } from '../store'
-import type { DayCapacity, DayLock, HostingRequest } from '../types'
+import type { DayAgenda, DayCapacity, DayLock, HostingRequest } from '../types'
 import { BackRow, EmptyState, Footnote, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
+import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeesCard } from '../components/attendees'
 import { EventRow } from '../components/EventRow'
 import { RequestsCard } from '../components/RequestRow'
@@ -23,6 +24,36 @@ const askReason = (initial: string): Promise<string | null> =>
     maxLength: 120,
     confirmLabel: 'Готово',
   })
+
+/** Повестку правят с плашки под шапкой и строкой в секции «День»; пустой текст её снимает. */
+const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<void> => {
+  const current = agenda?.text ?? ''
+  const text = await textPrompt({
+    text: 'Что в этот день в спейсе?',
+    initial: current,
+    placeholder: 'Например: убираемся и сортируем вещи',
+    hint: 'Повестку увидят и гости.',
+    maxLength: 200,
+    confirmLabel: 'Сохранить',
+  })
+  if (text === null || text === current) return
+  const done = await action('day.agenda', { dateKey, text })
+  if (done) haptic('success')
+}
+
+function AgendaCard({ dateKey, agenda }: { dateKey: string; agenda: DayAgenda | null }) {
+  return (
+    <div className="card">
+      <button type="button" className="row tappable" onClick={() => editAgenda(dateKey, agenda)}>
+        <span className="row-label">Повестка</span>
+        <div className="row-right">
+          <span className="lock-reason">{agenda ? agenda.text : 'Добавить'}</span>
+          {icons.chevron()}
+        </div>
+      </button>
+    </div>
+  )
+}
 
 /** Плашка «день закрыт» под шапкой — отдельно от переключателя внизу экрана. */
 function LockBanner({ lock }: { lock: DayLock }) {
@@ -217,6 +248,7 @@ export function Day() {
   const iAmComing = residentsComing.some((a) => a.userId === data!.me.id)
   const events = (dayObj && dayObj.events) || []
   const lock = (dayObj && dayObj.lock) || null
+  const agenda = (dayObj && dayObj.agenda) || null
   // Вместимость приходит только резидентам (см. bootstrap) — у гостя её нет вовсе.
   const capacity = (dayObj && dayObj.capacity) || null
   const subscribed = Boolean(dayObj && dayObj.subscribed)
@@ -251,6 +283,7 @@ export function Day() {
       />
       {archive ? <ReadonlyBadge /> : null}
       {lock ? <LockBanner lock={lock} /> : null}
+      {agenda ? <AgendaBanner agenda={agenda} onEdit={() => editAgenda(params.dateKey, agenda)} /> : null}
       {!archive ? (
         <button
           className={'attend-btn' + (iAmComing ? ' on' : '')}
@@ -341,6 +374,7 @@ export function Day() {
       {!archive ? (
         <>
           <SectionTitle>День</SectionTitle>
+          <AgendaCard dateKey={params.dateKey} agenda={agenda} />
           {data!.me.isResident ? <SubscribeCard dateKey={params.dateKey} on={subscribed} /> : null}
           <LockCard dateKey={params.dateKey} lock={lock} requests={requests.length} />
           {capacity ? <CapacityCard dateKey={params.dateKey} capacity={capacity} /> : null}

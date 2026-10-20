@@ -159,6 +159,15 @@ export const icons = {
       <path d="M5.5 6.5h5M5.5 9.4h3.2" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   ),
+  /** Повестка дня: список пунктов. Не `note`: та закреплена за заметкой о госте, а она резидентская. */
+  agenda: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <path d="M7.2 4.6h7.6M7.2 9h7.6M7.2 13.4h4.8" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="3.7" cy="4.6" r="1.15" fill={color} />
+      <circle cx="3.7" cy="9" r="1.15" fill={color} />
+      <circle cx="3.7" cy="13.4" r="1.15" fill={color} />
+    </svg>
+  ),
   /** Рубль — раздел резидентских взносов. */
   rub: (size: number, color: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 18 18">

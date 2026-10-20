@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { BlockedUser, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder } from './types.js'
+import type { BlockedUser, DayAgenda, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder } from './types.js'
 import { own } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
@@ -112,6 +112,43 @@ export const setDayLock = async (
  */
 const movesIntoLockedDay = (storage: Storage, currentDateKey: string, nextDateKey: string): boolean =>
     nextDateKey !== currentDateKey && isDayLocked(storage, nextDateKey)
+
+// ---------------------------------------------------------------------------
+// Повестка дня: что в этот день происходит в спейсе
+// ---------------------------------------------------------------------------
+
+/** Потолок повестки: это строка под заголовком дня, а не анонс. Для анонса есть ивенты. */
+export const MAX_AGENDA_LENGTH = 200
+
+export const dayAgendaFor = (storage: Storage, dateKey: string): DayAgenda | null =>
+    own(storage.get().hostingDayAgenda, dateKey) ?? null
+
+/**
+ * Ставит повестку дня, пустой текст её снимает. Окно и чистка прошедших как у замков:
+ * повестка живёт на тех же дневных поверхностях, и ключ у неё тоже дневной.
+ */
+export const setDayAgenda = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    text: string,
+    by: HostingUser,
+): Promise<{ ok: true; agenda: DayAgenda | null } | { ok: false; error: 'bad_date' }> => {
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    // Повестка однострочная: перенос негде отрисовать ни в строке дня, ни на доске
+    // (`html()` схлопывает `\n` в пробел), поэтому храним сразу то, что покажем.
+    const clean = text.replace(/\s+/g, ' ').trim().slice(0, MAX_AGENDA_LENGTH)
+    await storage.update((s) => {
+        for (const key of Object.keys(s.hostingDayAgenda)) {
+            if (key < today) delete s.hostingDayAgenda[key]
+        }
+        if (clean) s.hostingDayAgenda[dateKey] = { dateKey, text: clean, by, at: new Date().toISOString() }
+        else delete s.hostingDayAgenda[dateKey]
+    })
+    return { ok: true, agenda: dayAgendaFor(storage, dateKey) }
+}
 
 // ---------------------------------------------------------------------------
 // Операции над заявками

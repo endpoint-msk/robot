@@ -4,7 +4,7 @@ import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_SHORT } fro
 import { icons } from '../icons'
 import { useStore } from '../store'
 import { sec } from '../theme'
-import type { Attendee, DayLock, HostingRequest, SpaceEvent } from '../types'
+import type { Attendee, DayAgenda, DayLock, HostingRequest, SpaceEvent } from '../types'
 import { AvatarStack } from './people'
 
 type DayRowData = {
@@ -18,6 +18,8 @@ type DayRowData = {
   events?: SpaceEvent[]
   /** День закрыт для гостевых заявок. В архиве замков нет. */
   lock?: DayLock | null
+  /** Повестка дня. В архиве её нет, как и замков. */
+  agenda?: DayAgenda | null
 }
 
 export function DayRow({
@@ -39,12 +41,16 @@ export function DayRow({
   // Заявок нет, но кто-то придёт — показываем людей, а не «нет заявок»: иначе день
   // с одними отметками резидентов выглядит пустым.
   const people = day.total > 0 || att.length > 0
+  // Повестка встаёт на место метки ивента, когда ивента нет. Кроме закрытого дня, где
+  // больше ничего нет: единственная строка там за причиной закрытия. Слова «закрыт»
+  // в строке нет, и без неё штриховку не прочесть.
+  const agendaText = !event && day.agenda && (people || !lock) ? day.agenda.text : null
   // «Пусто» — только про внешний вид строки. Открываться она должна всё равно: экран дня
   // это единственное место, где резидент отмечается «я приду», и в тихий день (заявок нет,
   // никто ещё не отметился) без этого туда было не попасть — то есть первым отметиться
-  // было нельзя в принципе. Ивент — такая же активность дня, как заявка: день с ивентом
-  // не «пустой», иначе он сереет, а сам повод прийти виден только на экране дня.
-  const empty = !people && !event
+  // было нельзя в принципе. Ивент и повестка - такая же активность дня, как заявка: иначе
+  // день сереет, а сам повод прийти виден только на экране дня.
+  const empty = !people && !event && !agendaText
   const cls =
     'row' +
     (tappable ? ' tappable' : '') +
@@ -52,7 +58,7 @@ export function DayRow({
     (empty ? ' day-empty' : '') +
     (lock ? ' day-locked' : '') +
     // Две строки внутри — своя вертикальная подложка (та же, что в «Активности»).
-    (event && people ? ' day-stack' : '')
+    ((event || agendaText) && people ? ' day-stack' : '')
 
   const dayCol = (
     <div className="day-col">
@@ -99,6 +105,11 @@ export function DayRow({
             <div className="ev-day-label">
               {icons.calendar(13, '#bf5af2')}
               <span>{`в ${event.time}`}</span>
+            </div>
+          ) : agendaText ? (
+            <div className="agenda-day-label">
+              {icons.agenda(13, sec(0.45))}
+              <span>{agendaText}</span>
             </div>
           ) : null}
           {people ? (

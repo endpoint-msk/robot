@@ -19,6 +19,7 @@ import {
     clearReschedule,
     clearTransfer,
     createHostingRequest,
+    dayAgendaFor,
     dayCapOverride,
     dayLockFor,
     dayOccupancy,
@@ -34,6 +35,7 @@ import {
     listBlockedUsers,
     listGuestNotes,
     markArrived,
+    MAX_AGENDA_LENGTH,
     MAX_DAY_CAP,
     MAX_LOCK_REASON_LENGTH,
     MAX_NOTE_LENGTH,
@@ -60,6 +62,7 @@ import {
     requestsForDay,
     requestsOfGuest,
     searchGuests,
+    setDayAgenda,
     setDayCap,
     setDayLock,
     SPACE_CAPACITY,
@@ -184,7 +187,7 @@ import {
     type AdminTargetKind,
 } from './resident-admin.js'
 import type { Storage } from './storage.js'
-import type { EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
+import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
 import { own } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
@@ -443,6 +446,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.apply.cancel': 'write',
     'day.lock': 'write',
     'day.cap': 'write',
+    'day.agenda': 'write',
     'day.subscribe': 'write',
     edit: 'write',
     'remind.set': 'write',
@@ -1014,6 +1018,7 @@ const buildBootstrap = (ctx: ApiContext) => {
         const dateKey = addDaysToKey(today, i)
         const requests = requestsForDay(storage, dateKey)
         const lock = dayLockFor(storage, dateKey)
+        const agenda = dayAgendaFor(storage, dateKey)
         days.push({
             dateKey,
             total: requests.length,
@@ -1021,6 +1026,10 @@ const buildBootstrap = (ctx: ApiContext) => {
             // Кто именно закрыл — только резидентам: это внутренняя кухня спейса.
             lock: lock
                 ? { reason: lock.reason, ...(resident ? { by: userView(lock.by), at: lock.at } : {}) }
+                : null,
+            // Повестку видят все, автора - по тому же правилу, что у замка.
+            agenda: agenda
+                ? { text: agenda.text, ...(resident ? { by: userView(agenda.by), at: agenda.at } : {}) }
                 : null,
             approved: requests.filter((r) => r.status === 'approved').length,
             // Детали заявок видят резиденты и dev-аккаунты (последним они нужны для
@@ -1151,7 +1160,7 @@ const AUDITED = new Set([
     'create', 'edit', 'cancel', 'approve', 'unapprove', 'close',
     'propose', 'proposal.accept', 'proposal.decline',
     'transfer.offer', 'transfer.accept', 'transfer.decline',
-    'day.lock', 'day.cap', 'block', 'unblock', 'note.set',
+    'day.lock', 'day.cap', 'day.agenda', 'block', 'unblock', 'note.set',
     'event.create', 'event.update', 'event.delete',
     'event.app.approve', 'event.app.decline',
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
@@ -1162,7 +1171,12 @@ const AUDITED = new Set([
 ])
 
 /** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
-type AuditBefore = { request: HostingRequest | null; event: SpaceEvent | null; application: EventApplication | null }
+type AuditBefore = {
+    request: HostingRequest | null
+    event: SpaceEvent | null
+    application: EventApplication | null
+    agenda: DayAgenda | null
+}
 
 /**
  * Снимок берётся ДО `handleApi`: `close`, `cancel`, `dev.delete` и `event.delete`
@@ -1178,10 +1192,15 @@ const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
     const event = own(state.events, id)
     // Для методов разбора заявок `body.id` — id заявки на ивент (её decline удаляет).
     const application = own(state.eventApplications, id)
+    // Правка повестки перезаписывает `by`, а снятие стирает запись целиком: кто ставил
+    // её до этого, знает только снимок.
+    const dateKey = typeof ctx.body.dateKey === 'string' ? ctx.body.dateKey : ''
+    const agenda = method === 'day.agenda' ? own(state.hostingDayAgenda, dateKey) : undefined
     return {
         request: request ? { ...request } : null,
         event: event ? { ...event } : null,
         application: application ? { ...application } : null,
+        agenda: agenda ? { ...agenda } : null,
     }
 }
 
@@ -1270,6 +1289,16 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return body.locked === true
                 ? `закрыл день ${day} для заявок${reason ? ` (${reason})` : ''}`
                 : `открыл день ${day} для заявок`
+        }
+        case 'day.agenda': {
+            // Текст повестки публичный (его видят гости и доска), поэтому он здесь
+            // уместен, как причина закрытия дня.
+            const text = strOf(body.text).trim()
+            const day = strOf(body.dateKey)
+            const prev = before.agenda
+            const prevAuthor = prev && prev.by.userId !== user.userId ? ` (ставил ${whoOf(prev.by)})` : ''
+            if (!text) return `убрал повестку на ${day}${prevAuthor}`
+            return `${prev ? 'изменил' : 'поставил'} повестку на ${day}: «${excerpt(text)}»${prevAuthor}`
         }
         case 'block':
             return req ? `заблокировал ${whoOf(req.guest)} (${idOf(req.guest.userId)})` : `заблокировал гостя заявки ${id}`
@@ -1555,6 +1584,25 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const result = await setDayLock(storage, tzOffsetMinutes, dateKey, locked, reason, user)
             if (!result.ok) {
                 sendError(res, 400, result.error, 'Закрыть можно только день из ближайшей недели.')
+                return
+            }
+            syncBoard()
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Повестка дня: ставит и правит любой резидент, как и замок. Пустой текст снимает её.
+        case 'day.agenda': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const text = typeof body.text === 'string' ? body.text : ''
+            if (text.length > MAX_AGENDA_LENGTH) {
+                sendError(res, 400, 'too_long', `Повестка не длиннее ${MAX_AGENDA_LENGTH} символов.`)
+                return
+            }
+            const result = await setDayAgenda(storage, tzOffsetMinutes, dateKey, text, user)
+            if (!result.ok) {
+                sendError(res, 400, result.error, 'Повестку можно поставить только на день из ближайшей недели.')
                 return
             }
             syncBoard()

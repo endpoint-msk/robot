@@ -186,12 +186,20 @@ export type DayLock = {
   at?: string
 }
 
+/** Повестка дня. Текст видят все, автора только резиденты (сервер не отдаёт `by` гостю). */
+export type DayAgenda = {
+  text: string
+  by?: User
+  at?: string
+}
+
 export type Day = {
   dateKey: string
   total: number
   approved: number
   /** null — день открыт. Закрытый: гость не оставит заявку, резидент отметится «я приду». */
   lock: DayLock | null
+  agenda: DayAgenda | null
   /** Детали заявок приходят только резидентам и dev-аккаунтам; гостям — undefined. */
   requests?: HostingRequest[]
   attendees: Attendee[]

@@ -15,8 +15,13 @@ function PeekDayRow({ day }: { day: Day }) {
   const att = day.attendees || []
   const events = day.events || []
   const lock = day.lock || null
-  // День с ивентом «не пустой», даже если никто ещё не отметился: сам ивент и есть повод прийти.
-  const empty = att.length === 0 && events.length === 0
+  const first = events[0]
+  // Повестка встаёт на место метки ивента, когда его нет. У закрытого дня без людей
+  // строка остаётся за причиной закрытия (см. DayRow).
+  const agendaText = !first && day.agenda && (att.length > 0 || !lock) ? day.agenda.text : null
+  // День с ивентом или повесткой «не пустой», даже если никто ещё не отметился: это и
+  // есть повод прийти, а прочитать повестку целиком гость может только внутри дня.
+  const empty = att.length === 0 && !first && !agendaText
   const cls =
     'row' +
     (!empty ? ' tappable' : '') +
@@ -37,13 +42,12 @@ function PeekDayRow({ day }: { day: Day }) {
       </div>
     )
   }
-  const first = events[0]
   return (
     // day-stack — только когда строк внутри две: у неё своя вертикальная подложка,
     // чтобы зазоры над надписью, между ней и аватарками и под ними были равны.
     <button
       type="button"
-      className={cls + (first && att.length > 0 ? ' day-stack' : '')}
+      className={cls + ((first || agendaText) && att.length > 0 ? ' day-stack' : '')}
       title={lock ? 'Закрыт для заявок' : undefined}
       onClick={() => push('peekDay', { dateKey: day.dateKey })}
     >
@@ -56,6 +60,11 @@ function PeekDayRow({ day }: { day: Day }) {
           <div className="ev-day-label">
             {icons.calendar(13, '#bf5af2')}
             <span>{`в ${first.time}`}</span>
+          </div>
+        ) : agendaText ? (
+          <div className="agenda-day-label">
+            {icons.agenda(13, sec(0.45))}
+            <span>{agendaText}</span>
           </div>
         ) : null}
         {att.length > 0 ? (

@@ -3,6 +3,7 @@ import {
     addDaysToKey,
     attendeesForDay,
     type DayAttendee,
+    dayAgendaFor,
     dayLockFor,
     displayName,
     formatDayKey,
@@ -90,9 +91,9 @@ export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): st
 }
 
 /**
- * Текст доски за конкретный день: кто сейчас внутри (блок «Сейчас в спейсе», только
- * для сегодня), кто придёт (резиденты «я приду» + подтверждённые гости без анонимных)
- * и общее число заявок. Ники — t.me-ссылки (текст-ссылка не пингует упомянутого),
+ * Текст доски за конкретный день: повестка под заголовком, кто сейчас внутри (блок
+ * «Сейчас в спейсе», только для сегодня), кто придёт (резиденты «я приду» +
+ * подтверждённые гости без анонимных) и общее число заявок. Ники — t.me-ссылки (текст-ссылка не пингует упомянутого),
  * имена без ника — просто текст (см. attendeeLabel). Собираем через `<br>`.
  */
 export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMinutes: number): string => {
@@ -103,9 +104,14 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     // короткий текст, а кнопку гасит `boardMarkup(true)`. Кто внутри — оставляем: чат свой,
     // и «закрыт для гостей» не значит «внутри никого».
     const lock = dayLockFor(storage, dateKey)
+    // Повестка доску не заводит (её нет в `dayHasActivity`): доска про людей, а строка
+    // текста без единой отметки звала бы в чат на пустой день. Но раз день на доске,
+    // повестка идёт сразу под заголовком: это первое, что о нём надо знать.
+    const agenda = dayAgendaFor(storage, dateKey)
     if (lock) {
         const closed = [`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> — спейс закрыт для гостей`]
         if (lock.reason) closed.push(escapeHtml(lock.reason))
+        if (agenda && agenda.text !== lock.reason) closed.push(escapeHtml(agenda.text))
         if (isToday) {
             const inside = insideBoardLines(storage)
             if (inside.length > 0) closed.push('', ...inside)
@@ -119,6 +125,7 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
 
     const lines: string[] = []
     lines.push(`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> в спейсе`)
+    if (agenda) lines.push(escapeHtml(agenda.text))
     lines.push('')
     // Ивенты — первым блоком: это главное, что происходит в этот день. Резидентские
     // (`residentsOnly`) на доску не выносим — доска висит в общем чате.

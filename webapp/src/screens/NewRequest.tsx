@@ -10,7 +10,7 @@ import {
   AnonRow,
   DayChips,
   DayChipsLegend,
-  SelectedDayEvents,
+  SelectedDayInfo,
   firstOpenDay,
   isPastForToday,
   PurposeInput,
@@ -78,7 +78,7 @@ export function NewRequest() {
       <Header title="Хочу прийти" />
       <SectionTitle>День</SectionTitle>
       <DayChips days={days} selected={day} onSelect={selectDay} />
-      <SelectedDayEvents days={days} selected={day} />
+      <SelectedDayInfo days={days} selected={day} />
       <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">

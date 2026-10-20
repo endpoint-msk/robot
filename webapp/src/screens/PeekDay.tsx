@@ -2,6 +2,7 @@ import { fmtDayMonth, peopleWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { useParams, useStore } from '../store'
 import { BackRow, EmptyState, Header, SectionTitle } from '../components/common'
+import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeesCard } from '../components/attendees'
 import { EventCard } from './Event'
 import { Screen } from '../components/Screen'
@@ -13,6 +14,7 @@ export function PeekDay() {
   const att = (day && day.attendees) || []
   const events = (day && day.events) || []
   const lock = (day && day.lock) || null
+  const agenda = (day && day.agenda) || null
   const isToday = params.dateKey === data!.todayKey
   return (
     <Screen>
@@ -30,6 +32,7 @@ export function PeekDay() {
           </div>
         </div>
       ) : null}
+      {agenda ? <AgendaBanner agenda={agenda} /> : null}
       {/* Ивенты — над списком людей: это главное, что происходит в этот день. */}
       {events.map((ev) => (
         <EventCard key={ev.id} event={ev} calendar actions />

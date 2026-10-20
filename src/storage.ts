@@ -119,6 +119,7 @@ export class Storage {
             hostingAttendance: parsed.hostingAttendance ?? {},
             hostingDayLocks: parsed.hostingDayLocks ?? {},
             hostingDayCaps: parsed.hostingDayCaps ?? {},
+            hostingDayAgenda: parsed.hostingDayAgenda ?? {},
             hostingDaySubs: parsed.hostingDaySubs ?? {},
             hostingNotify: parsed.hostingNotify ?? {},
             hostingRemindedDay: parsed.hostingRemindedDay ?? {},

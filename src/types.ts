@@ -64,6 +64,8 @@ export type State = {
     hostingDayLocks: Record<string, DayLock>
     /** Дни с переопределённой вместимостью. Ключ — dateKey. Нет записи — общий SPACE_CAPACITY. */
     hostingDayCaps: Record<string, DayCap>
+    /** Повестка дня: что в этот день происходит в спейсе. Ключ - dateKey. Прошедшие дни чистятся при записи. */
+    hostingDayAgenda: Record<string, DayAgenda>
     /** Резиденты, подписанные на уведомления о событиях дня (кто кого захостил, «я приду»,
      *  перенос). Ключ — dateKey, значение — userId подписчиков. Прошедшие дни чистятся при записи. */
     hostingDaySubs: Record<string, number[]>
@@ -709,6 +711,23 @@ export type DayCap = {
     at: string
 }
 
+/**
+ * Повестка дня: что в этот день происходит в спейсе («убираемся и сортируем вещи»).
+ *
+ * Одна на день и общая, как заметка о госте: ставит и правит любой резидент, `by`
+ * перезаписывается автором последней правки.
+ */
+export type DayAgenda = {
+    /** День 'YYYY-MM-DD' в поясе спейса. */
+    dateKey: string
+    /** Видно всем, включая гостей. */
+    text: string
+    /** Кто правил последним. Гостю не отдаём, как и автора замка дня. */
+    by: HostingUser
+    /** Когда правили (ISO). */
+    at: string
+}
+
 /** Отметка резидента «я приду» на конкретный день (без заявки, просто присутствие в списке). */
 export type HostingAttendance = {
     /** День визита: 'YYYY-MM-DD' в поясе спейса. */
@@ -817,6 +836,7 @@ export const emptyState = (): State => ({
     hostingAttendance: {},
     hostingDayLocks: {},
     hostingDayCaps: {},
+    hostingDayAgenda: {},
     hostingDaySubs: {},
     hostingNotify: {},
     hostingRemindedDay: {},

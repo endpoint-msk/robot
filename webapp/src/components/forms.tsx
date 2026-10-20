@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { getState } from '../store'
+import { sec } from '../theme'
 import type { Day, ReminderChoice } from '../types'
 import { Switch } from './common'
 
@@ -101,15 +102,23 @@ export function DayChips({
 }
 
 /**
- * Что происходит в выбранный день. Название ивента жило только в атрибуте `title`
- * у точки на чипе: на телефоне его нельзя ни навести, ни прочитать — гость видел
- * безымянную метку и не понимал, повод это прийти или помеха.
+ * Что происходит в выбранный день: повестка и ивенты. Название ивента жило только в
+ * атрибуте `title` у точки на чипе: на телефоне его нельзя ни навести, ни прочитать —
+ * гость видел безымянную метку и не понимал, повод это прийти или помеха.
  */
-export function SelectedDayEvents({ days, selected }: { days: Day[]; selected: string }) {
-  const events = days.find((d) => d.dateKey === selected)?.events ?? []
-  if (events.length === 0) return null
+export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: string }) {
+  const day = days.find((d) => d.dateKey === selected)
+  const events = day?.events ?? []
+  const agenda = day?.agenda ?? null
+  if (events.length === 0 && !agenda) return null
   return (
     <div className="chips-events">
+      {agenda ? (
+        <div className="ce-row ce-agenda">
+          <span className="ce-ico">{icons.agenda(15, sec(0.5))}</span>
+          <span className="ce-text">{agenda.text}</span>
+        </div>
+      ) : null}
       {events.map((e) => (
         <div className="ce-row" key={e.id}>
           <span className="ce-ico">{icons.calendar(15, '#bf5af2')}</span>
