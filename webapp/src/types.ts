@@ -228,7 +228,8 @@ export type DayCapacity = {
 export type NotifyPrefs = { enabled: boolean; mode: 'today' | 'all' }
 /** Подписка гостя на отметки резидентов «я приду»: на сегодня и завтра или на всю неделю. */
 export type AttendNotifyPrefs = { enabled: boolean; mode: 'near' | 'week' }
-export type MacEntry = { mac: string; label: string }
+/** `online`: устройство было в сети спейса на последнем опросе роутера. */
+export type MacEntry = { mac: string; label: string; online?: boolean }
 
 export type Settings = {
   notify: NotifyPrefs

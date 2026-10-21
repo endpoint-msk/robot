@@ -2,22 +2,25 @@
 // Вход двойной — «Создать ивент» на экране дня и заготовка из пересланного в личку
 // поста канала (тогда поля уже заполнены, см. params.draft).
 
-import { useState, type ChangeEvent } from 'react'
+import { Fragment, useEffect, useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
-import { addDays, fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_ABBR, plural, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { compressImage } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { eventPhotoUrl, useIcsLink } from '../links'
-import { haptic, openUrl } from '../telegram'
-import { pop, push, setBusy, useParams, useStore } from '../store'
-import type { ReviewerScope, SpaceEvent, User } from '../types'
-import { BackRow, Footnote, Header, SectionTitle, Switch } from '../components/common'
+import { stageTint, toHex } from '../motion'
+import { haptic, openUrl, setHeaderColor } from '../telegram'
+import { getState, pop, push, setBusy, startNewRequest, useParams, useStore } from '../store'
+import { applyTheme } from '../theme'
+import type { Attendee, ReviewerScope, SpaceEvent, User } from '../types'
+import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { DateField } from '../components/DateField'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
 import { ResponsibleSheet } from '../components/ResponsiblePicker'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
+import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
 import { usePasteImages } from '../usePasteImages'
 
@@ -128,19 +131,7 @@ export function Event() {
   // Вставка картинок из буфера (Ctrl/Cmd+V) на десктопе; в режиме чтения не нужна.
   usePasteImages(addFiles, !readOnly)
 
-  if (readOnly) {
-    return (
-      <Screen>
-        <BackRow />
-        <Header
-          title={existing!.title}
-          subtitle={`${fmtShortDate(existing!.dateKey)} · в ${existing!.time}`}
-        />
-        <EventCard event={existing!} calendar actions />
-        {!asGuest ? <Footnote>Править ивент может только тот, кто его создал.</Footnote> : null}
-      </Screen>
-    )
-  }
+  if (readOnly) return <EventView event={existing!} asGuest={asGuest} />
 
   // Прошедший слот запрещаем только новому ивенту: идущий всё ещё нужно уметь поправить
   // (сервер думает так же, см. canEditEvent).
@@ -395,6 +386,189 @@ export function Event() {
       >
         {existing ? 'Сохранить' : 'Опубликовать'}
       </button>
+    </Screen>
+  )
+}
+
+/** «вт 01.12, 12:00»: подпись на афише, как у поста в сцене ивентов знакомства. */
+const posterWhen = (ev: SpaceEvent): string => {
+  const d = keyToDate(ev.dateKey)
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${WEEKDAYS_SHORT[weekdayIdx(ev.dateKey)]!.toLowerCase()} ${dd}.${mm}, ${ev.time}`
+}
+
+/** «сегодня», «завтра», «через 41 день». */
+const untilWord = (todayKey: string, dateKey: string): string => {
+  const n = Math.round((keyToDate(dateKey).getTime() - keyToDate(todayKey).getTime()) / 86_400_000)
+  if (n <= 0) return 'сегодня'
+  if (n === 1) return 'завтра'
+  return `через ${n} ${plural(n, 'день', 'дня', 'дней')}`
+}
+
+/** Дата плиткой: месяц и число крупно, как листок календаря. */
+export function DateTile({ dateKey, small = false }: { dateKey: string; small?: boolean }) {
+  return (
+    <div className={'ev-tile' + (small ? ' small' : '')} aria-hidden="true">
+      <span>{MONTHS_ABBR[monthIdx(dateKey)]}</span>
+      <b>{dayNum(dateKey)}</b>
+    </div>
+  )
+}
+
+/**
+ * Ивент на чтение. Открывается афишей во всю ширину: название живёт на ней одной, а не в
+ * шапке экрана, в карточке и снова на картинке. Без фото афиша рисуется из названия тем
+ * же языком, что пост в знакомстве. Под ней дата плиткой, кто придёт и ведущий.
+ */
+function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) {
+  const { data, theme } = useStore()
+  const photos = event.photos ?? []
+  const openIcs = useIcsLink('event', event.id, true)
+  const day = data!.days.find((d) => d.dateKey === event.dateKey) ?? null
+
+  // Шапка Telegram в тон полосы, как на экране дня; на выходе возвращаем тему.
+  useEffect(() => {
+    setHeaderColor(toHex(stageTint('purple')))
+  }, [theme])
+  useEffect(() => () => applyTheme(getState().theme), [])
+
+  // Кто придёт в этот день: ивент и есть повод, а решают, глядя на людей. У ивента с
+  // формой к ним добавляются принятые заявители. День вне обзора людей не знает.
+  const people: Attendee[] = [...(day?.attendees ?? [])]
+  for (const u of event.approvedAttendees ?? []) {
+    if (!people.some((a) => a.userId === u.userId)) people.push({ ...u, resident: false, time: null })
+  }
+  const names = people.map((a) => (a.userId === data!.me.id ? 'вы' : userLabel(a)))
+  const namesText =
+    names.length === 0
+      ? 'Пока никто не собирается'
+      : names.length <= 2
+        ? names.join(' и ')
+        : `${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`
+
+  // «Хочу прийти» у гостя и есть заявка на день ивента: форма открывается уже с днём и
+  // временем. Заявка на этот день уже есть: вместо кнопки она сама.
+  const mine = asGuest ? (data!.myRequests ?? []).find((r) => r.dateKey === event.dateKey) ?? null : null
+  const canAsk = asGuest && !event.form && Boolean(day) && !day!.lock && !isPastForToday(event.dateKey, event.time)
+
+  const poster = (
+    <div className={'evv-poster' + (photos.length > 0 ? ' photo' : '')}>
+      {photos.length > 0 ? <EventPoster photoId={photos[0]!} className="evv-photo" /> : null}
+      <div className="evv-pt">{event.title}</div>
+      <div className="evv-ps">{posterWhen(event)}</div>
+    </div>
+  )
+
+  return (
+    <Screen>
+      <div className="evv-top">
+        <div className="evv-band" aria-hidden="true" />
+        <BackRow />
+        {poster}
+        <div className="evv-when">
+          <DateTile dateKey={event.dateKey} />
+          <div className="evv-when-text">
+            <div className="evv-wt">
+              {`${WEEKDAYS_FULL[weekdayIdx(event.dateKey)]}, ${fmtDayMonth(event.dateKey)}`}
+              {event.residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
+            </div>
+            <div className="evv-ws">{`в ${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`}</div>
+          </div>
+        </div>
+        {day || people.length > 0 ? (
+          <div className="dpg-coming evv-coming">
+            <div className="dpg-faces" aria-hidden="true">
+              {people.length === 0 ? (
+                <span className="dpg-myslot">
+                  <span className="dpg-slot" />
+                </span>
+              ) : (
+                people.slice(0, 4).map((a) => (
+                  <span key={a.userId} className="dpg-face">
+                    <Avatar user={a} />
+                  </span>
+                ))
+              )}
+            </div>
+            <div className="dpg-coming-text">
+              <div className="dpg-coming-k">{`Придут · ${people.length}`}</div>
+              <div className="dpg-coming-s">{namesText.charAt(0).toUpperCase() + namesText.slice(1)}</div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="card evv-card">
+        <Profile user={event.host} className="row">
+          <Avatar user={event.host} className="req-avatar" />
+          <span className="row-label">
+            {event.host.name}
+            <span className="row-sublabel">{(event.host.username ? '@' + event.host.username + ' · ' : '') + 'ведёт'}</span>
+          </span>
+        </Profile>
+        {/* Ответственные приходят только резидентам: у гостя этих строк нет. */}
+        {(event.responsibles ?? []).map((u) => (
+          <Fragment key={u.userId}>
+            <Sep left={66} />
+            <Profile user={u} className="row">
+              <Avatar user={u} className="req-avatar" />
+              <span className="row-label">
+                {u.name}
+                <span className="row-sublabel">{(u.username ? '@' + u.username + ' · ' : '') + 'отвечает'}</span>
+              </span>
+            </Profile>
+          </Fragment>
+        ))}
+        {event.description ? (
+          <>
+            <Sep left={66} />
+            <div className="evv-desc">{linkedText(event.description)}</div>
+          </>
+        ) : null}
+        {event.sourceUrl ? (
+          <>
+            <Sep left={14} />
+            <button type="button" className="row tappable" onClick={() => openUrl(event.sourceUrl!)}>
+              <span className="row-label">Пост в канале</span>
+              <div className="row-right">{icons.external('#bf5af2')}</div>
+            </button>
+          </>
+        ) : null}
+      </div>
+      {photos.length > 1 ? (
+        <div className="ev-gallery evv-gallery">
+          {photos.slice(1).map((id) => (
+            <EventPoster key={id} photoId={id} className="ev-poster ev-gallery-item" />
+          ))}
+        </div>
+      ) : null}
+      {event.form ? <EventFormActions event={event} /> : null}
+      {mine ? (
+        <div className="card evv-mine">
+          <button type="button" className="row tappable" onClick={() => push('visit', { id: mine.id })}>
+            <span className="row-label">
+              Ваша заявка
+              <span className="row-sublabel">{`к ${mine.time} · ${mine.status === 'approved' ? 'подтверждена' : 'ждёт ответа'}`}</span>
+            </span>
+            <div className="row-right">{icons.chevron()}</div>
+          </button>
+        </div>
+      ) : null}
+      {canAsk && !mine ? (
+        <div className="evv-acts">
+          <button type="button" className="primary-btn" onClick={() => startNewRequest({ dateKey: event.dateKey, time: event.time })}>
+            Хочу прийти
+          </button>
+          <button type="button" className="evv-cal" aria-label="В календарь" title="В календарь" onClick={() => void openIcs()}>
+            {icons.calendarPlus(20, '#bf5af2')}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="secondary-btn evv-cal-wide" onClick={() => void openIcs()}>
+          {icons.calendarPlus(18, '#bf5af2')}
+          В календарь
+        </button>
+      )}
     </Screen>
   )
 }

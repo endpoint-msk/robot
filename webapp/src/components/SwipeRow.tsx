@@ -8,7 +8,9 @@
 //     поэтому без этой ветки на макбуке строка не двигается вообще.
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactElement, type ReactNode } from 'react'
+import { project, rubber, spring, tracker, type SpringOpts } from '../motion'
 import { pushOverlay } from '../overlays'
+import { haptic } from '../telegram'
 
 export type SwipeAction = {
   key: string
@@ -33,8 +35,13 @@ let closeOpened: (() => void) | null = null
 const OPEN_THRESHOLD = 0.4
 /** Смещение, после которого жест признаётся горизонтальным, а не скроллом. */
 const DIRECTION_SLOP = 8
-/** Сопротивление за пределом полной ширины действий («резинка»). */
-const RUBBER = 0.3
+/**
+ * Доводка пружиной со скоростью пальца, а не CSS-переходом постоянной длины: у перехода
+ * скорость задаёт кривая, и брошенная строка на миг замирала. Открытие с лёгким
+ * перелётом, закрытие без него.
+ */
+const OPEN_SPRING: SpringOpts = { response: 0.3, damping: 0.9 }
+const CLOSE_SPRING: SpringOpts = { response: 0.3, damping: 1 }
 /**
  * Пауза без событий колеса, после которой жест трекпада считается законченным.
  * У wheel нет аналога pointerup, а инерция macOS досылает события ещё долго после
@@ -44,8 +51,13 @@ const WHEEL_IDLE_MS = 110
 
 export function SwipeRow({ actions, children }: { actions: SwipeAction[]; children: ReactNode }) {
   const [offset, setOffset] = useState(0)
-  const [animate, setAnimate] = useState(true)
   const [dragging, setDragging] = useState(false)
+  // Строка за порогом открытия: иконки подрастают, палец узнаёт, что строка откроется,
+  // раньше, чем его отпустили.
+  const [armed, setArmed] = useState(false)
+  const armedRef = useRef(false)
+  const settleRef = useRef<{ stop: () => void } | null>(null)
+  const vt = useRef(tracker()).current
   // Панель действий скрыта, пока строку не тронули. Перекрывать её сдвинутым
   // контентом недостаточно: слой с transform композитится отдельно, и на дробном
   // device-pixel-ratio по правому краю проступала полоска красного.
@@ -64,11 +76,11 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
 
   const widthOf = (): number => actionsRef.current?.offsetWidth ?? 0
 
-  /** Смещение с «резинкой» за пределом ширины действий. */
+  /** Смещение с резинкой UIScrollView за пределом ширины действий: тянется всё туже и не бесконечно. */
   const clampOffset = (raw: number): number => {
     const w = widthOf()
     if (raw < 0) return 0
-    return raw > w ? w + (raw - w) * RUBBER : raw
+    return raw > w ? w + rubber(raw - w, w) : raw
   }
 
   const applyOffset = (value: number): void => {
@@ -76,48 +88,71 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     setOffset(value)
   }
 
-  const close = useCallback(() => {
-    // Панель гасим не здесь, а в onTransitionEnd: пока строка едет обратно, действия
-    // должны оставаться видимыми, иначе контент возвращается по пустому месту.
-    // Если ехать нечему (уже закрыто) — transitionend не придёт, гасим сразу.
-    const wasClosed = offsetRef.current === 0
+  /** Порог защёлкивания: открытую строку закрыть легче, чем закрытую открыть. */
+  const threshold = (): number => widthOf() * (openRef.current ? 1 - OPEN_THRESHOLD : OPEN_THRESHOLD)
+
+  /** Пересечение порога под пальцем: щелчок и подросшие иконки, как в «Почте» iOS. */
+  const track = (value: number): void => {
+    const over = value > threshold()
+    if (over !== armedRef.current) {
+      armedRef.current = over
+      setArmed(over)
+      haptic.tick()
+    }
+  }
+
+  const stopSettle = (): void => {
+    settleRef.current?.stop()
+    settleRef.current = null
+  }
+
+  const close = useCallback((velocity = 0) => {
+    stopSettle()
     openRef.current = false
-    offsetRef.current = 0
-    setAnimate(true)
+    armedRef.current = false
+    setArmed(false)
     setDragging(false)
-    setOffset(0)
-    if (wasClosed) setRevealed(false)
+    // Панель действий гаснет только когда строка доехала: пока она едет обратно,
+    // действия должны оставаться видимыми, иначе контент возвращается по пустому месту.
+    settleRef.current = spring(offsetRef.current, 0, velocity, CLOSE_SPRING, applyOffset, () => setRevealed(false))
     dropOverlay.current?.()
     dropOverlay.current = null
     if (closeOpened === close) closeOpened = null
   }, [])
 
-  const open = useCallback(() => {
-    if (closeOpened && closeOpened !== close) closeOpened()
-    closeOpened = close
-    // Открытая строка — такой же оверлей, как модалка: системная «Назад» сначала
-    // закрывает её, а уже потом уводит с экрана.
-    dropOverlay.current?.()
-    dropOverlay.current = pushOverlay(close)
-    openRef.current = true
-    const w = actionsRef.current?.offsetWidth ?? 0
-    offsetRef.current = w
-    setAnimate(true)
-    setDragging(false)
-    setRevealed(true)
-    setOffset(w)
-  }, [close])
+  const open = useCallback(
+    (velocity = 0) => {
+      if (closeOpened && closeOpened !== close) closeOpened()
+      closeOpened = close
+      // Открытая строка — такой же оверлей, как модалка: системная «Назад» сначала
+      // закрывает её, а уже потом уводит с экрана.
+      dropOverlay.current?.()
+      dropOverlay.current = pushOverlay(close)
+      stopSettle()
+      openRef.current = true
+      armedRef.current = true
+      setArmed(true)
+      setDragging(false)
+      setRevealed(true)
+      settleRef.current = spring(offsetRef.current, widthOf(), velocity, OPEN_SPRING, applyOffset)
+    },
+    [close],
+  )
 
-  /** Конец жеста: защёлкиваем в ближайшее состояние. */
-  const settle = useCallback(() => {
-    // Открытую строку закрыть легче, чем закрытую открыть: порог считаем от того,
-    // в каком состоянии жест начался.
-    const need = (actionsRef.current?.offsetWidth ?? 0) * (openRef.current ? 1 - OPEN_THRESHOLD : OPEN_THRESHOLD)
-    if (offsetRef.current > need) open()
-    else close()
-  }, [open, close])
+  /**
+   * Конец жеста: решает не место, где палец отпустили, а куда строка доехала бы по
+   * инерции. Быстрый короткий флик открывает, как в нативных списках.
+   */
+  const settle = useCallback(
+    (velocity = 0) => {
+      if (offsetRef.current + project(velocity, 0.99) > threshold()) open(velocity)
+      else close(velocity)
+    },
+    [open, close],
+  )
 
   useEffect(() => () => {
+    stopSettle()
     dropOverlay.current?.()
     dropOverlay.current = null
     if (closeOpened === close) closeOpened = null
@@ -136,12 +171,15 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
       // Строка закрыта, а жест ведёт вправо — открывать нечего, отдаём событие дальше.
       if (offsetRef.current <= 0 && e.deltaX <= 0) return
       e.preventDefault()
-      setAnimate(false)
+      stopSettle()
       setDragging(true)
       setRevealed(true)
-      applyOffset(clampOffset(offsetRef.current + e.deltaX))
+      const next = clampOffset(offsetRef.current + e.deltaX)
+      applyOffset(next)
+      track(next)
       clearTimeout(idle)
-      idle = setTimeout(settle, WHEEL_IDLE_MS)
+      // Тишина в событиях и есть отпускание: пальцы уже стоят, скорости нет.
+      idle = setTimeout(() => settle(0), WHEEL_IDLE_MS)
     }
 
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -151,15 +189,47 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     }
   }, [actions.length, settle])
 
+  // Палец наискось: при `touch-action: pan-y` браузер прокручивал бы страницу, пока
+  // строка едет вбок. Ось решаем по touchmove и, если жест горизонтальный, гасим
+  // прокрутку до конца жеста, как в листалке дней.
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || actions.length === 0) return
+    let t0: { x: number; y: number; axis: 0 | 1 | 2 } | null = null
+    const onStart = (e: TouchEvent): void => {
+      const t = e.touches[0]
+      t0 = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY, axis: 0 } : null
+    }
+    const onMove = (e: TouchEvent): void => {
+      const t = e.touches[0]
+      if (!t0 || !t) return
+      if (t0.axis === 0) {
+        const dx = Math.abs(t.clientX - t0.x)
+        const dy = Math.abs(t.clientY - t0.y)
+        if (dx < 6 && dy < 6) return
+        t0.axis = dx > dy ? 1 : 2
+      }
+      if (t0.axis === 1 && e.cancelable) e.preventDefault()
+    }
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    return () => {
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+    }
+  }, [actions.length])
+
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return
     draggedRef.current = false
     dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, base: offsetRef.current, axis: 'none' }
+    vt.start(-e.clientX, e.timeStamp)
   }
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const d = dragRef.current
     if (!d || d.id !== e.pointerId) return
+    vt.move(-e.clientX, e.timeStamp)
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
     if (d.axis === 'none') {
@@ -172,18 +242,22 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
       d.axis = 'x'
       draggedRef.current = true
       e.currentTarget.setPointerCapture(e.pointerId)
-      setAnimate(false)
+      // Строку поймали на лету: доводка останавливается, жест ведёт с того же места.
+      stopSettle()
+      d.base = offsetRef.current + dx
       setDragging(true)
       setRevealed(true)
     }
-    applyOffset(clampOffset(d.base - dx))
+    const next = clampOffset(d.base - dx)
+    applyOffset(next)
+    track(next)
   }
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const d = dragRef.current
     dragRef.current = null
     if (!d || d.id !== e.pointerId || d.axis !== 'x') return
-    settle()
+    settle(vt.release(e.timeStamp))
   }
 
   // Тап по открытой строке закрывает её и не проходит внутрь (в профиль/ссылку).
@@ -209,7 +283,7 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
 
   return (
     <div className="swipe-row">
-      <div className={'swipe-actions' + (revealed ? ' revealed' : '')} ref={actionsRef}>
+      <div className={'swipe-actions' + (revealed ? ' revealed' : '') + (armed ? ' armed' : '')} ref={actionsRef}>
         {actions.map((a) => (
           <button
             key={a.key}
@@ -230,7 +304,7 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
       </div>
       <div
         ref={contentRef}
-        className={'swipe-content' + (animate ? ' animate' : '') + (dragging ? ' dragging' : '')}
+        className={'swipe-content' + (dragging ? ' dragging' : '')}
         style={{ transform: `translate3d(${-offset}px, 0, 0)` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -240,11 +314,6 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
         // Без этого жест мышью не живёт: строка содержит <img> аватарки, и перетаскивание
         // с неё запускает нативный drag-and-drop, который тут же шлёт pointercancel.
         onDragStart={(e) => e.preventDefault()}
-        onTransitionEnd={(e) => {
-          if (e.propertyName === 'transform' && e.currentTarget === e.target && offsetRef.current === 0) {
-            setRevealed(false)
-          }
-        }}
       >
         {children}
       </div>

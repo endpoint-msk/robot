@@ -754,6 +754,18 @@ const macCheckIn = async (
  * MAC-адреса для Wi-Fi спейса — иначе видимый MAC будет меняться и привязка перестанет
  * совпадать. Об этом предупреждаем пользователя при /bindmac и в меню (см. macHintFor / macSection).
  */
+// Какие MAC были в сети на последнем удачном опросе. Только в памяти процесса, как кэш
+// директории: в стейте это была бы запись на каждый тик, а после рестарта всё равно неправда.
+let lastOnline: { at: number; macs: Set<string> } | null = null
+
+/**
+ * В сети ли устройство сейчас: метка «в сети» у каждой привязки в настройках миниаппа.
+ * Общий признак «отмечен по MAC» горел бы на всех устройствах человека, даже если
+ * пришёл он с одним. Данным старше MAC_STALE_MS не верим, как и сам поллер.
+ */
+export const isMacOnline = (mac: string): boolean =>
+    lastOnline !== null && Date.now() - lastOnline.at < MAC_STALE_MS && lastOnline.macs.has(mac)
+
 export const startMacPresencePoller = (
     client: TelegramClient,
     storage: Storage,
@@ -817,6 +829,7 @@ export const startMacPresencePoller = (
         failStreak = 0
         downSince = 0
         lastSuccessAt = Date.now()
+        lastOnline = { at: lastSuccessAt, macs: activeMacs }
 
         const nowIso = new Date().toISOString()
         const now = Date.now()

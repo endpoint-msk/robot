@@ -53,13 +53,12 @@ function PeekDayRow({ day }: { day: Day }) {
     >
       {dayCol}
       {/* Ивент и люди — двумя строками, как в макете: ивент это повод прийти, но кто
-          уже собрался, гостю важно не меньше, а в одну строку метка и список не влезают.
-          В метке только время — название он прочитает внутри дня. */}
+          уже собрался, гостю важно не меньше, а в одну строку метка и список не влезают. */}
       <div className="day-main">
         {first ? (
           <div className="ev-day-label">
             {icons.calendar(13, '#bf5af2')}
-            <span>{`в ${first.time}`}</span>
+            <span>{`${first.title} · ${first.time}`}</span>
           </div>
         ) : agendaText ? (
           <div className="agenda-day-label">

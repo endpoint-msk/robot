@@ -126,8 +126,14 @@ export function openOnboardingRoot(params: NavParams): void {
 }
 
 /** Новая заявка: до первой из них гость проходит через экран правил (сервер это тоже проверяет). */
-export function startNewRequest(): void {
-  push(state.data?.me.acceptedRules ? 'newRequest' : 'rules')
+/** `params`: день и время, с которыми открыть форму (например, «Хочу прийти» на ивенте). */
+export function startNewRequest(params?: NavParams): void {
+  push(state.data?.me.acceptedRules ? 'newRequest' : 'rules', params)
+}
+
+/** Верхний экран сменяется другим без перехода: форма становится созданным визитом на месте. */
+export function replaceTop(name: ScreenName, params: NavParams = {}): void {
+  set({ stack: [...state.stack.slice(0, -1), { name, params }], navId: state.navId + 1, anim: null })
 }
 
 export function setPerspective(p: Perspective): void {

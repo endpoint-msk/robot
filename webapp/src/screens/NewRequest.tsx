@@ -2,38 +2,101 @@ import { useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
 import { showAlert } from '../modals'
-import { push, resetRoot, setBusy, setData, useStore } from '../store'
+import { markOwnTap } from '../motion'
+import { replaceTop, resetRoot, setData, useParams, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { Bootstrap, ReminderChoice } from '../types'
-import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
+import { ActionButton, BackRow, BottomBar, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { Crossfade } from '../components/Crossfade'
 import {
-  AnonRow,
   DayChips,
   DayChipsLegend,
   SelectedDayInfo,
   firstOpenDay,
   isPastForToday,
   PurposeInput,
-  RemindCard,
+  REMINDER_LABELS,
+  REMINDER_ORDER,
+  reminderAvailable,
   reminderFor,
+  reminderWhen,
   useDayTime,
 } from '../components/forms'
+import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Screen } from '../components/Screen'
 import { TimeField } from '../components/TimeField'
 
+type RemindValue = ReminderChoice | 'off'
+
+/**
+ * Напоминание строкой с меню, как «Новые заявки» в настройках: срок справа, момент,
+ * когда напишет бот, под названием. Тумблер и пять чипов говорили то же самое. Меню
+ * лежит над карточкой, а не в ней: карточка обрезает всё, что выходит за её край.
+ */
+function useRemind(dateKey: string, time: string, choice: ReminderChoice | null, onChange: (c: ReminderChoice | null) => void) {
+  const menu = useRowMenu<'remind'>()
+  const available = REMINDER_ORDER.filter((c) => reminderAvailable(dateKey, time, c))
+  // Срок мог перестать успевать, когда гость сдвинул слот: тогда на сервер уйдёт null.
+  const active = choice !== null && available.includes(choice) ? choice : null
+  const none = available.length === 0
+  const row = (
+    <div className="row">
+      <span className="row-label">
+        Напомнить
+        <span className="row-sublabel">
+          {none ? 'До визита слишком мало времени' : active ? `Бот напишет ${reminderWhen(dateKey, time, active)}` : 'Бот напишет в личку перед визитом'}
+        </span>
+      </span>
+      <button
+        type="button"
+        className="ob-popup"
+        aria-haspopup="menu"
+        aria-expanded={menu.openFor === 'remind'}
+        disabled={none}
+        onClick={(e) => menu.open('remind', e.currentTarget)}
+      >
+        {active ? REMINDER_LABELS[active] : 'Нет'}
+        {icons.updown()}
+      </button>
+    </div>
+  )
+  const items = (
+    <MenuItems<RemindValue>
+      open={menu.openFor === 'remind'}
+      place={menu.place}
+      items={[
+        ...REMINDER_ORDER.map((c) => ({ value: c as RemindValue, label: REMINDER_LABELS[c], off: !available.includes(c) })),
+        { value: 'off', label: 'Не напоминать' },
+      ]}
+      value={active ?? 'off'}
+      gapBefore="off"
+      onPick={(v) => {
+        menu.close()
+        onChange(v === 'off' ? null : v)
+      }}
+    />
+  )
+  return { row, items, hostRef: menu.hostRef }
+}
+
 export function NewRequest() {
   const { data } = useStore()
+  const params = useParams()
   const days = data!.days
   // Закрытый день в чипах не выбрать — предвыбранным он оставил бы форму в состоянии,
-  // из которого заявку не отправить.
-  const { day, time, min, selectDay, onTimeChange } = useDayTime(firstOpenDay(days), null)
+  // из которого заявку не отправить. Пришли с ивента: день и время уже его.
+  const asked = days.find((d) => d.dateKey === params.dateKey && !d.lock)
+  const askedTime = asked && typeof params.time === 'string' && !isPastForToday(asked.dateKey, params.time) ? params.time : null
+  const { day, time, min, selectDay, onTimeChange } = useDayTime(asked ? asked.dateKey : firstOpenDay(days), askedTime)
   const locked = days.find((d) => d.dateKey === day)?.lock ?? null
   const [purpose, setPurpose] = useState('')
   const [anon, setAnon] = useState(false)
   // Напоминание предлагается включённым: выключенное по умолчанию им бы почти никто
   // не воспользовался, а именно оно и уменьшает «забыл про заявку».
   const [remind, setRemind] = useState<ReminderChoice | null>('h2')
-  const [submitting, setSubmitting] = useState(false)
+  // Заявка ушла: форма гаснет и уступает место карточке визита (см. visit-rise).
+  const [leaving, setLeaving] = useState(false)
+  const remindUi = useRemind(day, time, remind, setRemind)
 
   const submit = async (): Promise<void> => {
     if (locked) {
@@ -48,8 +111,7 @@ export function NewRequest() {
       showAlert('Это время уже прошло — выберите время позже текущего.')
       return
     }
-    setSubmitting(true)
-    setBusy(true)
+    haptic.impact('medium')
     try {
       // Если гость открыл миниапп из чата без /start, бот не сможет прислать ему ответ
       // резидента в личку — до создания заявки просим доступ нативной плашкой Telegram.
@@ -57,57 +119,74 @@ export function NewRequest() {
       const boot = await api<Bootstrap>('create', { dateKey: day, time, purpose, anon, remind: reminderFor(day, time, remind) })
       setData(boot)
       haptic.notify('success')
-      // Не в корень, а на карточку созданной заявки: там сразу написано «ждёт
-      // ответа» и что бот напишет в личку. Раньше форма молча сменялась списком,
-      // где новая строка ничем не отличалась от остальных, — момента отправки
-      // не было вовсе, а ответ на «сколько ждать» лежал ещё за одним тапом.
-      resetRoot()
+      // Форма становится созданным визитом на месте, а не уходит в корень: там сразу
+      // написано «ждёт ответа» и что бот напишет в личку. «Назад» ведёт туда, откуда
+      // форму открыли.
       const created = boot.myRequests.find((x) => x.dateKey === day && x.time === time)
-      if (created) push('visit', { id: created.id })
+      markOwnTap()
+      setLeaving(true)
+      await new Promise((r) => setTimeout(r, 300))
+      if (created) replaceTop('visit', { id: created.id, fresh: 1 })
+      else resetRoot()
     } catch (err) {
       showAlert((err as Error).message)
-      setSubmitting(false)
-    } finally {
-      setBusy(false)
     }
   }
 
   return (
     <Screen hasBottomBar>
       <BackRow />
-      <Header title="Хочу прийти" />
-      <SectionTitle>День</SectionTitle>
-      <DayChips days={days} selected={day} onSelect={selectDay} />
-      <SelectedDayInfo days={days} selected={day} />
-      <DayChipsLegend days={days} />
-      <SectionTitle>Детали</SectionTitle>
-      <div className="card">
-        <div className="row" style={{ padding: '6px 14px' }}>
-          <span style={{ fontSize: 16 }}>Приду к</span>
-          <TimeField value={time} min={min} onChange={onTimeChange} />
+      <div className={'nr-form' + (leaving ? ' leaving' : '')}>
+        <Header title="Хочу прийти" />
+        <SectionTitle>День</SectionTitle>
+        <DayChips
+          days={days}
+          selected={day}
+          onSelect={(k) => {
+            markOwnTap()
+            selectDay(k)
+          }}
+        />
+        <Crossfade id={day}>
+          <SelectedDayInfo days={days} selected={day} />
+        </Crossfade>
+        <DayChipsLegend days={days} />
+        <SectionTitle>Детали</SectionTitle>
+        {/* Всё про визит одной карточкой: время, напоминание, видимость и цель. */}
+        <div className="nt-host" ref={remindUi.hostRef}>
+          <div className="card">
+            <div className="row" style={{ padding: '6px 14px' }}>
+              <span style={{ fontSize: 16 }}>Приду к</span>
+              <TimeField value={time} min={min} onChange={onTimeChange} />
+            </div>
+            <Sep left={14} />
+            {remindUi.row}
+            <Sep left={14} />
+            <div className="row">
+              <span className="row-label">Не показывать другим гостям</span>
+              <Switch on={anon} onToggle={() => setAnon(!anon)} label="Не показывать другим гостям" />
+            </div>
+            <Sep left={14} />
+            <div className="kv-block">
+              <PurposeInput value={purpose} onChange={setPurpose} />
+            </div>
+          </div>
+          {remindUi.items}
         </div>
-        <Sep left={14} />
-        <div className="kv-block">
-          <PurposeInput value={purpose} onChange={setPurpose} />
-        </div>
-      </div>
-      <div style={{ height: 8 }} />
-      <RemindCard dateKey={day} time={time} choice={remind} onChange={setRemind} />
-      <div style={{ height: 8 }} />
-      <AnonRow anon={anon} onChange={setAnon} />
-      {/* Про кнопку «Я на месте» говорим заранее: в момент, когда гость стоит у двери,
-          читать инструкции поздно, а сама кнопка появится только в день визита. */}
-      <div className="hint-card">
-        <div className="hint-icon">{icons.pin(17, '#34c759')}</div>
-        <div className="hint-text">
-          Когда доберётесь до спейса, откройте свой визит и нажмите «Я на месте» - резиденты
-          поймут, что нужно открыть.
+        {/* Про кнопку «Я на месте» говорим заранее: в момент, когда гость стоит у двери,
+            читать инструкции поздно, а сама кнопка появится только в день визита. */}
+        <div className="hint-card">
+          <div className="hint-icon">{icons.pin(17, '#34c759')}</div>
+          <div className="hint-text">
+            Когда доберётесь до спейса, откройте свой визит и нажмите «Я на месте» - резиденты
+            поймут, что нужно открыть.
+          </div>
         </div>
       </div>
       <BottomBar>
-        <button className="primary-btn" disabled={submitting} onClick={submit}>
+        <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit}>
           Отправить заявку
-        </button>
+        </ActionButton>
         <div className="bar-hint">Ваша заявка будет отправлена резидентам</div>
       </BottomBar>
     </Screen>

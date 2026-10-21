@@ -2,7 +2,7 @@
 // это клиентская настройка, гостям она нужна не меньше, чем резидентам, а на
 // сервере хранить нечего. В CSS уходит уже разрешённая тема: data-theme на <html>.
 
-import { tg } from './telegram'
+import { setBottomBarColor, tg } from './telegram'
 import type { ResolvedTheme, ThemeChoice } from './types'
 
 export const THEMES: ThemeChoice[] = ['system', 'light', 'dark']
@@ -65,4 +65,5 @@ export function applyTheme(choice: ThemeChoice): void {
   } catch {
     /* старый клиент */
   }
+  setBottomBarColor(THEME_BG[t])
 }

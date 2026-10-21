@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
+import { useSheetDrag } from './useSheetDrag'
 
 /** Высота строки колеса; должна совпадать с --tp-item-h в app.css. */
 const ITEM_H = 40
@@ -123,6 +124,9 @@ function TimeSheet({
   // Системная «Назад» должна закрывать шторку, а не экран под ней. Регистрируем
   // после close: эффект зовёт именно его, со всей защитой от повторного закрытия.
   useEffect(() => pushOverlay(() => close(null)), [])
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSheetDrag(sheetRef, overlayRef, () => close(null), '.tp-bar')
 
   const selectHour = (next: string): void => {
     setHour(next)
@@ -132,12 +136,13 @@ function TimeSheet({
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={'tp-overlay' + (shown ? ' shown' : '')}
       onClick={(e) => {
         if (e.target === e.currentTarget) close(null)
       }}
     >
-      <div className="tp-sheet">
+      <div className="tp-sheet" ref={sheetRef}>
         <div className="tp-bar">
           <button className="tp-bar-btn" onClick={() => close(null)}>
             Отмена

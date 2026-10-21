@@ -175,7 +175,7 @@ import {
 } from './door.js'
 import { markOnboardingDone, onboardingOf, shouldShowOnboarding } from './onboarding.js'
 import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
-import { ANON_LABEL, removePresence } from './presence.js'
+import { ANON_LABEL, isMacOnline, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import {
     RESIDENT_TAG,
@@ -1071,7 +1071,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         ? {
             notify: notifyPrefsFor(storage, user.userId),
             eventNotify: eventNotifyPrefsFor(storage, user.userId),
-            macs: binding ? [...binding.macs].sort((a, b) => a.mac.localeCompare(b.mac)) : [],
+            macs: binding
+                ? [...binding.macs].sort((a, b) => a.mac.localeCompare(b.mac)).map((m) => ({ ...m, online: isMacOnline(m.mac) }))
+                : [],
             macAnon: binding?.anon ?? false,
             macPresenceActive: storage.get().presence[String(user.userId)]?.source === 'mac',
             logVisits: isPresenceLogged(storage, user.userId),

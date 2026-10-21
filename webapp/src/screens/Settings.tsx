@@ -1,38 +1,86 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { action, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
 import { confirmDialog } from '../modals'
 import { CHOICE_LABEL, choiceOf, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
-import { pushOverlay } from '../overlays'
 import { push, setTheme, useStore } from '../store'
-import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
+import { botCanWrite, openUrl, requestWriteAccess } from '../telegram'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
-import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { MacSheet } from '../components/MacSheet'
+import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Notification } from '../components/OnboardingScenes'
 import { Screen } from '../components/Screen'
 
+const THEMES: { value: ThemeChoice; label: string }[] = [
+  { value: 'system', label: 'Как в Telegram' },
+  { value: 'light', label: 'Светлая' },
+  { value: 'dark', label: 'Тёмная' },
+]
+
+/** Тема одной строкой с меню, как «Новые заявки»: три строки с галочкой говорили то же. */
 function ThemeSection() {
   const { theme } = useStore()
-  const row = (label: string, sublabel: string | null, value: ThemeChoice): ReactNode => (
-    <button type="button" className="row tappable" onClick={() => { if (theme !== value) setTheme(value) }}>
-      <span className="row-label">
-        {label}
-        {sublabel ? <span className="row-sublabel">{sublabel}</span> : null}
-      </span>
-      <div className="radio-check">{theme === value ? icons.check(16, '#007aff', 2.2) : null}</div>
-    </button>
-  )
+  const menu = useRowMenu<'theme'>()
   return (
     <>
       <SectionTitle>Оформление</SectionTitle>
-      <div className="card">
-        {row('Системная', 'Как в Telegram', 'system')}
-        <Sep left={14} />
-        {row('Светлая', null, 'light')}
-        <Sep left={14} />
-        {row('Тёмная', null, 'dark')}
+      <div className="nt-host" ref={menu.hostRef}>
+        <div className="card">
+          <div className="row">
+            <span className="row-label">Тема</span>
+            <button
+              type="button"
+              className="ob-popup"
+              aria-haspopup="menu"
+              aria-expanded={menu.openFor === 'theme'}
+              onClick={(e) => menu.open('theme', e.currentTarget)}
+            >
+              {THEMES.find((t) => t.value === theme)?.label}
+              {icons.updown()}
+            </button>
+          </div>
+        </div>
+        <MenuItems
+          open={menu.openFor === 'theme'}
+          place={menu.place}
+          items={THEMES}
+          value={theme}
+          onPick={(v) => {
+            menu.close()
+            if (v !== theme) setTheme(v)
+          }}
+        />
       </div>
     </>
+  )
+}
+
+/**
+ * Подписка календаря на ивенты: строка ведёт на `/events-subscribe`, тот редиректит на
+ * ту же ссылку схемой `webcal://`, и календарь заводит подписку, которая дальше
+ * обновляется сама. Https-ссылка на `.ics` дала бы разовый импорт, а `webcal://` из
+ * вебвью не открыть: `openLink` берёт только http/https.
+ */
+function CalendarRow() {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      className={'row tappable' + (busy ? ' rows-disabled' : '')}
+      onClick={async () => {
+        if (busy) return
+        setBusy(true)
+        await subscribeToEvents()
+        setBusy(false)
+      }}
+    >
+      <div className="row-icon" style={{ background: 'var(--purple)' }}>
+        {icons.calendar(17, '#fff')}
+      </div>
+      <span className="row-label">Ивенты в календаре</span>
+      <div className="row-right">{icons.chevron()}</div>
+    </button>
   )
 }
 
@@ -107,42 +155,16 @@ function NotifyCard<M extends string>({
  */
 function NotifySection({ s }: { s: SettingsData }) {
   const { data } = useStore()
-  const [menuFor, setMenuFor] = useState<'req' | 'ev' | null>(null)
-  const [menuTop, setMenuTop] = useState(0)
-  const hostRef = useRef<HTMLDivElement>(null)
-
-  // Меню закрывается тапом мимо и системной «Назад».
-  useEffect(() => {
-    if (!menuFor) return
-    const onDown = (e: PointerEvent): void => {
-      if (!(e.target as Element).closest('.ob-menu, .ob-popup')) setMenuFor(null)
-    }
-    document.addEventListener('pointerdown', onDown, true)
-    const un = pushOverlay(() => setMenuFor(null))
-    return () => {
-      document.removeEventListener('pointerdown', onDown, true)
-      un()
-    }
-  }, [menuFor])
-
-  const openMenu = (key: 'req' | 'ev', btn: HTMLElement): void => {
-    if (menuFor === key) {
-      setMenuFor(null)
-      return
-    }
-    const host = hostRef.current?.getBoundingClientRect()
-    const r = btn.getBoundingClientRect()
-    setMenuTop(host ? r.bottom - host.top + 4 : 0)
-    setMenuFor(key)
-  }
+  const menu = useRowMenu<'req' | 'ev'>()
+  const cur = menu.openFor === 'ev' ? s.eventNotify : s.notify
 
   const pick = (choice: NotifyChoice): void => {
-    if (!menuFor) return
-    const cur = menuFor === 'req' ? s.notify : s.eventNotify
-    haptic.tick()
-    setTimeout(() => setMenuFor(null), 140)
-    if (choiceOf(cur) === choice) return
-    void action(menuFor === 'req' ? 'notify' : 'notify.events', prefsFor(choice, cur), { quiet: true })
+    if (!menu.openFor) return
+    const which = menu.openFor
+    const prefs = which === 'req' ? s.notify : s.eventNotify
+    menu.close()
+    if (choiceOf(prefs) === choice) return
+    void action(which === 'req' ? 'notify' : 'notify.events', prefsFor(choice, prefs), { quiet: true })
   }
 
   const botName = data!.onboarding?.botName || 'Endpoint Robot'
@@ -156,20 +178,19 @@ function NotifySection({ s }: { s: SettingsData }) {
         type="button"
         className="ob-popup"
         aria-haspopup="menu"
-        aria-expanded={menuFor === key}
-        onClick={(e) => openMenu(key, e.currentTarget)}
+        aria-expanded={menu.openFor === key}
+        onClick={(e) => menu.open(key, e.currentTarget)}
       >
         {CHOICE_LABEL[choiceOf(prefs)]}
         {icons.updown()}
       </button>
     </div>
   )
-  const cur = menuFor === 'ev' ? s.eventNotify : s.notify
 
   return (
     <>
       <SectionTitle>Уведомления</SectionTitle>
-      <div className="nt-host" ref={hostRef}>
+      <div className="nt-host" ref={menu.hostRef}>
         <div className="nt-stage" aria-hidden="true">
           {notifyBanners(s, data!.todayKey).map((b) => (
             <Notification key={b.key} botName={botName} time={b.time} text={b.text} className={'ob-nb' + (b.off ? ' off' : '')} />
@@ -179,18 +200,17 @@ function NotifySection({ s }: { s: SettingsData }) {
           {row('req', 'Новые заявки', 'var(--orange)', s.notify)}
           <Sep left={54} />
           {row('ev', 'Новые ивенты', 'var(--purple)', s.eventNotify)}
+          <Sep left={54} />
+          <CalendarRow />
         </div>
-        <div className={'ob-menu' + (menuFor ? ' open' : '')} style={{ top: menuTop }} role="menu">
-          {(['today', 'all', 'off'] as NotifyChoice[]).map((c) => (
-            <Fragment key={c}>
-              {c === 'off' ? <div className="ob-menu-gap" /> : null}
-              <button type="button" role="menuitemradio" aria-checked={choiceOf(cur) === c} onClick={() => pick(c)}>
-                <span className="ob-mk">{icons.check(14, 'currentColor', 2.2)}</span>
-                {CHOICE_LABEL[c]}
-              </button>
-            </Fragment>
-          ))}
-        </div>
+        <MenuItems
+          open={menu.openFor !== null}
+          place={menu.place}
+          items={(['today', 'all', 'off'] as NotifyChoice[]).map((c) => ({ value: c, label: CHOICE_LABEL[c] }))}
+          value={choiceOf(cur)}
+          onPick={pick}
+          gapBefore="off"
+        />
       </div>
     </>
   )
@@ -216,46 +236,9 @@ function AttendNotifySection() {
           if (!botCanWrite()) await requestWriteAccess()
         }}
       />
-    </>
-  )
-}
-
-/**
- * Подписка календаря на ивенты.
- *
- * Кнопка ведёт на `/events-subscribe` — он редиректит на ту же ссылку схемой
- * `webcal://`, и календарь заводит подписку, которая дальше обновляется сама.
- * Отдавать https-ссылку на `.ics` напрямую бесполезно: система разово импортирует
- * ближайшие ивенты и на этом всё. Схему подменяет сервер, потому что из вебвью
- * `webcal://` не открыть — `openLink` берёт только http/https.
- */
-function CalendarSection() {
-  const [busy, setBusy] = useState(false)
-  return (
-    <>
-      <SectionTitle>Календарь</SectionTitle>
-      <div className="card">
-        <button
-          type="button"
-          className={'row tappable' + (busy ? ' rows-disabled' : '')}
-          onClick={async () => {
-            if (busy) return
-            setBusy(true)
-            await subscribeToEvents()
-            setBusy(false)
-          }}
-        >
-          <div className="row-icon" style={{ background: 'var(--purple)' }}>
-            {icons.calendar(17, '#fff')}
-          </div>
-          <span className="row-label">Подписаться на ивенты</span>
-          <div className="row-right">{icons.chevron()}</div>
-        </button>
+      <div className="card" style={{ marginTop: 12 }}>
+        <CalendarRow />
       </div>
-      <Footnote>
-        Ссылка добавляется в календарь один раз — дальше новые ивенты появляются в нём сами. Ивенты только для
-        резидентов в неё не попадают.
-      </Footnote>
     </>
   )
 }
@@ -297,100 +280,71 @@ function BuildSign() {
   )
 }
 
-function MacCard({ s }: { s: SettingsData }) {
-  const [showForm, setShowForm] = useState(false)
-  const [mac, setMac] = useState('')
-  const [label, setLabel] = useState('')
-  const macRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (showForm) macRef.current?.focus()
-  }, [showForm])
-
+/**
+ * Отметки одной карточкой, как шаг «Телефон» в знакомстве: устройства с меткой «в сети»,
+ * привязка через ту же шторку (вкладка системы, путь до адреса, вставка из буфера), без
+ * ника и журнал. Печатать MAC руками больше не нужно.
+ */
+function PresenceCard({ s }: { s: SettingsData }) {
+  const [sheet, setSheet] = useState(false)
   return (
-    <div className="card">
-      {s.macs.map((m, i) => (
-        <Fragment key={m.mac}>
-          {i > 0 ? <Sep left={14} /> : null}
-          <div className="row">
-            <span className="row-label">
-              {m.label || 'Устройство'}
-              <span className="row-sublabel mono">{m.mac}</span>
-            </span>
-            <button
-              className="remove-btn"
-              aria-label="Убрать MAC"
-              onClick={async () => {
-                const ok = await confirmDialog(
-                  `Убрать ${m.label ? '«' + m.label + '» ' : ''}${m.mac}? Авто-отметка по этому устройству перестанет работать.`,
-                  { confirmLabel: 'Убрать устройство', cancelLabel: 'Оставить', destructive: true },
-                )
-                if (ok) void action('mac.remove', { mac: m.mac })
-              }}
-            >
-              {icons.minusCircle()}
-            </button>
-          </div>
-        </Fragment>
-      ))}
-      {s.macs.length > 0 ? <Sep left={14} /> : null}
-      {!showForm ? (
-        <button type="button" className="row tappable" onClick={() => setShowForm(true)}>
+    <>
+      <SectionTitle>Отметки</SectionTitle>
+      <div className="card">
+        {s.macs.map((m) => (
+          <Fragment key={m.mac}>
+            <div className="row">
+              <span className="row-label">
+                {m.label || 'Устройство'}
+                <span className="row-sublabel mono">{m.mac}</span>
+              </span>
+              <div className="row-right">
+                {m.online ? <span className="ob-tag green">в сети</span> : null}
+                <button
+                  className="remove-btn"
+                  aria-label="Убрать устройство"
+                  onClick={async () => {
+                    const ok = await confirmDialog(
+                      `Убрать ${m.label ? '«' + m.label + '» ' : ''}${m.mac}? Авто-отметка по этому устройству перестанет работать.`,
+                      { confirmLabel: 'Убрать устройство', cancelLabel: 'Оставить', destructive: true },
+                    )
+                    if (ok) void action('mac.remove', { mac: m.mac }, { quiet: true })
+                  }}
+                >
+                  {icons.minusCircle()}
+                </button>
+              </div>
+            </div>
+            <Sep left={14} />
+          </Fragment>
+        ))}
+        <button type="button" className="row tappable" onClick={() => setSheet(true)}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
           <span className="add-row-label">Добавить устройство</span>
         </button>
-      ) : (
-        <>
-          <Sep left={14} />
-          <div className="row">
-            <input
-              ref={macRef}
-              className="text-input mono"
-              placeholder="AA:BB:CC:DD:EE:FF"
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              value={mac}
-              onChange={(e) => setMac(e.target.value)}
-            />
-          </div>
-          <Sep left={14} />
-          <div className="row">
-            <input
-              className="text-input"
-              placeholder="Название (например, Телефон)"
-              autoComplete="off"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </div>
-          <div className="inline-form-actions">
-            <button
-              className="small-btn blue"
-              onClick={async () => {
-                const value = mac.trim()
-                if (!value) {
-                  macRef.current?.focus()
-                  return
-                }
-                const done = await action('mac.add', { mac: value, label })
-                if (done) {
-                  haptic.notify('success')
-                  setShowForm(false)
-                  setMac('')
-                  setLabel('')
-                }
-              }}
-            >
-              Привязать
-            </button>
-            <button className="small-btn gray" onClick={() => setShowForm(false)}>
-              Отмена
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+        <Sep left={14} />
+        <div className={'row' + (s.macs.length === 0 ? ' rows-disabled' : '')}>
+          <span className="row-label">
+            Отмечаться без ника
+            <span className="row-sublabel">В списке будет «Без ника»</span>
+          </span>
+          <Switch label="Отмечаться без ника" on={s.macAnon} onToggle={() => action('mac.anon', { anon: !s.macAnon }, { quiet: true })} />
+        </div>
+        <Sep left={14} />
+        <div className="row">
+          <span className="row-label">
+            Вести историю визитов
+            <span className="row-sublabel">Для статистики спейса</span>
+          </span>
+          <Switch
+            label="Вести историю визитов"
+            on={s.logVisits}
+            onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
+          />
+        </div>
+      </div>
+      {sheet ? <MacSheet onClose={() => setSheet(false)} /> : null}
+    </>
   )
 }
 
@@ -407,9 +361,8 @@ export function Settings() {
       <Screen>
         <BackRow />
         <Header title="Настройки" />
-        <ThemeSection />
-        <CalendarSection />
         <AttendNotifySection />
+        <ThemeSection />
         <BuildSign />
       </Screen>
     )
@@ -430,7 +383,7 @@ export function Settings() {
             Мой профиль
             <span className="row-sublabel">Права и интеграции</span>
           </span>
-          {icons.chevron()}
+          <div className="row-right">{icons.chevron()}</div>
         </button>
         <Sep left={14} />
         <button type="button" className="row tappable" onClick={() => void openOnboarding()}>
@@ -438,63 +391,12 @@ export function Settings() {
             Знакомство с ботом
             <span className="row-sublabel">Что умеет бот для резидентов</span>
           </span>
-          {icons.chevron()}
+          <div className="row-right">{icons.chevron()}</div>
         </button>
       </div>
-      <ThemeSection />
-      <CalendarSection />
+      <PresenceCard s={s} />
       <NotifySection s={s} />
-      <SectionTitle>Авто-отметка по MAC</SectionTitle>
-      <div className="card" style={{ marginBottom: 8 }}>
-        <div className="row">
-          <div className="row-icon" style={{ background: 'var(--blue)' }}>
-            {icons.wifi()}
-          </div>
-          <span className="row-label">
-            Мои устройства
-            <span className="row-sublabel">
-              {s.macPresenceActive ? 'Сейчас вы отмечены по MAC' : 'Авто-отметка сейчас не активна'}
-            </span>
-          </span>
-        </div>
-      </div>
-      <MacCard s={s} />
-      <div className="card" style={{ marginTop: 8 }}>
-        <div className={'row' + (s.macs.length === 0 ? ' rows-disabled' : '')}>
-          <span className="row-label">
-            Отмечаться без ника
-            <span className="row-sublabel">В списке будет «Без ника»</span>
-          </span>
-          <Switch
-            label="Отмечаться без ника"
-            on={s.macAnon}
-            onToggle={() => action('mac.anon', { anon: !s.macAnon }, { quiet: true })}
-          />
-        </div>
-      </div>
-      <Footnote>
-        Пока устройство в сети спейса, бот сам ставит отметку «внутри». Выключите ротацию (рандомизацию) MAC для Wi-Fi
-        спейса — иначе адрес будет меняться. Команды /bindmac, /unbindmac и /settings в боте работают как раньше и
-        синхронизированы с этим списком.
-      </Footnote>
-      <SectionTitle>Журнал присутствия</SectionTitle>
-      <div className="card">
-        <div className="row">
-          <span className="row-label">
-            Не вести историю моих визитов
-            <span className="row-sublabel">Отметки продолжат работать, но в статистике вас не будет</span>
-          </span>
-          <Switch
-            label="Не вести историю моих визитов"
-            on={!s.logVisits}
-            onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
-          />
-        </div>
-      </div>
-      <Footnote>
-        Журнал нужен статистике спейса: сколько часов он работал и когда сюда приходят. Уже записанные визиты остаются —
-        выключение останавливает запись новых.
-      </Footnote>
+      <ThemeSection />
       <BuildSign />
     </Screen>
   )

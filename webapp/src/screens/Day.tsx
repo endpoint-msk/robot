@@ -64,7 +64,8 @@ const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<vo
     confirmLabel: 'Сохранить',
   })
   if (text === null || text === current) return
-  await action('day.agenda', { dateKey, text })
+  markOwnTap()
+  await action('day.agenda', { dateKey, text }, { quiet: true })
 }
 
 /** Плашка «день закрыт» под шапкой — отдельно от переключателя в карточке «День». */
@@ -114,7 +115,8 @@ function DayCard({ day }: { day: DayData }) {
         { confirmLabel: 'Открыть день' },
       )
       if (!ok) return
-      await action('day.lock', { dateKey, locked: false })
+      markOwnTap()
+      await action('day.lock', { dateKey, locked: false }, { quiet: true })
       return
     }
     if (requests > 0) {
@@ -126,13 +128,14 @@ function DayCard({ day }: { day: DayData }) {
     }
     const reason = await askReason('')
     if (reason === null) return
-    await action('day.lock', { dateKey, locked: true, reason })
+    markOwnTap()
+    await action('day.lock', { dateKey, locked: true, reason }, { quiet: true })
   }
 
   const editReason = async (): Promise<void> => {
     const reason = await askReason(lock?.reason ?? '')
     if (reason === null) return
-    await action('day.lock', { dateKey, locked: true, reason })
+    await action('day.lock', { dateKey, locked: true, reason }, { quiet: true })
   }
 
   // Вместимость — мягкий лимит: при «Захостить» сверх него приходит предупреждение с
@@ -149,10 +152,12 @@ function DayCard({ day }: { day: DayData }) {
       confirmLabel: 'Сохранить',
     })
     if (value === null || value === capacity.cap) return
-    await action('day.cap', { dateKey, cap: value })
+    markOwnTap()
+    await action('day.cap', { dateKey, cap: value }, { quiet: true })
   }
   const resetCap = async (): Promise<void> => {
-    await action('day.cap', { dateKey, cap: null })
+    markOwnTap()
+    await action('day.cap', { dateKey, cap: null }, { quiet: true })
   }
 
   const toggleSub = async (): Promise<void> => {
@@ -511,8 +516,12 @@ function DayPage({
         <ComingRow attendees={attendees} coming={coming} onToggle={() => void toggle()} />
       </div>
       <div className="dpg-body">
-        {day.lock ? <LockBanner lock={day.lock} /> : null}
-        {day.agenda ? <AgendaBanner agenda={day.agenda} onEdit={() => editAgenda(day.dateKey, day.agenda)} /> : null}
+        {/* Закрыли день или поставили повестку своим тапом: плашка вырастает на месте, а
+            не вставляется рывком, сдвигая всё, на что смотрят. */}
+        <Collapse open={Boolean(day.lock)}>{day.lock ? <LockBanner lock={day.lock} /> : null}</Collapse>
+        <Collapse open={Boolean(day.agenda)}>
+          {day.agenda ? <AgendaBanner agenda={day.agenda} onEdit={() => editAgenda(day.dateKey, day.agenda)} /> : null}
+        </Collapse>
         {/* Ивентов на день может быть сколько угодно, поэтому вход в редактор нужен и
             тогда, когда список уже не пуст. */}
         {events.length > 0 ? (
@@ -700,7 +709,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       S.raf = 0
       const a = S.anim
       if (a) {
-        const s = springAt(a.x0, a.v0, PAGE_SPRING, (now - a.t0) / 1000)
+        const s = springAt(a.x0, a.v0, PAGE_SPRING, Math.max(0, now - a.t0) / 1000)
         S.p = a.to + s.x
         if (Math.abs(s.x) < 0.001 && Math.abs(s.v) < 0.01) {
           S.p = a.to

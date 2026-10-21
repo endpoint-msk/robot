@@ -109,7 +109,8 @@ export function EventApps() {
     setBusy(true)
     try {
       // action обновляет общий стор (счётчики на карточках), затем перечитываем список.
-      await action(approve ? 'event.app.approve' : 'event.app.decline', { id: app.id })
+      // Свой спиннер уже держит список, второй на весь экран поверх него лишний.
+      await action(approve ? 'event.app.approve' : 'event.app.decline', { id: app.id }, { quiet: true })
       if (approve) haptic.notify('success')
       reload()
     } catch (err) {

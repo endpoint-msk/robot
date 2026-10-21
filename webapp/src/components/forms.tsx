@@ -193,7 +193,7 @@ export function PurposeInput({
 // «сейчас» (todayKey/nowTime из bootstrap) приходят с сервера уже в нём, поэтому сдвиг
 // пояса фронту знать не нужно, а локальные часы устройства тут вообще ни при чём.
 
-const REMINDER_LABELS: Record<ReminderChoice, string> = {
+export const REMINDER_LABELS: Record<ReminderChoice, string> = {
   m30: 'за 30 мин',
   h1: 'за час',
   h2: 'за 2 часа',
@@ -202,7 +202,7 @@ const REMINDER_LABELS: Record<ReminderChoice, string> = {
 }
 
 /** Порядок в карточке — от ближнего срока к дальнему, как в макете. */
-const REMINDER_ORDER: ReminderChoice[] = ['m30', 'h1', 'h2', 'morning', 'evening']
+export const REMINDER_ORDER: ReminderChoice[] = ['m30', 'h1', 'h2', 'morning', 'evening']
 
 /** Что предлагаем при включении: за два часа, а если не успевает — ближайший подходящий. */
 const REMINDER_PREFERENCE: ReminderChoice[] = ['h2', 'h1', 'm30', 'morning', 'evening']
@@ -259,7 +259,7 @@ export const reminderFor = (dateKey: string, time: string, choice: ReminderChoic
   choice && reminderAvailable(dateKey, time, choice) ? choice : null
 
 /** «сегодня в 17:00» / «завтра в 17:00» / «в чт, 14 августа в 17:00». */
-function reminderWhen(dateKey: string, time: string, choice: ReminderChoice): string {
+export function reminderWhen(dateKey: string, time: string, choice: ReminderChoice): string {
   const d = getState().data!
   const at = reminderSlot(dateKey, time, choice)
   if (at.dateKey === d.todayKey) return `сегодня в ${at.time}`

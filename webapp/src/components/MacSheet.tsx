@@ -7,6 +7,7 @@ import { action } from '../api'
 import { icons } from '../icons'
 import { pushOverlay } from '../overlays'
 import { haptic, tg } from '../telegram'
+import { useSheetDrag } from './useSheetDrag'
 
 type Os = 'ios' | 'android' | 'mac' | 'win'
 
@@ -157,6 +158,9 @@ export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: 
 
   // Системная «Назад» закрывает шторку, а не шаг под ней.
   useEffect(() => pushOverlay(() => close()), [])
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSheetDrag(sheetRef, overlayRef, () => close())
 
   const pickOs = (next: Os): void => {
     setOs(next)
@@ -185,12 +189,13 @@ export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: 
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={'ob-sheet-overlay' + (shown ? ' shown' : '')}
       onClick={(e) => {
         if (e.target === e.currentTarget) close()
       }}
     >
-      <div className="ob-sheet" role="dialog" aria-label="Привязка телефона">
+      <div className="ob-sheet" role="dialog" aria-label="Привязка телефона" ref={sheetRef}>
         <div className="ob-grabber" />
         <div className="ob-sheet-nav">
           <button type="button" className="ob-sheet-cancel" onClick={() => close()}>

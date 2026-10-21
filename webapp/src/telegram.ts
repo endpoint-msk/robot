@@ -12,11 +12,15 @@ interface TelegramWebApp {
   disableVerticalSwipes?(): void
   setHeaderColor(color: string): void
   setBackgroundColor(color: string): void
+  setBottomBarColor?(color: string): void
   openLink(url: string): void
   openTelegramLink(url: string): void
   requestWriteAccess?(callback: (granted: boolean) => void): void
   switchInlineQuery?(query: string, chooseChatTypes?: string[]): void
   onEvent(event: string, callback: () => void): void
+  offEvent?(event: string, callback: () => void): void
+  /** Bot API 8.0. Углы в радианах. */
+  DeviceOrientation?: { start(params: { refresh_rate?: number }): void; stop(): void; beta: number | null; gamma: number | null }
   isVersionAtLeast?(version: string): boolean
   HapticFeedback?: {
     impactOccurred?(style: ImpactStyle): void
@@ -105,6 +109,18 @@ export function switchInline(): boolean {
     /* старый клиент */
   }
   return false
+}
+
+/**
+ * Цвет нижней панели Telegram (Bot API 7.10). На Android красит и системную панель
+ * навигации, поэтому сцена в тон выглядит цельной снизу так же, как сверху.
+ */
+export function setBottomBarColor(hex: string): void {
+  try {
+    if (tg?.isVersionAtLeast?.('7.10')) tg.setBottomBarColor?.(hex)
+  } catch {
+    /* старый клиент */
+  }
 }
 
 /** Цвет шапки Telegram. Только #RRGGBB: rgba и имена цветов понимают не все клиенты. */

@@ -4,12 +4,15 @@ import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
 import { confirmDialog, reschedulePrompt, showAlert } from '../modals'
-import { getDataAt, pop, push, setBusy, setData, useParams, useStore } from '../store'
+import { getDataAt, pop, push, setBusy, setData, setTopParams, useParams, useStore } from '../store'
 import { sec } from '../theme'
 import { useIcsLink } from '../links'
 import { haptic } from '../telegram'
 import type { Bootstrap } from '../types'
-import { BackRow, Header, Sep, SectionTitle } from '../components/common'
+import { ActionButton, BackRow, Header, Sep, SectionTitle } from '../components/common'
+import { Collapse } from '../components/Collapse'
+import { XText } from '../components/Flip'
+import { markOwnTap } from '../motion'
 import { RemindCard } from '../components/forms'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
@@ -54,6 +57,14 @@ function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null 
     return () => window.clearInterval(timer)
   }, [])
 
+  // Галочка встаёт с перелётом, только когда сообщили своим тапом сейчас.
+  const [pop, setPop] = useState(false)
+  useEffect(() => {
+    if (!pop) return
+    const timer = window.setTimeout(() => setPop(false), 600)
+    return () => window.clearTimeout(timer)
+  }, [pop])
+
   const at = arrivedAt ? Date.parse(arrivedAt) : NaN
   const sent = Number.isFinite(at)
   const left = sent ? at + ARRIVAL_COOLDOWN_MS - now : 0
@@ -63,26 +74,33 @@ function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null 
   return (
     <div className="arrival-card">
       <div className="arrival-head">
-        <div className="arrival-icon">{sent ? icons.check(19, '#34c759', 2.2) : icons.pin(19, '#34c759')}</div>
+        <div className={'arrival-icon' + (pop ? ' pop' : '')}>{sent ? icons.check(19, '#34c759', 2.2) : icons.pin(19, '#34c759')}</div>
         <div style={{ minWidth: 0 }}>
           <div className="arrival-title">
-            {!sent ? 'Уже у двери?' : mins === 0 ? 'Сообщили только что' : `Сообщили ${mins} мин назад`}
+            <XText text={!sent ? 'Уже у двери?' : mins === 0 ? 'Сообщили только что' : `Сообщили ${mins} мин назад`} />
           </div>
           <div className="arrival-sub">
-            {sent ? 'Открывают. Если никто не вышел, сообщите ещё раз' : 'Скажу тем, кто сейчас в спейсе'}
+            <XText text={sent ? 'Открывают. Если никто не вышел, сообщите ещё раз' : 'Скажу тем, кто сейчас в спейсе'} delay={60} />
           </div>
         </div>
       </div>
-      <button
+      {/* Единственная кнопка, которую гость жмёт у двери, нервничая: удар сразу, ждёт она
+          сама, а не весь экран. Ушло сообщение, и галочка встаёт с успехом. */}
+      <ActionButton
         className="arrival-btn"
         disabled={waiting}
         onClick={async () => {
-          const done = await action('arrived', { id })
-          if (done) haptic.notify('success')
+          haptic.impact('medium')
+          markOwnTap()
+          const done = await action('arrived', { id }, { quiet: true })
+          if (done) {
+            haptic.notify('success')
+            setPop(true)
+          }
         }}
       >
         {waiting ? `Сообщить ещё раз можно через ${countdown(left)}` : sent ? 'Сообщить ещё раз' : 'Я на месте'}
-      </button>
+      </ActionButton>
     </div>
   )
 }
@@ -99,6 +117,13 @@ export function Visit() {
     if (!r) pop()
   }, [r])
   const openIcs = useIcsLink('visit', r?.id ?? '', !!r && !isPast)
+  // Поднимается один раз: вернулись на визит позже, и он просто стоит.
+  const fresh = params.fresh === 1
+  useEffect(() => {
+    if (!fresh) return
+    const timer = window.setTimeout(() => setTopParams({ ...params, fresh: undefined }), 1200)
+    return () => window.clearTimeout(timer)
+  }, [fresh])
   if (!r) return <Screen />
 
   const approved = r.status === 'approved' && !!r.approvedBy
@@ -148,15 +173,16 @@ export function Visit() {
           <span className="ptb-old">{slotLabel(r.dateKey, r.time)}</span>
         </div>
         <div className="propose-actions">
-          <button
+          <ActionButton
             className="primary-btn"
             onClick={async () => {
-              const done = await action('proposal.accept', { id: r.id })
-              if (done) haptic.notify('success')
+              haptic.impact('medium')
+              markOwnTap()
+              await action('proposal.accept', { id: r.id }, { quiet: true })
             }}
           >
             Принять
-          </button>
+          </ActionButton>
           <button
             className="chip-btn"
             onClick={async () => {
@@ -166,23 +192,24 @@ export function Visit() {
                 initialTime: p.time,
               })
               if (!slot) return
-              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
+              markOwnTap()
+              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
               if (done) haptic.notify('success')
             }}
           >
             Своё
           </button>
         </div>
-        <button
-          className="link-btn"
-          style={{ marginTop: 12 }}
+        <ActionButton
+          className="link-btn ptb-keep"
           onClick={async () => {
             haptic.impact('light')
-            await action('proposal.decline', { id: r.id })
+            markOwnTap()
+            await action('proposal.decline', { id: r.id }, { quiet: true })
           }}
         >
           Оставить как есть ({slotLabel(r.dateKey, r.time)})
-        </button>
+        </ActionButton>
       </div>
     )
   } else if (p && p.by === 'guest') {
@@ -209,21 +236,23 @@ export function Visit() {
                 confirmLabel: 'Обновить',
               })
               if (!slot) return
-              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
+              markOwnTap()
+              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
               if (done) haptic.notify('success')
             }}
           >
             Изменить
           </button>
-          <button
+          <ActionButton
             className="chip-btn"
             onClick={async () => {
               haptic.impact('light')
-              await action('proposal.decline', { id: r.id })
+              markOwnTap()
+              await action('proposal.decline', { id: r.id }, { quiet: true })
             }}
           >
             Отозвать
-          </button>
+          </ActionButton>
         </div>
       </div>
     )
@@ -259,10 +288,15 @@ export function Visit() {
   return (
     <Screen>
       <BackRow label="Мои визиты" />
-      <Header title={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]} subtitle={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} />
+      {/* Только что отправленная заявка: форма погасла, и визит поднимается на её месте. */}
+      <div className={fresh ? 'visit-rise' : undefined}>
+      <Header
+        title={<XText text={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]!} />}
+        subtitle={<XText text={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} delay={120} />}
+      />
       {arrivalOpen ? <ArrivalCard id={r.id} arrivedAt={r.arrivedAt} /> : null}
       {isPast ? null : statusCard}
-      {isPast ? null : proposalCard}
+      <Collapse open={!isPast && Boolean(proposalCard)}>{proposalCard}</Collapse>
       {/* Правка доступна, пока визит не одобрен: сервер тоже это проверяет. */}
       {!approved && !isPast ? (
         <button className="secondary-btn" style={{ marginTop: 12 }} onClick={() => push('editRequest', { id: r.id })}>
@@ -284,7 +318,8 @@ export function Visit() {
             })
             // Оставили слот как есть — переносить нечего (сервер тоже это гасит).
             if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
-            const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
+            markOwnTap()
+            const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
             if (done) haptic.notify('success')
           }}
         >
@@ -296,7 +331,9 @@ export function Visit() {
       <div className="card">
         <div className="row">
           <span className="kv-key">Когда</span>
-          <span className="kv-val">{`${fmtShortDate(r.dateKey)} · ${r.time}`}</span>
+          <span className="kv-val">
+            <XText text={`${fmtShortDate(r.dateKey)} · ${r.time}`} delay={120} />
+          </span>
         </div>
         <Sep left={14} />
         <div className="row">
@@ -338,7 +375,9 @@ export function Visit() {
             choice={r.remind?.choice ?? null}
             sentAt={r.remind?.sentAt}
             onChange={async (choice) => {
-              await action('remind.set', { id: r.id, choice: choice ?? 'off' })
+              // Чип отвечает щелчком; у тумблера свой удар, и щелчок рядом с ним гасится.
+              haptic.tick()
+              await action('remind.set', { id: r.id, choice: choice ?? 'off' }, { quiet: true })
             }}
           />
         </div>
@@ -376,6 +415,7 @@ export function Visit() {
         Отменить заявку
       </button>
       )}
+      </div>
     </Screen>
   )
 }

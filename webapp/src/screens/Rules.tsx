@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
-import { pop, push, useStore } from '../store'
+import { pop, push, useParams, useStore } from '../store'
 import { openUrl } from '../telegram'
 import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -18,6 +18,7 @@ const RULES = [
 
 export function Rules() {
   const { data } = useStore()
+  const params = useParams()
   const [agreed, setAgreed] = useState(data!.me.acceptedRules)
 
   const submit = async (): Promise<void> => {
@@ -25,7 +26,7 @@ export function Rules() {
     if (!done) return
     // Экран правил из стека убираем: назад с формы заявки надо возвращаться к визитам.
     pop()
-    push('newRequest')
+    push('newRequest', { dateKey: params.dateKey, time: params.time })
   }
 
   return (

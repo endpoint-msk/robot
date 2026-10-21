@@ -2,8 +2,10 @@
 // src/onboarding.ts по классам отсюда; здесь только конечный кадр. Сцены -
 // иллюстрации, смысл шага несёт текст под ними, поэтому для скринридера они скрыты.
 
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { icons } from '../icons'
+import { clamp, mix, reducedMotion } from '../motion'
+import { tg } from '../telegram'
 import type { User } from '../types'
 import { Avatar } from './people'
 
@@ -92,15 +94,109 @@ function Barcode({ seed }: { seed: number }) {
   return <div className="ob-pass-bars">{bars}</div>
 }
 
+/** Наклон телефона, при котором блик доходит до края карты: 15° в радианах. */
+const TILT_RANGE = 0.26
+
+/**
+ * Карта наклоняется за рукой, и блик идёт за ней: телефон наклоняют, на компьютере его
+ * ведёт курсор. Наклон считается от позы на старте, а не от вертикали: карту держат
+ * как удобно. Датчик работает, только пока карта на экране, между его отсчётами
+ * (20 Гц) значение сглаживается в каждом кадре.
+ */
+function useCardTilt(ref: RefObject<HTMLDivElement | null>, active: boolean): void {
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !active || reducedMotion()) return
+    const target = { x: 0, y: 0 }
+    const cur = { x: 0, y: 0 }
+    let raf = 0
+    const draw = (): void => {
+      cur.x = mix(cur.x, target.x, 0.16)
+      cur.y = mix(cur.y, target.y, 0.16)
+      el.style.setProperty('--tilt-x', cur.x.toFixed(3))
+      el.style.setProperty('--tilt-y', cur.y.toFixed(3))
+      el.style.setProperty('--tilt-on', Math.min(1, Math.hypot(cur.x, cur.y) * 1.6).toFixed(3))
+      raf = Math.abs(cur.x - target.x) + Math.abs(cur.y - target.y) > 0.002 ? requestAnimationFrame(draw) : 0
+    }
+    const kick = (): void => {
+      if (!raf) raf = requestAnimationFrame(draw)
+    }
+
+    const onMove = (e: PointerEvent): void => {
+      const b = el.getBoundingClientRect()
+      target.x = clamp(((e.clientX - b.left) / b.width) * 2 - 1, -1, 1)
+      target.y = clamp(((e.clientY - b.top) / b.height) * 2 - 1, -1, 1)
+      kick()
+    }
+    const onLeave = (): void => {
+      target.x = 0
+      target.y = 0
+      kick()
+    }
+    el.addEventListener('pointermove', onMove)
+    el.addEventListener('pointerleave', onLeave)
+
+    const dor = tg?.DeviceOrientation
+    const sensor = Boolean(dor && tg?.isVersionAtLeast?.('8.0'))
+    let base: { b: number; g: number } | null = null
+    const onOrient = (): void => {
+      const b = dor?.beta
+      const g = dor?.gamma
+      if (b == null || g == null) return
+      if (!base) base = { b, g }
+      target.x = clamp((g - base.g) / TILT_RANGE, -1, 1)
+      target.y = clamp((b - base.b) / TILT_RANGE, -1, 1)
+      kick()
+    }
+    if (sensor) {
+      try {
+        tg!.onEvent('deviceOrientationChanged', onOrient)
+        dor!.start({ refresh_rate: 50 })
+      } catch {
+        /* клиент без датчика: остаётся курсор */
+      }
+    }
+    return () => {
+      el.removeEventListener('pointermove', onMove)
+      el.removeEventListener('pointerleave', onLeave)
+      if (sensor) {
+        try {
+          tg!.offEvent?.('deviceOrientationChanged', onOrient)
+          dor!.stop()
+        } catch {
+          /* старый клиент */
+        }
+      }
+      cancelAnimationFrame(raf)
+      el.style.removeProperty('--tilt-x')
+      el.style.removeProperty('--tilt-y')
+      el.style.removeProperty('--tilt-on')
+    }
+  }, [active])
+}
+
 /**
  * Карта резидента в духе карты Endpoint: логотип, имя крупно, номер, служебные
  * строки моноширинным и штрихкод. Номер - сколько резидентов вместе с вами.
  */
-export function DoneScene({ me, number, since }: { me: User; number: number | null; since: string | null }) {
+export function DoneScene({
+  me,
+  number,
+  since,
+  active = false,
+}: {
+  me: User
+  number: number | null
+  since: string | null
+  /** Шаг открыт: только тогда карта следует за наклоном и держит датчик. */
+  active?: boolean
+}) {
   const code = `EPT-${String(number ?? 0).padStart(3, '0')}-${String(Math.abs(me.userId)).padStart(10, '0')}`
+  const posRef = useRef<HTMLDivElement>(null)
+  useCardTilt(posRef, active)
   return (
     <div className="ob-pass-stage" aria-hidden="true">
-      <div className="ob-pass-pos">
+      <div className="ob-pass-pos" ref={posRef}>
         <div className="ob-pass">
           <div className="ob-pass-logo">EPT</div>
           <div className="ob-pass-name">{me.name}</div>
@@ -126,6 +222,7 @@ export function DoneScene({ me, number, since }: { me: User; number: number | nu
             <Barcode seed={me.userId} />
           </div>
           <span className="ob-pass-sheen" />
+          <span className="ob-pass-glint" />
         </div>
       </div>
     </div>

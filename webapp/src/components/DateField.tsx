@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { addDays, dayNum, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
 import { haptic } from '../telegram'
+import { useSheetDrag } from './useSheetDrag'
 
 const monthStart = (key: string): string => key.slice(0, 8) + '01'
 
@@ -53,6 +54,9 @@ function DateSheet({
     setShown(false)
     setTimeout(() => onClose(next), 220)
   }
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSheetDrag(sheetRef, overlayRef, () => close(null))
 
   const first = monthStart(month)
   // Ведущие пустые ячейки: сколько дней прошлого месяца попадает в первую строку.
@@ -72,12 +76,13 @@ function DateSheet({
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={'tp-overlay' + (shown ? ' shown' : '')}
       onClick={(e) => {
         if (e.target === e.currentTarget) close(null)
       }}
     >
-      <div className="tp-sheet">
+      <div className="tp-sheet" ref={sheetRef}>
         <div className="tp-bar">
           <button className="tp-bar-btn" onClick={() => close(null)}>
             Отмена

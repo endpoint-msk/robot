@@ -103,13 +103,13 @@ export function DuesPerson() {
       amount = picked
     }
     haptic.impact('light')
-    const done = await action('dues.rate', { userId: data.user.userId, kind, ...(amount === undefined ? {} : { amount }) })
+    const done = await action('dues.rate', { userId: data.user.userId, kind, ...(amount === undefined ? {} : { amount }) }, { quiet: true })
     if (done) reload()
   }
 
   const toggleMonth = async (periodKey: string, paid: boolean) => {
     haptic.impact('light')
-    const done = await action(paid ? 'dues.clear' : 'dues.confirm', { periodKey, userId: data.user.userId })
+    const done = await action(paid ? 'dues.clear' : 'dues.confirm', { periodKey, userId: data.user.userId }, { quiet: true })
     if (done) reload()
   }
 

@@ -29,12 +29,13 @@ import {
   type SceneName,
   type Tone,
 } from '../onboarding'
+import { reducedMotion } from '../motion'
 import { CHOICE_LABEL, choiceOf, DEMO_EVENT, nextSaturday, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
 import { pushOverlay } from '../overlays'
 import { getState, resetRoot, setData, useParams, useStore } from '../store'
 import { applyTheme, sec } from '../theme'
 import { eventPhotoUrl } from '../links'
-import { haptic, openBotSection, setHeaderColor, switchInline, tg } from '../telegram'
+import { haptic, openBotSection, setBottomBarColor, setHeaderColor, switchInline, tg } from '../telegram'
 import type { Bootstrap, NotifyPrefs, OnboardingPerson, User } from '../types'
 import { Sep, Switch } from '../components/common'
 import { AnimContext } from '../components/Screen'
@@ -541,13 +542,7 @@ export function Onboarding() {
   const [sheet, setSheet] = useState(false)
   const [menuFor, setMenuFor] = useState<'req' | 'ev' | null>(null)
   const [menuTop, setMenuTop] = useState(0)
-  const [reduce] = useState(() => {
-    try {
-      return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    } catch {
-      return false
-    }
-  })
+  const [reduce] = useState(reducedMotion)
 
   const cover = useMemo(() => createHive(people), [people])
 
@@ -619,11 +614,15 @@ export function Onboarding() {
   // шторка или меню - досчитываем отложенные размеры.
   useEffect(() => engine.current?.kick(), [theme, sheet, menuFor])
 
-  // Шапку Telegram красим в тон шага, когда он встал: плавно вместе со свайпом она
-  // умеет перекрашиваться только в полноэкранном режиме.
+  // Шапку и нижнюю панель Telegram красим в тон шага, когда он встал: плавно вместе со
+  // свайпом они умеют перекрашиваться только в полноэкранном режиме. Сцена занимает весь
+  // экран, и белая полоса снизу резала бы её.
   useEffect(() => {
     const s = steps[step]
-    if (s) setHeaderColor(toHex(headColor(s, palette())))
+    if (!s) return
+    const c = toHex(headColor(s, palette()))
+    setHeaderColor(c)
+    setBottomBarColor(c)
   }, [step, theme])
   useEffect(() => () => applyTheme(getState().theme), [])
 
@@ -768,7 +767,12 @@ export function Onboarding() {
         return <BotScene printer={info?.printer ?? false} time={d.nowTime} finish={finishAt(d.nowTime)} board={board} />
       case 'done':
         return (
-          <DoneScene me={me} number={people.length > 0 ? count : null} since={info?.joinedAt ? isoDay(info.joinedAt) : null} />
+          <DoneScene
+            me={me}
+            number={people.length > 0 ? count : null}
+            since={info?.joinedAt ? isoDay(info.joinedAt) : null}
+            active={steps[step]?.id === 'done'}
+          />
         )
     }
   }
@@ -791,7 +795,7 @@ export function Onboarding() {
                 {m.label || 'Устройство'}
                 <span className="row-sublabel mono">{m.mac}</span>
               </span>
-              {settings.macPresenceActive ? <span className="ob-tag green">в сети</span> : null}
+              {m.online ? <span className="ob-tag green">в сети</span> : null}
             </div>
           </Fragment>
         ))}

@@ -99,12 +99,12 @@ export function DayRow({
         <span className="day-none">{lock ? lock.reason || 'Закрыт для гостей' : 'Пока никого'}</span>
       ) : (
         // Ивент и люди — двумя строками, как в «Активности» у гостя: в одну строку
-        // метка и список не влезают. В метке только время — название видно внутри дня.
+        // метка и список не влезают. По одному времени не понять, ради чего открывать день.
         <div className="day-main">
           {event ? (
             <div className="ev-day-label">
               {icons.calendar(13, '#bf5af2')}
-              <span>{`в ${event.time}`}</span>
+              <span>{`${event.title} · ${event.time}`}</span>
             </div>
           ) : agendaText ? (
             <div className="agenda-day-label">

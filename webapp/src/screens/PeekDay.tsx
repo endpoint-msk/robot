@@ -1,10 +1,11 @@
 import { fmtDayMonth, peopleWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { useParams, useStore } from '../store'
-import { BackRow, EmptyState, Header, SectionTitle } from '../components/common'
+import { Fragment } from 'react'
+import { BackRow, EmptyState, Header, SectionTitle, Sep } from '../components/common'
 import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeesCard } from '../components/attendees'
-import { EventCard } from './Event'
+import { EventRow } from '../components/EventRow'
 import { Screen } from '../components/Screen'
 
 export function PeekDay() {
@@ -33,10 +34,18 @@ export function PeekDay() {
         </div>
       ) : null}
       {agenda ? <AgendaBanner agenda={agenda} /> : null}
-      {/* Ивенты — над списком людей: это главное, что происходит в этот день. */}
-      {events.map((ev) => (
-        <EventCard key={ev.id} event={ev} calendar actions />
-      ))}
+      {/* Ивенты — над списком людей: это главное, что происходит в этот день. Строкой,
+          как на экране дня у резидента: сам ивент открывается афишей. */}
+      {events.length > 0 ? (
+        <div className="card dpg-events">
+          {events.map((ev, i) => (
+            <Fragment key={ev.id}>
+              {i > 0 ? <Sep left={62} /> : null}
+              <EventRow event={ev} backLabel={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]} />
+            </Fragment>
+          ))}
+        </div>
+      ) : null}
       {att.length > 0 ? <SectionTitle>Кто придёт</SectionTitle> : null}
       {att.length === 0 && events.length === 0 ? (
         <div className="card">

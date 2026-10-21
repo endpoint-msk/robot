@@ -1,7 +1,7 @@
 // Строка ивента в списке — одна и та же на экране дня и в списке «Позже».
 
 import { Fragment } from 'react'
-import { fmtShortDate, yearOf } from '../dates'
+import { dayNum, monthIdx, MONTHS_ABBR, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
 import { push, useStore } from '../store'
 import type { SpaceEvent } from '../types'
@@ -11,11 +11,14 @@ export function EventRow({
   event,
   backLabel,
   dateLabel,
+  tile = false,
 }: {
   event: SpaceEvent
   backLabel?: string
   /** День перед временем: нужен там, где строки идут вперемешку по разным дням. */
   dateLabel?: string
+  /** Плитка с датой вместо значка: дальние ивенты различаются с одного взгляда. */
+  tile?: boolean
 }) {
   const host = event.host.username ? '@' + event.host.username : event.host.name
   return (
@@ -24,7 +27,14 @@ export function EventRow({
       className="row tappable"
       onClick={() => push('event', { event, ...(backLabel ? { backLabel } : {}) })}
     >
-      <div className="row-icon ev-row-icon">{icons.calendar(17, '#bf5af2')}</div>
+      {tile ? (
+        <div className="ev-tile small" aria-hidden="true">
+          <span>{MONTHS_ABBR[monthIdx(event.dateKey)]}</span>
+          <b>{dayNum(event.dateKey)}</b>
+        </div>
+      ) : (
+        <div className="row-icon ev-row-icon">{icons.calendar(17, '#bf5af2')}</div>
+      )}
       <div className="ev-row-main">
         <div className="ev-row-title-line">
           <span className="ev-row-title">{event.title}</span>
@@ -57,8 +67,10 @@ export function LaterEvents({ backLabel }: { backLabel: string }) {
             <EventRow
               event={event}
               backLabel={backLabel}
+              tile
               dateLabel={
-                fmtShortDate(event.dateKey) + (yearOf(event.dateKey) === thisYear ? '' : ` ${yearOf(event.dateKey)}`)
+                WEEKDAYS_SHORT[weekdayIdx(event.dateKey)]!.toLowerCase() +
+                (yearOf(event.dateKey) === thisYear ? '' : ` ${yearOf(event.dateKey)}`)
               }
             />
           </Fragment>

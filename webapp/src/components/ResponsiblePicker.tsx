@@ -3,11 +3,12 @@
 // Выбор применяется сразу по тапу (родитель хранит полные объекты — они же идут в превью,
 // на сервер уходят id).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { icons } from '../icons'
 import { pushOverlay } from '../overlays'
+import { useSheetDrag } from './useSheetDrag'
 import { useRemote } from '../remote'
 import type { EventPeopleResponse, ResponsibleCandidate, User } from '../types'
 import { Sep } from './common'
@@ -77,6 +78,9 @@ export function ResponsibleSheet({
   }
   // Системная «Назад» закрывает лист, а не экран под ним.
   useEffect(() => pushOverlay(close), [])
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSheetDrag(sheetRef, overlayRef, close)
 
   const ids = selected.map((u) => u.userId)
   const toggle = (u: User): void => {
@@ -91,12 +95,13 @@ export function ResponsibleSheet({
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={'tp-overlay' + (shown ? ' shown' : '')}
       onClick={(e) => {
         if (e.target === e.currentTarget) close()
       }}
     >
-      <div className="resp-sheet">
+      <div className="resp-sheet" ref={sheetRef}>
         <div className="tp-bar">
           <span className="tp-bar-btn" style={{ visibility: 'hidden' }}>
             Готово

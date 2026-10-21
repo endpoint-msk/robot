@@ -13,7 +13,10 @@ import { sec } from '../theme'
 import { haptic } from '../telegram'
 import type { DayCapacity, HostingRequest, RescheduleProposal } from '../types'
 import { Avatar, Profile, userLabel } from './people'
-import { Sep } from './common'
+import { ActionButton, Sep } from './common'
+import { Collapse } from './Collapse'
+import { XText } from './Flip'
+import { markOwnTap } from '../motion'
 import { SwipeRow, type SwipeAction } from './SwipeRow'
 
 /** Слот предложения: «Пт, 17 июля · 15:00», если день отличается от текущего дня заявки; иначе только время. */
@@ -61,7 +64,8 @@ async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
   })
   // Согласованный слот не изменился — предлагать нечего (сервер тоже это гасит).
   if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
-  const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time })
+  markOwnTap()
+  const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
   if (done) haptic.notify('success')
 }
 
@@ -78,7 +82,7 @@ async function closeRequest(r: HostingRequest): Promise<void> {
     { confirmLabel: 'Закрыть заявку', cancelLabel: 'Оставить', destructive: true },
   )
   if (!ok) return
-  await action('close', { id: r.id })
+  await action('close', { id: r.id }, { quiet: true })
 }
 
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
@@ -119,7 +123,8 @@ async function hostMenu(r: HostingRequest): Promise<void> {
   }
   if (choice === 'withdraw') {
     haptic.impact('light')
-    await action('transfer.decline', { id: r.id })
+    markOwnTap()
+    await action('transfer.decline', { id: r.id }, { quiet: true })
     return
   }
   if (choice !== 'unapprove') return
@@ -128,7 +133,8 @@ async function hostMenu(r: HostingRequest): Promise<void> {
     cancelLabel: 'Оставить',
   })
   if (!ok) return
-  await action('unapprove', { id: r.id })
+  markOwnTap()
+  await action('unapprove', { id: r.id }, { quiet: true })
 }
 
 /**
@@ -228,27 +234,29 @@ export function RequestRow({
   const proposalRow: ReactNode =
     canReschedule && p && p.by === 'guest' ? (
       <div className="req-proposal-actions">
-        <button
+        <ActionButton
           className="accept-btn"
           onClick={async () => {
-            const done = await action('proposal.accept', { id: r.id })
-            if (done) haptic.notify('success')
+            haptic.impact('medium')
+            markOwnTap()
+            await action('proposal.accept', { id: r.id }, { quiet: true })
           }}
         >
           {icons.check(14, '#34c759', 2.4)}
           Принять {proposalSlot(r, p)}
-        </button>
+        </ActionButton>
         {/* Отказ — половина переговоров, и сервер его разрешает (proposalSides:
             снять вправе адресат). Без него предложение можно было только принять. */}
-        <button
+        <ActionButton
           className="link-btn"
           onClick={async () => {
             haptic.impact('light')
-            await action('proposal.decline', { id: r.id })
+            markOwnTap()
+            await action('proposal.decline', { id: r.id }, { quiet: true })
           }}
         >
           Оставить {r.time}
-        </button>
+        </ActionButton>
       </div>
     ) : null
 
@@ -263,25 +271,27 @@ export function RequestRow({
   const transferRow: ReactNode =
     t && iAmTransferTo ? (
       <div className="req-proposal-actions">
-        <button
+        <ActionButton
           className="accept-btn"
           onClick={async () => {
-            const done = await action('transfer.accept', { id: r.id })
-            if (done) haptic.notify('success')
+            haptic.impact('medium')
+            markOwnTap()
+            await action('transfer.accept', { id: r.id }, { quiet: true })
           }}
         >
           {icons.check(14, '#34c759', 2.4)}
           Взять визит
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           className="link-btn"
           onClick={async () => {
             haptic.impact('light')
-            await action('transfer.decline', { id: r.id })
+            markOwnTap()
+            await action('transfer.decline', { id: r.id }, { quiet: true })
           }}
         >
           Не смогу
-        </button>
+        </ActionButton>
       </div>
     ) : null
 
@@ -295,15 +305,16 @@ export function RequestRow({
       ) : iAmTransferBy ? (
         <span>
           передаёте <span className="pn-time">{userLabel(t.to)}</span> · ждём ответа
-          <button
+          <ActionButton
             className="link-btn pn-undo"
             onClick={async () => {
               haptic.impact('light')
-              await action('transfer.decline', { id: r.id })
+              markOwnTap()
+              await action('transfer.decline', { id: r.id }, { quiet: true })
             }}
           >
             Отозвать
-          </button>
+          </ActionButton>
         </span>
       ) : (
         // Чужие переговоры: показываем, чтобы второй раз никого не звали на тот же визит.
@@ -386,7 +397,9 @@ export function RequestRow({
         <div className="req-sub split">
           {r.guest.username ? <span className="req-sub-nick">@{r.guest.username}</span> : null}
           <span className="req-sub-fixed">
-            {(r.guest.username ? ' · ' : '') + 'к ' + r.time + (r.anon ? ' · анонимно' : '')}
+            {r.guest.username ? ' · ' : ''}
+            <XText text={'к ' + r.time} />
+            {r.anon ? ' · анонимно' : ''}
           </span>
         </div>
         {r.purpose ? <PurposeBlock text={r.purpose} /> : null}
@@ -413,15 +426,16 @@ export function RequestRow({
             <span className="pn-time">{proposalSlot(r, p)}</span> · ждём гостя
             {/* Своё предложение висело до ответа гостя, отозвать его было нечем. */}
             {p.user.userId === me.id && canReschedule ? (
-              <button
+              <ActionButton
                 className="link-btn pn-undo"
                 onClick={async () => {
                   haptic.impact('light')
-                  await action('proposal.decline', { id: r.id })
+                  markOwnTap()
+                  await action('proposal.decline', { id: r.id }, { quiet: true })
                 }}
               >
                 Отозвать
-              </button>
+              </ActionButton>
             ) : null}
           </span>
         )}
@@ -433,14 +447,14 @@ export function RequestRow({
     <SwipeRow actions={swipeActions}>
       <div className="row req-row">
         {top}
-        {hasExtra ? (
+        <Collapse open={hasExtra}>
           <div className="req-extra">
             {note}
             {proposalRow}
             {transferNote}
             {transferRow}
           </div>
-        ) : null}
+        </Collapse>
       </div>
     </SwipeRow>
   )

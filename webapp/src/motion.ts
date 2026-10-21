@@ -101,7 +101,21 @@ export const stageTint = (tone: Tone, C: Palette = palette()): string => mixc(C.
 
 // --- проигрыватель ------------------------------------------------------------
 
+/**
+ * Слабый Android: Telegram пишет класс производительности в User-Agent
+ * (`Telegram-Android/… (…; SDK 34; LOW)`), и документация прямо просит урезать на нём
+ * движение. Кадры там рвутся, и анимация хуже её отсутствия.
+ */
+export const lowEnd = ((): boolean => {
+  try {
+    return /Telegram-Android\/[^(]*\([^)]*;\s*LOW\)/i.test(navigator.userAgent)
+  } catch {
+    return false
+  }
+})()
+
 export const reducedMotion = (): boolean => {
+  if (lowEnd) return true
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   } catch {
@@ -201,7 +215,9 @@ export const spring = (
   const t0 = performance.now()
   let raf = 0
   const tick = (now: number): void => {
-    cur = springAt(from - to, velocity, s, (now - t0) / 1000)
+    // Метка кадра rAF бывает раньше старта пружины: отрицательное время отбросило бы
+    // тело назад на первом кадре.
+    cur = springAt(from - to, velocity, s, Math.max(0, now - t0) / 1000)
     if (Math.abs(cur.x) < eps && Math.abs(cur.v) < eps * 10) {
       raf = 0
       frame(to)

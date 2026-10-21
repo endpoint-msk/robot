@@ -806,6 +806,9 @@ body {
 .swipe-action.warn { background: var(--orange); }
 .swipe-action.neutral { background: var(--gray); }
 .swipe-action:active { filter: brightness(0.88); }
+/* Иконки подрастают, когда строка уходит за порог открытия, и ужимаются обратно. */
+.swipe-action > * { transform: scale(0.9); transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.swipe-actions.armed .swipe-action > * { transform: none; }
 /* Непрозрачный фон обязателен: он перекрывает действия во время жеста.
    touch-action: pan-y отдаёт браузеру вертикальный скролл, а горизонталь — нам. */
 .swipe-content {
@@ -814,7 +817,6 @@ body {
     touch-action: pan-y;
     overscroll-behavior-x: contain;
 }
-.swipe-content.animate { transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
 /* Во время жеста мышью текст не выделяем — иначе drag тянет выделение по строке. */
 .swipe-content.dragging { user-select: none; }
 /* Аватарки и ссылки внутри строки не должны утаскиваться нативным drag-and-drop:
@@ -1178,6 +1180,7 @@ body {
 .day-chips { display: flex; gap: 6px; margin-bottom: 8px; }
 .day-chip {
     position: relative;
+    transition: background-color 0.22s ease-out, color 0.22s ease-out;
     flex: 1;
     min-width: 0;
     min-height: 74px;
@@ -2028,6 +2031,15 @@ button.agenda-banner:active { opacity: 0.6; }
 @keyframes pend-label { to { opacity: 0; } }
 @keyframes pend-spin { to { opacity: 0.85; } }
 
+/* Слабый Android (motion.ts, lowEnd): переходы и анимации сразу в конечном кадре.
+   Крутилки остаются: без вращения ожидание читалось бы как зависание. */
+.low-motion *:not(.spinner):not(.pend-spin),
+.low-motion *:not(.spinner):not(.pend-spin)::before,
+.low-motion *:not(.spinner):not(.pend-spin)::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+}
+
 body.busy #app { pointer-events: none; }
 #busy-overlay {
     position: fixed;
@@ -2043,6 +2055,116 @@ body.busy #busy-overlay { display: flex; }
 /* --- Ивенты ---------------------------------------------------------------
    Фиолетовый — собственный тон подсистемы: синий занят действиями, зелёный
    одобрением, красный блокировкой. Ивент ничем из этого не является. */
+
+/* Ивент на чтение (EventView): афиша во всю ширину на полосе в тон ивента, под ней дата
+   плиткой и «Придут», как в шапке дня. */
+.evv-top { position: relative; padding-bottom: 18px; margin-bottom: 18px; }
+.evv-band {
+    position: absolute;
+    z-index: 0;
+    left: -16px;
+    right: -16px;
+    top: calc(-12px - var(--tg-content-safe-area-inset-top, 0px));
+    bottom: 0;
+    background: var(--bg);
+    background: color-mix(in srgb, var(--purple) 12%, var(--bg));
+    pointer-events: none;
+}
+:root[data-theme="dark"] .evv-band { background: color-mix(in srgb, var(--purple) 21%, var(--bg)); }
+.evv-top > :not(.evv-band) { position: relative; z-index: 1; }
+.evv-poster {
+    height: 212px;
+    margin-top: 6px;
+    border-radius: 20px;
+    overflow: hidden;
+    padding: 16px 18px 15px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: #fff;
+    background: #2b1745;
+    box-shadow: 0 14px 34px -16px rgba(0, 0, 0, 0.35);
+}
+.evv-poster:not(.photo)::after {
+    content: "";
+    position: absolute;
+    right: -46px;
+    bottom: -78px;
+    width: 196px;
+    height: 196px;
+    border-radius: 50%;
+    border: 24px solid #ff9f0a;
+}
+/* С фото название и дата лежат поверх затемнения снизу: на светлом снимке иначе не прочесть. */
+.evv-poster.photo { justify-content: flex-end; gap: 4px; }
+.evv-poster.photo::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0) 64%);
+    pointer-events: none;
+}
+.evv-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+.evv-pt {
+    position: relative;
+    z-index: 2;
+    max-width: 250px;
+    font-size: 30px;
+    line-height: 1.02;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    pointer-events: none;
+}
+.evv-ps { position: relative; z-index: 2; font-size: 13px; font-weight: 600; opacity: 0.82; pointer-events: none; }
+.evv-when { display: flex; align-items: center; gap: 12px; margin: 16px 4px 0; }
+.evv-when-text { min-width: 0; }
+.evv-wt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 17px; font-weight: 700; }
+.evv-ws { margin-top: 2px; font-size: 14px; color: var(--text-2); }
+.evv-coming { margin-top: 10px; }
+.ev-tile {
+    width: 48px;
+    height: 52px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+.ev-tile span { font-size: 11px; font-weight: 700; color: var(--purple); }
+.ev-tile b { margin-top: 3px; font-size: 22px; font-weight: 800; }
+/* В строке «Позже» плитка встаёт на место значка ивента. */
+.ev-tile.small { width: 40px; height: 44px; border-radius: 10px; background: var(--ev-bg); box-shadow: none; }
+.ev-tile.small span { font-size: 10.5px; }
+.ev-tile.small b { margin-top: 2px; font-size: 18px; }
+.evv-desc { padding: 12px 14px 14px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.evv-gallery { margin-top: 12px; }
+.evv-mine { margin-top: 14px; }
+.evv-acts { display: flex; gap: 10px; margin-top: 14px; }
+.evv-acts .primary-btn { flex: 1; width: auto; margin: 0; }
+.evv-cal {
+    width: 50px;
+    height: 50px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.evv-cal-wide { color: var(--purple); }
 
 .event-card {
     background: var(--ev-bg);
@@ -2557,6 +2679,8 @@ body.busy #busy-overlay { display: flex; }
     margin-bottom: 12px;
 }
 .arrival-head { display: flex; align-items: center; gap: 10px; }
+.ptb-keep { margin-top: 12px; }
+.arrival-icon.pop svg { animation: host-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 .arrival-icon {
     width: 36px;
     height: 36px;
@@ -3788,7 +3912,9 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     width: 240px;
     height: 390px;
     margin: -195px 0 0 -120px;
-    transform: scale(var(--ob-pass-k, 1));
+    /* Наклон за рукой (useCardTilt): без переменных карта стоит прямо. */
+    transform: scale(var(--ob-pass-k, 1)) perspective(900px) rotateX(calc(var(--tilt-y, 0) * -8deg))
+        rotateY(calc(var(--tilt-x, 0) * 10deg));
 }
 .ob-pass {
     position: absolute;
@@ -3831,6 +3957,25 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
         rgba(181, 140, 255, 0.16) 58%,
         transparent 70%
     );
+    pointer-events: none;
+}
+/* Блик за рукой: градиент на всю карту, сдвигается фоном вслед за наклоном. Отдельной
+   полосой его край был бы виден на высокой карте. */
+.ob-pass-glint {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+            115deg,
+            transparent 38%,
+            rgba(142, 242, 230, 0.16) 45%,
+            rgba(255, 255, 255, 0.26) 50%,
+            rgba(181, 140, 255, 0.16) 55%,
+            transparent 62%
+        )
+        no-repeat;
+    background-size: 300% 100%;
+    background-position: calc(50% - var(--tilt-x, 0) * 45%) 0;
+    opacity: var(--tilt-on, 0);
     pointer-events: none;
 }
 /* Радужный градиент логотипа и номера, как на карте. */
@@ -3997,10 +4142,72 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     background: color-mix(in srgb, var(--indigo) var(--ob-mix), var(--bg));
 }
 .nt-host .ob-menu { right: 8px; }
+.ob-menu.up { transform-origin: 88% 100%; }
 
 @media (prefers-reduced-motion: reduce) {
     .ob.ob-in { animation: none; }
     .ob-tip, .ob-menu, .ob-sheet, .ob-sheet-overlay { transition-duration: 0.01s; }
     .row-flash { animation: none; }
     .my-dues.md-moving .md-s, .my-dues.md-moving .md-req, .dues-summary.ds-moving .dues-bar > i { transition: none; }
+}
+
+/* --- Нажатия одним слоем ---------------------------------------------------
+   Подсветка встаёт в момент касания, а снимается плавно: переход висит на обычном
+   состоянии, поэтому работает только при отпускании. Одним кадром туда и обратно
+   кнопка ощущалась веб-страницей. Сами значения нажатия остаются в правилах :active
+   у каждого компонента. */
+.lightbox-close, .secondary-btn, .search-clear, .note-flag, .purpose-toggle, .linkified, .person-tap,
+.pill.mine, .host-btn, .link-btn, .accept-btn, .chip-btn, .attend-btn, .build-link, button.agenda-banner,
+.time-field, .tp-bar-btn, .dp-nav, .write-banner, .retry-btn, .ev-source, .ev-thumb-del, .ev-thumb-add,
+.ev-step, .route-door.tappable, .arrival-btn, .evv-cal {
+    transition: opacity 0.3s ease-out;
+}
+.lightbox-close:active, .secondary-btn:active, .search-clear:active, .note-flag:active, .purpose-toggle:active,
+.linkified:active, .person-tap:active, .pill.mine:active, .host-btn:active, .link-btn:active, .accept-btn:active,
+.chip-btn:active, .attend-btn:active, .build-link:active, button.agenda-banner:active, .time-field:active,
+.tp-bar-btn:active, .dp-nav:active, .write-banner:active, .retry-btn:active, .ev-source:active,
+.ev-thumb-del:active, .ev-thumb-add:active, .ev-step:active, .route-door.tappable:active, .arrival-btn:active {
+    transition-duration: 0s;
+}
+.evv-cal:active { opacity: 0.6; transition-duration: 0s; }
+
+/* Главная кнопка сжимается заметно и возвращается с лёгким перелётом. */
+.primary-btn { transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease-out; }
+.primary-btn:active { transform: scale(0.97); transition: transform 0.1s ease-out; }
+/* В знакомстве кнопки двигает движок покадрово: переход тянул бы каждый его кадр. */
+.ob .primary-btn, .ob .primary-btn:active { transition: none; }
+
+/* Строка подсвечивается с задержкой: палец, начавший прокрутку, её не мигнёт. */
+.row.tappable, .modal-btn, .destructive-btn, .ob-menu button { transition: background-color 0.3s ease-out; }
+.row.tappable:active, .modal-btn:active, .destructive-btn:active, .ob-menu button:active { transition: background-color 0s 0.06s; }
+
+/* Ожидание в кнопке не мигает подсветкой поверх своей крутилки. */
+.pending:active { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .primary-btn, .primary-btn:active { transition: none; }
+}
+
+/* --- Заявка гостя: форма и её отправка ------------------------------------- */
+/* Строка дня под чипами перетекает при смене дня (Crossfade). */
+.xfade { position: relative; overflow: hidden; }
+.xfade-old { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; }
+/* Слои держат отступы содержимого внутри себя: иначе замер высоты их не видел, и в
+   последнем кадре всё ниже доезжало на их размер рывком. */
+.xfade > div { display: flow-root; }
+/* Заявка ушла: форма гаснет и чуть уходит вверх, на её месте поднимается визит. */
+.nr-form { transition: opacity 0.28s ease-out, transform 0.28s ease-out; }
+.nr-form.leaving { opacity: 0; transform: translateY(-14px); }
+.primary-btn.nr-sent { opacity: 0; transition: opacity 0.28s ease-out; }
+.visit-rise > * { animation: visit-rise 0.46s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.visit-rise > :nth-child(2) { animation-delay: 0.06s; }
+.visit-rise > :nth-child(3) { animation-delay: 0.12s; }
+.visit-rise > :nth-child(4) { animation-delay: 0.18s; }
+.visit-rise > :nth-child(5) { animation-delay: 0.24s; }
+.visit-rise > :nth-child(n + 6) { animation-delay: 0.3s; }
+.visit-rise .status-card-icon { animation: host-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both; }
+@keyframes visit-rise { from { opacity: 0; transform: translateY(18px); } }
+@media (prefers-reduced-motion: reduce) {
+    .nr-form, .primary-btn.nr-sent { transition: none; }
+    .visit-rise > *, .visit-rise .status-card-icon { animation: none; }
 }

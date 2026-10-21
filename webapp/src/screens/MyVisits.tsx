@@ -195,7 +195,7 @@ export function MyVisits() {
         </button>
       </div>
       <BottomBar>
-        <button className="primary-btn" onClick={startNewRequest}>
+        <button className="primary-btn" onClick={() => startNewRequest()}>
           {icons.plus()}
           Новая заявка
         </button>
