@@ -41,12 +41,12 @@ export const tg: TelegramWebApp | null = window.Telegram?.WebApp ?? null
 export const initData = (): string => (tg ? tg.initData : '')
 
 /**
- * Кнопка «Назад» Telegram стоит в шапке клиента на iOS и Android: своя строка «‹ Экран»
- * там дублировала бы её. На десктопе и в вебе своей кнопки у клиента нет, там строка нужна.
+ * Кнопку «Назад» (Bot API 6.1) рисует в шапке любой клиент Telegram, десктоп тоже: своя
+ * строка «‹ Экран» её только дублирует. Нужна она вне Telegram (`unknown`) и в старых клиентах.
  */
 export const nativeBack = ((): boolean => {
   try {
-    return Boolean(tg) && ['ios', 'android'].includes(tg!.platform ?? '') && (tg!.isVersionAtLeast?.('6.1') ?? false)
+    return Boolean(tg) && (tg!.platform ?? 'unknown') !== 'unknown' && (tg!.isVersionAtLeast?.('6.1') ?? false)
   } catch {
     return false
   }

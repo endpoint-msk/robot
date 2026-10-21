@@ -118,7 +118,7 @@ export function Root() {
     } catch {
       /* старый клиент */
     }
-    // На десктопе тот же смысл несёт Escape — своей кнопки «Назад» там нет.
+    // На десктопе тот же смысл несёт Escape: до системной «Назад» тянуться мышью.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       if (closeTopOverlay()) e.preventDefault()
