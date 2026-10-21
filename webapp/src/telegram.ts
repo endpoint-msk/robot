@@ -40,6 +40,18 @@ export const tg: TelegramWebApp | null = window.Telegram?.WebApp ?? null
 
 export const initData = (): string => (tg ? tg.initData : '')
 
+/**
+ * Кнопка «Назад» Telegram стоит в шапке клиента на iOS и Android: своя строка «‹ Экран»
+ * там дублировала бы её. На десктопе и в вебе своей кнопки у клиента нет, там строка нужна.
+ */
+export const nativeBack = ((): boolean => {
+  try {
+    return Boolean(tg) && ['ios', 'android'].includes(tg!.platform ?? '') && (tg!.isVersionAtLeast?.('6.1') ?? false)
+  } catch {
+    return false
+  }
+})()
+
 export type ImpactStyle = 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'
 export type NotifyKind = 'success' | 'warning' | 'error'
 

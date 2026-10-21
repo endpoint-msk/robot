@@ -7,7 +7,7 @@ import { BarContext } from '../barContext'
 import { cooldownSnapshot, subscribeCooldown } from '../cooldown'
 import { icons } from '../icons'
 import { pop, push, setPerspective, useStore } from '../store'
-import { haptic } from '../telegram'
+import { haptic, nativeBack } from '../telegram'
 import { screenTitle } from '../titles'
 
 export function Sep({ left }: { left?: number }) {
@@ -37,6 +37,7 @@ export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?:
 export function BackRow({ label }: { label?: string }) {
   const { stack, data } = useStore()
   const prev = stack[stack.length - 2]
+  if (nativeBack) return null
   return (
     <button type="button" className="back-row" onClick={pop}>
       {icons.back()}
