@@ -285,6 +285,38 @@ export function Visit() {
   const arrivalOpen =
     approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
 
+  const askReschedule = async (): Promise<void> => {
+    const slot = await reschedulePrompt({
+      text: 'Попросить перенести визит на другой день или время?',
+      initialDay: r.dateKey,
+      initialTime: r.time,
+      confirmLabel: 'Попросить',
+    })
+    // Оставили слот как есть: переносить нечего (сервер тоже это гасит).
+    if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
+    markOwnTap()
+    const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
+    if (done) haptic.notify('success')
+  }
+
+  const cancelVisit = async (): Promise<void> => {
+    const ok = await confirmDialog('Отменить заявку на визит?', {
+      confirmLabel: 'Отменить заявку',
+      cancelLabel: 'Оставить',
+      destructive: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      setData(await api<Bootstrap>('cancel', { id: r.id }))
+      pop()
+    } catch (err) {
+      showAlert((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <Screen>
       <BackRow label="Мои визиты" />
@@ -297,36 +329,6 @@ export function Visit() {
       {arrivalOpen ? <ArrivalCard id={r.id} arrivedAt={r.arrivedAt} /> : null}
       {isPast ? null : statusCard}
       <Collapse open={!isPast && Boolean(proposalCard)}>{proposalCard}</Collapse>
-      {/* Правка доступна, пока визит не одобрен: сервер тоже это проверяет. */}
-      {!approved && !isPast ? (
-        <button className="secondary-btn" style={{ marginTop: 12 }} onClick={() => push('editRequest', { id: r.id })}>
-          {icons.pencil()}
-          Изменить день или время
-        </button>
-      ) : null}
-      {/* У подтверждённого визита можно попросить перенести день или время. */}
-      {approved && !p && !isPast ? (
-        <button
-          className="secondary-btn"
-          style={{ marginTop: 12 }}
-          onClick={async () => {
-            const slot = await reschedulePrompt({
-              text: 'Попросить перенести визит на другой день или время?',
-              initialDay: r.dateKey,
-              initialTime: r.time,
-              confirmLabel: 'Попросить',
-            })
-            // Оставили слот как есть — переносить нечего (сервер тоже это гасит).
-            if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
-            markOwnTap()
-            const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
-            if (done) haptic.notify('success')
-          }}
-        >
-          {icons.clock(17, '#007aff')}
-          Попросить перенести
-        </button>
-      ) : null}
       <SectionTitle>Детали</SectionTitle>
       <div className="card">
         <div className="row">
@@ -382,39 +384,41 @@ export function Visit() {
           />
         </div>
       )}
+      {/* Перенос, календарь и отмена строками одной карточки, а не тремя карточками
+          по кнопке: экран визита кончается одним блоком действий, как в настройках iOS. */}
       {isPast ? null : (
-      // .ics отдаёт сервер (см. /visit.ics): разовая ссылка, которую открывает
-      // системный браузер — оттуда файл уходит в календарь.
-      <button className="secondary-btn" onClick={() => void openIcs()}>
-        {icons.calendarPlus()}
-        Добавить в календарь
-      </button>
-      )}
-      <div style={{ height: 22 }} />
-      {/* Отмеченный резидентом визит - уже история: сервер отмену не примет. */}
-      {isPast || r.visit?.source === 'mark' ? null : (
-      <button
-        className="destructive-btn"
-        onClick={async () => {
-          const ok = await confirmDialog('Отменить заявку на визит?', {
-            confirmLabel: 'Отменить заявку',
-            cancelLabel: 'Оставить',
-            destructive: true,
-          })
-          if (!ok) return
-          setBusy(true)
-          try {
-            setData(await api<Bootstrap>('cancel', { id: r.id }))
-            pop()
-          } catch (err) {
-            showAlert((err as Error).message)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        Отменить заявку
-      </button>
+        <div className="card visit-acts">
+          {/* Правка доступна, пока визит не одобрен: сервер тоже это проверяет. У
+              подтверждённого вместо неё просьба перенести день или время. */}
+          {!approved ? (
+            <button type="button" className="row tappable" onClick={() => push('editRequest', { id: r.id })}>
+              <span className="act-ico">{icons.pencil()}</span>
+              <span className="add-row-label">Изменить день или время</span>
+            </button>
+          ) : !p ? (
+            <button type="button" className="row tappable" onClick={() => void askReschedule()}>
+              <span className="act-ico">{icons.clock(18, 'currentColor')}</span>
+              <span className="add-row-label">Попросить перенести</span>
+            </button>
+          ) : null}
+          {!approved || !p ? <Sep left={46} /> : null}
+          {/* .ics отдаёт сервер (см. /visit.ics): разовая ссылка, которую открывает
+              системный браузер, а оттуда файл уходит в календарь. */}
+          <button type="button" className="row tappable" onClick={() => void openIcs()}>
+            <span className="act-ico">{icons.calendarPlus(19, 'currentColor')}</span>
+            <span className="add-row-label">Добавить в календарь</span>
+          </button>
+          {/* Отмеченный резидентом визит - уже история: сервер отмену не примет. */}
+          {r.visit?.source === 'mark' ? null : (
+            <>
+              <Sep left={46} />
+              <button type="button" className="row tappable" onClick={() => void cancelVisit()}>
+                <span className="act-ico danger">{icons.xmark(19, 'currentColor')}</span>
+                <span className="add-row-label danger">Отменить заявку</span>
+              </button>
+            </>
+          )}
+        </div>
       )}
       </div>
     </Screen>

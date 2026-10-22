@@ -1982,6 +1982,10 @@ button.agenda-banner:active { opacity: 0.6; }
     display: flex;
 }
 .add-row-label { font-size: 16px; color: var(--blue); }
+.add-row-label.danger { color: var(--red); }
+.act-ico { display: flex; align-items: center; justify-content: center; width: 22px; flex-shrink: 0; color: var(--blue); }
+.act-ico.danger { color: var(--red); }
+.visit-acts { margin-top: 22px; }
 .icon-plus-circle {
     width: 26px;
     height: 26px;
