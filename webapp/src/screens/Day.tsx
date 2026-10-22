@@ -39,7 +39,7 @@ import { Collapse } from '../components/Collapse'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
-import { confirmOverCapacity, RequestRow } from '../components/RequestRow'
+import { RequestRow } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 import { defaultTimeFor } from '../components/forms'
 import { TimeField } from '../components/TimeField'
@@ -396,6 +396,7 @@ function RequestSection({
   onHost,
   flash,
   count,
+  capacity,
   dim = false,
 }: {
   title: string
@@ -403,6 +404,7 @@ function RequestSection({
   count: number
   onHost: (r: HostingRequest) => void
   flash: string[]
+  capacity?: DayData['capacity']
   /** Заголовок гаснет, но держит место: строки под ним не должны сдвигаться. */
   dim?: boolean
 }) {
@@ -418,7 +420,7 @@ function RequestSection({
           <Fragment key={r.id}>
             {i > 0 ? <Sep left={66} /> : null}
             <div className={flash.includes(r.id) ? 'row-flash' : undefined}>
-              <RequestRow r={r} onHost={onHost} justHosted={flash.includes(r.id)} />
+              <RequestRow r={r} onHost={onHost} capacity={capacity} />
             </div>
           </Fragment>
         ))}
@@ -463,9 +465,8 @@ function DayPage({
   const requests = (day.requests ?? []).map((r) =>
     optimistic.includes(r) ? { ...r, status: 'approved' as const, approvedBy: meUser, proposal: null } : r,
   )
+  // Подтверждение уже было: «Захостить» хостит только вторым тапом (см. RequestRow).
   const host = async (r: HostingRequest): Promise<void> => {
-    const ok = await confirmOverCapacity(r, dayView.capacity ?? undefined)
-    if (!ok) return
     haptic.impact('medium')
     markOwnTap()
     setHosted((h) => [...h, r.id])
@@ -626,7 +627,14 @@ function DayPage({
             <EmptyState title="Нет заявок гостей" text="На этот день пока никто не оставил заявку." />
           </div>
         ) : null}
-        <RequestSection title="Одобрены" list={approved} count={approved.length} onHost={(r) => void host(r)} flash={flash} />
+        <RequestSection
+          title="Одобрены"
+          list={approved}
+          count={approved.length}
+          onHost={(r) => void host(r)}
+          flash={flash}
+          capacity={dayView.capacity}
+        />
         {/* Последнюю ждущую захостили: строки остаются на месте, а заголовок «Ждут ответа»
             гаснет, иначе под ним стояли бы уже одобренные. */}
         <RequestSection
@@ -635,6 +643,7 @@ function DayPage({
           count={waiting > 0 || approved.length > 0 ? waiting : pending.length}
           onHost={(r) => void host(r)}
           flash={flash}
+          capacity={dayView.capacity}
           dim={waiting === 0 && approved.length > 0}
         />
         {/* Под заявками, а не над ними: первая отметка «я приду» не должна сдвигать

@@ -2,7 +2,7 @@
 // или «Захостить». Перенос и блокировка гостя — свайпом влево (см. SwipeRow),
 // передача визита другому резиденту — тапом по своему пиллу хоста.
 
-import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { action } from '../api'
 import { fmtShortDate, plural } from '../dates'
 import { icons } from '../icons'
@@ -152,39 +152,108 @@ async function hostMenu(r: HostingRequest): Promise<void> {
 }
 
 /**
- * Предупреждение о перегрузе дня. Лимит мягкий: он не запрещает хостить, а называет
- * число — решение остаётся за резидентом, который видит день целиком. Заявки без хоста
- * места не занимают (см. dayOccupancy), поэтому предупреждаем ровно в тот момент, когда
- * место действительно занимают.
+ * Слово подписи «Захостить», разложенное на буквы: при смене слова буквы старого тают
+ * волной, а нового на том же месте проявляются следом (см. .hb-ch). Морф идёт по
+ * буквам, а не словом целиком: слово, сменившееся разом, читалось как мигание.
  */
-export async function confirmOverCapacity(r: HostingRequest, capacity: DayCapacity | undefined): Promise<boolean> {
-  const guest = `${r.guest.name}${r.guest.username ? ' (@' + r.guest.username + ')' : ''}`
-  const ask = `Захостить: ${guest}, ${fmtShortDate(r.dateKey)} к ${r.time}?`
-  const over = capacity && capacity.occupied + 1 > capacity.cap
-  if (!over) return confirmDialog(ask, { confirmLabel: 'Захостить', cancelLabel: 'Не сейчас' })
-  haptic.notify('warning')
-  return confirmDialog(`В этот день уже ${capacity.occupied} из ${capacity.cap}: этот визит сверх вместимости. ${ask}`, {
-    confirmLabel: 'Всё равно захостить',
-    cancelLabel: 'Не сейчас',
-    destructive: true,
-  })
+function MorphWord({ text, on }: { text: string; on: boolean }) {
+  return (
+    <span className={'hb-l' + (on ? ' on' : '')}>
+      {Array.from(text).map((ch, i) => (
+        <span key={i} className="hb-ch" style={{ '--i': i } as CSSProperties}>
+          {ch === ' ' ? ' ' : ch}
+        </span>
+      ))}
+    </span>
+  )
 }
+
+/**
+ * Сколько держится взведённая «Захостить» без второго тапа: кнопку, про которую
+ * забыли, потом нажали бы случайно.
+ */
+const HOST_ARM_MS = 5000
 
 export function RequestRow({
   r,
   archive = false,
   onHost,
-  justHosted = false,
+  capacity,
 }: {
   r: HostingRequest
   archive?: boolean
   /** Свой «Захостить»: после подтверждения экран дня ставит одобрение сразу, строка остаётся на месте. */
   onHost?: (r: HostingRequest) => void
-  /** Только что захостили отсюда: пилл встаёт на место кнопки с перелётом. */
-  justHosted?: boolean
+  /** Вместимость дня. Экран дня знает её точнее bootstrap: в ней уже свои только что захостенные. */
+  capacity?: DayCapacity
 }) {
   const data = useStore().data!
   const me = data.me
+
+  // «Захостить» в два тапа: первый взводит кнопку, второй хостит. Тап мимо неё и пауза
+  // HOST_ARM_MS возвращают её назад.
+  const [armed, setArmed] = useState(false)
+  const hostRef = useRef<HTMLButtonElement>(null)
+  const dayCapacity = capacity ?? data.days.find((d) => d.dateKey === r.dateKey)?.capacity
+  // Лимит мягкий: он не запрещает хостить, а называет число до второго тапа. Заявки без
+  // хоста места не занимают (см. dayOccupancy), поэтому предупреждаем ровно тогда, когда
+  // место действительно занимают.
+  const over = Boolean(dayCapacity && dayCapacity.occupied + 1 > dayCapacity.cap)
+  useEffect(() => {
+    if (!armed) return
+    const onDown = (e: PointerEvent): void => {
+      if (!hostRef.current?.contains(e.target as Node)) setArmed(false)
+    }
+    const timer = window.setTimeout(() => setArmed(false), HOST_ARM_MS)
+    document.addEventListener('pointerdown', onDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true)
+      window.clearTimeout(timer)
+    }
+  }, [armed])
+
+  // Второй тап: кнопка не исчезает, а становится пиллом хоста. Та же капсула вспыхивает
+  // зелёным с галочкой, слово растворяется по буквам, капсула сжимается до размера пилла,
+  // и в ней проявляются аватарка и ник (см. .pill-morphing). Размер кнопки снимается в
+  // момент тапа: к следующему кадру её уже нет.
+  const [morph, setMorph] = useState<{ w: number; h: number; bg: string; label: string } | null>(null)
+  const approverRef = useRef<HTMLDivElement>(null)
+  const hostedByMe = r.status === 'approved' && r.approvedBy?.userId === me.id
+  const hostedByOther = r.status === 'approved' && !hostedByMe
+  useLayoutEffect(() => {
+    if (!morph) return
+    // Гонку выиграл другой резидент: его пилл встаёт без морфа, наш нечего показывать.
+    if (hostedByOther) {
+      setMorph(null)
+      return
+    }
+    const pill = approverRef.current?.querySelector<HTMLElement>('.pill')
+    if (!hostedByMe || !pill) return
+    // Конечный размер - тот, что пилл занял сам: класс морфа ставится уже после замера.
+    const to = pill.getBoundingClientRect()
+    const vars: [string, string][] = [
+      ['--from-w', `${morph.w}px`],
+      ['--from-h', `${morph.h}px`],
+      ['--from-bg', morph.bg],
+      ['--to-w', `${to.width}px`],
+      ['--to-h', `${to.height}px`],
+    ]
+    for (const [k, v] of vars) pill.style.setProperty(k, v)
+    pill.classList.add('pill-morphing')
+    const done = (): void => setMorph(null)
+    const onEnd = (e: AnimationEvent): void => {
+      if (e.target === pill && e.animationName === 'pill-morph') done()
+    }
+    pill.addEventListener('animationend', onEnd)
+    // animationend не придёт, если вкладку свернули посреди морфа.
+    const timer = window.setTimeout(done, 1500)
+    return () => {
+      pill.removeEventListener('animationend', onEnd)
+      window.clearTimeout(timer)
+      pill.classList.remove('pill-morphing')
+      for (const [k] of vars) pill.style.removeProperty(k)
+    }
+  }, [morph, hostedByMe, hostedByOther])
   const p = r.proposal
   // Заметки приходят только резидентам (см. bootstrap) — гостю тут всегда пусто.
   const guestNote = (data.notes || []).find((n) => n.userId === r.guest.userId) || null
@@ -218,6 +287,18 @@ export function RequestRow({
         {host}
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
         <span className="pill-x">···</span>
+        {morph ? (
+          <span className="pill-fx" aria-hidden="true">
+            <span className="pill-fx-word">
+              {Array.from(morph.label).map((ch, i) => (
+                <span key={i} className="pill-fx-ch" style={{ '--i': i } as CSSProperties}>
+                  {ch === ' ' ? ' ' : ch}
+                </span>
+              ))}
+            </span>
+            <span className="pill-fx-check">{icons.check(16, '#fff', 2.6)}</span>
+          </span>
+        ) : null}
       </button>
     ) : (
       // Свой пилл занят меню хостинга — в профиль ведут только чужие.
@@ -226,24 +307,50 @@ export function RequestRow({
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
       </Profile>
     )
-    right = <div className={'approver' + (justHosted ? ' host-in' : '')}>{pill}</div>
+    right = (
+      <div className="approver" ref={approverRef}>
+        {pill}
+      </div>
+    )
     // Подтверждённый визит двигает только его хост.
     canReschedule = mine && iAmParty
   } else if (archive) {
     right = <span className="waiting-label">Без ответа</span>
   } else {
     right = (
+      // Подтверждение - сама кнопка, а не диалог: диалог закрывал строку, ради которой
+      // его открыли, и переспрашивал то, что в ней и так написано (гость, день, время).
+      // Все три подписи лежат слоями, и ширину держит самая длинная: кнопка не меняет
+      // размер ни при взводе, ни на переполненном дне, меняются только заливка и слово.
       <button
-        className="host-btn"
+        ref={hostRef}
+        type="button"
+        className={'host-btn' + (armed ? ' armed' : '') + (armed && over ? ' over' : '')}
+        aria-label={armed ? (over ? 'Захостить сверх вместимости' : 'Подтвердить хостинг') : 'Захостить'}
         onClick={async () => {
+          if (!armed) {
+            markOwnTap()
+            if (over) haptic.notify('warning')
+            else haptic.impact('light')
+            setArmed(true)
+            return
+          }
+          const el = hostRef.current
+          if (el) {
+            const box = el.getBoundingClientRect()
+            setMorph({ w: box.width, h: box.height, bg: getComputedStyle(el).backgroundColor, label: over ? 'Всё равно' : 'Подтвердить' })
+          }
+          setArmed(false)
           if (onHost) return onHost(r)
-          const ok = await confirmOverCapacity(r, data.days.find((d) => d.dateKey === r.dateKey)?.capacity)
-          if (!ok) return
           haptic.impact('medium')
-          await action('approve', { id: r.id })
+          if (!(await action('approve', { id: r.id }))) setMorph(null)
         }}
       >
-        Захостить
+        <span className="hb-labels" aria-hidden="true">
+          <MorphWord text="Захостить" on={!armed} />
+          <MorphWord text="Подтвердить" on={armed && !over} />
+          <MorphWord text="Всё равно" on={armed && over} />
+        </span>
       </button>
     )
     canReschedule = iAmParty
@@ -497,13 +604,27 @@ export function RequestRow({
       </div>
     ) : null
 
-  const hasExtra = Boolean(note) || Boolean(proposalRow) || Boolean(transferNote) || Boolean(transferRow)
+  // Сверх вместимости второй тап должен быть осознанным: пока кнопка взведена, под
+  // строкой стоит, сколько уже занято.
+  const capNote: ReactNode =
+    armed && over && dayCapacity ? (
+      <div className="proposal-note cap-note">
+        {icons.warnTriangle(14, '#ff9500')}
+        <span>
+          в этот день уже <span className="pn-time">{`${dayCapacity.occupied} из ${dayCapacity.cap}`}</span>, визит сверх
+          вместимости
+        </span>
+      </div>
+    ) : null
+
+  const hasExtra = Boolean(capNote) || Boolean(note) || Boolean(proposalRow) || Boolean(transferNote) || Boolean(transferRow)
   return (
     <SwipeRow actions={swipeActions}>
       <div className="row req-row">
         {top}
         <Collapse open={hasExtra}>
           <div className="req-extra">
+            {capNote}
             {note}
             {proposalRow}
             {transferNote}

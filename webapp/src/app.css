@@ -679,14 +679,49 @@ body {
 .person-tap:active { opacity: 0.55; }
 
 .approver { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
-/* Свой «Захостить»: пилл встаёт на место кнопки, аватарка с перелётом, как в «Я приду». */
-.approver.host-in { animation: host-in 0.22s ease-out both; }
-.approver.host-in .avatar { animation: host-pop 0.56s cubic-bezier(0.34, 1.56, 0.64, 1) 0.06s both; }
 @keyframes host-in { from { opacity: 0; transform: translateY(4px); } }
 @keyframes host-pop { from { transform: scale(0); } }
-@media (prefers-reduced-motion: reduce) {
-    .approver.host-in, .approver.host-in .avatar { animation: none; }
+/* Свой «Захостить» → пилл хоста (RequestRow): капсула кнопки вспыхивает зелёным с
+   галочкой, слово растворяется по буквам, капсула сжимается до пилла, и в ней
+   проявляются аватарка и ник. Размеры «до» и «после» JS кладёт в переменные: их знает
+   только вёрстка. Всё на ключевых кадрах, без покадрового JS. */
+.pill.pill-morphing {
+    position: relative;
+    overflow: hidden;
+    animation: pill-morph 0.86s both;
 }
+@keyframes pill-morph {
+    0% { width: var(--from-w); height: var(--from-h); background-color: var(--from-bg); animation-timing-function: ease-out; }
+    22% { width: var(--from-w); height: var(--from-h); background-color: var(--green); }
+    48% { width: var(--from-w); height: var(--from-h); background-color: var(--green); animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    100% { width: var(--to-w); height: var(--to-h); background-color: var(--chip); }
+}
+.pill-fx { display: none; }
+.pill-morphing .pill-fx {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.pill-fx-word, .pill-fx-check { position: absolute; display: flex; align-items: center; }
+.pill-fx-word { font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; }
+.pill-fx-ch { display: inline-block; animation: pill-ch-out 0.2s ease-out calc(var(--i) * 14ms) both; }
+@keyframes pill-ch-out { to { opacity: 0; filter: blur(4px); transform: scale(0.82); } }
+.pill-fx-check { animation: pill-check 0.86s both; }
+@keyframes pill-check {
+    0%, 12% { opacity: 0; filter: blur(4px); transform: scale(0.5); }
+    28%, 50% { opacity: 1; filter: blur(0); transform: none; }
+    70%, 100% { opacity: 0; filter: blur(3px); transform: scale(0.7); }
+}
+/* Содержимое пилла проявляется, пока капсула сжимается: аватарка, потом ник, потом меню. */
+.pill-morphing > :not(.pill-fx) { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.52s both; }
+.pill-morphing > :nth-child(2) { animation-delay: 0.58s; }
+.pill-morphing > :nth-child(3) { animation-delay: 0.64s; }
+@keyframes pill-in { from { opacity: 0; filter: blur(4px); transform: scale(0.88); } }
+/* Без движения морф сразу в конечном кадре: задержки иначе держали бы пилл пустым. */
+.low-motion .pill-morphing, .low-motion .pill-morphing * { animation-delay: 0s !important; }
 /* Микро-заголовок, младшая ступень. Их в приложении шесть — «ХОСТ», «АДРЕС»,
    «МЕТРО», «ИВЕНТ», «ВАШ ВЗНОС», подпись ответа в анкете, — и жили они в четырёх
    кеглях с тремя трекингами: одинаковые по смыслу подписи читались как разные
@@ -766,6 +801,33 @@ body {
 }
 .host-btn:active { opacity: 0.6; }
 .host-btn[disabled] { opacity: 0.5; }
+/* «Захостить» в два тапа (RequestRow): подписи лежат слоями в одной ячейке, ширину
+   держит самая длинная, поэтому при взводе кнопка не двигается и не меняет размер.
+   Слово морфится по буквам: буквы старого тают волной слева направо (размытие, сжатие,
+   прозрачность), нового проявляются на том же месте следом, без перелёта: кнопка,
+   которая прыгала, читалась как сбой, а не как ответ. Селектор с тегом: общее правило
+   нажатий ниже по файлу задаёт .host-btn только opacity и иначе съело бы переход заливки. */
+button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-out, opacity 0.3s ease-out; }
+.hb-labels { display: grid; justify-items: center; }
+.hb-l { grid-area: 1 / 1; white-space: nowrap; }
+.hb-ch {
+    display: inline-block;
+    opacity: 0;
+    filter: blur(4px);
+    transform: scale(0.82);
+    transition: opacity 0.2s ease-out, filter 0.24s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition-delay: calc(var(--i) * 14ms);
+}
+.hb-l.on .hb-ch {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+    transition-delay: calc(90ms + var(--i) * 18ms);
+}
+.host-btn.armed { background: var(--blue); color: #fff; }
+.host-btn.armed.over { background: var(--orange); }
+/* Сколько занято, пока «Захостить» взведена сверх вместимости: число тем же оранжевым. */
+.cap-note .pn-time { color: var(--orange); }
 .waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.5); flex-shrink: 0; }
 
 /* --- Перенос времени (резидент ↔ гость) --- */
