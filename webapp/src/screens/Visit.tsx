@@ -19,7 +19,7 @@ import { Screen } from '../components/Screen'
 import { ADDRESS, ENTRANCE } from './Route'
 
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
-function minuteOfDay(hhmm: string): number {
+export function minuteOfDay(hhmm: string): number {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm)
   return m ? Number(m[1]) * 60 + Number(m[2]) : -1
 }
@@ -40,7 +40,7 @@ const countdown = (ms: number): string => {
  * перезапрашивается, и без тика кнопка так и осталась бы выключенной.
  */
 /** Живая минута в поясе спейса: снимок из bootstrap плюс время, прошедшее с загрузки. */
-function useNowMin(): number {
+export function useNowMin(): number {
   const { data } = useStore()
   const [, tick] = useState(0)
   useEffect(() => {
@@ -391,7 +391,8 @@ export function Visit() {
       </button>
       )}
       <div style={{ height: 22 }} />
-      {isPast ? null : (
+      {/* Отмеченный резидентом визит - уже история: сервер отмену не примет. */}
+      {isPast || r.visit?.source === 'mark' ? null : (
       <button
         className="destructive-btn"
         onClick={async () => {

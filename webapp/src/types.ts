@@ -49,10 +49,35 @@ export type HostingRequest = {
   remind?: VisitReminder | null
   /** Кому хост предлагает передать визит. Приходит только в резидентские списки. */
   transfer?: HostTransfer | null
+  /** Чем закончился визит. Резидентам с автором отметки, гостю - только по своей заявке и без автора. */
+  visit?: VisitOutcome
 }
 
-/** Сколько раз человек уже приходил - чип в строке заявки. Только резидентам. */
-export type GuestVisitStats = { past: number; lastDateKey: string }
+/**
+ * Исход визита (см. visitOutcome на сервере). status null - исхода нет: визит впереди,
+ * идёт сегодня или заявку никто не взял. 'unknown' - подтверждённый визит без отметки.
+ * source: 'mark' - отметил резидент (by/at - кто и когда), 'door' - гость нажал «Я на
+ * месте», 'legacy' - визит был до отметок и засчитан.
+ */
+export type VisitOutcome = {
+  status: 'came' | 'missed' | 'unknown' | null
+  source: 'mark' | 'door' | 'legacy' | null
+  by: User | null
+  at: string | null
+}
+
+/** Гость, пришедший без заявки. userId 0 - добавлен только по имени, профиля у него нет. */
+export type WalkIn = { id: string; dateKey: string; guest: User; by: User; at: string }
+
+/** «Кто пришёл» за день: заявки с исходом и гости без заявки. editable - день ещё можно отмечать. */
+export type VisitsDay = { dateKey: string; editable: boolean; requests: HostingRequest[]; walkIns: WalkIn[] }
+
+/** Кандидат в «пришёл без заявки». fromEvent - принят на ивент этого дня по форме. */
+export type WalkInCandidate = User & { fromEvent: boolean }
+export type WalkInCandidatesResponse = { people: WalkInCandidate[] }
+
+/** Сколько раз человек уже приходил и сколько раз не пришёл - чипы в строке заявки. Только резидентам. */
+export type GuestVisitStats = { past: number; missed: number; lastDateKey: string }
 
 export type BlockedUser = {
   userId: number
@@ -75,6 +100,7 @@ export type Attendee = {
   name: string
   username: string | null
   resident: boolean
+  /** Ко скольки придёт: у гостя время заявки, у резидента - если указал. */
   time: string | null
 }
 
@@ -209,6 +235,8 @@ export type Day = {
   capacity?: DayCapacity
   /** Подписан ли резидент на события дня (хостинг, «я приду», перенос). Только резидентам. */
   subscribed?: boolean
+  /** Пришедшие без заявки (бывают только сегодня). Только резидентам. */
+  walkIns?: WalkIn[]
 }
 
 /**
@@ -392,14 +420,22 @@ export type Bootstrap = {
   myRequests: HostingRequest[]
   /** Свои прошедшие визиты, свежие сверху (последние 5): «Были раньше» в «Моих визитах». */
   myPast: HostingRequest[]
+  /** Свои визиты: сколько засчитано и сколько раз резиденты отметили неявку. */
+  myVisits: { visits: number; missed: number }
   /** Ключ - userId гостя. Только резидентам: чужая история визитов гостю не полагается. */
   guestStats?: Record<string, GuestVisitStats>
+  /** Вчерашний день, пока его ещё можно отметить (ночь после него). Только резидентам. */
+  visitGraceDay?: string | null
   /** null у гостя: уведомления о заявках и ивентах и MAC — только резидентам. */
   settings: Settings | null
   /** Гостевая настройка, но приходит всем: её читает и дев в перспективе «гость». */
   attendNotify: AttendNotifyPrefs
   /** create/edit возвращают ещё и саму созданную/изменённую заявку. */
   request?: HostingRequest
+  /** Ответ `close`: дошло ли гостю сообщение о закрытии. null - отправка ещё идёт. */
+  delivered?: boolean | null
+  /** Ответ отметок «кто пришёл»: день целиком, каким он стал. */
+  visitsDay?: VisitsDay
   /** Список заблокированных — только dev-аккаунтам (для дев-меню). */
   blocked?: BlockedUser[]
   /** Заметки о гостях — только резидентам; гостю (в т.ч. о нём самом) не приходят. */
@@ -523,12 +559,29 @@ export type DuesPerson = {
 export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }
 export type ArchiveResponse = { weeks: ArchiveWeekSummary[] }
 
-/** Человек в поиске по архиву: кто, сколько заявок и когда был в последний раз. */
-export type GuestSummary = { user: User; total: number; approved: number; lastDateKey: string }
+/** Человек в поиске по архиву: сколько записей (заявки и визиты без заявки), сколько визитов засчитано. */
+export type GuestSummary = { user: User; total: number; visits: number; lastDateKey: string }
 export type GuestSearchResponse = { guests: GuestSummary[] }
-export type GuestRequestsResponse = { user: User; requests: HostingRequest[] }
 
-export type ArchiveWeekDay = { dateKey: string; requests: HostingRequest[] }
+/**
+ * Профиль гостя для резидентов. visits - засчитанные визиты, из них unmarked без
+ * отметки; missed - явные неявки. usual - обычный день недели (0 - понедельник) и время.
+ */
+export type GuestProfile = {
+  user: User
+  visits: number
+  unmarked: number
+  missed: number
+  firstDateKey: string
+  lastDateKey: string
+  next: { dateKey: string; time: string; approved: boolean } | null
+  usual: { weekday: number; time: string | null } | null
+  hosts: { user: User; count: number }[]
+  events: { id: string; title: string; dateKey: string }[]
+}
+export type GuestRequestsResponse = { user: User; requests: HostingRequest[]; walkIns: WalkIn[]; profile: GuestProfile }
+
+export type ArchiveWeekDay = VisitsDay
 export type ArchiveWeekResponse = { weekStart: string; days: ArchiveWeekDay[] }
 
 export type Release = { version: string; name: string; url: string; publishedAt: string }

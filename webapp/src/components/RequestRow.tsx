@@ -4,10 +4,10 @@
 
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { action } from '../api'
-import { fmtShortDate } from '../dates'
+import { fmtShortDate, plural } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { choiceDialog, confirmDialog, reschedulePrompt } from '../modals'
+import { choiceDialog, confirmDialog, reschedulePrompt, showAlert, textPrompt } from '../modals'
 import { push, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
@@ -72,17 +72,31 @@ async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
 /**
  * Закрыть заявку со стороны спейса: визит не состоится. Заявка удаляется, гостю уходит
  * DM с предложением выбрать другой день — он не остаётся ждать ответа, которого не будет.
+ *
+ * Подтверждение и комментарий гостю - одна модалка: комментарий необязательный, и
+ * второй шаг ради него удлинял бы каждое закрытие.
  */
 async function closeRequest(r: HostingRequest): Promise<void> {
   const approved = r.status === 'approved'
-  const ok = await confirmDialog(
-    approved
+  const comment = await textPrompt({
+    text: approved
       ? `Закрыть подтверждённый визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`
       : `Закрыть заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`,
-    { confirmLabel: 'Закрыть заявку', cancelLabel: 'Оставить', destructive: true },
-  )
-  if (!ok) return
-  await action('close', { id: r.id }, { quiet: true })
+    placeholder: 'Комментарий для гостя',
+    hint: 'Необязательно. Уйдёт гостю вместе с уведомлением.',
+    maxLength: 500,
+    multiline: true,
+    destructive: true,
+    confirmLabel: 'Закрыть заявку',
+    cancelLabel: 'Оставить',
+  })
+  if (comment === null) return
+  const res = await action('close', { id: r.id, comment }, { quiet: true })
+  // Без комментария молчать можно: заявка у гостя и так пропадёт. С ним резидент
+  // ждёт, что его прочитают, и должен знать, что письмо не ушло.
+  if (res && comment && res.delivered === false) {
+    showAlert(`Заявку закрыли, но комментарий не дошёл: ${r.guest.name} не открывал чат с ботом.`)
+  }
 }
 
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
@@ -187,26 +201,32 @@ export function RequestRow({
   let right: ReactNode
   if (r.status === 'approved' && r.approvedBy) {
     const mine = !archive && r.approvedBy.userId === me.id
+    // «Одобрил» - галочкой на аватарке хоста, а не подписью над пиллом: подпись была
+    // отдельной строкой и раздувала строку заявки, а под заголовком «Одобрены» она ещё и
+    // повторяла его. Словами остаётся в aria-label.
+    const host = (
+      <span className="pill-host">
+        <Avatar user={r.approvedBy} />
+        <span className="pill-ok" role="img" aria-label="хостит">
+          {icons.check(8, '#fff', 3.2)}
+        </span>
+      </span>
+    )
     const pill = mine ? (
       // Многоточие, а не крестик: за пиллом теперь два действия — передать и снять с себя.
-      <button type="button" className="pill mine" aria-label="Действия с хостингом" onClick={() => hostMenu(r)}>
-        <Avatar user={r.approvedBy} />
+      <button type="button" className="pill mine" aria-label="Вы хостите. Действия с хостингом" onClick={() => hostMenu(r)}>
+        {host}
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
         <span className="pill-x">···</span>
       </button>
     ) : (
       // Свой пилл занят меню хостинга — в профиль ведут только чужие.
       <Profile user={r.approvedBy} className="pill">
-        <Avatar user={r.approvedBy} />
+        {host}
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
       </Profile>
     )
-    right = (
-      <div className={'approver' + (justHosted ? ' host-in' : '')}>
-        <span className="approver-label">одобрил</span>
-        {pill}
-      </div>
-    )
+    right = <div className={'approver' + (justHosted ? ' host-in' : '')}>{pill}</div>
     // Подтверждённый визит двигает только его хост.
     canReschedule = mine && iAmParty
   } else if (archive) {
@@ -356,18 +376,45 @@ export function RequestRow({
     swipeActions.push({ key: 'block', label: 'Заблокировать', icon: icons.ban(21, '#fff'), tone: 'red', onSelect: () => blockGuest(r) })
   }
 
-  // Какой это по счёту визит: резидент решает «брать ли», не зная, кто перед ним.
-  // Новичка надо встретить и объяснить про дверь, завсегдатая - не переспрашивать.
-  // Цифра считается по состоявшимся визитам ДО сегодня (см. guestVisitStats).
-  // В архиве чипа нет: счёт ведётся на сегодня, и у прошлогодней строки он показал бы
-  // не тот номер, каким визит был тогда.
+  // Кто перед резидентом: новичок (встретить, объяснить про дверь), завсегдатай или
+  // тот, кто уже не приходил. Числа - значками, а не пилюлями «5-й» и «2 неявки»: те
+  // съедали имя до «Илья С…». Завсегдатай - дверь с числом прошлых визитов, неявки -
+  // оранжевый кружок с крестиком, как ✗ в «Кто пришёл» (голый «×1» читался как «один
+  // раз»). Новичок - словом «впервые»: это единственный статус, ради которого резидент
+  // меняет поведение, а значок человечка с плюсом в приложении уже значит «позвать» и
+  // читался как кнопка. Числа считаются по дням ДО сегодня (см. guestVisitStats). В
+  // архиве значков нет: счёт ведётся на сегодня, и у прошлогодней строки он показал бы
+  // не то, что было тогда.
   const stats = data.guestStats ? data.guestStats[String(r.guest.userId)] : undefined
-  const visitChip = me.isResident && !archive ? (
-    !stats || stats.past === 0 ? (
-      <span className="visit-chip first">впервые</span>
-    ) : (
-      <span className="visit-chip">{stats.past + 1}-й</span>
-    )
+  const past = stats?.past ?? 0
+  const missed = stats?.missed ?? 0
+  const openGuest = (e: { stopPropagation: () => void }): void => {
+    e.stopPropagation()
+    push('guestVisits', { userId: r.guest.userId, user: r.guest })
+  }
+  const statsLabel = [
+    past === 0 ? 'впервые' : `${past} ${plural(past, 'визит', 'визита', 'визитов')}`,
+    missed > 0 ? `${missed} ${plural(missed, 'неявка', 'неявки', 'неявок')}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+  const visitStats = me.isResident && !archive ? (
+    <button type="button" className="visit-stats" onClick={openGuest} aria-label={`Профиль гостя: ${statsLabel}`} title={statsLabel}>
+      {past === 0 ? (
+        <span className="visit-chip first">впервые</span>
+      ) : (
+        <span className="vs-item">
+          {icons.door(13, sec(0.45))}
+          {past}
+        </span>
+      )}
+      {missed > 0 ? (
+        <span className="vs-item vs-missed">
+          <span className="vs-x">{icons.xmark(10, '#fff', 3.4)}</span>
+          {missed}
+        </span>
+      ) : null}
+    </button>
   ) : null
 
   const top = (
@@ -376,10 +423,18 @@ export function RequestRow({
       <div className="req-main">
         {/* Флажок «о госте есть заметка» — единственный её след в списке; тап ведёт в неё. */}
         <div className="req-name-line">
-          <Profile user={r.guest} className="req-name">
-            {r.guest.name}
-          </Profile>
-          {visitChip}
+          {/* Имя ведёт в профиль гостя у нас, аватарка - в Telegram: резиденту
+              история человека нужнее его страницы, а написать ему - на шаг дальше. */}
+          {me.isResident ? (
+            <button type="button" className="req-name req-name-btn" onClick={openGuest}>
+              {r.guest.name}
+            </button>
+          ) : (
+            <Profile user={r.guest} className="req-name">
+              {r.guest.name}
+            </Profile>
+          )}
+          {visitStats}
           {guestNote ? (
             <button
               className="note-flag"

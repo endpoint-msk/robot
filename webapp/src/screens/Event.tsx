@@ -484,8 +484,8 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
                   <span className="dpg-slot" />
                 </span>
               ) : (
-                people.slice(0, 4).map((a) => (
-                  <span key={a.userId} className="dpg-face">
+                people.slice(0, 4).map((a, i, faces) => (
+                  <span key={a.userId} className="dpg-face" style={{ zIndex: faces.length - i }}>
                     <Avatar user={a} />
                   </span>
                 ))

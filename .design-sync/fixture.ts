@@ -180,10 +180,11 @@ export const dsFixture: Bootstrap = {
   days,
   myRequests: [myRequest],
   myPast: [],
+  myVisits: { visits: 0, missed: 0 },
   guestStats: {
-    [String(misha.userId)]: { past: 0, lastDateKey: '' },
-    [String(anya.userId)]: { past: 4, lastDateKey: '2026-07-18' },
-    [String(zhenya.userId)]: { past: 11, lastDateKey: '2026-08-01' },
+    [String(misha.userId)]: { past: 0, missed: 0, lastDateKey: '' },
+    [String(anya.userId)]: { past: 4, missed: 0, lastDateKey: '2026-07-18' },
+    [String(zhenya.userId)]: { past: 11, missed: 2, lastDateKey: '2026-08-01' },
   },
   settings: {
     notify: { enabled: true, mode: 'today' },

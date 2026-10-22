@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
-import type { BlockedUser, DayAgenda, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder } from './types.js'
+import type { BlockedUser, DayAgenda, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder, WalkIn } from './types.js'
 import { own } from './types.js'
 
 /** Сколько дней вперёд показывает обзор (включая сегодня). */
@@ -240,6 +240,8 @@ export const editHostingRequest = async (
     await storage.update((s) => {
         const r = s.hostingRequests[id]
         if (!r) return
+        // Отметка «пришёл» описывает визит в его слоте: переехал слот - описывать нечего.
+        if (r.dateKey !== patch.dateKey || r.time !== patch.time) r.visit = null
         r.dateKey = patch.dateKey
         r.time = patch.time
         r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
@@ -256,22 +258,45 @@ export const editHostingRequest = async (
 
 const attendanceKey = (dateKey: string, userId: number): string => `${dateKey}#${userId}`
 
-/** Ставит/снимает отметку резидента «я приду» на день. День — в окне обзора (сегодня..+6). */
+export type AttendanceError = 'bad_date' | 'bad_time' | 'past_time'
+
+/**
+ * Ставит/снимает отметку резидента «я приду» на день. День — в окне обзора (сегодня..+6).
+ *
+ * `time` - ко скольки собирается: строка ставит, null снимает, undefined оставляет как
+ * было (кнопка «Приду» из зова времени не знает). Повторная отметка сохраняет `at`
+ * первой: по нему идут порядок в списке и выдержка перед рассылкой гостям
+ * (attend-alerts), а смена времени - не новая отметка.
+ */
 export const setResidentAttendance = async (
     storage: Storage,
     tzOffsetMinutes: number,
     dateKey: string,
     user: HostingUser,
     coming: boolean,
-): Promise<{ ok: true; changed: boolean } | { ok: false; error: 'bad_date' }> => {
+    time?: string | null,
+): Promise<{ ok: true; changed: boolean } | { ok: false; error: AttendanceError }> => {
     const today = todayKey(tzOffsetMinutes)
     const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
     if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    if (coming && typeof time === 'string') {
+        if (!isValidTime(time)) return { ok: false, error: 'bad_time' }
+        if (isPastSlot(dateKey, time, tzOffsetMinutes)) return { ok: false, error: 'past_time' }
+    }
     const key = attendanceKey(dateKey, user.userId)
-    const existed = key in storage.get().hostingAttendance
+    const existed = own(storage.get().hostingAttendance, key) !== undefined
     await storage.update((s) => {
-        if (coming) s.hostingAttendance[key] = { dateKey, user, at: new Date().toISOString() }
-        else delete s.hostingAttendance[key]
+        if (!coming) {
+            delete s.hostingAttendance[key]
+            return
+        }
+        const prev = own(s.hostingAttendance, key)
+        s.hostingAttendance[key] = {
+            dateKey,
+            user,
+            at: prev?.at ?? new Date().toISOString(),
+            time: time === undefined ? prev?.time ?? null : time,
+        }
     })
     return { ok: true, changed: coming ? !existed : existed }
 }
@@ -364,8 +389,9 @@ export const notifySubsAttending = async (
     webappUrl: string,
     dateKey: string,
     resident: HostingUser,
+    time: string | null,
 ): Promise<void> => {
-    const text = `🙋 ${await mentionLabel(client, resident)} придёт — <b>${formatDayKey(dateKey)}</b>.`
+    const text = `🙋 ${await mentionLabel(client, resident)} придёт <b>${formatDayKey(dateKey)}</b>${time ? ` к ${time}` : ''}.`
     await notifyDaySubscribers(client, storage, webappUrl, [dateKey], text, resident.userId)
 }
 
@@ -395,7 +421,7 @@ export type DayAttendee = {
     username: string | null
     /** Резидент, отметившийся «я приду» (в приоритете над гостевой строкой того же человека). */
     resident: boolean
-    /** Время прихода гостя 'HH:MM'; у резидентов null. */
+    /** Ко скольки придёт 'HH:MM': у гостя время заявки, у резидента - если указал. null - не указано. */
     time: string | null
 }
 
@@ -421,7 +447,7 @@ export const attendeesForDay = (storage: Storage, dateKey: string): DayAttendee[
         name: a.user.name,
         username: a.user.username,
         resident: true,
-        time: null,
+        time: a.time ?? null,
     }))
     const seen = new Set(residents.map((a) => a.userId))
     const guests: DayAttendee[] = requestsForDay(storage, dateKey)
@@ -541,10 +567,10 @@ export const setDayCap = async (
 }
 
 /**
- * Недели, в которых были заявки: ключ понедельника + счётчики. Включая текущую —
- * обзор показывает скользящие 7 дней и «понедельник этой недели» из него уже выпал,
- * так что без неё начало текущей недели было бы не посмотреть нигде.
- * Сортировка — от свежих к старым.
+ * Недели, в которых были заявки или гости без заявки: ключ понедельника + счётчики
+ * заявок. Включая текущую — обзор показывает скользящие 7 дней и «понедельник этой
+ * недели» из него уже выпал, так что без неё начало текущей недели было бы не
+ * посмотреть нигде. Сортировка — от свежих к старым.
  */
 export const archiveWeeks = (
     storage: Storage,
@@ -559,6 +585,10 @@ export const archiveWeeks = (
         agg.total += 1
         if (r.status === 'approved') agg.approved += 1
         byWeek.set(week, agg)
+    }
+    for (const w of Object.values(storage.get().hostingWalkIns)) {
+        const week = weekStartOf(w.dateKey)
+        if (week <= currentWeek && !byWeek.has(week)) byWeek.set(week, { total: 0, approved: 0 })
     }
     return [...byWeek.entries()]
         .map(([weekStart, agg]) => ({ weekStart, ...agg }))
@@ -626,16 +656,21 @@ const hasOtherRequestOnDay = (storage: Storage, guestUserId: number, dateKey: st
 // ---------------------------------------------------------------------------
 
 /**
- * Гости, которых бот вообще знает: авторы заявок (включая архивные — заявки не чистятся).
- * Заблокированные и фейки дев-сида (отрицательный id) не попадают. Имя берём из самой
- * свежей заявки: человек мог сменить его с прошлого визита.
+ * Гости, которых бот вообще знает: авторы заявок (включая архивные — заявки не чистятся)
+ * и пришедшие без заявки. Заблокированные, фейки дев-сида (отрицательный id) и люди без
+ * аккаунта (id 0) не попадают. Имя берём из самой свежей записи: человек мог сменить
+ * его с прошлого визита.
  */
 export const listKnownGuests = (storage: Storage): HostingUser[] => {
+    const s = storage.get()
+    const records = [
+        ...Object.values(s.hostingRequests).map((r) => ({ user: r.guest, at: r.createdAt })),
+        ...Object.values(s.hostingWalkIns).map((w) => ({ user: w.guest, at: w.at })),
+    ].sort((a, b) => a.at.localeCompare(b.at))
     const out = new Map<number, HostingUser>()
-    const byDate = Object.values(storage.get().hostingRequests).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    for (const r of byDate) {
-        if (r.guest.userId <= 0 || isBlocked(storage, r.guest.userId)) continue
-        out.set(r.guest.userId, { ...r.guest, name: displayName(r.guest.name) })
+    for (const { user } of records) {
+        if (user.userId <= 0 || isBlocked(storage, user.userId)) continue
+        out.set(user.userId, { ...user, name: displayName(user.name) })
     }
     return [...out.values()]
 }
@@ -643,9 +678,11 @@ export const listKnownGuests = (storage: Storage): HostingUser[] => {
 /** Человек в поиске по архиву: кто, сколько раз приходил и когда был в последний раз. */
 export type GuestSummary = {
     user: HostingUser
+    /** Заявки плюс визиты без заявки. */
     total: number
-    approved: number
-    /** День самой поздней заявки — по нему же и сортировка. */
+    /** Засчитанные визиты (см. `countsAsVisit`): то же число, что в профиле. */
+    visits: number
+    /** День самой поздней записи — по нему же и сортировка. */
     lastDateKey: string
 }
 
@@ -661,9 +698,9 @@ const guestMatches = (user: HostingUser, query: string): boolean =>
  *
  * Имя и ник берём из самой поздней заявки — человек мог их сменить с прошлого визита.
  */
-export const searchGuests = (storage: Storage, query: string, limit = 40): GuestSummary[] => {
+export const searchGuests = (storage: Storage, query: string, today: string, limit = 40): GuestSummary[] => {
     const q = query.trim().toLowerCase().replace(/^@/, '')
-    return [...aggregateGuests(storage).values()]
+    return [...aggregateGuests(storage, today).values()]
         .filter((g) => q.length === 0 || guestMatches(g.user, q))
         .sort((a, b) => b.lastDateKey.localeCompare(a.lastDateKey))
         .slice(0, limit)
@@ -685,63 +722,80 @@ export const hostedGuestCount = (storage: Storage, userId: number): number => {
 }
 
 /**
- * Свод по каждому человеку из заявок: сколько всего, сколько состоялось, когда был
- * последний раз. Имя и ник берём из самой поздней заявки - человек мог их сменить.
+ * Свод по каждому человеку из заявок и визитов без заявки: сколько всего, сколько
+ * засчитано, когда был последний раз. Имя и ник берём из самой поздней записи - человек
+ * мог их сменить. Люди без аккаунта (id 0) в свод не идут: различить их нечем.
  */
-const aggregateGuests = (storage: Storage): Map<number, GuestSummary> => {
+const aggregateGuests = (storage: Storage, today: string): Map<number, GuestSummary> => {
+    const s = storage.get()
+    const since = s.hostingVisitsSince
     const byUser = new Map<number, GuestSummary>()
-    for (const r of Object.values(storage.get().hostingRequests)) {
-        const seen = byUser.get(r.guest.userId)
+    const add = (user: HostingUser, dateKey: string, visit: boolean): void => {
+        const seen = byUser.get(user.userId)
         if (!seen) {
-            byUser.set(r.guest.userId, {
-                user: { ...r.guest, name: displayName(r.guest.name) },
-                total: 1,
-                approved: r.status === 'approved' ? 1 : 0,
-                lastDateKey: r.dateKey,
-            })
-            continue
+            byUser.set(user.userId, { user: { ...user, name: displayName(user.name) }, total: 1, visits: visit ? 1 : 0, lastDateKey: dateKey })
+            return
         }
         seen.total += 1
-        if (r.status === 'approved') seen.approved += 1
-        if (r.dateKey >= seen.lastDateKey) {
-            seen.lastDateKey = r.dateKey
-            seen.user = { ...r.guest, name: displayName(r.guest.name) }
+        if (visit) seen.visits += 1
+        if (dateKey >= seen.lastDateKey) {
+            seen.lastDateKey = dateKey
+            seen.user = { ...user, name: displayName(user.name) }
         }
+    }
+    for (const r of Object.values(s.hostingRequests)) {
+        add(r.guest, r.dateKey, r.dateKey < today && countsAsVisit(visitOutcome(r, since, today)))
+    }
+    for (const w of Object.values(s.hostingWalkIns)) {
+        if (w.guest.userId !== 0) add(w.guest, w.dateKey, w.dateKey < today)
     }
     return byUser
 }
 
 /** Счётчик визитов человека для строки заявки: какой это по счёту раз. */
 export type GuestVisitStats = {
-    /** Состоявшихся визитов ДО этого дня (заявка текущего дня в счёт не идёт). */
+    /** Засчитанных визитов ДО этого дня (заявка текущего дня в счёт не идёт). */
     past: number
+    /** Явных «не пришёл» до этого дня. */
+    missed: number
     /** Когда был в последний раз. Пустая строка - не был ни разу. */
     lastDateKey: string
 }
 
 /**
- * Сколько раз человек уже приходил - для чипа «впервые» / «5-й» в строке заявки.
+ * Сколько раз человек уже приходил и сколько раз не пришёл - для чипов «впервые» /
+ * «5-й» / «2 неявки» в строке заявки.
  *
- * Считаем только `approved` и только по дням строго раньше сегодняшнего: заявка,
- * ради которой резидент и смотрит на строку, не должна считать саму себя, а
- * неподтверждённые - это несостоявшиеся намерения. Отсюда же «past», а не «total»:
- * цифра в интерфейсе обещает визиты, и обещание должно быть честным.
+ * Считаем по дням строго раньше сегодняшнего: заявка, ради которой резидент и смотрит
+ * на строку, не должна считать саму себя. Визит - по `countsAsVisit` (вместе с «без
+ * отметки», чтобы забытая отметка не делала завсегдатая новичком), неявка - только
+ * явная отметка.
  *
  * Считается разом на весь bootstrap: иначе на каждую строку шёл бы проход по всем
  * заявкам стейта.
  */
 export const guestVisitStats = (storage: Storage, todayDateKey: string): Record<string, GuestVisitStats> => {
+    const s = storage.get()
+    const since = s.hostingVisitsSince
     const out: Record<string, GuestVisitStats> = {}
-    for (const r of Object.values(storage.get().hostingRequests)) {
-        if (r.status !== 'approved' || r.dateKey >= todayDateKey) continue
-        const key = String(r.guest.userId)
-        const cur = out[key]
-        if (!cur) {
-            out[key] = { past: 1, lastDateKey: r.dateKey }
-            continue
+    const bump = (userId: number, dateKey: string, missed: boolean): void => {
+        const key = String(userId)
+        const cur = out[key] ?? (out[key] = { past: 0, missed: 0, lastDateKey: '' })
+        if (missed) {
+            cur.missed += 1
+            return
         }
         cur.past += 1
-        if (r.dateKey > cur.lastDateKey) cur.lastDateKey = r.dateKey
+        if (dateKey > cur.lastDateKey) cur.lastDateKey = dateKey
+    }
+    for (const r of Object.values(s.hostingRequests)) {
+        if (r.dateKey >= todayDateKey) continue
+        const o = visitOutcome(r, since, todayDateKey)
+        if (o.status === 'missed') bump(r.guest.userId, r.dateKey, true)
+        else if (countsAsVisit(o)) bump(r.guest.userId, r.dateKey, false)
+    }
+    for (const w of Object.values(s.hostingWalkIns)) {
+        if (w.guest.userId !== 0 && w.dateKey < todayDateKey) bump(w.guest.userId, w.dateKey, false)
     }
     return out
 }
@@ -842,6 +896,314 @@ export const requestsOfGuest = (storage: Storage, userId: number): HostingReques
     Object.values(storage.get().hostingRequests)
         .filter((r) => r.guest.userId === userId)
         .sort((a, b) => (a.dateKey === b.dateKey ? b.time.localeCompare(a.time) : b.dateKey.localeCompare(a.dateKey)))
+
+// ---------------------------------------------------------------------------
+// Кто пришёл: отметки резидентов и гости без заявки
+// ---------------------------------------------------------------------------
+
+/**
+ * До скольки утра ещё можно отметить вчерашний день. Вечер в спейсе переваливает за
+ * полночь, а отмечать, кто пришёл, естественно в конце вечера: без этого запаса смена
+ * даты закрывала бы отметки ровно тогда, когда до них дошли руки.
+ */
+export const VISIT_MARK_GRACE_UNTIL = '06:00'
+
+/** Потолок имени гостя без аккаунта: это подпись в списке. */
+export const MAX_WALK_IN_NAME_LENGTH = 64
+
+/**
+ * Включает отметки: запоминает день запуска. Всё, что подтвердили раньше, отметок не
+ * имеет и считается состоявшимся (см. `visitOutcome`).
+ */
+export const ensureVisitsSince = async (storage: Storage, tzOffsetMinutes: number): Promise<void> => {
+    if (storage.get().hostingVisitsSince) return
+    const today = todayKey(tzOffsetMinutes)
+    await storage.update((s) => {
+        if (!s.hostingVisitsSince) s.hostingVisitsSince = today
+    })
+}
+
+/**
+ * Отмечать можно только в день визита и ночью после него. Архив - история, а не
+ * черновик: отметка задним числом - это уже воспоминание, а неявку, записанную через
+ * неделю, гость не оспорит. Забытый день остаётся «без отметки», и визитом он всё
+ * равно засчитан, а не пропуском, так что запрет почти ничего не стоит.
+ */
+export const isVisitDayEditable = (dateKey: string, tzOffsetMinutes: number, now: Date = new Date()): boolean => {
+    const today = dayKeyOf(now, tzOffsetMinutes)
+    if (dateKey === today) return true
+    return dateKey === addDaysToKey(today, -1) && nowTimeKey(tzOffsetMinutes, now) < VISIT_MARK_GRACE_UNTIL
+}
+
+/** Вчерашний день, пока его ещё можно отметить (ночь после него), иначе null. */
+export const visitGraceDay = (tzOffsetMinutes: number, now: Date = new Date()): string | null => {
+    const yesterday = addDaysToKey(dayKeyOf(now, tzOffsetMinutes), -1)
+    return isVisitDayEditable(yesterday, tzOffsetMinutes, now) ? yesterday : null
+}
+
+/** Чем закончился визит по заявке и откуда это известно. */
+export type VisitOutcome = {
+    /** null - исхода нет: визит впереди или идёт сегодня, либо заявку так никто и не взял. */
+    status: 'came' | 'missed' | 'unknown' | null
+    /**
+     * 'mark' - отметил резидент, 'door' - гость сам нажал «Я на месте», 'legacy' - визит
+     * был до отметок и засчитан как состоявшийся. null - исхода нет либо он неизвестен.
+     */
+    source: 'mark' | 'door' | 'legacy' | null
+}
+
+/**
+ * Исход визита. Проверки идут в порядке доверия: отметка резидента, сигнал гостя у
+ * двери, дата до запуска отметок.
+ *
+ * Пропуск - только явная отметка «не пришёл». Подтверждённый визит без отметки - это
+ * «без отметки»: резидент мог просто забыть, и записывать гостю неявку за чужую
+ * забывчивость нельзя. Пустой `since` значит, что отметки ещё не включили, и тогда
+ * вся история - до отметок.
+ */
+export const visitOutcome = (r: HostingRequest, since: string, today: string): VisitOutcome => {
+    if (r.visit) return { status: r.visit.came ? 'came' : 'missed', source: 'mark' }
+    if (r.arrivedAt) return { status: 'came', source: 'door' }
+    if (r.status !== 'approved' || r.dateKey >= today) return { status: null, source: null }
+    if (!since || r.dateKey < since) return { status: 'came', source: 'legacy' }
+    return { status: 'unknown', source: null }
+}
+
+/**
+ * Визит засчитан: пришёл по любому признаку либо без отметки. Без отметки идёт в счёт
+ * по той же причине, по какой не идёт в пропуски: иначе одна забытая отметка делала бы
+ * завсегдатая «впервые». Насколько счёт подтверждён, показывает профиль.
+ */
+const countsAsVisit = (o: VisitOutcome): boolean => o.status === 'came' || o.status === 'unknown'
+
+export type VisitMarkError = 'not_found' | 'bad_day' | 'not_approved' | 'too_early'
+
+/**
+ * Отметка «пришёл / не пришёл» по заявке, `came = null` снимает её.
+ *
+ * «Не пришёл» - только у подтверждённой заявки и не раньше слота: ничью заявку никто
+ * не обещал принять, и неявка по ней не пропуск, а визит, который ещё не начался,
+ * пропустить нельзя. «Пришёл» можно и у ничьей: гостя впустили, хотя заявку никто не
+ * взял. Статус заявки при этом не меняется: хоста задним числом не назначаем.
+ */
+export const markVisit = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    id: string,
+    came: boolean | null,
+    by: HostingUser,
+): Promise<{ ok: true; request: HostingRequest } | { ok: false; error: VisitMarkError }> => {
+    const request = own(storage.get().hostingRequests, id)
+    if (!request) return { ok: false, error: 'not_found' }
+    if (!isVisitDayEditable(request.dateKey, tzOffsetMinutes)) return { ok: false, error: 'bad_day' }
+    if (came === false) {
+        if (request.status !== 'approved') return { ok: false, error: 'not_approved' }
+        if (Date.now() < slotStartUtc(request.dateKey, request.time, tzOffsetMinutes)) return { ok: false, error: 'too_early' }
+    }
+    await storage.update((s) => {
+        const r = own(s.hostingRequests, id)
+        if (r) r.visit = came === null ? null : { came, by, at: new Date().toISOString() }
+    })
+    return { ok: true, request: own(storage.get().hostingRequests, id)! }
+}
+
+/**
+ * «Все пришли»: отмечает пришедшими подтверждённых гостей дня, о которых ещё ничего не
+ * известно. Явную отметку не трогает (руками поставленный «не пришёл» общая кнопка не
+ * переписывает), как и «сам у двери»: там исход уже есть.
+ */
+export const markAllVisits = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    by: HostingUser,
+): Promise<{ ok: true; marked: number } | { ok: false; error: 'bad_day' }> => {
+    if (!isVisitDayEditable(dateKey, tzOffsetMinutes)) return { ok: false, error: 'bad_day' }
+    const ids = requestsForDay(storage, dateKey)
+        .filter((r) => r.status === 'approved' && !r.visit && !r.arrivedAt)
+        .map((r) => r.id)
+    if (ids.length === 0) return { ok: true, marked: 0 }
+    const at = new Date().toISOString()
+    await storage.update((s) => {
+        for (const id of ids) {
+            const r = own(s.hostingRequests, id)
+            if (r) r.visit = { came: true, by, at }
+        }
+    })
+    return { ok: true, marked: ids.length }
+}
+
+/** Гости дня без заявки, в порядке добавления. */
+export const walkInsForDay = (storage: Storage, dateKey: string): WalkIn[] =>
+    Object.values(storage.get().hostingWalkIns)
+        .filter((w) => w.dateKey === dateKey)
+        .sort((a, b) => a.at.localeCompare(b.at))
+
+export type WalkInError = 'bad_day' | 'bad_name' | 'has_request' | 'duplicate' | 'blocked'
+
+/**
+ * Добавляет в день гостя без заявки. Если заявка на этот день у человека есть, его
+ * отмечают по ней: иначе один визит считался бы дважды. Людей без аккаунта (`userId`
+ * 0) различаем только по имени, поэтому и дубль у них по имени.
+ */
+export const addWalkIn = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    dateKey: string,
+    guest: HostingUser,
+    by: HostingUser,
+): Promise<{ ok: true; walkIn: WalkIn } | { ok: false; error: WalkInError }> => {
+    if (!isVisitDayEditable(dateKey, tzOffsetMinutes)) return { ok: false, error: 'bad_day' }
+    const name = cleanName(guest.name).slice(0, MAX_WALK_IN_NAME_LENGTH)
+    if (!name) return { ok: false, error: 'bad_name' }
+    if (guest.userId !== 0) {
+        if (isBlocked(storage, guest.userId)) return { ok: false, error: 'blocked' }
+        if (requestsForDay(storage, dateKey).some((r) => r.guest.userId === guest.userId)) return { ok: false, error: 'has_request' }
+    }
+    const lower = name.toLowerCase()
+    const duplicate = walkInsForDay(storage, dateKey).some((w) =>
+        guest.userId !== 0 ? w.guest.userId === guest.userId : w.guest.userId === 0 && w.guest.name.toLowerCase() === lower)
+    if (duplicate) return { ok: false, error: 'duplicate' }
+    const walkIn: WalkIn = { id: randomUUID(), dateKey, guest: { ...guest, name }, by, at: new Date().toISOString() }
+    await storage.update((s) => {
+        s.hostingWalkIns[walkIn.id] = walkIn
+    })
+    return { ok: true, walkIn }
+}
+
+export const removeWalkIn = async (
+    storage: Storage,
+    tzOffsetMinutes: number,
+    id: string,
+): Promise<{ ok: true; walkIn: WalkIn } | { ok: false; error: 'not_found' | 'bad_day' }> => {
+    const walkIn = own(storage.get().hostingWalkIns, id)
+    if (!walkIn) return { ok: false, error: 'not_found' }
+    if (!isVisitDayEditable(walkIn.dateKey, tzOffsetMinutes)) return { ok: false, error: 'bad_day' }
+    await storage.update((s) => {
+        delete s.hostingWalkIns[id]
+    })
+    return { ok: true, walkIn }
+}
+
+/** Визиты человека без заявки, от свежих к старым. */
+export const walkInsOfGuest = (storage: Storage, userId: number): WalkIn[] =>
+    Object.values(storage.get().hostingWalkIns)
+        .filter((w) => w.guest.userId === userId)
+        .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+
+/** Сводка визитов человека: сколько засчитано, из них без отметки, и явные пропуски. */
+export type GuestVisitTally = { visits: number; unmarked: number; missed: number }
+
+/** Сводка по заявкам и визитам без заявки одного человека. Сегодняшний день ещё идёт и в счёт не входит. */
+export const guestVisitTally = (storage: Storage, userId: number, today: string): GuestVisitTally => {
+    const since = storage.get().hostingVisitsSince
+    const tally: GuestVisitTally = { visits: 0, unmarked: 0, missed: 0 }
+    for (const r of requestsOfGuest(storage, userId)) {
+        if (r.dateKey >= today) continue
+        const o = visitOutcome(r, since, today)
+        if (countsAsVisit(o)) tally.visits += 1
+        if (o.status === 'unknown') tally.unmarked += 1
+        if (o.status === 'missed') tally.missed += 1
+    }
+    tally.visits += walkInsOfGuest(storage, userId).filter((w) => w.dateKey < today).length
+    return tally
+}
+
+/** Обычный день недели (0 - понедельник) и время прихода гостя. */
+export type GuestUsual = { weekday: number; time: string | null }
+
+/**
+ * Профиль гостя для резидентов: кто он и насколько на него можно рассчитывать.
+ * null - о человеке нет ни одной записи.
+ */
+export type GuestProfile = GuestVisitTally & {
+    user: HostingUser
+    /** Первый и последний засчитанный визит. Пусто - не было ни одного. */
+    firstDateKey: string
+    lastDateKey: string
+    /** Ближайшая заявка начиная с сегодняшнего дня. */
+    next: { dateKey: string; time: string; approved: boolean } | null
+    /** Обычный день и время: только когда засчитанных визитов хотя бы три и день повторялся. */
+    usual: GuestUsual | null
+    /** Кто хостил, от самых частых. */
+    hosts: { user: HostingUser; count: number }[]
+    /** Ивенты, на которые гостя приняли по форме, свежие сверху. */
+    events: { id: string; title: string; dateKey: string }[]
+}
+
+/** С какого числа визитов имеет смысл называть «обычно»: на двух это совпадение. */
+const USUAL_MIN_VISITS = 3
+
+/** Медиана времён прихода, округлённая до четверти часа: «к 19:00», а не «к 18:52». */
+const usualTime = (times: string[]): string | null => {
+    if (times.length === 0) return null
+    const minutes = times.map((t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))).sort((a, b) => a - b)
+    const mid = minutes[Math.floor(minutes.length / 2)]!
+    const rounded = Math.min(23 * 60 + 45, Math.round(mid / 15) * 15)
+    return `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`
+}
+
+export const guestProfile = (storage: Storage, userId: number, today: string): GuestProfile | null => {
+    const s = storage.get()
+    const since = s.hostingVisitsSince
+    const requests = requestsOfGuest(storage, userId)
+    const walkIns = walkInsOfGuest(storage, userId)
+    if (requests.length === 0 && walkIns.length === 0) return null
+
+    // Имя и ник - из самой свежей записи: человек мог сменить их с прошлого визита.
+    const latest = [
+        ...requests.map((r) => ({ user: r.guest, at: r.createdAt })),
+        ...walkIns.map((w) => ({ user: w.guest, at: w.at })),
+    ].sort((a, b) => b.at.localeCompare(a.at))[0]!
+    const user = { ...latest.user, name: displayName(latest.user.name) }
+
+    const visitDays: string[] = []
+    const visitTimes: string[] = []
+    for (const r of requests) {
+        if (r.dateKey >= today || !countsAsVisit(visitOutcome(r, since, today))) continue
+        visitDays.push(r.dateKey)
+        visitTimes.push(r.time)
+    }
+    for (const w of walkIns) if (w.dateKey < today) visitDays.push(w.dateKey)
+    visitDays.sort()
+
+    let usual: GuestUsual | null = null
+    if (visitDays.length >= USUAL_MIN_VISITS) {
+        const byWeekday = new Map<number, number>()
+        for (const d of visitDays) byWeekday.set(weekdayOfKey(d), (byWeekday.get(weekdayOfKey(d)) ?? 0) + 1)
+        const [weekday, count] = [...byWeekday.entries()].sort((a, b) => b[1] - a[1])[0]!
+        if (count >= 2) usual = { weekday, time: usualTime(visitTimes) }
+    }
+
+    const hostCounts = new Map<number, { user: HostingUser; count: number }>()
+    for (const r of requests) {
+        if (r.status !== 'approved' || !r.approvedBy) continue
+        const cur = hostCounts.get(r.approvedBy.userId)
+        if (cur) cur.count += 1
+        else hostCounts.set(r.approvedBy.userId, { user: r.approvedBy, count: 1 })
+    }
+
+    const upcoming = requests.filter((r) => r.dateKey >= today).sort((a, b) =>
+        a.dateKey === b.dateKey ? a.time.localeCompare(b.time) : a.dateKey.localeCompare(b.dateKey))[0]
+
+    const events = Object.values(s.eventApplications)
+        .filter((a) => a.guest.userId === userId && a.status === 'approved')
+        .map((a) => own(s.events, a.eventId))
+        .filter((e): e is NonNullable<typeof e> => e !== undefined)
+        .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+        .map((e) => ({ id: e.id, title: e.title, dateKey: e.dateKey }))
+
+    return {
+        user,
+        ...guestVisitTally(storage, userId, today),
+        firstDateKey: visitDays[0] ?? '',
+        lastDateKey: visitDays[visitDays.length - 1] ?? '',
+        next: upcoming ? { dateKey: upcoming.dateKey, time: upcoming.time, approved: upcoming.status === 'approved' } : null,
+        usual,
+        hosts: [...hostCounts.values()].sort((a, b) => b.count - a.count),
+        events,
+    }
+}
 
 /**
  * Рассылает резидентам уведомление о новой заявке — в личку, с учётом настроек
@@ -955,28 +1317,49 @@ export const notifyGuestUnapproved = async (
     }
 }
 
+/** Потолок комментария к закрытию: это пара фраз гостю, а не переписка. */
+export const MAX_CLOSE_COMMENT_LENGTH = 500
+
+/** Комментарий к закрытию как его отправим: без лишних пустых строк по краям и подряд. */
+export const cleanCloseComment = (raw: string): string =>
+    raw.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, MAX_CLOSE_COMMENT_LENGTH)
+
 /**
- * Гостю в личку: резидент закрыл его заявку.
+ * Гостю в личку: резидент закрыл его заявку. true - сообщение ушло.
  *
  * Закрытие — это удаление заявки со стороны спейса: визит не состоится (резидент не
  * может принять, планы поменялись). Раньше такого глагола не было вовсе, и резиденту
  * оставалось либо просить гостя удалить заявку самому, либо звать дева.
+ *
+ * Комментарий резидента идёт цитатой. С ним фраза «в этот день не получится» уходит:
+ * причину объясняет сам комментарий, и додумывать её за резидента нельзя.
  */
 export const notifyGuestClosed = async (
     client: TelegramClient,
     webappUrl: string,
     request: HostingRequest,
     by: HostingUser,
-): Promise<void> => {
+    comment: string,
+): Promise<boolean> => {
     const who = await mentionLabel(client, by)
-    const text = `Резидент ${who} закрыл заявку на визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time} — в этот день не получится.<br>Можно выбрать другой день.`
+    const slot = `<b>${formatDayKey(request.dateKey)}</b> к ${request.time}`
+    // `html()` схлопывает `\n` в пробел, поэтому строки комментария склеиваем через `<br>`.
+    const lines = comment
+        ? [
+            `Резидент ${who} закрывает заявку на визит ${slot}:`,
+            `<blockquote>${comment.split('\n').map((l) => html.escape(l)).join('<br>')}</blockquote>`,
+            'Можно выбрать другой день.',
+        ]
+        : [`Резидент ${who} закрывает заявку на визит ${slot}: в этот день не получится.`, 'Можно выбрать другой день.']
     try {
-        await client.sendText(request.guest.userId, html(text), {
+        await client.sendText(request.guest.userId, html(lines.join('<br>')), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Выбрать другой день', webappUrl)]]),
             disableWebPreview: true,
         })
+        return true
     } catch {
         // гость не открывал личку с ботом
+        return false
     }
 }
 
@@ -1159,6 +1542,7 @@ export const updateHostingRequest = async (
         r.time = patch.time
         r.purpose = patch.purpose.trim().slice(0, MAX_PURPOSE_LENGTH)
         if (moved && r.remind) r.remind.sentAt = null
+        if (moved) r.visit = null
     })
     return { ok: true, request: own(storage.get().hostingRequests, id)! }
 }
@@ -1259,8 +1643,10 @@ export const acceptReschedule = async (
             r.dateKey = r.proposal.dateKey
             r.time = r.proposal.time
             r.proposal = null
-            // Визит уехал на другой слот — напоминание должно уйти заново.
+            // Визит уехал на другой слот — напоминание должно уйти заново, а отметка
+            // «пришёл» про старый слот больше ничего не значит.
             if (moved && r.remind) r.remind.sentAt = null
+            if (moved) r.visit = null
         }
     })
     return { ok: true, request: own(storage.get().hostingRequests, id)!, proposal }
@@ -1430,8 +1816,8 @@ export const listBlockedUsers = (storage: Storage): BlockedUser[] =>
     Object.values(storage.get().blockedUsers).sort((a, b) => b.at.localeCompare(a.at))
 
 /**
- * Блокирует участника: пишет запись в стейт, стирает все его заявки/отметки/присутствие/
- * подписку на отметки резидентов и банит во всех allowlist-чатах. Бан по чатам
+ * Блокирует участника: пишет запись в стейт, стирает все его заявки/отметки/визиты без
+ * заявки/присутствие/подписку на отметки резидентов и банит во всех allowlist-чатах. Бан по чатам
  * fire-and-safe: недоступный/уже вышедший участник просто логируется и не роняет
  * остальные чаты.
  */
@@ -1455,6 +1841,9 @@ export const blockUser = async (
         }
         for (const [k, a] of Object.entries(s.hostingAttendance)) {
             if (a.user.userId === target.userId) delete s.hostingAttendance[k]
+        }
+        for (const [k, w] of Object.entries(s.hostingWalkIns)) {
+            if (w.guest.userId === target.userId) delete s.hostingWalkIns[k]
         }
         // Заметку о госте намеренно оставляем: она объясняет резидентам, почему он в блоке.
         delete s.presence[String(target.userId)]

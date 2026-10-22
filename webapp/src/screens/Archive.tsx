@@ -175,10 +175,11 @@ function GuestSearch({
                   {`последняя ${fmtShortDate(g.lastDateKey)}`}
                 </div>
               </div>
+              {/* Визиты из всех записей человека: «был 4 раза из 5 заявок». */}
               <div className="row-right">
                 <div className="approved-count" style={{ fontSize: 14 }}>
                   {icons.check(14, '#34c759')}
-                  {String(g.approved)}
+                  {String(g.visits)}
                 </div>
                 <span className="count-muted">{`/ ${g.total}`}</span>
                 {icons.chevron()}

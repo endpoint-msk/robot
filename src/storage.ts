@@ -117,6 +117,8 @@ export class Storage {
             goalsMuted: parsed.goalsMuted ?? {},
             hostingRequests: normalizeHostingRequests(parsed.hostingRequests),
             hostingAttendance: parsed.hostingAttendance ?? {},
+            hostingWalkIns: parsed.hostingWalkIns ?? {},
+            hostingVisitsSince: typeof parsed.hostingVisitsSince === 'string' ? parsed.hostingVisitsSince : '',
             hostingDayLocks: parsed.hostingDayLocks ?? {},
             hostingDayCaps: parsed.hostingDayCaps ?? {},
             hostingDayAgenda: parsed.hostingDayAgenda ?? {},

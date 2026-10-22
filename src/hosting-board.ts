@@ -152,7 +152,7 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     if (attendees.length > 0) {
         lines.push('<b>Придут:</b>')
         for (const a of attendees) {
-            const mark = a.resident ? ' (резидент)' : a.time ? ` к ${a.time}` : ''
+            const mark = `${a.time ? ` к ${a.time}` : ''}${a.resident ? ' (резидент)' : ''}`
             lines.push(`• ${attendeeLabel(a)}${mark}`)
         }
     } else {

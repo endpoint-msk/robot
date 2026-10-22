@@ -50,6 +50,11 @@ type TextInput = {
   hint?: string
   maxLength: number
   confirmLabel: string
+  cancelLabel: string
+  /** Несколько строк: Enter переносит строку, а не подтверждает. */
+  multiline: boolean
+  /** Подтверждение необратимо (закрыть заявку): красная кнопка и жёсткий отклик. */
+  destructive: boolean
 }
 type DateInput = {
   kind: 'date'
@@ -340,6 +345,9 @@ function TextCard({ modal }: { modal: Modal & { kind: 'text' } }) {
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       setShown(true)
+      // Многострочное поле здесь всегда необязательное (комментарий к действию), и
+      // клавиатура, выехавшая сама, закрывала бы главную кнопку.
+      if (modal.multiline) return
       inputRef.current?.focus()
       inputRef.current?.select()
     })
@@ -364,26 +372,43 @@ function TextCard({ modal }: { modal: Modal & { kind: 'text' } }) {
       <div className="modal-card">
         <div className="modal-text">{modal.text}</div>
         <div className="modal-num-wrap">
-          <input
-            ref={inputRef}
-            className="text-input modal-text-input"
-            type="text"
-            autoComplete="off"
-            placeholder={modal.placeholder}
-            maxLength={modal.maxLength}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') close(value.trim())
-            }}
-          />
+          {modal.multiline ? (
+            <textarea
+              className="text-input modal-text-input modal-textarea"
+              rows={3}
+              placeholder={modal.placeholder}
+              maxLength={modal.maxLength}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          ) : (
+            <input
+              ref={inputRef}
+              className="text-input modal-text-input"
+              type="text"
+              autoComplete="off"
+              placeholder={modal.placeholder}
+              maxLength={modal.maxLength}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') close(value.trim())
+              }}
+            />
+          )}
         </div>
         {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
         <div className="modal-actions">
           <button className="modal-btn" onClick={() => close(null)}>
-            Отмена
+            {modal.cancelLabel}
           </button>
-          <button className="modal-btn primary" onClick={() => close(value.trim())}>
+          <button
+            className={'modal-btn primary' + (modal.destructive ? ' destructive' : '')}
+            onClick={() => {
+              if (modal.destructive) haptic.impact('rigid')
+              close(value.trim())
+            }}
+          >
             {modal.confirmLabel}
           </button>
         </div>
@@ -640,6 +665,9 @@ export const textPrompt = (opts: {
   hint?: string
   maxLength?: number
   confirmLabel?: string
+  cancelLabel?: string
+  multiline?: boolean
+  destructive?: boolean
 }): Promise<string | null> =>
   open<string | null>({
     kind: 'text',
@@ -649,6 +677,9 @@ export const textPrompt = (opts: {
     hint: opts.hint,
     maxLength: opts.maxLength ?? 200,
     confirmLabel: opts.confirmLabel ?? 'Сохранить',
+    cancelLabel: opts.cancelLabel ?? 'Отмена',
+    multiline: opts.multiline ?? false,
+    destructive: opts.destructive ?? false,
   })
 
 /** Выбор даты ('YYYY-MM-DD'). null — отмена. */

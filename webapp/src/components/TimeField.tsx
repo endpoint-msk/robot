@@ -97,14 +97,18 @@ function TimeSheet({
   initial,
   min,
   onClose,
+  onClear,
 }: {
   initial: string
   min: string | undefined
   onClose: (value: string | null) => void
+  onClear?: () => void
 }) {
   const [shown, setShown] = useState(false)
   const done = useRef(false)
-  const [initialHour, initialMinute] = split(initial)
+  // Сохранённое время могло уйти в прошлое, пока экран был открыт: колесо встаёт на
+  // первое разрешённое, иначе «Готово» вернуло бы то, что сервер отобьёт.
+  const [initialHour, initialMinute] = split(min && initial < min ? min : initial)
   const [hour, setHour] = useState(initialHour)
   const [minute, setMinute] = useState(initialMinute)
   const [minHour, minMinute] = min ? split(min) : [null, null]
@@ -170,6 +174,18 @@ function TimeSheet({
             onChange={setMinute}
           />
         </div>
+        {onClear ? (
+          <button
+            type="button"
+            className="tp-clear"
+            onClick={() => {
+              close(null)
+              onClear()
+            }}
+          >
+            Без времени
+          </button>
+        ) : null}
       </div>
     </div>,
     document.body,
@@ -181,25 +197,38 @@ export function TimeField({
   onChange,
   min,
   className,
+  placeholder,
+  fallback,
+  onClear,
+  prefix,
 }: {
   value: string
   onChange: (value: string) => void
   /** Нижняя граница `HH:MM` (слот «на сегодня» не должен быть в прошлом). */
   min?: string | undefined
   className?: string
+  /** Подпись пустого поля. Без неё пустое значение рисуется как 15:00. */
+  placeholder?: string
+  /** На каком времени открыть колесо, когда значения нет. */
+  fallback?: string
+  /** «Без времени» в шторке: у необязательного поля значение надо уметь и снять. */
+  onClear?: () => void
+  /** Слово перед временем («к 18:00»), когда поле стоит в строке без подписи. */
+  prefix?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [hour, minute] = split(value)
+  const empty = value === '' && placeholder !== undefined
+  const [hour, minute] = split(empty && fallback ? fallback : value)
 
   return (
     <>
       <button
         type="button"
-        className={'time-input time-field' + (className ? ' ' + className : '')}
-        aria-label={'Время: ' + hour + ':' + minute}
+        className={'time-input time-field' + (empty ? ' empty' : '') + (className ? ' ' + className : '')}
+        aria-label={empty ? placeholder : 'Время: ' + hour + ':' + minute}
         onClick={() => setOpen(true)}
       >
-        {hour + ':' + minute}
+        {empty ? placeholder : (prefix ? prefix + ' ' : '') + hour + ':' + minute}
       </button>
       {open ? (
         <TimeSheet
@@ -209,6 +238,7 @@ export function TimeField({
             setOpen(false)
             if (next) onChange(next)
           }}
+          onClear={value !== '' ? onClear : undefined}
         />
       ) : null}
     </>

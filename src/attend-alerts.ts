@@ -64,7 +64,7 @@ const buildText = (marks: HostingAttendance[], labels: Map<number, string>, toda
     const byDay = new Map<string, string[]>()
     for (const a of marks) {
         const names = byDay.get(a.dateKey) ?? []
-        names.push(labels.get(a.user.userId) ?? '')
+        names.push(`${labels.get(a.user.userId) ?? ''}${a.time ? ` к ${a.time}` : ''}`)
         byDay.set(a.dateKey, names)
     }
     const days = [...byDay.entries()]

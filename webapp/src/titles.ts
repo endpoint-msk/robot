@@ -47,6 +47,8 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return 'Изменить заявку'
     case 'guestNote':
       return 'Заметка'
+    case 'walkIn':
+      return 'Без заявки'
     case 'eventApps':
       return 'Заявки на ивент'
     case 'announce':
@@ -68,6 +70,10 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
     case 'day':
     case 'peekDay':
       return weekday(p.dateKey) ?? 'День'
+    // Сегодняшний (и вчерашний ночью) день открывают с экрана дня, и там «Пятница» уже
+    // занята им самим.
+    case 'visits':
+      return p.dateKey === data?.todayKey || p.dateKey === data?.visitGraceDay ? 'Кто пришёл' : (weekday(p.dateKey) ?? 'День')
     case 'statsDay':
       return typeof p.dateKey === 'string' ? fmtWeekdayDate(p.dateKey) : 'День'
     case 'archiveWeek':

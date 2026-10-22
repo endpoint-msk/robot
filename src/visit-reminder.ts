@@ -237,6 +237,12 @@ export const registerVisitReminderHandlers = (
             await ctx.answer({ text: 'Заявки уже нет.', alert: true })
             return
         }
+        // Те же гейты, что у отмены в миниаппе: сообщение с кнопкой живёт в личке вечно,
+        // и без них прошедший или уже отмеченный визит стирался бы задним числом.
+        if (request.dateKey < todayKey(tzOffsetMinutes) || request.visit) {
+            await ctx.answer({ text: 'Этот визит уже прошёл или отмечен резидентом, отменить его нельзя.', alert: true })
+            return
+        }
         await storage.update((s) => {
             delete s.hostingRequests[id]
         })

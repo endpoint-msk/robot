@@ -1,7 +1,7 @@
 // Аватарки (градиент по userId + буква + настоящее фото поверх) и обёртка для
 // открытия профиля в Telegram по тапу.
 
-import { useState, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { avatarUrl } from '../links'
 import { hasProfile, openProfile } from '../telegram'
 import type { User } from '../types'
@@ -20,9 +20,11 @@ export function Avatar({
   user,
   className,
   profile = false,
+  style,
 }: {
   user: AvatarUser
   className?: string
+  style?: CSSProperties
   /** Тап по аватарке открывает профиль в Telegram (по нику либо по id). */
   profile?: boolean
 }) {
@@ -43,7 +45,7 @@ export function Avatar({
   return (
     <div
       className={cls}
-      style={{ background: `linear-gradient(135deg, ${grad[0]}, ${grad[1]})` }}
+      style={{ background: `linear-gradient(135deg, ${grad[0]}, ${grad[1]})`, ...style }}
       onClick={
         tappable
           ? (e) => {
@@ -76,11 +78,17 @@ export function Avatar({
   )
 }
 
+/**
+ * Лица внахлёст: каждое следующее лежит под предыдущим. Порядок в стопке и есть
+ * важность (резиденты, потом гости), а браузер по умолчанию кладёт поздний элемент
+ * сверху, и последний в ряду перекрывал бы первого.
+ */
 export function AvatarStack({ users, max = 3 }: { users: AvatarUser[]; max?: number }) {
+  const shown = users.slice(0, max)
   return (
     <div className="avatar-stack">
-      {users.slice(0, max).map((u, i) => (
-        <Avatar key={`${u.userId}-${i}`} user={u} />
+      {shown.map((u, i) => (
+        <Avatar key={`${u.userId}-${i}`} user={u} style={{ zIndex: shown.length - i }} />
       ))}
     </div>
   )

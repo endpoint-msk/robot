@@ -42,7 +42,7 @@ import { Storage } from './storage.js'
 import { drainAudit, initAuditLog } from './audit.js'
 import { drainErrorLog, initErrorLog, readRecentErrors } from './error-log.js'
 import { installErrorReporting } from './errors.js'
-import { parseHostingTzOffset } from './hosting.js'
+import { ensureVisitsSince, parseHostingTzOffset } from './hosting.js'
 import { setPresenceLogTz } from './presence-log.js'
 import { parseWebappConfig, startWebappServer } from './webapp.js'
 import { buildAdminTargets } from './resident-admin.js'
@@ -362,6 +362,9 @@ const main = async () => {
         console.error('[warn] failed to register bot commands:', err)
     }
 
+    // Отметки «кто пришёл» считаются с первого запуска, где они есть: подтверждённые
+    // раньше визиты засчитаны как состоявшиеся (см. visitOutcome).
+    await ensureVisitsSince(storage, hostingTzOffset)
     const scheduler = startMonthlyScheduler(tg, storage)
     const dailyPoster = startDailyFundraiserPoster(tg, storage, allowedChats)
     // Шедулер бэкапов поднимаем всегда: расписания лежат в стейте и переживают рестарт,

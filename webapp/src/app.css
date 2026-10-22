@@ -569,7 +569,8 @@ body {
 .day-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .day-people { display: flex; align-items: center; gap: 10px; }
 
-.avatar-stack { display: flex; align-items: center; flex-shrink: 0; }
+/* isolation держит z-index лиц (AvatarStack кладёт первое сверху) внутри стопки. */
+.avatar-stack { display: flex; align-items: center; flex-shrink: 0; isolation: isolate; }
 .avatar {
     position: relative;
     border-radius: 50%;
@@ -706,6 +707,21 @@ body {
     background: var(--chip);
 }
 .pill .avatar { width: 20px; height: 20px; font-size: 10px; }
+/* «Хостит» - зелёной галочкой на аватарке хоста вместо подписи над пиллом. */
+.pill-host { position: relative; display: flex; flex-shrink: 0; }
+.pill-ok {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 1.5px var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 /* Пилл не сжимается (.approver flex-shrink: 0), поэтому длинный ник хоста
    выдавливал бы левую колонку со временем — режем сам ник. */
 .pill-name {
@@ -980,14 +996,15 @@ body {
 .dpg-body { padding-top: 18px; }
 .dpg-events + .dpg-acts { margin-top: 12px; }
 .dpg-coming { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 14px 4px 0; }
-.dpg-faces { display: flex; align-items: center; flex-shrink: 0; }
-.dpg-faces .avatar { position: relative; z-index: 1; width: 34px; height: 34px; font-size: 14px; box-shadow: 0 0 0 2px var(--dpg-ring, var(--bg)); }
+/* Каждый следующий в ряду лежит под предыдущим: z-index по убыванию ставит разметка,
+   isolation не выпускает его за пределы ряда. */
+.dpg-faces { display: flex; align-items: center; flex-shrink: 0; isolation: isolate; }
+.dpg-faces .avatar { position: relative; width: 34px; height: 34px; font-size: 14px; box-shadow: 0 0 0 2px var(--dpg-ring, var(--bg)); }
 .dpg-faces > * + * { margin-left: -9px; }
-.dpg-face { display: block; width: 34px; height: 34px; flex-shrink: 0; }
+.dpg-face { position: relative; display: block; width: 34px; height: 34px; flex-shrink: 0; }
 /* Первое место в ряду всегда ваше: пунктир, пока не собираетесь, аватарка поверх
    соседей, когда собрались. Соседи поэтому никогда не сдвигаются. */
-.dpg-myslot { position: relative; z-index: 0; width: 34px; height: 34px; flex-shrink: 0; }
-.dpg-myslot.on { z-index: 2; }
+.dpg-myslot { position: relative; width: 34px; height: 34px; flex-shrink: 0; }
 .dpg-slot { position: absolute; inset: 0; border-radius: 50%; border: 1.6px dashed rgba(var(--sec), 0.3); }
 .dpg-myslot.on .dpg-slot { opacity: 0; }
 .dpg-me { position: absolute; inset: 0; border-radius: 50%; }
@@ -1388,6 +1405,32 @@ button.agenda-banner:active { opacity: 0.6; }
     padding: 11px 14px;
 }
 .time-field:active { opacity: 0.6; }
+/* Необязательное время пустым читается как вопрос, а не как значение. */
+.time-field.empty { color: var(--blue); }
+/* Время прихода резидента в его строке «Придут резиденты»: таблетка размера пилюли
+   строки, а не поле формы. Зону тапа добирает слой, как у .host-btn. */
+.time-field.attend-time {
+    position: relative;
+    flex-shrink: 0;
+    min-height: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 14px;
+}
+.time-field.attend-time::after { content: ""; position: absolute; inset: -8px -6px; }
+/* «Без времени» под колёсами: снять значение необязательного поля. */
+.tp-clear {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 16px;
+    color: var(--red);
+    cursor: pointer;
+}
+.tp-clear:active { opacity: 0.6; }
 
 /* Шторка пикера времени. z-index выше модалок (100) и лайтбокса (110): пикер
    вызывается в том числе из модалки переноса и должен лечь поверх неё. */
@@ -2648,6 +2691,8 @@ body.busy #busy-overlay { display: flex; }
     border-radius: 14px;
     background: rgba(var(--sec), 0.08);
 }
+/* Комментарий к действию: несколько строк, растягивать руками в модалке незачем. */
+.modal-textarea { display: block; resize: none; line-height: 1.35; }
 .modal-btn.disabled { opacity: 0.4; pointer-events: none; }
 
 /* Какой это по счёту визит гостя - пилюля рядом с именем в строке заявки.
@@ -2665,6 +2710,122 @@ body.busy #busy-overlay { display: flex; }
     line-height: 1.5;
 }
 .visit-chip.first { background: var(--blue-soft-strong); color: var(--blue); }
+/* Значки визитов у имени гостя (RequestRow): число прошлых визитов и неявки, без
+   подложки, как флажок заметки рядом: пилюли со словами съедали имя. Словом остался
+   только новичок (.visit-chip.first). Это кнопка в профиль гостя, зону тапа добирает слой. */
+.visit-stats {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
+}
+.visit-stats::after { content: ""; position: absolute; inset: -9px -5px; }
+.visit-stats:active { opacity: 0.55; }
+.vs-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+/* Неявки - оранжевым: «был пять раз, но дважды не пришёл» должно читаться до того,
+   как резидент нажмёт «Захостить». */
+.vs-missed { gap: 3px; color: var(--orange); }
+/* Кружок-статус, как галочка хоста на пилле (.pill-ok) и ✗ в «Кто пришёл». */
+.vs-x {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--orange);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+/* Имя гостя - кнопка в его профиль: оформление кнопки снято, многоточие от .req-name. */
+.req-name-btn {
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.req-name-btn:active { opacity: 0.55; }
+
+/* --- Кто пришёл (screens/Visits.tsx) --- */
+
+/* Строка: человек слева ведёт в профиль, отметки справа - отдельные кнопки. */
+.visit-row { gap: 8px; }
+.visit-who {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.visit-who:active { opacity: 0.6; }
+/* Исход визита: кто и как отметил. Цвет - тот же, что у значка в профиле. */
+.visit-status { font-size: 13px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visit-status.came { color: var(--green); }
+.visit-status.missed { color: var(--orange); }
+.visit-status.muted { color: var(--text-3); }
+.visit-mark { display: flex; gap: 8px; flex-shrink: 0; }
+.vm-btn {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease-out, opacity 0.3s ease-out;
+}
+.vm-btn::after { content: ""; position: absolute; inset: -5px -4px; }
+.vm-btn:active { opacity: 0.6; transition-duration: 0s; }
+.vm-btn.came.on { background: var(--green); }
+.vm-btn.missed.on { background: var(--orange); }
+.vm-btn[disabled] { opacity: 0.35; cursor: default; }
+.vm-remove {
+    position: relative;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: var(--chip);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.vm-remove::after { content: ""; position: absolute; inset: -9px; }
+.vm-remove:active { opacity: 0.6; }
+
+/* Неявки в профиле гостя - тем же оранжевым, что и чип в строке заявки. */
+.sq-num.missed { color: var(--orange); }
+
+/* Счёт своих визитов у гостя под «Были раньше». */
+.visits-tally { margin: 8px 16px 0; font-size: 13px; color: var(--text-2); }
 
 /* Прошедший визит в «Были раньше»: дата приглушена - это архив, а не то, за чем следят. */
 .req-name.past { color: var(--text-2); }

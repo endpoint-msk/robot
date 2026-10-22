@@ -1,6 +1,7 @@
 // Экран дня. Живые дни листаются, как шаги знакомства: свайп по экрану открывает
 // соседний день, шапка в тон его состояния, точки показывают, какой из семи открыт.
-// «Я приду» живёт в шапке и отвечает на месте. Архивный день остаётся прежним списком.
+// «Я приду» живёт в шапке и отвечает на месте. Прошедший день открывается из архива
+// экраном «Кто пришёл» (screens/Visits.tsx).
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { action } from '../api'
@@ -31,15 +32,17 @@ import { getState, pop, push, setTopParams, useParams, useStore, type NavParams 
 import { haptic, setHeaderColor } from '../telegram'
 import { applyTheme, sec } from '../theme'
 import type { Attendee, Day as DayData, DayAgenda, DayLock, HostingRequest, User } from '../types'
-import { BackRow, EmptyState, Footnote, Header, ReadonlyBadge, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, EmptyState, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeeRow } from '../components/attendees'
 import { Collapse } from '../components/Collapse'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
-import { confirmOverCapacity, RequestRow, RequestsCard } from '../components/RequestRow'
+import { confirmOverCapacity, RequestRow } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
+import { defaultTimeFor } from '../components/forms'
+import { TimeField } from '../components/TimeField'
 
 /** Причина закрытия: её вводят один раз при закрытии и правят строкой в карточке. */
 const askReason = (initial: string): Promise<string | null> =>
@@ -247,8 +250,11 @@ const comingNames = (names: string[]): string => {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** Аватарка, которая после своего тапа встаёт в ряд с перелётом. Чужое появление ставит её сразу. */
-function FaceIn({ a, fly }: { a: Attendee; fly: boolean }) {
+/**
+ * Аватарка, которая после своего тапа встаёт в ряд с перелётом. Чужое появление ставит её сразу.
+ * `z` - место в стопке: каждый следующий в ряду лежит под предыдущим.
+ */
+function FaceIn({ a, fly, z }: { a: Attendee; fly: boolean; z: number }) {
   const ref = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -265,7 +271,7 @@ function FaceIn({ a, fly }: { a: Attendee; fly: boolean }) {
     )
   }, [])
   return (
-    <span className="dpg-face" ref={ref}>
+    <span className="dpg-face" ref={ref} style={{ zIndex: z }}>
       <Avatar user={a} />
     </span>
   )
@@ -333,10 +339,13 @@ function ComingRow({ attendees, coming, onToggle }: { attendees: Attendee[]; com
   }, [coming, showMe])
 
   const names = [...(coming ? ['вы'] : []), ...others.map((a) => userLabel(a))]
+  const faces = others.slice(0, 3)
   return (
     <div className="dpg-coming">
       <div className="dpg-faces" aria-hidden="true">
-        <span className={'dpg-myslot' + (coming ? ' on' : '')}>
+        {/* Ваше место - первое и, когда вы собрались, верхнее в стопке. Пунктир пустого
+            места лежит под соседом: это ещё не человек. */}
+        <span className={'dpg-myslot' + (coming ? ' on' : '')} style={{ zIndex: coming ? faces.length + 1 : 0 }}>
           <span className="dpg-slot" ref={slotRef} />
           {showMe ? (
             <div className="dpg-me" ref={meRef}>
@@ -344,8 +353,8 @@ function ComingRow({ attendees, coming, onToggle }: { attendees: Attendee[]; com
             </div>
           ) : null}
         </span>
-        {others.slice(0, 3).map((a) => (
-          <FaceIn key={a.userId} a={a} fly={seen.fresh.includes(a.userId)} />
+        {faces.map((a, i) => (
+          <FaceIn key={a.userId} a={a} fly={seen.fresh.includes(a.userId)} z={faces.length - i} />
         ))}
       </div>
       <div className="dpg-coming-text">
@@ -487,10 +496,12 @@ function DayPage({
   const waiting = pending.filter((r) => r.status !== 'approved').length
   const events = day.events
   const isToday = day.dateKey === data!.todayKey
+  const cameToday = (day.requests ?? []).filter((r) => r.visit?.status === 'came').length + (day.walkIns ?? []).length
 
   // Отметка ставится сразу, не дожидаясь ответа: шапка и список ниже показывают её
   // вместе. Запрос идёт без оверлея, отказ возвращает как было.
-  const onServer = day.attendees.some((a) => a.resident && a.userId === me.id)
+  const myMark = day.attendees.find((a) => a.resident && a.userId === me.id) ?? null
+  const onServer = myMark !== null
   const [mine, setMine] = useState<boolean | null>(null)
   useEffect(() => setMine(null), [onServer])
   const coming = mine ?? onServer
@@ -502,6 +513,31 @@ function DayPage({
     const done = await action('attend', { dateKey: day.dateKey, coming: next }, { quiet: true })
     if (!done) setMine(null)
   }
+  // Время прихода - необязательная часть отметки: его ставят уже после «Я приду», в
+  // своей строке списка, и видят его гости и доска. Ставится сразу, как и сама отметка.
+  const serverTime = myMark?.time ?? null
+  const [timeEdit, setTimeEdit] = useState<string | null | undefined>(undefined)
+  useEffect(() => setTimeEdit(undefined), [serverTime])
+  const myTime = timeEdit !== undefined ? timeEdit : serverTime
+  const setMyTime = async (next: string | null): Promise<void> => {
+    haptic.impact(next ? 'light' : 'soft')
+    markOwnTap()
+    setTimeEdit(next)
+    const done = await action('attend', { dateKey: day.dateKey, coming: true, time: next }, { quiet: true })
+    if (!done) setTimeEdit(undefined)
+  }
+  const timeChip = (
+    <TimeField
+      className="attend-time"
+      value={myTime ?? ''}
+      placeholder="Ко скольки?"
+      prefix="к"
+      fallback={defaultTimeFor(day.dateKey)}
+      min={isToday ? data!.nowTime : undefined}
+      onChange={(v) => void setMyTime(v)}
+      onClear={() => void setMyTime(null)}
+    />
+  )
   const others = day.attendees.filter((a) => a.resident && a.userId !== me.id)
   const meRow: Attendee = { userId: me.id, name: me.name, username: me.username, resident: true, time: null }
   const residents = others.length + (coming ? 1 : 0)
@@ -550,6 +586,40 @@ function DayPage({
             <span className="row-label">{events.length > 0 ? 'Ещё ивент' : 'Создать ивент'}</span>
             <div className="row-right">{icons.chevron()}</div>
           </button>
+          {/* Отмечать, кто пришёл, можно только в день визита: будущего ещё не было, а
+              прошедший день - уже история. Вчерашний вечер открыт до утра: после полуночи
+              этот экран уже про новую дату, и отметить вечер иначе было бы неоткуда. */}
+          {isToday ? (
+            <>
+              <Sep left={54} />
+              <button type="button" className="row tappable" onClick={() => push('visits', { dateKey: day.dateKey })}>
+                <div className="row-icon" style={{ background: 'var(--green)' }}>
+                  {icons.check(17, '#fff', 2.4)}
+                </div>
+                <span className="row-label">Кто пришёл</span>
+                <div className="row-right">
+                  {cameToday > 0 ? <span className="count-muted">{String(cameToday)}</span> : null}
+                  {icons.chevron()}
+                </div>
+              </button>
+              {data!.visitGraceDay ? (
+                <>
+                  <Sep left={54} />
+                  <button
+                    type="button"
+                    className="row tappable"
+                    onClick={() => push('visits', { dateKey: data!.visitGraceDay })}
+                  >
+                    <div className="row-icon" style={{ background: 'var(--green)' }}>
+                      {icons.check(17, '#fff', 2.4)}
+                    </div>
+                    <span className="row-label">Кто пришёл вчера</span>
+                    <div className="row-right">{icons.chevron()}</div>
+                  </button>
+                </>
+              ) : null}
+            </>
+          ) : null}
         </div>
         {requests.length === 0 && events.length === 0 ? (
           <div className="card">
@@ -577,11 +647,11 @@ function DayPage({
           <div className="card">
             {others.length > 0 ? (
               <Collapse open={coming} delay={200}>
-                <AttendeeRow a={meRow} />
+                <AttendeeRow a={meRow} right={timeChip} />
                 <Sep left={66} />
               </Collapse>
             ) : coming ? (
-              <AttendeeRow a={meRow} />
+              <AttendeeRow a={meRow} right={timeChip} />
             ) : null}
             {others.map((a, i) => (
               <Fragment key={a.userId}>
@@ -991,46 +1061,9 @@ function DroppedDay({ dateKey }: { dateKey: string }) {
   )
 }
 
-/** День из архива недели: только чтение, заявки приезжают в параметрах экрана. */
-function ArchiveDay() {
-  const params = useParams()
-  const requests = (params.requests as HostingRequest[]) || []
-  const approved = requests.filter((r) => r.status === 'approved')
-  const pending = requests.filter((r) => r.status !== 'approved')
-  return (
-    <Screen>
-      <BackRow label="Неделя" />
-      <Header
-        title={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]}
-        subtitle={`${fmtDayMonth(params.dateKey)} · ${requestsWord(requests.length)}`}
-      />
-      <ReadonlyBadge />
-      {requests.length === 0 ? (
-        <div className="card">
-          <EmptyState title="Заявок не было" text="В этот день никто не собирался прийти." />
-        </div>
-      ) : null}
-      {approved.length > 0 ? (
-        <>
-          <SectionTitle>{`Одобрены · ${approved.length}`}</SectionTitle>
-          <RequestsCard list={approved} archive />
-        </>
-      ) : null}
-      {pending.length > 0 ? (
-        <>
-          <SectionTitle>{`Ждут ответа · ${pending.length}`}</SectionTitle>
-          <RequestsCard list={pending} archive />
-        </>
-      ) : null}
-      {requests.length > 0 ? <Footnote>Свайп по строке влево — заметка о госте.</Footnote> : null}
-    </Screen>
-  )
-}
-
 export function Day() {
   const params = useParams()
   const { data } = useStore()
-  if (params.archive) return <ArchiveDay />
   const index = data!.days.findIndex((d) => d.dateKey === params.dateKey)
   if (index < 0) return <DroppedDay dateKey={String(params.dateKey)} />
   return <DayPager days={data!.days} index={index} />

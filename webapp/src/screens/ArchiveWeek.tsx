@@ -58,8 +58,10 @@ export function ArchiveWeek() {
   } else {
     const all = data.flatMap((d) => d.requests)
     const approvedCount = all.filter((r) => r.status === 'approved').length
-    sub = `${requestsWord(all.length)} · ${approvedCount} одобрено`
-    const nonEmpty = data.filter((d) => d.requests.length > 0)
+    const came = all.filter((r) => r.visit?.status === 'came').length + data.reduce((n, d) => n + d.walkIns.length, 0)
+    sub = `${requestsWord(all.length)} · ${approvedCount} одобрено · пришли ${came}`
+    // День с одними гостями без заявки - тоже день архива: в спейсе кто-то был.
+    const nonEmpty = data.filter((d) => d.requests.length > 0 || d.walkIns.length > 0)
     if (nonEmpty.length === 0) {
       body = (
         <div className="card">
@@ -78,10 +80,12 @@ export function ArchiveWeek() {
                   total: d.requests.length,
                   approved: d.requests.filter((r) => r.status === 'approved').length,
                   requests: d.requests,
+                  // Пришедшие без заявки - лицами в строке, как отметки «я приду» в обзоре.
+                  attendees: d.walkIns.map((w) => ({ ...w.guest, resident: false, time: null })),
                 }}
                 tappable
                 alwaysApproved
-                onOpen={() => push('day', { dateKey: d.dateKey, archive: true, requests: d.requests })}
+                onOpen={() => push('visits', { dateKey: d.dateKey, preset: d })}
               />
             </Fragment>
           ))}

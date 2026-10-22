@@ -15,6 +15,8 @@ export type ScreenName =
   | 'archive'
   | 'archiveWeek'
   | 'guestVisits'
+  | 'visits'
+  | 'walkIn'
   | 'settings'
   | 'dues'
   | 'duesPerson'

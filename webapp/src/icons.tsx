@@ -263,9 +263,9 @@ export const icons = {
     </svg>
   ),
   /** Крестик («закрыть заявку») — без кружка, чтобы не путался с `ban`. */
-  xmark: (size: number, color: string): ReactElement => (
+  xmark: (size: number, color: string, width?: number): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 20 20">
-      <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke={color} strokeWidth={width || 1.9} strokeLinecap="round" />
     </svg>
   ),
   /** Дверь подъезда: строка домофона. */

@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { fmtShortDate, fmtWeekdayDate } from '../dates'
+import { fmtShortDate, fmtWeekdayDate, plural } from '../dates'
 import { icons } from '../icons'
 import { bump, push, startNewRequest, useStore } from '../store'
 import { sec } from '../theme'
@@ -91,17 +91,19 @@ function WriteAccessBanner() {
 
 /**
  * Прошедший визит: та же строка, но приглушённая и без статуса - это архив, а не
- * состояние, за которым надо следить. Отсюда серая галочка вместо зелёной.
+ * состояние, за которым надо следить. Отсюда серая галочка вместо зелёной. Неявку,
+ * отмеченную резидентом, гость видит: это его собственная история.
  */
 function PastVisitRow({ r }: { r: HostingRequest }) {
   const host = r.approvedBy
+  const missed = r.visit?.status === 'missed'
   return (
     <button type="button" className="row tappable" onClick={() => push('visit', { id: r.id })}>
-      <div className="status-square">{icons.check(20, sec(0.4))}</div>
+      <div className="status-square">{missed ? icons.xmark(15, sec(0.4)) : icons.check(20, sec(0.4))}</div>
       <div className="req-main">
         <div className="req-name past">{fmtWeekdayDate(r.dateKey)}</div>
         <div className="req-sub">
-          {`к ${r.time}` + (host ? ` · хостил ${userLabel(host)}` : '')}
+          {`к ${r.time}` + (missed ? ' · неявка' : host ? ` · хостил ${userLabel(host)}` : '')}
         </div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
@@ -126,6 +128,7 @@ export function MyVisits() {
   const { data } = useStore()
   const my = data!.myRequests
   const past = data!.myPast ?? []
+  const tally = data!.myVisits ?? { visits: 0, missed: 0 }
   const approved = my.filter((r) => r.status === 'approved')
   const pending = my.filter((r) => r.status !== 'approved')
 
@@ -153,10 +156,18 @@ export function MyVisits() {
           <VisitList list={pending} />
         </>
       ) : null}
-      {past.length > 0 ? (
+      {past.length > 0 || tally.visits > 0 ? (
         <>
           <SectionTitle>Были раньше</SectionTitle>
-          <VisitList list={past} past />
+          {past.length > 0 ? <VisitList list={past} past /> : null}
+          {/* В списке только последние визиты, а счёт - за всё время, вместе с визитами
+              без заявки, которые отметили резиденты. */}
+          {tally.visits > 0 ? (
+            <div className="visits-tally">
+              {`Вы были в спейсе ${tally.visits} ${plural(tally.visits, 'раз', 'раза', 'раз')}`}
+              {tally.missed > 0 ? `, неявок: ${tally.missed}` : ''}
+            </div>
+          ) : null}
         </>
       ) : null}
       <div className="card" style={{ marginTop: 22 }}>

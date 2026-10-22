@@ -3,18 +3,20 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { html, InputMedia, type TelegramClient } from '@mtcute/node'
+import { html, InputMedia, type TelegramClient, type User } from '@mtcute/node'
 import {
     acceptReschedule,
     acceptRules,
     acceptTransfer,
     addDaysToKey,
+    addWalkIn,
     archiveWeeks,
     ARRIVAL_COOLDOWN_MS,
     attendeesForDay,
     dayKeyOf,
     blockUser,
     buildVisitIcs,
+    cleanCloseComment,
     cleanName,
     clearReschedule,
     clearTransfer,
@@ -26,19 +28,27 @@ import {
     deleteHostingRequest,
     displayName,
     editHostingRequest,
+    guestProfile,
     guestVisitStats,
+    guestVisitTally,
     hasAcceptedRules,
     HOSTING_DAYS_AHEAD,
     isBlocked,
     isFakeUserId,
     isValidDayKey,
+    isVisitDayEditable,
     listBlockedUsers,
     listGuestNotes,
+    listKnownGuests,
+    markAllVisits,
     markArrived,
+    markVisit,
     MAX_AGENDA_LENGTH,
+    MAX_CLOSE_COMMENT_LENGTH,
     MAX_DAY_CAP,
     MAX_LOCK_REASON_LENGTH,
     MAX_NOTE_LENGTH,
+    MAX_WALK_IN_NAME_LENGTH,
     notifyArrival,
     nowTimeKey,
     notifyApproverCancelled,
@@ -59,6 +69,7 @@ import {
     setDaySubscription,
     offerTransfer,
     proposeReschedule,
+    removeWalkIn,
     requestsForDay,
     requestsOfGuest,
     searchGuests,
@@ -71,6 +82,11 @@ import {
     todayKey,
     unblockUser,
     updateHostingRequest,
+    VISIT_MARK_GRACE_UNTIL,
+    visitGraceDay,
+    visitOutcome,
+    walkInsForDay,
+    walkInsOfGuest,
     weekStartOf,
 } from './hosting.js'
 import { guestAttendPrefsFor } from './attend-alerts.js'
@@ -187,7 +203,7 @@ import {
     type AdminTargetKind,
 } from './resident-admin.js'
 import type { Storage } from './storage.js'
-import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent } from './types.js'
+import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent, WalkIn } from './types.js'
 import { own } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
@@ -365,6 +381,11 @@ const ARRIVAL_COOLDOWN_LABEL = `${ARRIVAL_COOLDOWN_MINUTES} ${plural(ARRIVAL_COO
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 
+/** Сколько ручка `close` ждёт DM гостю, прежде чем ответить «доставку не знаем». */
+const CLOSE_DM_WAIT_MS = 5000
+
+const VISIT_DAY_CLOSED = `Отмечать, кто пришёл, можно только в день визита и ночью после него, до ${VISIT_MARK_GRACE_UNTIL}.`
+
 /**
  * Полки лимитов вне `/api/*`. Ключ у всех, кроме `ip`/`board`/`authFail`, — userId из
  * подписанного initData: подпись живёт сутки, и это единственная устойчивая личность
@@ -434,6 +455,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'stats.days': 'read',
     'stats.day': 'read',
     'stats.person': 'read',
+    'visits.day': 'read',
     'dues.period': 'read',
     'dues.history': 'read',
     'dues.person': 'read',
@@ -470,6 +492,9 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.rate': 'write',
     'dues.settings': 'write',
     'dues.notify': 'write',
+    'visit.mark': 'write',
+    'visit.markAll': 'write',
+    'walkin.remove': 'write',
 
     create: 'dm',
     invite: 'dm',
@@ -506,6 +531,9 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'admin.grant': 'heavy',
     'admin.revoke': 'heavy',
     'admin.tag': 'heavy',
+    // Кандидаты сверяются с составом резидентов, а добавление по @нику идёт в Telegram.
+    'walkin.candidates': 'heavy',
+    'walkin.add': 'heavy',
 
     'announce.send': 'broadcast',
 }
@@ -728,14 +756,38 @@ const userView = <T extends { userId: number; name: string }>(u: T): T => {
 /** Сколько прошедших визитов гостя отдаём в «Были раньше»: это напоминание, а не журнал. */
 const MY_PAST_LIMIT = 3
 
+/** От каких дат считается исход визита (см. `visitOutcome`): день запуска отметок и сегодня. */
+type VisitDates = { since: string; today: string }
+
+const visitDates = (ctx: ApiContext): VisitDates => ({
+    since: ctx.storage.get().hostingVisitsSince,
+    today: todayKey(ctx.tzOffsetMinutes),
+})
+
+/**
+ * Исход визита для фронта. Кто и когда отметил - только резидентам: гость свой исход
+ * видит, а кто из резидентов его отметил, ему знать незачем.
+ */
+const visitView = (r: HostingRequest, dates: VisitDates, withAuthor: boolean) => ({
+    ...visitOutcome(r, dates.since, dates.today),
+    by: withAuthor && r.visit ? userView(r.visit.by) : null,
+    at: withAuthor && r.visit ? r.visit.at : null,
+})
+
 /**
  * Заявки для фронта. `viewerId` — кому мы их показываем: напоминание о визите это
  * личная настройка гостя, и в резидентских списках (дни, архив, карточка гостя) ему
- * делать нечего, поэтому поле едет только в своих заявках. `withTransfer` — наоборот,
- * поле для резидентских списков: передача хостинга гостя не касается.
+ * делать нечего, поэтому поле едет только в своих заявках. `forResidents` — наоборот,
+ * резидентские списки: передача хостинга гостя не касается, а исход визита в них идёт
+ * с автором отметки.
  */
-const requestsView = (list: HostingRequest[], viewerId?: number, withTransfer = false) =>
-    list.map((r) => ({
+const requestsView = (
+    list: HostingRequest[],
+    dates: VisitDates,
+    opts: { viewerId?: number; forResidents?: boolean } = {},
+) => {
+    const { viewerId, forResidents = false } = opts
+    return list.map((r) => ({
         id: r.id,
         dateKey: r.dateKey,
         time: r.time,
@@ -749,9 +801,66 @@ const requestsView = (list: HostingRequest[], viewerId?: number, withTransfer = 
         arrivedAt: r.arrivedAt ?? null,
         // Передача хостинга — внутренняя кухня резидентов: гостю незачем видеть, что
         // его визит пытаются передать. Поэтому поле едет только в резидентские списки.
-        ...(withTransfer && r.transfer ? { transfer: { ...r.transfer, to: userView(r.transfer.to), by: userView(r.transfer.by) } } : {}),
+        ...(forResidents && r.transfer ? { transfer: { ...r.transfer, to: userView(r.transfer.to), by: userView(r.transfer.by) } } : {}),
         ...(viewerId !== undefined && r.guest.userId === viewerId ? { remind: r.remind ?? null } : {}),
+        ...(forResidents || (viewerId !== undefined && r.guest.userId === viewerId)
+            ? { visit: visitView(r, dates, forResidents) }
+            : {}),
     }))
+}
+
+const walkInView = (w: WalkIn) => ({
+    id: w.id,
+    dateKey: w.dateKey,
+    guest: userView(w.guest),
+    by: userView(w.by),
+    at: w.at,
+})
+
+/**
+ * «Кто пришёл» за день: заявки с исходом визита и гости без заявки. Отдельной ручкой,
+ * а не только в bootstrap: прошедших дней в bootstrap нет, а отмечать их можно.
+ */
+const visitsDayView = (ctx: ApiContext, dateKey: string) => ({
+    dateKey,
+    editable: isVisitDayEditable(dateKey, ctx.tzOffsetMinutes),
+    requests: requestsView(requestsForDay(ctx.storage, dateKey), visitDates(ctx), { forResidents: true }),
+    walkIns: walkInsForDay(ctx.storage, dateKey).map(walkInView),
+})
+
+/**
+ * Кого можно добавить в день как пришедшего без заявки: принятые заявители ивентов
+ * этого дня (их визит - ивент, заявки на визит у них обычно нет, поэтому они первые
+ * кандидаты) и остальные известные боту гости. Без резидентов (их визиты видны по
+ * присутствию), без заблокированных и без тех, кто на этот день уже есть.
+ */
+const walkInCandidates = async (ctx: ApiContext, dateKey: string) => {
+    const { storage } = ctx
+    const s = storage.get()
+    const busy = new Set<number>([
+        ...requestsForDay(storage, dateKey).map((r) => r.guest.userId),
+        ...walkInsForDay(storage, dateKey).map((w) => w.guest.userId),
+    ])
+    const residentIds = await ctx.residents.listIds()
+    const keep = (u: HostingUser): boolean =>
+        u.userId > 0 && !busy.has(u.userId) && !residentIds.has(u.userId) && !isBlocked(storage, u.userId)
+    const eventIds = new Set(eventsForDay(storage, dateKey, true).map((e) => e.id))
+    const fromEvents = new Map<number, HostingUser>()
+    for (const a of Object.values(s.eventApplications)) {
+        if (a.status === 'approved' && eventIds.has(a.eventId) && keep(a.guest)) fromEvents.set(a.guest.userId, a.guest)
+    }
+    const byName = (a: HostingUser, b: HostingUser): number => a.name.localeCompare(b.name, 'ru')
+    return [
+        ...[...fromEvents.values()]
+            .map((u) => ({ ...u, name: displayName(u.name) }))
+            .sort(byName)
+            .map((u) => ({ ...u, fromEvent: true })),
+        ...listKnownGuests(storage)
+            .filter((u) => keep(u) && !fromEvents.has(u.userId))
+            .sort(byName)
+            .map((u) => ({ ...u, fromEvent: false })),
+    ]
+}
 
 /**
  * Стороны переговоров о переносе: кто предложил и кому.
@@ -1013,6 +1122,8 @@ const adminStatusPayload = async (
 const buildBootstrap = (ctx: ApiContext) => {
     const { storage, tzOffsetMinutes, user, resident } = ctx
     const today = todayKey(tzOffsetMinutes)
+    const dates = visitDates(ctx)
+    const myTally = guestVisitTally(storage, user.userId, today)
     const days = []
     for (let i = 0; i < HOSTING_DAYS_AHEAD; i++) {
         const dateKey = addDaysToKey(today, i)
@@ -1034,7 +1145,7 @@ const buildBootstrap = (ctx: ApiContext) => {
             approved: requests.filter((r) => r.status === 'approved').length,
             // Детали заявок видят резиденты и dev-аккаунты (последним они нужны для
             // дев-меню — правка и удаление). Гостям — только счётчики.
-            ...(resident || isDevUser(ctx) ? { requests: requestsView(requests, undefined, true) } : {}),
+            ...(resident || isDevUser(ctx) ? { requests: requestsView(requests, dates, { forResidents: true }) } : {}),
             // Мягкий лимит вместимости — резидентам: решение «брать или не брать» за
             // ними, а «осталось два места» у гостя превратило бы заявку в гонку.
             ...(resident
@@ -1048,6 +1159,8 @@ const buildBootstrap = (ctx: ApiContext) => {
                     },
                     // Подписан ли резидент на события этого дня — резидентская фича.
                     subscribed: isDaySubscribed(storage, dateKey, user.userId),
+                    // Пришедшие без заявки бывают только сегодня: будущего дня ещё не было.
+                    walkIns: walkInsForDay(storage, dateKey).map(walkInView),
                 }
                 : {}),
             // Публичный список «кто придёт» — виден всем.
@@ -1104,8 +1217,11 @@ const buildBootstrap = (ctx: ApiContext) => {
         // Ивенты дальше окна обзора: их день в `days` не попадает, а показать их надо —
         // и автору (иначе он не поправит собственный анонс), и всем остальным.
         laterEvents: eventsLater(storage, tzOffsetMinutes, resident).map((e) => eventView(e, ctx)),
-        myRequests: requestsView(myRequests, user.userId),
-        myPast: requestsView(myPast, user.userId),
+        myRequests: requestsView(myRequests, dates, { viewerId: user.userId }),
+        myPast: requestsView(myPast, dates, { viewerId: user.userId }),
+        // Свои визиты гость видит сам: сколько был и сколько раз не пришёл. «Без
+        // отметки» ему не отдаём: это про то, что резиденты забыли, а не про него.
+        myVisits: { visits: myTally.visits, missed: myTally.missed },
         settings,
         // Гостевая настройка, но едет всем: перспектива «гость» у дева читает этот же
         // bootstrap, а сервер про перспективу не знает.
@@ -1113,6 +1229,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         // Какой это по счёту визит человека - резидентская информация: она отвечает на
         // вопрос «кого я пускаю», а гостю чужая история визитов не полагается.
         ...(resident ? { guestStats: guestVisitStats(storage, today) } : {}),
+        // Вчерашний день, пока его ещё можно отметить: после полуночи экран дня уже про
+        // новую дату, и без отдельного входа отметить вечер было бы неоткуда, кроме архива.
+        ...(resident ? { visitGraceDay: visitGraceDay(tzOffsetMinutes) } : {}),
         // Заметки о гостях — общая память резидентов, гостю их не показываем (в т.ч.
         // заметку о нём самом). Отдаём разом все: их единицы, а строка заявки с иконкой
         // «есть заметка» встречается и в архиве, который грузится отдельным запросом.
@@ -1163,6 +1282,7 @@ const AUDITED = new Set([
     'propose', 'proposal.accept', 'proposal.decline',
     'transfer.offer', 'transfer.accept', 'transfer.decline',
     'day.lock', 'day.cap', 'day.agenda', 'block', 'unblock', 'note.set',
+    'visit.mark', 'visit.markAll', 'walkin.add', 'walkin.remove',
     'event.create', 'event.update', 'event.delete',
     'event.app.approve', 'event.app.decline',
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
@@ -1178,6 +1298,7 @@ type AuditBefore = {
     event: SpaceEvent | null
     application: EventApplication | null
     agenda: DayAgenda | null
+    walkIn: WalkIn | null
 }
 
 /**
@@ -1198,11 +1319,14 @@ const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
     // её до этого, знает только снимок.
     const dateKey = typeof ctx.body.dateKey === 'string' ? ctx.body.dateKey : ''
     const agenda = method === 'day.agenda' ? own(state.hostingDayAgenda, dateKey) : undefined
+    // `walkin.remove` стирает запись: кого убрали, знает только снимок.
+    const walkIn = own(state.hostingWalkIns, id)
     return {
         request: request ? { ...request } : null,
         event: event ? { ...event } : null,
         application: application ? { ...application } : null,
         agenda: agenda ? { ...agenda } : null,
+        walkIn: walkIn ? { ...walkIn } : null,
     }
 }
 
@@ -1247,8 +1371,9 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return `захостил${target} на ${reqSlot}`
         case 'unapprove':
             return `снял хостинг с${target} на ${reqSlot}`
+        // Сам комментарий не пишем: это сообщение гостю, то есть содержимое, а не действие.
         case 'close':
-            return `закрыл${target} на ${reqSlot}`
+            return `закрыл${target} на ${reqSlot}${strOf(body.comment).trim() ? ' (с комментарием)' : ''}`
         case 'propose': {
             const asked = slotOf(strOf(body.dateKey) || (req?.dateKey ?? ''), strOf(body.time))
             const now = own(storage.get().hostingRequests, id)
@@ -1308,6 +1433,26 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
             return `разблокировал ${idOf(body.userId)}`
         case 'note.set':
             return `${strOf(body.text).trim() ? 'изменил' : 'удалил'} заметку о ${idOf(body.userId)}`
+        case 'visit.mark': {
+            const what = body.came === true ? 'отметил, что пришёл' : body.came === false ? 'отметил неявку' : 'снял отметку визита'
+            // Перезаписанную чужую отметку видно только по снимку: после вызова в заявке уже своя.
+            const prev = req?.visit && req.visit.by.userId !== user.userId ? ` (была отметка ${whoOf(req.visit.by)})` : ''
+            return `${what}: ${req ? whoOf(req.guest) : id} на ${reqSlot}${prev}`
+        }
+        case 'visit.markAll':
+            return `отметил пришедшими всех подтверждённых гостей ${strOf(body.dateKey)}`
+        case 'walkin.add': {
+            const who = typeof body.userId === 'number'
+                ? idOf(body.userId)
+                : strOf(body.username).trim()
+                    ? `@${strOf(body.username).trim().replace(/^@/, '')}`
+                    : `«${strOf(body.name).trim()}» (без аккаунта)`
+            return `добавил гостя без заявки на ${strOf(body.dateKey)}: ${who}`
+        }
+        case 'walkin.remove': {
+            const w = before.walkIn
+            return w ? `убрал гостя без заявки ${whoOf(w.guest)} с ${w.dateKey}` : `убрал гостя без заявки ${id}`
+        }
         case 'event.create':
             return `завёл ивент «${strOf(body.title)}» на ${slotOf(strOf(body.dateKey), strOf(body.time))}`
         case 'event.update': {
@@ -1464,7 +1609,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             void notifyResidentsAboutRequest(client, storage, residents, tzOffsetMinutes, config.publicUrl, created.request)
                 .catch((err) => console.error('[hosting] не удалось разослать уведомления о заявке:', err))
             syncBoard()
-            sendJson(res, 200, { request: requestsView([created.request], user.userId)[0], ...buildBootstrap(ctx) })
+            sendJson(res, 200, { request: requestsView([created.request], visitDates(ctx), { viewerId: user.userId })[0], ...buildBootstrap(ctx) })
             return
         }
 
@@ -1521,7 +1666,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 void notify.catch((err) => console.error('[hosting] не удалось уведомить резидента о правке заявки:', err))
             }
             syncBoard()
-            sendJson(res, 200, { request: requestsView([edited.request], user.userId)[0], ...buildBootstrap(ctx) })
+            sendJson(res, 200, { request: requestsView([edited.request], visitDates(ctx), { viewerId: user.userId })[0], ...buildBootstrap(ctx) })
             return
         }
 
@@ -1550,19 +1695,26 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
-        // Резидент отмечает «я приду» / снимает отметку на день (без заявки).
+        // Резидент отмечает «я приду» / снимает отметку на день (без заявки). Время
+        // необязательно: не пришло - остаётся прежнее, null - снять.
         case 'attend': {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const coming = body.coming === true
-            const result = await setResidentAttendance(storage, tzOffsetMinutes, dateKey, user, coming)
+            const time = body.time === null ? null : typeof body.time === 'string' ? body.time : undefined
+            const result = await setResidentAttendance(storage, tzOffsetMinutes, dateKey, user, coming, time)
             if (!result.ok) {
-                sendError(res, 400, result.error, 'Выберите день в пределах ближайшей недели.')
+                const messages = {
+                    bad_date: 'Выберите день в пределах ближайшей недели.',
+                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
+                    past_time: 'Это время уже прошло, выберите позже.',
+                } as const
+                sendError(res, 400, result.error, messages[result.error])
                 return
             }
-            // Только на реальный приход (не на повторный тап и не на снятие отметки).
+            // Только на реальный приход (не на повторный тап, не на смену времени и не на снятие отметки).
             if (coming && result.changed) {
-                void notifySubsAttending(client, storage, config.publicUrl, dateKey, user)
+                void notifySubsAttending(client, storage, config.publicUrl, dateKey, user, typeof time === 'string' ? time : null)
                     .catch((err) => console.error('[hosting] не удалось уведомить подписчиков дня:', err))
             }
             syncBoard()
@@ -1828,6 +1980,17 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_yours', 'Отменить можно только свою заявку.')
                 return
             }
+            // Отмена удаляет заявку, а вместе с ней и историю визита. Прошедший визит и
+            // визит, который резидент уже отметил, - история: иначе неявку стирали бы
+            // отменой задним числом.
+            if (request.dateKey < todayKey(tzOffsetMinutes)) {
+                sendError(res, 409, 'past', 'Визит уже прошёл, отменять нечего.')
+                return
+            }
+            if (request.visit) {
+                sendError(res, 409, 'visit_marked', 'Резидент уже отметил этот визит, отменить его нельзя.')
+                return
+            }
             await storage.update((s) => {
                 delete s.hostingRequests[request.id]
             })
@@ -2072,11 +2235,35 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_allowed', 'Этот визит ведёт другой резидент — закрыть может только он.')
                 return
             }
+            // Закрытие удаляет заявку, поэтому прошедший или уже отмеченный визит не
+            // закрывается: это история, а не планы (тот же довод, что у отмены гостем).
+            if (request.dateKey < todayKey(tzOffsetMinutes)) {
+                sendError(res, 409, 'past', 'Визит уже прошёл, закрывать нечего.')
+                return
+            }
+            if (request.visit) {
+                sendError(res, 409, 'visit_marked', 'Визит уже отмечен, закрывать его поздно.')
+                return
+            }
+            const raw = typeof body.comment === 'string' ? body.comment : ''
+            if (raw.length > MAX_CLOSE_COMMENT_LENGTH) {
+                sendError(res, 400, 'too_long', `Комментарий не длиннее ${MAX_CLOSE_COMMENT_LENGTH} символов.`)
+                return
+            }
             await deleteHostingRequest(storage, request.id)
-            void notifyGuestClosed(client, config.publicUrl, request, user)
-                .catch((err) => console.error('[hosting] не удалось уведомить гостя о закрытии заявки:', err))
             syncBoard()
-            sendJson(res, 200, buildBootstrap(ctx))
+            // DM здесь ждём, а не пускаем в фон: комментарий - это то, ради чего резидент
+            // и писал, и про закрытую личку гостя он должен узнать сразу, а не никогда.
+            // Telegram может задержать отправку надолго (FLOOD_WAIT), поэтому ждём не
+            // дольше CLOSE_DM_WAIT_MS: дальше ответ «не знаем», а отправка доедет сама.
+            const delivered = await Promise.race([
+                notifyGuestClosed(client, config.publicUrl, request, user, cleanCloseComment(raw)).catch((err) => {
+                    console.error('[hosting] не удалось уведомить гостя о закрытии заявки:', err)
+                    return false
+                }),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), CLOSE_DM_WAIT_MS).unref()),
+            ])
+            sendJson(res, 200, { delivered, ...buildBootstrap(ctx) })
             return
         }
 
@@ -2992,21 +3179,166 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const query = typeof body.query === 'string' ? body.query : ''
             sendJson(res, 200, {
-                guests: searchGuests(storage, query).map((g) => ({ ...g, user: userView(g.user) })),
+                guests: searchGuests(storage, query, todayKey(tzOffsetMinutes)).map((g) => ({ ...g, user: userView(g.user) })),
             })
             return
         }
 
+        // Профиль гостя: сводка визитов, кто хостил, ивенты и вся история - заявки и
+        // визиты без заявки. Работает и для того, кто заявок не оставлял ни разу.
         case 'guest.requests': {
             if (!requireResident()) return
             const userId = typeof body.userId === 'number' ? body.userId : 0
-            const requests = requestsOfGuest(storage, userId)
-            const guest = requests[0]?.guest
-            if (!guest) {
-                sendError(res, 404, 'not_found', 'Заявок этого человека уже нет.')
+            const profile = userId > 0 || isFakeUserId(userId) ? guestProfile(storage, userId, todayKey(tzOffsetMinutes)) : null
+            if (!profile) {
+                sendError(res, 404, 'not_found', 'Об этом человеке записей уже нет.')
                 return
             }
-            sendJson(res, 200, { user: userView(guest), requests: requestsView(requests, undefined, true) })
+            sendJson(res, 200, {
+                user: userView(profile.user),
+                requests: requestsView(requestsOfGuest(storage, userId), visitDates(ctx), { forResidents: true }),
+                walkIns: walkInsOfGuest(storage, userId).map(walkInView),
+                profile: {
+                    ...profile,
+                    user: userView(profile.user),
+                    hosts: profile.hosts.map((h) => ({ user: userView(h.user), count: h.count })),
+                },
+            })
+            return
+        }
+
+        // --- Кто пришёл ------------------------------------------------------
+        // Отмечает любой резидент: дверь открывает тот, кто внутри, а не обязательно
+        // хост. Гостю ничего не уходит: это учёт, а не разговор с ним.
+
+        case 'visits.day': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            if (!isValidDayKey(dateKey) || dateKey > todayKey(tzOffsetMinutes)) {
+                sendError(res, 400, 'bad_date', 'Кто пришёл, видно только за сегодня и прошедшие дни.')
+                return
+            }
+            sendJson(res, 200, visitsDayView(ctx, dateKey))
+            return
+        }
+
+        case 'visit.mark': {
+            if (!requireResident()) return
+            const id = typeof body.id === 'string' ? body.id : ''
+            const came = body.came === true ? true : body.came === false ? false : body.came === null ? null : undefined
+            if (came === undefined) {
+                sendError(res, 400, 'bad_mark', 'Не понял отметку.')
+                return
+            }
+            const marked = await markVisit(storage, tzOffsetMinutes, id, came, user)
+            if (!marked.ok) {
+                const messages = {
+                    not_found: [404, 'Заявка не найдена, возможно, её уже отменили.'],
+                    bad_day: [400, VISIT_DAY_CLOSED],
+                    not_approved: [409, 'Неявку отмечают только у подтверждённого визита: эту заявку никто не брал.'],
+                    too_early: [409, 'Визит ещё не начался: неявку можно отметить после его времени.'],
+                } as const
+                const [status, message] = messages[marked.error]
+                sendError(res, status, marked.error, message)
+                return
+            }
+            sendJson(res, 200, { ...buildBootstrap(ctx), visitsDay: visitsDayView(ctx, marked.request.dateKey) })
+            return
+        }
+
+        case 'visit.markAll': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            const marked = await markAllVisits(storage, tzOffsetMinutes, dateKey, user)
+            if (!marked.ok) {
+                sendError(res, 400, marked.error, VISIT_DAY_CLOSED)
+                return
+            }
+            sendJson(res, 200, { ...buildBootstrap(ctx), visitsDay: visitsDayView(ctx, dateKey) })
+            return
+        }
+
+        case 'walkin.candidates': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            if (!isVisitDayEditable(dateKey, tzOffsetMinutes)) {
+                sendError(res, 400, 'bad_day', VISIT_DAY_CLOSED)
+                return
+            }
+            const people = await walkInCandidates(ctx, dateKey)
+            sendJson(res, 200, { people: people.map((p) => ({ ...userView(p), fromEvent: p.fromEvent })) })
+            return
+        }
+
+        // Пришёл без заявки: человек из списка кандидатов (`userId`), любой по @нику
+        // (`username`, ищем в Telegram) или просто имя (`name`), если аккаунта не знаем.
+        case 'walkin.add': {
+            if (!requireResident()) return
+            const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+            let guest: HostingUser
+            if (typeof body.userId === 'number') {
+                const found = (await walkInCandidates(ctx, dateKey)).find((p) => p.userId === body.userId)
+                if (!found) {
+                    sendError(res, 404, 'not_found', 'Этого человека больше нет в списке, обновите экран.')
+                    return
+                }
+                guest = { userId: found.userId, username: found.username, name: found.name }
+            } else if (typeof body.username === 'string') {
+                const username = body.username.trim().replace(/^@/, '')
+                if (!/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(username)) {
+                    sendError(res, 400, 'bad_username', 'Ник: от 4 до 32 латинских букв, цифр и _.')
+                    return
+                }
+                let found: User | null = null
+                try {
+                    found = (await client.getUsers(username))[0] ?? null
+                } catch {
+                    // ник не занят или не разбирается: для резидента это одно «не нашёл»
+                }
+                if (!found || found.isBot) {
+                    sendError(res, 404, 'no_user', `Не нашёл @${username} в Telegram.`)
+                    return
+                }
+                if (await residents.isResident(found.id)) {
+                    sendError(res, 400, 'resident', 'Это резидент: его визиты видны по отметкам присутствия.')
+                    return
+                }
+                guest = { userId: found.id, username: found.username, name: cleanName(found.displayName) || found.username || String(found.id) }
+            } else {
+                const name = typeof body.name === 'string' ? cleanName(body.name) : ''
+                if (name.length > MAX_WALK_IN_NAME_LENGTH) {
+                    sendError(res, 400, 'too_long', `Имя не длиннее ${MAX_WALK_IN_NAME_LENGTH} символов.`)
+                    return
+                }
+                guest = { userId: 0, username: null, name }
+            }
+            const added = await addWalkIn(storage, tzOffsetMinutes, dateKey, guest, user)
+            if (!added.ok) {
+                const messages = {
+                    bad_day: [400, VISIT_DAY_CLOSED],
+                    bad_name: [400, 'Впишите имя.'],
+                    has_request: [409, 'У него есть заявка на этот день: отметьте её в списке.'],
+                    duplicate: [409, 'Он уже в списке этого дня.'],
+                    blocked: [403, 'Этот участник заблокирован.'],
+                } as const
+                const [status, message] = messages[added.error]
+                sendError(res, status, added.error, message)
+                return
+            }
+            sendJson(res, 200, { ...buildBootstrap(ctx), visitsDay: visitsDayView(ctx, dateKey) })
+            return
+        }
+
+        case 'walkin.remove': {
+            if (!requireResident()) return
+            const removed = await removeWalkIn(storage, tzOffsetMinutes, typeof body.id === 'string' ? body.id : '')
+            if (!removed.ok) {
+                sendError(res, removed.error === 'not_found' ? 404 : 400, removed.error, removed.error === 'not_found'
+                    ? 'Этой записи уже нет, обновите экран.'
+                    : VISIT_DAY_CLOSED)
+                return
+            }
+            sendJson(res, 200, { ...buildBootstrap(ctx), visitsDay: visitsDayView(ctx, removed.walkIn.dateKey) })
             return
         }
 
@@ -3021,7 +3353,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const days = []
             for (let i = 0; i < 7; i++) {
                 const dateKey = addDaysToKey(weekStart, i)
-                days.push({ dateKey, requests: requestsView(requestsForDay(storage, dateKey), undefined, true) })
+                // Та же форма, что у `visits.day`: день из недели открывается «Кто пришёл»
+                // сразу, не дожидаясь своего запроса.
+                days.push(visitsDayView(ctx, dateKey))
             }
             sendJson(res, 200, { weekStart, days })
             return
