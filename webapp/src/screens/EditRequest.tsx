@@ -1,24 +1,25 @@
 import { useEffect, useState } from 'react'
 import { action } from '../api'
 import { showAlert } from '../modals'
+import { markOwnTap } from '../motion'
 import { pop, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { ReminderChoice } from '../types'
-import { BackRow, BottomBar, Header, SectionTitle, Sep } from '../components/common'
+import { ActionButton, BackRow, BottomBar, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { Crossfade } from '../components/Crossfade'
 import {
-  AnonRow,
   DayChips,
   DayChipsLegend,
   SelectedDayInfo,
   firstOpenDay,
   isPastForToday,
   PurposeInput,
-  RemindCard,
   reminderFor,
   useDayTime,
 } from '../components/forms'
 import { Screen } from '../components/Screen'
 import { TimeField } from '../components/TimeField'
+import { useRemind } from './NewRequest'
 
 export function EditRequest() {
   const params = useParams()
@@ -31,6 +32,10 @@ export function EditRequest() {
   const [purpose, setPurpose] = useState(r ? r.purpose : '')
   const [anon, setAnon] = useState(r ? r.anon : false)
   const [remind, setRemind] = useState<ReminderChoice | null>(r?.remind?.choice ?? null)
+  // Отправленное напоминание сервер снимает вместе со сменой слота, поэтому «уже
+  // отправлено» держится, только пока день и время прежние.
+  const sent = Boolean(r?.remind?.sentAt) && day === r?.dateKey && time === r?.time
+  const remindUi = useRemind(day, time, remind, setRemind, sent)
 
   useEffect(() => {
     if (!r) pop()
@@ -46,14 +51,20 @@ export function EditRequest() {
       showAlert('Это время уже прошло — выберите время позже текущего.')
       return
     }
-    const done = await action('edit', {
-      id: r.id,
-      dateKey: day,
-      time,
-      purpose,
-      anon,
-      remind: reminderFor(day, time, remind),
-    })
+    haptic.impact('medium')
+    markOwnTap()
+    const done = await action(
+      'edit',
+      {
+        id: r.id,
+        dateKey: day,
+        time,
+        purpose,
+        anon,
+        remind: reminderFor(day, time, remind),
+      },
+      { quiet: true },
+    )
     if (done) {
       haptic.notify('success')
       pop()
@@ -65,28 +76,43 @@ export function EditRequest() {
       <BackRow />
       <Header title="Изменить заявку" />
       <SectionTitle>День</SectionTitle>
-      <DayChips days={days} selected={day} onSelect={selectDay} />
-      <SelectedDayInfo days={days} selected={day} />
+      <DayChips
+        days={days}
+        selected={day}
+        onSelect={(k) => {
+          markOwnTap()
+          selectDay(k)
+        }}
+      />
+      <Crossfade id={day}>
+        <SelectedDayInfo days={days} selected={day} />
+      </Crossfade>
       <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
-      <div className="card">
-        <div className="row" style={{ padding: '6px 14px' }}>
-          <span style={{ fontSize: 16 }}>Приду к</span>
-          <TimeField value={time} min={min} onChange={onTimeChange} />
+      <div className="nt-host" ref={remindUi.hostRef}>
+        <div className="card">
+          <div className="row" style={{ padding: '6px 14px' }}>
+            <span style={{ fontSize: 16 }}>Приду к</span>
+            <TimeField value={time} min={min} onChange={onTimeChange} />
+          </div>
+          <Sep left={14} />
+          {remindUi.row}
+          <Sep left={14} />
+          <div className="row">
+            <span className="row-label">Не показывать другим гостям</span>
+            <Switch on={anon} onToggle={() => setAnon(!anon)} label="Не показывать другим гостям" />
+          </div>
+          <Sep left={14} />
+          <div className="kv-block">
+            <PurposeInput value={purpose} onChange={setPurpose} />
+          </div>
         </div>
-        <Sep left={14} />
-        <div className="kv-block">
-          <PurposeInput value={purpose} onChange={setPurpose} />
-        </div>
+        {remindUi.items}
       </div>
-      <div style={{ height: 8 }} />
-      <RemindCard dateKey={day} time={time} choice={remind} onChange={setRemind} sentAt={r.remind?.sentAt} />
-      <div style={{ height: 8 }} />
-      <AnonRow anon={anon} onChange={setAnon} />
       <BottomBar>
-        <button className="primary-btn" onClick={submit}>
+        <ActionButton className="primary-btn" onClick={submit}>
           Сохранить
-        </button>
+        </ActionButton>
       </BottomBar>
     </Screen>
   )

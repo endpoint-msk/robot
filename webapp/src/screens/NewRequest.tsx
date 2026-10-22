@@ -33,18 +33,30 @@ type RemindValue = ReminderChoice | 'off'
  * когда напишет бот, под названием. Тумблер и пять чипов говорили то же самое. Меню
  * лежит над карточкой, а не в ней: карточка обрезает всё, что выходит за её край.
  */
-function useRemind(dateKey: string, time: string, choice: ReminderChoice | null, onChange: (c: ReminderChoice | null) => void) {
+export function useRemind(
+  dateKey: string,
+  time: string,
+  choice: ReminderChoice | null,
+  onChange: (c: ReminderChoice | null) => void,
+  sent = false,
+) {
   const menu = useRowMenu<'remind'>()
   const available = REMINDER_ORDER.filter((c) => reminderAvailable(dateKey, time, c))
   // Срок мог перестать успевать, когда гость сдвинул слот: тогда на сервер уйдёт null.
-  const active = choice !== null && available.includes(choice) ? choice : null
+  const active = !sent && choice !== null && available.includes(choice) ? choice : null
   const none = available.length === 0
   const row = (
     <div className="row">
       <span className="row-label">
         Напомнить
         <span className="row-sublabel">
-          {none ? 'До визита слишком мало времени' : active ? `Бот напишет ${reminderWhen(dateKey, time, active)}` : 'Бот напишет в личку перед визитом'}
+          {sent
+            ? 'Напоминание уже отправлено'
+            : none
+              ? 'До визита слишком мало времени'
+              : active
+                ? `Бот напишет ${reminderWhen(dateKey, time, active)}`
+                : 'Бот напишет в личку перед визитом'}
         </span>
       </span>
       <button
@@ -52,7 +64,7 @@ function useRemind(dateKey: string, time: string, choice: ReminderChoice | null,
         className="ob-popup"
         aria-haspopup="menu"
         aria-expanded={menu.openFor === 'remind'}
-        disabled={none}
+        disabled={none || sent}
         onClick={(e) => menu.open('remind', e.currentTarget)}
       >
         {active ? REMINDER_LABELS[active] : 'Нет'}
