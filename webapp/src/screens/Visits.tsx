@@ -143,7 +143,7 @@ export function Visits() {
   const dateKey = params.dateKey as string
   const todayKey = data!.todayKey
   const isToday = dateKey === todayKey
-  // Вчерашний вечер, который ещё можно отметить: открыт с экрана сегодняшнего дня.
+  // Вчерашний вечер, который ещё можно отметить: открыт из архива недели.
   const isGrace = dateKey === data!.visitGraceDay
   const me: User = { userId: data!.me.id, name: data!.me.name, username: data!.me.username }
   const nowMin = useNowMin()

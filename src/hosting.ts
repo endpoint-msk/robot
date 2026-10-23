@@ -590,6 +590,10 @@ export const archiveWeeks = (
         const week = weekStartOf(w.dateKey)
         if (week <= currentWeek && !byWeek.has(week)) byWeek.set(week, { total: 0, approved: 0 })
     }
+    // Вчерашний вечер до утра отмечают из архива, в том числе гостей без заявки в день,
+    // на который заявок не было: его неделя нужна в списке и пустой.
+    const grace = visitGraceDay(tzOffsetMinutes)
+    if (grace && !byWeek.has(weekStartOf(grace))) byWeek.set(weekStartOf(grace), { total: 0, approved: 0 })
     return [...byWeek.entries()]
         .map(([weekStart, agg]) => ({ weekStart, ...agg }))
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart))

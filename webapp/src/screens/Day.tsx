@@ -588,8 +588,7 @@ function DayPage({
             <div className="row-right">{icons.chevron()}</div>
           </button>
           {/* Отмечать, кто пришёл, можно только в день визита: будущего ещё не было, а
-              прошедший день - уже история. Вчерашний вечер открыт до утра: после полуночи
-              этот экран уже про новую дату, и отметить вечер иначе было бы неоткуда. */}
+              прошедший день - уже история. Вчерашний вечер до утра отмечают из архива. */}
           {isToday ? (
             <>
               <Sep left={54} />
@@ -603,22 +602,6 @@ function DayPage({
                   {icons.chevron()}
                 </div>
               </button>
-              {data!.visitGraceDay ? (
-                <>
-                  <Sep left={54} />
-                  <button
-                    type="button"
-                    className="row tappable"
-                    onClick={() => push('visits', { dateKey: data!.visitGraceDay })}
-                  >
-                    <div className="row-icon" style={{ background: 'var(--green)' }}>
-                      {icons.check(17, '#fff', 2.4)}
-                    </div>
-                    <span className="row-label">Кто пришёл вчера</span>
-                    <div className="row-right">{icons.chevron()}</div>
-                  </button>
-                </>
-              ) : null}
             </>
           ) : null}
         </div>

@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { api } from '../api'
 import { addDays, fmtRange, requestsWord } from '../dates'
 import { useRemote } from '../remote'
-import { push, useParams } from '../store'
+import { push, useParams, useStore } from '../store'
 import type { ArchiveWeekResponse } from '../types'
 import { BackRow, EmptyState, ErrorState, ReadonlyBadge, Sep } from '../components/common'
 import { DayRow } from '../components/DayRow'
@@ -44,6 +44,12 @@ export function ArchiveWeek() {
   const params = useParams()
   const weekStart = params.weekStart as string
   const weekEnd = addDays(weekStart, 6)
+  const boot = useStore().data!
+  // Вчерашний вечер до утра отмечают отсюда, в том числе гостей без заявки в день, на
+  // который заявок не было: такой день стоит в списке и пустым. Неделя с ним или с
+  // сегодняшним днём правится, и «только просмотр» над ней был бы неправдой.
+  const grace = boot.visitGraceDay ?? null
+  const live = [boot.todayKey, grace].some((k) => k !== null && k >= weekStart && k <= weekEnd)
   const { data, error, pending, reload } = useRemote(
     async () => (await api<ArchiveWeekResponse>('archive.week', { weekStart })).days,
     [weekStart],
@@ -61,7 +67,7 @@ export function ArchiveWeek() {
     const came = all.filter((r) => r.visit?.status === 'came').length + data.reduce((n, d) => n + d.walkIns.length, 0)
     sub = `${requestsWord(all.length)} · ${approvedCount} одобрено · пришли ${came}`
     // День с одними гостями без заявки - тоже день архива: в спейсе кто-то был.
-    const nonEmpty = data.filter((d) => d.requests.length > 0 || d.walkIns.length > 0)
+    const nonEmpty = data.filter((d) => d.requests.length > 0 || d.walkIns.length > 0 || d.dateKey === grace)
     if (nonEmpty.length === 0) {
       body = (
         <div className="card">
@@ -101,7 +107,7 @@ export function ArchiveWeek() {
         <div className="title">{fmtRange(weekStart, weekEnd)}</div>
         <div className="subtitle">{sub}</div>
       </div>
-      <ReadonlyBadge />
+      {live ? null : <ReadonlyBadge />}
       <Swap loading={!data && !error} skeleton={pending ? <WeekSkeleton /> : null}>
         {body}
       </Swap>
