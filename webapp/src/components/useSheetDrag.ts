@@ -24,6 +24,9 @@ export function useSheetDrag(
     const vt = tracker()
     let drag: { id: number; x0: number; y0: number; on: boolean } | null = null
     let y = 0
+    // Высота снимается на касании: замер после записи transform заставил бы браузер
+    // пересчитывать стили на каждом кадре жеста и пружины.
+    let h = 1
     let settle: { stop: () => void } | null = null
 
     const set = (v: number): void => {
@@ -31,12 +34,19 @@ export function useSheetDrag(
       sheet.style.transition = 'none'
       sheet.style.transform = `translateY(${v.toFixed(1)}px)`
       const o = overlayRef.current
-      if (o) o.style.opacity = String(Math.max(0, Math.min(1, 1 - Math.max(v, 0) / (sheet.offsetHeight || 1))))
+      if (o) {
+        // Иначе каждая запись запускает CSS-переход заново, и затемнение отстаёт от пальца.
+        o.style.transition = 'none'
+        o.style.opacity = String(Math.max(0, Math.min(1, 1 - Math.max(v, 0) / h)))
+      }
     }
     const reset = (): void => {
       sheet.style.transition = ''
       sheet.style.transform = ''
-      if (overlayRef.current) overlayRef.current.style.opacity = ''
+      if (overlayRef.current) {
+        overlayRef.current.style.transition = ''
+        overlayRef.current.style.opacity = ''
+      }
     }
 
     const scrolledInside = (t: Element | null): boolean => {
@@ -50,6 +60,7 @@ export function useSheetDrag(
       if (handle ? !t.closest(handle) : scrolledInside(t)) return
       if (t.closest('input, textarea')) return
       settle?.stop()
+      h = sheet.offsetHeight || 1
       drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY - y, on: false }
       vt.start(e.clientY, e.timeStamp)
     }
@@ -80,7 +91,6 @@ export function useSheetDrag(
       drag = null
       if (!d.on) return
       const v = vt.release(e.timeStamp)
-      const h = sheet.offsetHeight
       if (y + project(v, 0.99) > h / 2 || v > 1000) {
         settle = spring(y, h, Math.max(v, 0), BACK, set, dismiss, 1)
       } else {

@@ -196,7 +196,7 @@ export function Route() {
             </div>
           </div>
         </button>
-        <div className="sep" style={{ marginLeft: 60 }} />
+        <div className="sep" style={{ marginLeft: 58 }} />
         <div className="route-metro">
           <div className="route-label">Метро</div>
           <div className="route-metro-list">
@@ -230,7 +230,7 @@ export function Route() {
         </button>
       </div>
 
-      <Footnote>По прибытию свяжитесь с резидентом, который вас хостит, или нажмите кнопку «Я на месте».</Footnote>
+      <Footnote>По прибытии свяжитесь с резидентом, который вас хостит, или нажмите кнопку «Я на месте».</Footnote>
     </Screen>
   )
 }

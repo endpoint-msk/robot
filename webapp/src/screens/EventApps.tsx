@@ -157,7 +157,7 @@ export function EventApps() {
   return (
     <Screen>
       <BackRow />
-      <Header title="Заявки на ивент" subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в ${event.time}`} />
+      <Header title="Заявки на ивент" subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в\u00a0${event.time}`} />
       <Swap loading={loading && !data} skeleton={pending ? <SkRows count={3} avatar tail /> : null}>
         {body}
       </Swap>

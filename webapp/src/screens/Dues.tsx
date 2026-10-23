@@ -13,7 +13,7 @@ import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { DuesRow, DuesSnapshot, DuesStatus } from '../types'
-import { BackRow, EmptyState, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
 import { Collapse } from '../components/Collapse'
 import { Flip } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
@@ -118,7 +118,7 @@ function Verdict({ row, mark, done }: { row: DuesRow; mark: Mark; done: boolean 
   }
   return (
     <div className="dues-verdict">
-      <button className="small-btn" style={{ background: 'var(--green)', color: '#fff' }} onClick={() => mark(row, 'paid')}>
+      <button className="small-btn green" onClick={() => mark(row, 'paid')}>
         Подтвердить
       </button>
       <button className="small-btn gray" onClick={() => mark(row, 'none')}>
@@ -159,7 +159,7 @@ function DuesSection({
         {`${title} · `}
         <Flip value={live} />
       </SectionTitle>
-      <div className="card">
+      <div className="card dues-list">
         {items.map((x, i) => (
           <Collapse key={x.row.userId} open={!x.leaving} appear={x.entering}>
             {i > 0 ? <Sep left={verdicts || x.row.status !== 'none' ? 46 : 64} /> : null}
@@ -302,7 +302,9 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
         <span className="df-sum">{money(collected, snap.currency)}</span>
       </div>
       <div className="dues-bar">
-        <i style={{ width: `${pct(paid)}%` }} />
+        {/* Пустой сегмент не рисуем: зазор между сегментами иначе отодвигал бы
+            заявленные от начала полосы, пока не подтверждён ни один. */}
+        {paid > 0 ? <i style={{ width: `${pct(paid)}%` }} /> : null}
         {claimed > 0 ? <i className="claimed" style={{ width: `${pct(claimed)}%` }} /> : null}
       </div>
       {/* Подписи сегментов, а не только их цвет: зелёный и оранжевый под протанопией
@@ -531,7 +533,6 @@ export function DuesScreen() {
           ) : null}
         </div>
       ) : null}
-      {snap.canEdit ? null : <Footnote>Чужие строки только на чтение: подтверждает dev. Свой взнос отмечается кнопкой выше.</Footnote>}
     </>,
   )
 }

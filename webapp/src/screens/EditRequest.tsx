@@ -80,6 +80,7 @@ export function EditRequest() {
         days={days}
         selected={day}
         onSelect={(k) => {
+          if (k !== day) haptic.tick()
           markOwnTap()
           selectDay(k)
         }}

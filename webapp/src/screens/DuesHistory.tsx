@@ -112,7 +112,7 @@ export function DuesHistory() {
                         и оранжевый там означал бы «тревога» на ровном месте. */}
                     <i className={i > 0 && pct < 100 ? 'low' : undefined} style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="dues-amount">{money(p.collected, data.currency)}</span>
+                  <span className="dues-amount period-sum">{money(p.collected, data.currency)}</span>
                   {icons.chevron()}
                 </div>
               </button>

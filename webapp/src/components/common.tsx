@@ -9,6 +9,7 @@ import { icons } from '../icons'
 import { pop, push, setPerspective, useStore } from '../store'
 import { haptic, nativeBack } from '../telegram'
 import { screenTitle } from '../titles'
+import { AnimContext } from './Screen'
 
 export function Sep({ left }: { left?: number }) {
   return <div className="sep" style={left !== undefined ? { marginLeft: left } : undefined} />
@@ -222,8 +223,11 @@ export function ActionButton({
 
 export function BottomBar({ children }: { children: ReactNode }) {
   const node = useContext(BarContext)
+  // Панель живёт вне .screen и без класса перехода стояла бы целиком, пока экран над
+  // ней ещё прозрачный.
+  const anim = useContext(AnimContext)
   if (!node) return null
-  return createPortal(<div className="bottom-bar">{children}</div>, node)
+  return createPortal(<div className={'bottom-bar' + (anim ? ' ' + anim : '')}>{children}</div>, node)
 }
 
 /** Дев-панель в шапке: переключатель перспективы «резидент ↔ гость» + вход в dev-меню.

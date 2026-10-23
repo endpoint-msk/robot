@@ -80,8 +80,8 @@ async function closeRequest(r: HostingRequest): Promise<void> {
   const approved = r.status === 'approved'
   const comment = await textPrompt({
     text: approved
-      ? `Закрыть подтверждённый визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`
-      : `Закрыть заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`,
+      ? `Закрыть подтверждённый визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`
+      : `Закрыть заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`,
     placeholder: 'Комментарий для гостя',
     hint: 'Необязательно. Уйдёт гостю вместе с уведомлением.',
     maxLength: 500,
@@ -122,8 +122,8 @@ async function hostMenu(r: HostingRequest): Promise<void> {
   const pending = r.transfer ?? null
   const choice = await choiceDialog(
     pending
-      ? `Ждём ответа ${userLabel(pending.to)} по визиту ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}.`
-      : `Визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time} на вас.`,
+      ? `Ждём ответа ${userLabel(pending.to)} по визиту ${r.guest.name} ${fmtShortDate(r.dateKey)} к\u00a0${r.time}.`
+      : `Визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к\u00a0${r.time} на вас.`,
     [
       pending
         ? { key: 'withdraw', label: 'Отозвать передачу' }

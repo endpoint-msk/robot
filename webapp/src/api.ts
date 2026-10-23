@@ -87,7 +87,7 @@ export async function action(
   const wait = cooldownLeft()
   if (wait > 0) {
     haptic.notify('warning')
-    showAlert(`Слишком часто. Попробуйте через ${wait} с.`)
+    showAlert(`Слишком часто. Попробуйте через ${wait}\u00a0с.`)
     return null
   }
   const quiet = opts?.quiet === true

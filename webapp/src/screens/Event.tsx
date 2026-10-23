@@ -265,7 +265,7 @@ export function Event() {
             onClick={() => selectDay(d.dateKey)}
           >
             <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
-            <span className="dc-num">{fmtDayMonth(d.dateKey).split(' ')[0]}</span>
+            <span className="dc-num">{String(dayNum(d.dateKey))}</span>
           </button>
         ))}
       </div>
@@ -403,7 +403,7 @@ const untilWord = (todayKey: string, dateKey: string): string => {
   const n = Math.round((keyToDate(dateKey).getTime() - keyToDate(todayKey).getTime()) / 86_400_000)
   if (n <= 0) return 'сегодня'
   if (n === 1) return 'завтра'
-  return `через ${n} ${plural(n, 'день', 'дня', 'дней')}`
+  return `через ${n}\u00a0${plural(n, 'день', 'дня', 'дней')}`
 }
 
 /** Дата плиткой: месяц и число крупно, как листок календаря. */
@@ -473,7 +473,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
               {`${WEEKDAYS_FULL[weekdayIdx(event.dateKey)]}, ${fmtDayMonth(event.dateKey)}`}
               {event.residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
             </div>
-            <div className="evv-ws">{`в ${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`}</div>
+            <div className="evv-ws">{`в\u00a0${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`}</div>
           </div>
         </div>
         {day || people.length > 0 ? (
@@ -521,7 +521,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
         ))}
         {event.description ? (
           <>
-            <Sep left={66} />
+            <Sep left={14} />
             <div className="evv-desc">{linkedText(event.description)}</div>
           </>
         ) : null}

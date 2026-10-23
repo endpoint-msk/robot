@@ -24,16 +24,16 @@ export const hoursNumWord = (minutes: number): string => {
 
 export const hoursWord = (minutes: number): string => {
   const n = Math.round(minutes / 60)
-  return `${n} ${plural(n, 'час', 'часа', 'часов')}`
+  return `${n}\u00a0${plural(n, 'час', 'часа', 'часов')}`
 }
 
 /** «3 ч 20 мин», «45 мин» — длительность визита в строке списка. */
 export const fmtDuration = (minutes: number): string => {
   const m = Math.max(0, Math.round(minutes))
   const h = Math.floor(m / 60)
-  if (h === 0) return `${m} мин`
+  if (h === 0) return `${m}\u00a0мин`
   const rest = m % 60
-  return rest > 0 ? `${h} ч ${rest} мин` : `${h} ч`
+  return rest > 0 ? `${h}\u00a0ч\u00a0${rest}\u00a0мин` : `${h}\u00a0ч`
 }
 
 /** Минуты от полуночи → 'HH:MM'. */
@@ -41,6 +41,12 @@ export const fmtMinutes = (minutes: number): string => {
   const m = Math.max(0, Math.round(minutes))
   return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
+
+/**
+ * Конец дня журнала. Визит, дошедший до полуночи, сервер заканчивает в «00:00», и
+ * «с 19:20 до 00:00» читалось как время до начала суток, а не до их конца.
+ */
+export const dayEnd = (hhmm: string): string => (hhmm === '00:00' ? '24:00' : hhmm)
 
 export const HEAT_LEVELS = 5
 
@@ -70,7 +76,7 @@ export const heatCell = (
 }
 
 /** Человекочасы ячейки словами: «1,3 чел.». Без единицы цифра в подсказке нечитаема. */
-export const heatValue = (v: number): string => `${(Math.round(v * 10) / 10).toString().replace('.', ',')} чел.`
+export const heatValue = (v: number): string => `${(Math.round(v * 10) / 10).toString().replace('.', ',')}\u00a0чел.`
 
 /** Двухчасовой интервал ячейки: «14–16». */
 export const heatSlot = (bucket: number): string =>

@@ -262,9 +262,9 @@ export const reminderFor = (dateKey: string, time: string, choice: ReminderChoic
 export function reminderWhen(dateKey: string, time: string, choice: ReminderChoice): string {
   const d = getState().data!
   const at = reminderSlot(dateKey, time, choice)
-  if (at.dateKey === d.todayKey) return `сегодня в ${at.time}`
-  if (at.dateKey === addDays(d.todayKey, 1)) return `завтра в ${at.time}`
-  return `в ${fmtShortDate(at.dateKey)} в ${at.time}`
+  if (at.dateKey === d.todayKey) return `сегодня в\u00a0${at.time}`
+  if (at.dateKey === addDays(d.todayKey, 1)) return `завтра в\u00a0${at.time}`
+  return `в\u00a0${fmtShortDate(at.dateKey)} в\u00a0${at.time}`
 }
 
 /**

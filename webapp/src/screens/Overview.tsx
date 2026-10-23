@@ -156,7 +156,7 @@ export function Overview() {
       <div className="card">
         {days.map((day, i) => (
           <Fragment key={day.dateKey}>
-            {i > 0 ? <Sep left={86} /> : null}
+            {i > 0 ? <Sep left={96} /> : null}
             <DayRow day={day} tappable onOpen={() => push('day', { dateKey: day.dateKey })} />
           </Fragment>
         ))}

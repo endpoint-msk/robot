@@ -67,7 +67,7 @@ export function EventApply() {
   return (
     <Screen>
       <BackRow />
-      <Header title={title} subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в ${event.time}`} />
+      <Header title={title} subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в\u00a0${event.time}`} />
 
       {app ? (
         <Footnote>

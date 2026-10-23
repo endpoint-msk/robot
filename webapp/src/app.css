@@ -157,6 +157,11 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
     text-align: left;
 }
 
+/* Кнопка или поле без своего font-family рисуется шрифтом браузера, а не страницы: на
+   Windows это Arial посреди Segoe UI («Отклонить» в заявках на ивент, подпись сборки).
+   Вес нулевой, своё семейство класса (моноширинное) по-прежнему главнее. */
+:where(button, input, textarea, select) { font-family: inherit; }
+
 /* Клавиатурный фокус. В вебвью Telegram клавиатуры нет, поэтому :focus-visible
    там не срабатывает вовсе, а в браузере обводка обязана быть. */
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
@@ -200,8 +205,13 @@ html, body {
     background: var(--bg);
 }
 
+/* Системный шрифт на каждой платформе: SF у Apple, Segoe UI в Telegram Desktop на
+   Windows, Roboto или шрифт системы на Android и Linux. Без Segoe UI вебвью Windows
+   доходил до Helvetica, а её Windows подменяет на Arial. Segoe UI раньше system-ui:
+   на китайской или японской Windows system-ui отдаёт местный шрифт, и кириллица
+   рисовалась бы им. */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     color: var(--text);
     overscroll-behavior-y: none;
@@ -211,6 +221,52 @@ body {
     max-width: 520px;
     margin: 0 auto;
     min-height: 100vh;
+    /* Экран въезжает сдвигом на 32px и на время перехода шире окна: без обрезки в
+       Telegram Desktop на Windows под ним появляется горизонтальная полоса прокрутки,
+       и нижняя панель прыгает на её высоту. clip, а не hidden: прокрутку он не заводит
+       и fixed-потомков не трогает. */
+    overflow-x: clip;
+}
+
+/* --- Цифры ---------------------------------------------------------------------
+   Табличные цифры там, где число меняется на месте (счётчик после своего тапа, время
+   в поле, обратный отсчёт в кнопке) или стоит в столбце и ряду (суммы, часы, оси, чипы
+   дней). У SF цифры по умолчанию пропорциональные: смена «1» на «4» сдвигала соседний
+   текст. Крупные одиночные числа статистики не в списке: табличная «1» в них даёт
+   дыру, а сами они не меняются на месте. */
+.section-title,
+.dpg-coming-k,
+.req-sub,
+.approved-count,
+.day-chip,
+.ce-time,
+.time-input,
+.tp-wheels,
+.ev-time-value,
+.dues-figure,
+.dues-split,
+.dues-amount,
+.my-dues-sum,
+.kv-val,
+.person-hours,
+.heat-hour,
+.heat-readout,
+.tl-ticks,
+.primary-btn,
+.arrival-btn {
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Переносы ------------------------------------------------------------------
+   text-wrap заодно задаёт text-wrap-mode, как и white-space. Поэтому блок стоит выше
+   правил компонентов: nowrap компонента должен перебивать его, а не наоборот. */
+.title, .ob-title, .ev-title, .stats-card-title, .status-card-title, .wb-title, .lb-title,
+.es-title, .es-text, .be-title, .be-text, .modal-text, .modal-num-hint, .bar-hint, .build-sign {
+    text-wrap: balance;
+}
+.ob-lead, .rules-intro, .rule-text, .rules-wiki, .footnote, .hint-text, .remind-caption,
+.status-card-note, .my-dues-sub, .stats-note, .dues-note, .ab-title, .lb-sub, .ce-text {
+    text-wrap: pretty;
 }
 
 .screen {
@@ -226,6 +282,9 @@ body {
 .screen.in-forward { animation: slide-from-right 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
 .screen.in-back { animation: slide-from-left 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
 .screen.in-fade { animation: screen-in 0.18s ease; }
+/* Нижняя панель вынесена из .screen и проявляется в такт с ним, но без сдвига. */
+.bottom-bar.in-forward, .bottom-bar.in-back { animation: screen-fade-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+.bottom-bar.in-fade { animation: screen-in 0.18s ease; }
 
 @keyframes slide-from-right {
     from { opacity: 0; transform: translateX(32px); }
@@ -242,7 +301,8 @@ body {
 
 /* Уважаем системную настройку «уменьшить движение». */
 @media (prefers-reduced-motion: reduce) {
-    .screen.in-forward, .screen.in-back, .screen.in-fade { animation: screen-in 0.12s ease; }
+    .screen.in-forward, .screen.in-back, .screen.in-fade,
+    .bottom-bar.in-forward, .bottom-bar.in-back, .bottom-bar.in-fade { animation: screen-in 0.12s ease; }
 }
 
 /* Каркас → данные. Содержимое проявляется, каркас гаснет поверх него: одновременно,
@@ -480,8 +540,11 @@ body {
     padding: 0 12px;
     min-height: 40px;
     border-radius: 12px;
-    background: var(--chip);
+    /* В светлой теме --chip совпадает с фоном экрана, и поле пропадало целиком:
+       оставались одна лупа и подсказка. Заливка как у поиска iOS на сгруппированном фоне. */
+    background: rgba(118, 118, 128, 0.12);
 }
+:root[data-theme="dark"] .search-field { background: var(--chip); }
 .search-field input {
     flex: 1;
     min-width: 0;
@@ -529,7 +592,8 @@ body {
     position: relative;
 }
 .row.tappable { cursor: pointer; }
-.row.tappable:active { background: rgba(var(--sec), 0.06); }
+/* Только цвет: шорткат background стирал штриховку закрытого дня на время нажатия. */
+.row.tappable:active { background-color: rgba(var(--sec), 0.06); }
 
 .sep { height: 0.5px; background: var(--sep); }
 
@@ -549,12 +613,15 @@ body {
 /* Точка «здесь нужен хост». Своего токена не заводим: это тот же акцент действия,
    что у --attn, только в полную силу — на 8px полупрозрачная заливка не читается. */
 .day-dot {
+    /* Рядом с днём недели, а не перед людьми: в потоке строки точка сдвигала её
+       содержимое, и столбец людей и ивентов в неделе шёл лесенкой. */
+    display: inline-block;
     width: 8px;
     height: 8px;
+    margin-left: 6px;
     border-radius: 50%;
     background: var(--blue);
-    flex-shrink: 0;
-    margin-left: -2px;
+    vertical-align: 0.1em;
 }
 .row.day-locked .day-dot { display: none; }
 
@@ -568,6 +635,9 @@ body {
 .row.day-stack { padding-top: 8px; padding-bottom: 8px; }
 .day-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .day-people { display: flex; align-items: center; gap: 10px; }
+/* Счётчик одобренных стоит в строке людей, к которым он относится: тогда метка ивента
+   или повестки над ней тянется до шеврона, а не обрывается на его месте. */
+.day-people .approved-count { margin-left: auto; }
 
 /* isolation держит z-index лиц (AvatarStack кладёт первое сверху) внутри стопки. */
 .avatar-stack { display: flex; align-items: center; flex-shrink: 0; isolation: isolate; }
@@ -1129,11 +1199,42 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
     justify-content: center;
     background: var(--chip);
 }
-.status-square.ok { background: rgba(52, 199, 89, 0.14); }
+.status-square.ok { background: var(--green-soft); }
 /* Визит ждёт ответа гостя на предложенное резидентом время — акцентная подсветка строки. */
 .status-square.attn { background: var(--attn-strong); }
 .row.needs-action { background: var(--attn); }
 .req-sub.attn { color: var(--text); font-weight: 600; }
+
+/* Разделы главной гостя: плитки в две колонки. На узком экране значок встаёт над
+   подписью: рядом с ним «Активность» не помещается в половину ширины. */
+.home-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 22px;
+}
+.home-tile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 56px;
+    padding: 12px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    font-family: inherit;
+    text-align: left;
+    color: var(--text);
+    cursor: pointer;
+    transition: opacity 0.3s ease-out;
+}
+.home-tile:active { opacity: 0.6; transition-duration: 0s; }
+.home-tile-label { min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.25; }
+@media (max-width: 359px) {
+    .home-tile { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 
 /* --- Зелёная карточка статуса (визит подтверждён) --- */
 
@@ -1190,6 +1291,7 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
     padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     transform: translateY(100%);
     transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
 }
 .tp-overlay.shown .resp-sheet { transform: none; }
 .resp-sheet .tp-bar { background: var(--bg); border-radius: 20px 20px 0 0; }
@@ -1328,7 +1430,7 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
     gap: 8px;
     padding: 9px 12px;
     border-radius: 12px;
-    background: rgba(191, 90, 242, 0.1);
+    background: var(--ev-bg);
     font-size: 14px;
     min-width: 0;
 }
@@ -1366,9 +1468,18 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
 .day-chip.locked { cursor: default; }
 .day-chip.locked .dc-dow, .day-chip.locked .dc-num { color: var(--text-3); }
 /* Дата приглушается, как у пустого дня: слова «закрыт» в строке нет, роль берут
-   на себя штриховка и погасший день. */
+   на себя штриховка и погасший день. Дата и причина при этом на ступень заметнее,
+   чем там: поверх штриховки --text-4 почти не читался. Причина не длиннее двух
+   строк, целиком она стоит на экране дня. */
 .row.day-locked .dow { color: var(--text-3); }
-.row.day-locked .date { color: var(--text-4); }
+.row.day-locked .date { color: var(--text-3); }
+.row.day-locked .day-none {
+    color: var(--text-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
 
 /* Плашка на экране дня — близнец .write-banner, но не кнопка: она сообщает, а не зовёт.
    Штриховка тут не нужна: она язык списка, где закрытый день опознают среди семи
@@ -1505,6 +1616,9 @@ button.agenda-banner:active { opacity: 0.6; }
     background: var(--overlay);
     opacity: 0;
     transition: opacity 0.22s ease;
+    /* Шторку и затемнение под ней ведёт палец (useSheetDrag): без своих слоёв каждый
+       кадр жеста перерисовывает и то и другое. */
+    will-change: opacity;
 }
 .tp-overlay.shown { opacity: 1; }
 
@@ -1517,6 +1631,7 @@ button.agenda-banner:active { opacity: 0.6; }
     padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     transform: translateY(100%);
     transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
 }
 .tp-overlay.shown .tp-sheet { transform: none; }
 
@@ -1703,8 +1818,18 @@ button.agenda-banner:active { opacity: 0.6; }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color 0.2s ease-out, border-color 0.2s ease-out;
 }
 .checkbox.on { background: var(--blue); border-color: var(--blue); }
+.checkbox svg { opacity: 0; transform: scale(0.4); transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
+.checkbox.on svg {
+    opacity: 1;
+    transform: none;
+    transition: opacity 0.15s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+    .checkbox, .checkbox svg, .checkbox.on svg { transition: none; }
+}
 
 /* --- Заметка о госте (резиденты) --- */
 .note-input {
@@ -1851,6 +1976,12 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .week-title { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .week-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+/* «Одобрено / всего» в архиве читается одной дробью, а не двумя соседними числами.
+   Цифры табличные, обе части в рамке своей ширины: косая черта стоит одним столбцом
+   во всех строках, пока числа не длиннее двух знаков. */
+.frac { display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.frac .approved-count { font-size: 14px; justify-content: flex-end; min-width: calc(18px + 2ch); }
+.frac .count-muted { min-width: 3ch; }
 
 /* --- Настройки: иконки строк, свитчи, радио --- */
 
@@ -1981,6 +2112,9 @@ button.agenda-banner:active { opacity: 0.6; }
     color: var(--text-3);
     display: flex;
 }
+/* Отступ кнопки это зона тапа, а не место в строке: без поправки кружок стоял левее
+   тумблеров и шевронов той же карточки. */
+.row-right > .remove-btn { margin-right: -6px; }
 .add-row-label { font-size: 16px; color: var(--blue); }
 .add-row-label.danger { color: var(--red); }
 .act-ico { display: flex; align-items: center; justify-content: center; width: 22px; flex-shrink: 0; color: var(--blue); }
@@ -2008,6 +2142,7 @@ button.agenda-banner:active { opacity: 0.6; }
     cursor: pointer;
 }
 .small-btn.blue { background: var(--blue); color: #fff; }
+.small-btn.green { background: var(--green); color: #fff; }
 .small-btn.gray { background: var(--chip); color: var(--text); }
 .small-btn[disabled] { opacity: 0.45; cursor: default; }
 
@@ -2148,6 +2283,10 @@ button.agenda-banner:active { opacity: 0.6; }
     transition-duration: 0s !important;
     animation-duration: 0s !important;
 }
+/* Задержка без длительности держит элемент в первом кадре, а потом роняет его в
+   последний рывком: ступенчатый подъём визита иначе стоит пустым до 0.3 с. Задержки
+   ожидания (подпись и крутилка кнопки, оверлей) не украшение и остаются. */
+.low-motion *:not(.pend-label):not(.pend-spin):not(#busy-overlay) { animation-delay: 0s !important; }
 
 body.busy #app { pointer-events: none; }
 #busy-overlay {
@@ -2159,7 +2298,10 @@ body.busy #app { pointer-events: none; }
     background: var(--busy);
     z-index: 50;
 }
-body.busy #busy-overlay { display: flex; }
+/* Затемнение проявляется, только если ответ затянулся, как каркас и крутилка кнопки
+   (320 мс): иначе быстрый ответ мигает им на кадр-другой. Тапы прозрачный слой ловит сразу. */
+body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both; }
+@keyframes busy-in { from { opacity: 0; } }
 
 /* --- Ивенты ---------------------------------------------------------------
    Фиолетовый — собственный тон подсистемы: синий занят действиями, зелёный
@@ -2273,7 +2415,7 @@ body.busy #busy-overlay { display: flex; }
     justify-content: center;
     cursor: pointer;
 }
-.evv-cal-wide { color: var(--purple); }
+.evv-cal-wide { margin-top: 14px; color: var(--purple); }
 
 .event-card {
     background: var(--ev-bg);
@@ -2453,16 +2595,24 @@ body.busy #busy-overlay { display: flex; }
 /* Строка ивента на экране дня */
 .ev-row-icon { background: rgba(191, 90, 242, 0.16); }
 .ev-row-main { min-width: 0; flex: 1; }
-.ev-row-title-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ev-row-title-line { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+/* Название до двух строк: в одну длинное обрывалось на втором слове, и рядом с плашкой
+   «резидентам» от него оставалось одно начало. */
 .ev-row-title {
     font-size: 16px;
     font-weight: 600;
+    line-height: 1.25;
     color: var(--text);
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
-.ev-row-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+/* Плашка встаёт по первой строке названия, а не посередине двух. */
+.ev-row-title-line .ev-chip { margin-top: 1.5px; }
+/* Ник ведущего бывает длиннее строки, а пробелов в нём нет. */
+.ev-row-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; overflow-wrap: anywhere; }
 .secondary-btn.event-btn { color: var(--purple); }
 /* Добавление второго ивента строкой в той же карточке — как «Добавить устройство»
    в настройках. Отдельной кнопкой под карточкой оно читалось бы как «создать
@@ -2481,6 +2631,9 @@ body.busy #busy-overlay { display: flex; }
     color: var(--purple);
 }
 .ev-day-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Многоточие достаётся названию, время видно всегда: без него метка не говорит, когда
+   приходить. Иконку при длинном названии флекс иначе сжимает до точки. */
+.ev-day-label svg, .ev-day-label .ev-day-time { flex-shrink: 0; }
 
 /* Повестка на месте метки ивента: та же сетка, но серым. Фиолетовый за ивентом, и
    повестка не должна за него сойти. */
@@ -2496,6 +2649,16 @@ body.busy #busy-overlay { display: flex; }
    флекс сжимает иконку до точки. */
 .agenda-day-label svg { flex-shrink: 0; }
 .agenda-day-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Повестка без людей под ней одна занимает строку дня, и ей отданы обе строчки: колонка
+   даты всё равно двухэтажная, так что строка от этого не растёт. */
+.day-main > .agenda-day-label:only-child { align-items: flex-start; line-height: 1.3; }
+.day-main > .agenda-day-label:only-child svg { margin-top: 2.5px; }
+.day-main > .agenda-day-label:only-child span {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
 
 /* --- «Как пройти» ---------------------------------------------------------- */
 
@@ -2537,9 +2700,12 @@ body.busy #busy-overlay { display: flex; }
     to { transform: scale(1); opacity: 1; }
 }
 .route-metro { padding: 13px 14px 15px; }
+/* Те же колонки, что у адреса над ним: значок линии под булавкой (34px), подпись и
+   станции под текстом адреса. */
+.route-metro > .route-label { padding-left: 44px; }
 .route-metro-list { display: flex; flex-direction: column; gap: 11px; margin-top: 10px; }
-.route-metro-row { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
-.route-metro-row img { flex-shrink: 0; display: block; border-radius: 50%; }
+.route-metro-row { display: grid; grid-template-columns: 34px 1fr; column-gap: 10px; align-items: center; font-size: 16px; font-weight: 600; }
+.route-metro-row img { justify-self: center; display: block; border-radius: 50%; }
 
 .route-door {
     margin-top: 22px;
@@ -2620,7 +2786,7 @@ body.busy #busy-overlay { display: flex; }
 
 /* Сводка периода: крупная цифра «внесли N из M» и полоса прогресса. */
 .dues-summary { padding: 18px 18px 16px; }
-.dues-figure { display: flex; align-items: baseline; gap: 9px; }
+.dues-figure { display: flex; align-items: baseline; gap: 9px; font-variant-numeric: tabular-nums; }
 .dues-figure .df-main { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
 .dues-figure .df-of { font-size: 15px; color: var(--text-2); }
 .dues-figure .df-sum { margin-left: auto; font-size: 17px; font-weight: 700; }
@@ -2630,6 +2796,9 @@ body.busy #busy-overlay { display: flex; }
 .dues-bar { height: 8px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 14px; overflow: hidden; display: flex; gap: 2px; }
 .dues-bar > i { display: block; height: 100%; background: var(--green); }
 .dues-bar > i:first-child { border-radius: 999px 0 0 999px; }
+/* Конец данных круглый, как у полос периодов в истории: рядом с ними прямой торец
+   читался обрубленным. Стык сегментов остаётся прямым. */
+.dues-bar > i:last-child { border-radius: 0 999px 999px 0; }
 /* Заявленное, но не подтверждённое, идёт той же полосой в другом тоне: видно, сколько
    ещё предстоит сверить, и полоса не показывает кассу собранной раньше времени. */
 .dues-bar > i.claimed { background: var(--orange); }
@@ -2665,7 +2834,7 @@ body.busy #busy-overlay { display: flex; }
 .row-value { font-size: 15px; font-weight: 600; }
 .row-value.muted { color: var(--text-3); font-weight: 500; }
 
-.dues-amount { font-size: 15px; font-weight: 600; }
+.dues-amount { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .dues-amount.muted { color: var(--text-3); font-weight: 500; }
 .dues-amount.paid { color: var(--green); }
 
@@ -2679,12 +2848,14 @@ body.busy #busy-overlay { display: flex; }
     border-radius: 999px;
     font-size: 11px;
     font-weight: 700;
+    line-height: 16px;
     flex-shrink: 0;
 }
 .debt-badge.warn { background: rgba(255, 149, 0, 0.14); color: var(--orange); }
 .debt-badge.crit { background: rgba(255, 59, 48, 0.14); color: var(--red); }
-/* Ставка это не статус, а свойство человека: нейтральный чип, не спорит с меткой просрочки. */
-.rate-chip { padding: 1px 7px; border-radius: 999px; background: var(--chip); color: var(--text-2); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+/* Ставка это не статус, а свойство человека: нейтральный чип, не спорит с меткой просрочки.
+   Высота та же, что у метки просрочки: в одной строке разные пилюли читались сбоем. */
+.rate-chip { padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--text-2); font-size: 11px; font-weight: 700; line-height: 16px; flex-shrink: 0; }
 
 /* Кружок статуса слева: подтверждено (зелёный) и заявлено (пунктирный контур). */
 .dues-mark { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -2694,8 +2865,28 @@ body.busy #busy-overlay { display: flex; }
 /* Ответ на чужую заявку: инлайн, а не свайпом — прятать за жест решение по чужому
    действию нельзя (так же оставлена инлайновой кнопка «Принять слот» в заявках). */
 .dues-verdict { display: flex; gap: 8px; padding: 0 14px 12px 46px; }
-/* Ответ на «Подтвердить»: кнопки сменяет строка той же высоты, ничего ниже не сдвигается. */
-.dues-verdict.done { align-items: center; gap: 6px; min-height: 33px; font-size: 14px; font-weight: 600; color: var(--green); animation: host-in 0.22s ease-out both; }
+/* Кнопки делят ряд поровну: дев сверяет подряд, и цель под пальцем одна и та же. */
+.dues-verdict .small-btn { flex: 1; line-height: 18px; transition: opacity 0.3s ease-out; }
+.dues-verdict .small-btn:active { opacity: 0.6; transition-duration: 0s; }
+/* Ответ на «Подтвердить»: кнопки сменяет строка той же высоты, ничего ниже не сдвигается.
+   Высота с нижним отступом (border-box): кнопка 34 плюс 12. */
+.dues-verdict.done { align-items: center; gap: 6px; min-height: 46px; font-size: 14px; font-weight: 600; color: var(--green); animation: host-in 0.22s ease-out both; }
+/* Разделитель поверх строк: у строки со свайпом непрозрачный фон на своём слое, и на
+   дробной позиции он перекрывал волосяную линию над следующей строкой. */
+.dues-list .sep { position: relative; z-index: 1; }
+
+/* Плашка просрочки в карточке человека. В тёмной теме подложка своя (у оранжевой это
+   --warn-bg): десятая доля тона на чёрном фоне давала почти чёрную плашку. */
+.debt-card.warn { background: var(--warn-bg); }
+.debt-card.crit { background: rgba(255, 59, 48, 0.1); }
+:root[data-theme="dark"] .debt-card.crit { background: #4a1c19; }
+.debt-card.warn .status-card-icon { background: var(--orange); }
+.debt-card.crit .status-card-icon { background: var(--red); }
+.debt-card.warn .status-card-title { color: var(--orange); }
+.debt-card.crit .status-card-title { color: var(--red); }
+/* Пояснение вторым планом, как у остальных карточек статуса: заголовок уже сказал главное. */
+.debt-card .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.dues-kv .kv-val { font-variant-numeric: tabular-nums; }
 
 /* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
 .my-dues { position: relative; border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
@@ -2711,6 +2902,9 @@ body.busy #busy-overlay { display: flex; }
 .md-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; }
 .md-tags { display: grid; justify-items: end; }
 .md-tags > .ob-tag, .md-act > * { grid-area: 1 / 1; }
+/* Подложка метки гуще --warn-bg: в тёмной теме он непрозрачный и совпадал с самой
+   карточкой, пилюля пропадала, оставался голый текст. */
+.my-dues .ob-tag.warn { background: rgba(255, 149, 0, 0.18); }
 /* Специфичнее .primary-btn[disabled]: погашенная «Я внёс» иначе просвечивает на 0.55. */
 .my-dues.md-card .md-s { opacity: 0; pointer-events: none; }
 .my-dues.md-none .md-s[data-s="none"],
@@ -2726,7 +2920,7 @@ body.busy #busy-overlay { display: flex; }
 .my-dues .md-act .primary-btn { margin-top: 0; }
 .md-act .ob-pay-line { position: static; min-height: 50px; border-radius: var(--radius-btn); }
 .my-dues-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
-.my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; }
+.my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .my-dues-sub { margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
 .my-dues .primary-btn { margin-top: 14px; }
 /* Реквизиты прямо в плашке: перевод делают отсюда, а не идут искать закреп в чате. */
@@ -2740,6 +2934,9 @@ body.busy #busy-overlay { display: flex; }
 /* Оранжевый — статусный тон «внимание», а не «не ровно сто». Недобор красит только
    закрытые периоды: у текущего сбор ещё идёт, и тревожить там нечем. */
 .period-bar > i.low { background: var(--orange); }
+/* Сумма периода фиксированной ширины: иначе полоса стояла левее или правее в
+   зависимости от числа разрядов, и столбец полос разъезжался. */
+.period-sum { min-width: 4.4em; text-align: right; }
 
 /* Поле ввода числа в модалке (ставка взноса, день сбора). */
 .modal-num-wrap { padding: 0 18px 4px; }
@@ -3000,13 +3197,25 @@ body.busy #busy-overlay { display: flex; }
 }
 .seg.on { color: var(--text); font-weight: 600; }
 
+/* Переключатель статистики стоит на фоне экрана, а не на карточке: --chip в светлой
+   теме совпадает с --bg, и от контрола оставался висящий бегунок без дорожки.
+   Подложка и тень бегунка как у системного сегмента iOS. */
+.stats-seg { background: rgba(118, 118, 128, 0.12); }
+.stats-seg .seg-thumb {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.04);
+    /* Бегунок ведёт пружина (Stats.tsx): переход поверх неё отставал бы на каждом кадре. */
+    transition: none;
+}
+:root[data-theme="dark"] .stats-seg { background: var(--chip); }
+:root[data-theme="dark"] .stats-seg .seg-thumb { box-shadow: none; }
+
 .stats-card { padding: 16px 16px 14px; margin-bottom: 18px; }
 .stats-card-title { font-size: 17px; font-weight: 700; margin: 0 2px 13px; }
 .stats-figure { display: flex; align-items: baseline; gap: 9px; }
-.sf-main { font-size: 40px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+.sf-main { font-size: 40px; font-weight: 800; letter-spacing: -1px; line-height: 1; font-variant-numeric: tabular-nums; }
 .sf-main.sf-mid { font-size: 28px; letter-spacing: -0.5px; }
 .sf-of { font-size: 15px; line-height: 1.3; color: var(--text-2); }
-.stats-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.stats-note { margin-top: 8px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .stats-card .sep { margin: 14px 0 12px; }
 
 /* Полоса текущего окна относительно максимума пары «сейчас / раньше».
@@ -3027,14 +3236,24 @@ body.busy #busy-overlay { display: flex; }
 }
 
 .stats-pair { display: flex; gap: 24px; }
-.sp-num { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.sp-num { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .sp-label { font-size: 13px; color: var(--text-2); margin-top: 2px; }
 
 /* Тепловая карта 7×12: строка — день недели, колонка — двухчасовой интервал. */
-.heat { display: flex; flex-direction: column; gap: 2px; }
-.heat-row { display: flex; gap: 2px; align-items: center; }
-.heat-dow { width: 22px; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--axis-ink); }
-.heat-cell { flex: 1; aspect-ratio: 1; border-radius: 4px; padding: 0; border: 0; background: none; }
+.heat { display: flex; flex-direction: column; gap: 3px; }
+.heat-row { display: flex; gap: 3px; align-items: center; }
+.heat-dow { width: 22px; flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--axis-ink); }
+/* Смена окна перекрашивает клетки на месте, а не подменяет карту целиком. На
+   открытии экрана перехода нет: клетка сразу рождается в своём цвете. */
+.heat-cell {
+    flex: 1;
+    aspect-ratio: 1;
+    border-radius: 5px;
+    padding: 0;
+    border: 0;
+    background: none;
+    transition: background-color 0.3s ease;
+}
 /* Никого не было — пустая клетка с контуром, а не самая светлая ступень шкалы. */
 .heat-cell.zero { box-shadow: inset 0 0 0 1px var(--sep); }
 /* Данных нет — штриховка: провал опроса роутера это не «спейс стоял пустой».
@@ -3053,13 +3272,22 @@ body.busy #busy-overlay { display: flex; }
     box-shadow: inset 0 0 0 1px var(--sep);
 }
 button.heat-cell { cursor: pointer; }
-button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
-.heat-hours { margin-top: 4px; }
-.heat-hour { flex: 1; text-align: center; font-size: 10px; color: var(--axis-ink); }
+/* Выбранная клетка обведена снаружи, через полоску фона карточки: заливка видна
+   целиком, а кольцо ложится на зазор и края соседей. */
+button.heat-cell.picked {
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--text);
+}
+.heat-hours { margin-top: 5px; }
+.heat-hour { flex: 1; text-align: center; font-size: 11px; color: var(--axis-ink); font-variant-numeric: tabular-nums; }
 /* wrap: на 390px подпись и шкала в одну строку не помещаются, и подпись ломалась
    пополам, прижимаясь к квадратикам. Пусть лучше шкала уходит на свою строку. */
 .heat-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 13px 2px 0; font-size: 12px; color: var(--text-2); }
+.heat-legend + .heat-legend { margin-top: 8px; }
 .heat-scale { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; }
+/* Шкала без подписи слева (карта на экране статистики) встаёт в начало строки. */
+.heat-scale:first-child { margin-left: 0; }
 .heat-scale i { width: 10px; height: 10px; border-radius: 3px; }
 .heat-swatch { width: 10px; height: 10px; flex-shrink: 0; border-radius: 3px; }
 .heat-swatch.zero { box-shadow: inset 0 0 0 1px var(--sep); }
@@ -3076,13 +3304,20 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 }
 
 /* Значение выбранной ячейки. Тултипа тут быть не может: в вебвью нет hover, а
-   нативный title на тап не открывается — значение читается строкой под картой. */
+   нативный title на тап не открывается. Строка стоит над картой, под заголовком:
+   под картой её закрывала бы рука, которой тапают. Высота строки зафиксирована,
+   чтобы смена текста не двигала карту. */
+.heat-head { margin: 0 2px 12px; }
+.heat-head .stats-card-title { margin: 0 0 3px; }
 .heat-readout {
-    margin: 12px 2px 0;
-    min-height: 18px;
+    height: 18px;
     font-size: 13px;
-    line-height: 1.4;
+    line-height: 18px;
     color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .heat-readout b { color: var(--text); font-weight: 600; }
 
@@ -3112,13 +3347,18 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     font-weight: 700;
     color: var(--text);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 .bar-track { position: relative; width: 100%; height: 92px; display: flex; align-items: flex-end; }
 /* Скругляем только конец данных: круглый низ отрывает столбик от базовой линии,
    а на минимальной высоте радиус превращает его в плавающую каплю. */
-.bar-track i { display: block; width: 100%; border-radius: 4px 4px 0 0; }
+.bar-track i { display: block; width: 100%; border-radius: 5px 5px 0 0; }
 .bar-label { font-size: 11px; color: var(--axis-ink); }
+/* Текущий месяц ещё не кончился: подпись в цвет графика, как «сегодня» в календаре,
+   без отдельной марки на самом столбике. */
+.bar-label.now { color: var(--chart-blue); font-weight: 600; }
 .bar-label.on { font-weight: 700; color: var(--text); }
+.bar-label.now.on { color: var(--chart-blue); }
 
 /* Размеры аватарок журнала. Сама аватарка общая (.avatar): градиент с буквой —
    только подложка, поверх неё приезжает настоящее фото из /avatar.jpg. */
@@ -3129,7 +3369,8 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .person-cell { flex: 1; min-width: 0; }
 .person-top { display: flex; align-items: baseline; gap: 10px; }
 .person-name { font-size: 16px; }
-.person-hours { margin-left: auto; font-size: 15px; font-weight: 600; }
+/* nowrap: длинный ник ужимает строку, и без него «ч» уезжало бы от числа на новую строку. */
+.person-hours { margin-left: auto; font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .share-bar { height: 4px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 7px; overflow: hidden; }
 .share-bar i { display: block; height: 100%; border-radius: 999px; background: var(--chart-blue); }
 
@@ -3142,21 +3383,32 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 /* Строка подписей — та же ширина, но без рельса и без обрезки: крайние отметки
    вынесены за границы дорожки на половину своей ширины. */
 .tl-ticks .tl-track { height: 12px; background: none; overflow: visible; }
-.tl-ticks span { position: absolute; top: 0; font-size: 10px; color: var(--axis-ink); transform: translateX(-50%); }
+.tl-ticks span {
+    position: absolute;
+    top: 0;
+    font-size: 11px;
+    line-height: 12px;
+    color: var(--axis-ink);
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
+}
 .tl-name { width: 84px; flex-shrink: 0; display: flex; align-items: center; gap: 7px; min-width: 0; }
 .tl-name span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Время — своя колонка справа, а не вторая строка под ником: в узкой колонке имени
-   жались оба, и обрезались оба. Ширина под «00:00–00:00», сокращать нечего. */
+   жались оба, и обрезались оба. Ширина под самый длинный интервал, от 00:00 до 24:00,
+   набранный шрифтом iOS: сокращать нечего. */
 .tl-when {
-    width: 62px;
+    width: 66px;
     flex-shrink: 0;
     text-align: right;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--axis-ink);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
-.tl-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; }
+.tl-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; transition: opacity 0.3s ease-out; }
+/* Строка ведёт в карточку человека: нажатие отвечает сразу, отпускание гаснет плавно. */
+.tl-row:active { opacity: 0.55; transition-duration: 0s; }
 /* Дорожка — это шкала суток целиком, поэтому фон у неё есть всегда, даже если
    человек был внутри полчаса. Сетка часов делает её читаемой: без неё пустой
    рельс с точкой выглядит как артефакт вёрстки. */
@@ -3165,20 +3417,36 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 /* min-width: короткий визит на суточной шкале вырождается в точку — оставляем
    ему различимую капсулу, иначе строка читается как пустая. */
 .tl-bar { position: absolute; top: 2px; bottom: 2px; min-width: 14px; border-radius: 999px; background: var(--chart-blue); }
-/* Авто-отметка по MAC: тот же тон, но контур вместо заливки — её границы менее
-   точны. Контур читается на любой ширине; штриховка с шагом 3px на короткой
-   капсуле не показывала ни одной полосы, и отличие пропадало совсем. */
-.tl-bar.mac {
-    background: repeating-linear-gradient(135deg, var(--chart-blue) 0 3px, transparent 3px 7px), var(--card);
+/* Авто-отметка по MAC: тот же тон, но контур со светлой заливкой вместо сплошной: её
+   границы менее точны. Контур читается на любой ширине. Штриховки внутри нет: на
+   короткой капсуле от неё оставалась одна косая полоса, и капсула читалась как знак
+   «запрещено». */
+.tl-bar.mac,
+.tl-swatch.mac {
+    background: color-mix(in srgb, var(--chart-blue) 20%, var(--card));
     box-shadow: inset 0 0 0 1.5px var(--chart-blue);
 }
-.tl-legend { display: flex; align-items: center; gap: 14px; margin: 12px 2px 0; font-size: 11.5px; color: var(--text-2); }
+/* На тёмной карточке той же доли не хватает: заливка сливалась с дорожкой. */
+:root[data-theme="dark"] .tl-bar.mac,
+:root[data-theme="dark"] .tl-swatch.mac { background: color-mix(in srgb, var(--chart-blue) 32%, var(--card)); }
+/* Роутер не отвечал: та же штриховка, что у клеток карты без данных. Под отметками,
+   хотя сервер и так отдаёт только провалы без визитов. */
+.tl-gap,
+.tl-swatch.gap {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(var(--sec), 0.3) 0,
+        rgba(var(--sec), 0.3) 1.5px,
+        transparent 2px,
+        transparent 4.5px,
+        rgba(var(--sec), 0.3) 5px
+    );
+}
+.tl-gap { position: absolute; top: 0; bottom: 0; }
+.tl-swatch.gap { box-shadow: inset 0 0 0 1px var(--sep); }
+.tl-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 12px 2px 0; font-size: 11.5px; color: var(--text-2); }
 .tl-legend span { display: flex; align-items: center; gap: 6px; }
 .tl-swatch { width: 16px; height: 9px; border-radius: 999px; background: var(--chart-blue); }
-.tl-swatch.mac {
-    background: repeating-linear-gradient(135deg, var(--chart-blue) 0 3px, transparent 3px 7px), var(--card);
-    box-shadow: inset 0 0 0 1.5px var(--chart-blue);
-}
 
 /* Плитка даты в списках журнала. */
 .date-tile {
@@ -3192,7 +3460,9 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     align-items: center;
     justify-content: center;
 }
-.dt-num { font-size: 15px; font-weight: 700; line-height: 1; }
+.dt-num { font-size: 15px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+/* Списки журнала: длительности и время стоят столбцом, цифры одной ширины. */
+.stats-list .row-label { font-variant-numeric: tabular-nums; }
 /* Вторая плитка даты (журнал) — та же геометрия и та же подпись, см. .ws-month. */
 
 /* Четыре показателя человека сеткой 2×2. */
@@ -3200,23 +3470,24 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .sq-row { display: flex; }
 .sq-cell { flex: 1; min-width: 0; padding: 15px 16px; }
 .sq-vsep { width: 0.5px; background: var(--sep); margin: 12px 0; }
-.sq-num { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
+.sq-num { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; font-variant-numeric: tabular-nums; }
 .sq-num.small { font-size: 19px; font-weight: 700; line-height: 1.1; }
 .sq-label { font-size: 13px; color: var(--text-2); margin-top: 4px; }
 
 /* Точки визитов: 12 недель по столбцам, дни недели по строкам. */
-.dots { display: flex; gap: 2px; }
-.dots-labels { width: 22px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
-.dots-labels div { flex: 1; display: flex; align-items: center; font-size: 10px; font-weight: 600; color: var(--axis-ink); }
+/* Зазор и скругление те же, что у тепловой карты: две сетки на соседних экранах. */
+.dots { display: flex; gap: 3px; }
+.dots-labels { width: 22px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; }
+.dots-labels div { flex: 1; display: flex; align-items: center; font-size: 11px; font-weight: 600; color: var(--axis-ink); }
 .dots-grid {
     flex: 1;
     display: grid;
     grid-template-columns: repeat(12, 1fr);
     grid-template-rows: repeat(7, 1fr);
     grid-auto-flow: column;
-    gap: 2px;
+    gap: 3px;
 }
-.dot { aspect-ratio: 1; border-radius: 4px; }
+.dot { aspect-ratio: 1; border-radius: 5px; }
 .dot.zero { box-shadow: inset 0 0 0 1px var(--sep); }
 /* Будущее не рисуется вовсе: ни заливки, ни контура. */
 .dot.future { background: none; box-shadow: none; }
@@ -3224,12 +3495,12 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 /* Подписи месяцев над колонками-неделями. Отступ слева равен колонке дней недели
    (22px) плюс её gap, иначе подпись съезжает с своей недели. */
 .dots-months {
-    margin-left: 24px;
+    margin-left: 25px;
     display: grid;
     grid-template-columns: repeat(12, 1fr);
-    gap: 2px;
-    margin-bottom: 4px;
-    font-size: 10px;
+    gap: 3px;
+    margin-bottom: 5px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--axis-ink);
 }
@@ -3289,7 +3560,7 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     flex: 1;
     min-width: 0;
     height: 24%;
-    border-radius: 4px 4px 0 0;
+    border-radius: 5px 5px 0 0;
     background: var(--heat-3);
     opacity: 0.55;
     animation: sk-wave 1.5s ease-in-out infinite;
@@ -3336,6 +3607,10 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 .collapsible-inner { overflow: hidden; }
 
 .month-group { margin-bottom: 12px; }
+/* Заголовок месяца плотнее строк дней под ним: иначе раскрытый месяц читался как
+   ещё одна строка списка. */
+.month-head .row-label { font-weight: 600; }
+.month-head .row-sublabel { font-weight: 400; }
 .chev { display: flex; transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
 .chev.open { transform: rotate(90deg); }
 
@@ -3354,16 +3629,19 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 }
 .seg { position: relative; z-index: 1; transition: color 0.18s ease, font-weight 0.18s ease; }
 
-/* Смена окна: цифры меняются все разом, поэтому блок проявляется целиком. */
-.stats-body { animation: stats-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
-@keyframes stats-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: none; }
-}
+/* Смена окна: пока едет ответ, прошлые числа приглушены, чтобы под уже переключённым
+   сегментом не выглядеть правдой. Задержка гасит мигание на быстром ответе, а
+   возвращается яркость сразу, вместе с новыми числами. */
+.stats-body { transition: opacity 0.2s ease; }
+.stats-body.stale { opacity: 0.45; pointer-events: none; transition-delay: 0.1s; }
 
-/* Столбик месяца и его подпись переезжают, а не перещёлкиваются. */
+/* Число в строке-переходе (История по дням, Мои визиты) перещёлкивается на месте. */
+.stat-count { font-variant-numeric: tabular-nums; }
+
+/* Столбик месяца и его подпись переезжают, а не перещёлкиваются. Подпись выбранного
+   месяца проявляется только после тапа: пик подписан с открытия экрана и не мигает. */
 .bar-track i { transition: height 0.3s cubic-bezier(0.32, 0.72, 0, 1), background 0.2s ease; }
-.bar-val { animation: bar-val-in 0.2s ease; }
+.bar-val.on { animation: bar-val-in 0.2s ease; }
 @keyframes bar-val-in {
     from { opacity: 0; transform: translate(-50%, 4px); }
     to { opacity: 1; transform: translate(-50%, 0); }
@@ -3377,8 +3655,7 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     .share-bar i,
     .compare-bar i,
     .chev { transition: none; }
-    .stats-body, .bar-val { animation: none; }
-    .screen.in-forward, .screen.in-back, .screen.in-fade { animation: none; }
+    .bar-val.on { animation: none; }
 }
 
 /* ======================= Заявки на ивент ======================= */
@@ -4294,6 +4571,8 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     background: var(--overlay);
     opacity: 0;
     transition: opacity 0.24s ease;
+    /* Слои под жест, как у .tp-overlay. */
+    will-change: opacity;
 }
 .ob-sheet-overlay.shown { opacity: 1; }
 .ob-sheet {
@@ -4308,6 +4587,7 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
     padding-bottom: calc(16px + var(--tg-safe-area-inset-bottom, 0px));
     transform: translateY(100%);
     transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
 }
 .ob-sheet-overlay.shown .ob-sheet { transform: none; }
 .ob-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(var(--sec), 0.28); margin: 6px auto 0; }
@@ -4407,6 +4687,13 @@ button.heat-cell.picked { box-shadow: inset 0 0 0 2px var(--text); }
 /* Строка подсвечивается с задержкой: палец, начавший прокрутку, её не мигнёт. */
 .row.tappable, .modal-btn, .destructive-btn, .ob-menu button { transition: background-color 0.3s ease-out; }
 .row.tappable:active, .modal-btn:active, .destructive-btn:active, .ob-menu button:active { transition: background-color 0s 0.06s; }
+
+/* Мышь (Telegram Desktop): строка под курсором чуть подсвечена. Слоем тени, а не фоном:
+   фон строки занят подложкой «сегодня» и штриховкой закрытого дня. Сенсорные экраны
+   сюда не попадают, иначе подсветка залипала бы после тапа. */
+@media (hover: hover) and (pointer: fine) {
+    .row.tappable:hover, .write-banner:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.05); }
+}
 
 /* Ожидание в кнопке не мигает подсветкой поверх своей крутилки. */
 .pending:active { opacity: 1; transform: none; }

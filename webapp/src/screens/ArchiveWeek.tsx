@@ -73,7 +73,7 @@ export function ArchiveWeek() {
         <div className="card">
           {nonEmpty.map((d, i) => (
             <Fragment key={d.dateKey}>
-              {i > 0 ? <Sep left={86} /> : null}
+              {i > 0 ? <Sep left={96} /> : null}
               <DayRow
                 day={{
                   dateKey: d.dateKey,

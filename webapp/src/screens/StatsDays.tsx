@@ -1,13 +1,13 @@
 // История по дням. Месяцы — свёрнутые группы: за год журнала выходит триста строк,
 // и прокрутить их до нужной даты нереально. Раскрыт последний, остальные тапом.
 
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { dayNum, MONTHS_NOM, monthIdx, peopleWord, plural, WEEKDAYS_SHORT, weekdayIdx, yearOf } from '../dates'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push } from '../store'
-import { fmtDuration, hoursNum } from '../stats'
+import { dayEnd, fmtDuration, hoursNum } from '../stats'
 import type { StatsDaySummary, StatsDaysView } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -59,14 +59,13 @@ function DaysSkeleton() {
 
 export function StatsDays() {
   const { data, error, loading, pending, reload } = useRemote(() => api<StatsDaysView>('stats.days'), [])
-  const [open, setOpen] = useState<string[]>([])
+  // Только то, что человек раскрыл или свернул сам; остальное считается от данных.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({})
 
-  // Раскрыт свежий месяц: за ним приходят чаще всего. Выбор ведёт за данными, а не
-  // делается в момент загрузки: после «Повторить» список приезжает заново.
+  // Раскрыт свежий месяц: за ним приходят чаще всего. Считается при отрисовке, а не
+  // эффектом после загрузки: эффект раскрывал месяц уже на экране, и список выезжал
+  // сам, без тапа. После «Повторить» выбор так же идёт за пришедшими данными.
   const freshMonth = data?.days[0]?.dateKey.slice(0, 7)
-  useEffect(() => {
-    if (freshMonth) setOpen([freshMonth])
-  }, [freshMonth])
 
   // Шапка держится на месте, подменяется только тело: каркас гаснет поверх
   // проявляющихся данных, а не исчезает в том же кадре.
@@ -92,17 +91,21 @@ export function StatsDays() {
   }
 
   const groups = groupByMonth(data.days)
-  const toggle = (key: string): void =>
-    setOpen((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]))
+  const toggle = (key: string, isOpen: boolean): void => setToggled((cur) => ({ ...cur, [key]: !isOpen }))
 
   return frame(
     `${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`,
     <>
       {groups.map((group) => {
-        const isOpen = open.includes(group.key)
+        const isOpen = toggled[group.key] ?? group.key === freshMonth
         return (
-          <div className="card month-group" key={group.key}>
-            <button type="button" className="row tappable" onClick={() => toggle(group.key)} aria-expanded={isOpen}>
+          <div className="card month-group stats-list" key={group.key}>
+            <button
+              type="button"
+              className="row tappable month-head"
+              onClick={() => toggle(group.key, isOpen)}
+              aria-expanded={isOpen}
+            >
               <span className="row-label">
                 {group.title}
                 <span className="row-sublabel">
@@ -130,7 +133,7 @@ export function StatsDays() {
                       <span className="row-label">
                         {fmtDuration(day.openMinutes)}
                         <span className="row-sublabel">
-                          {`с ${day.from} до ${day.to} · ${peopleWord(day.people)} · пик ${day.peak}`}
+                          {`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`}
                         </span>
                       </span>
                       <div className="row-right">{icons.chevron()}</div>

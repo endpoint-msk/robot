@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
 import { pop, push, useParams, useStore } from '../store'
-import { openUrl } from '../telegram'
+import { haptic, openUrl } from '../telegram'
 import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
 
@@ -62,10 +62,15 @@ export function Rules() {
           className="row tappable"
           role="checkbox"
           aria-checked={agreed}
-          onClick={() => setAgreed((v) => !v)}
+          onClick={() => {
+            haptic.impact(agreed ? 'soft' : 'light')
+            setAgreed((v) => !v)
+          }}
         >
           <span className="row-label rule-agree">Я прочитал и согласен с правилами</span>
-          <div className={'checkbox' + (agreed ? ' on' : '')}>{agreed ? icons.check(13, '#fff', 2.6) : null}</div>
+          {/* Галочка в разметке всегда: переход по классу играет только на тапе, а не
+              при входе на экран с уже принятыми правилами. */}
+          <div className={'checkbox' + (agreed ? ' on' : '')}>{icons.check(13, '#fff', 2.6)}</div>
         </button>
       </div>
       <BottomBar>

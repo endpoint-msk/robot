@@ -228,7 +228,7 @@ export function StatsPerson() {
       {data.lastVisits.length > 0 ? (
         <>
           <div className="section-title">Последние визиты</div>
-          <div className="card">
+          <div className="card stats-list">
             {data.lastVisits.map((v, i) => (
               <Fragment key={`${v.dateKey}-${v.from}`}>
                 {i > 0 ? <div className="sep" style={{ marginLeft: 68 }} /> : null}

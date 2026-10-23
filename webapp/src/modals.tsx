@@ -97,16 +97,25 @@ const cancelValue = (kind: ModalInput['kind']): unknown => (kind === 'confirm' ?
 /** Снятие оверлея по id: модалка может закрыться и сама (кнопкой), и снаружи. */
 const unregister = new Map<number, () => void>()
 
+/** Закрытие смонтированной карточки её же close: с затуханием, как по кнопке. */
+const closers = new Map<number, (value: any) => void>()
+
 function open<T>(input: ModalInput): Promise<T> {
   return new Promise<T>((resolve) => {
     const id = nextId++
     modals = [...modals, { ...input, id, resolve }]
-    // Системная «Назад» закрывает верхнюю модалку как отмену. Резолвим здесь же:
-    // карточка размонтируется без своего onClose, и ждущий промис иначе повис бы.
+    // Системная «Назад» закрывает верхнюю модалку как отмену. Закрывает сама карточка:
+    // снятый отсюда узел исчез бы за один кадр, без затухания. Здесь резолвим, только
+    // если она ещё не смонтировалась: иначе ждущий промис повис бы.
     unregister.set(
       id,
       pushOverlay(() => {
         if (!modals.some((m) => m.id === id)) return
+        const close = closers.get(id)
+        if (close) {
+          close(cancelValue(input.kind))
+          return
+        }
         modals = modals.filter((m) => m.id !== id)
         unregister.delete(id)
         emit()
@@ -121,6 +130,18 @@ function remove(id: number): void {
   unregister.delete(id)
   modals = modals.filter((m) => m.id !== id)
   emit()
+}
+
+/** Отдаёт системной «Назад» close карточки. Через ref: close пересоздаётся каждый рендер. */
+function useBackClose(id: number, close: (value: any) => void): void {
+  const ref = useRef(close)
+  ref.current = close
+  useEffect(() => {
+    closers.set(id, (value) => ref.current(value))
+    return () => {
+      closers.delete(id)
+    }
+  }, [id])
 }
 
 function ModalCard({ modal }: { modal: Modal & { kind: 'confirm' | 'time' } }) {
@@ -143,6 +164,7 @@ function ModalCard({ modal }: { modal: Modal & { kind: 'confirm' | 'time' } }) {
     modal.resolve(value)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
 
   if (modal.kind === 'time') {
     return (
@@ -220,6 +242,7 @@ function RescheduleCard({ modal }: { modal: Modal & { kind: 'reschedule' } }) {
     modal.resolve(value)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
 
   const confirm = (): void => {
     if (!time) return
@@ -287,6 +310,7 @@ function NumberCard({ modal }: { modal: Modal & { kind: 'number' } }) {
     modal.resolve(result)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
 
   const parsed = Number(value.replace(',', '.').trim())
   const valid = value.trim() !== '' && Number.isFinite(parsed) && parsed >= modal.min && parsed <= modal.max
@@ -361,6 +385,7 @@ function TextCard({ modal }: { modal: Modal & { kind: 'text' } }) {
     modal.resolve(result)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
 
   return (
     <div
@@ -435,6 +460,7 @@ function DateCard({ modal }: { modal: Modal & { kind: 'date' } }) {
     modal.resolve(result)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
 
   const valid = value !== '' && (!modal.max || value <= modal.max)
 
@@ -491,6 +517,7 @@ function ImageCard({ modal }: { modal: Modal & { kind: 'image' } }) {
     modal.resolve(true)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
 
   return (
     <div className={'lightbox' + (shown ? ' shown' : '')} onClick={close}>
@@ -521,6 +548,7 @@ function ChoiceCard({ modal }: { modal: Modal & { kind: 'choice' } }) {
     modal.resolve(value)
     setTimeout(() => remove(modal.id), 180)
   }
+  useBackClose(modal.id, close)
   return (
     <div
       className={'modal-overlay' + (shown ? ' shown' : '')}

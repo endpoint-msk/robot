@@ -30,18 +30,21 @@ export const addDays = (k: string, n: number): string => {
   return d.toISOString().slice(0, 10)
 }
 
-export const fmtDayMonth = (k: string): string => `${dayNum(k)} ${MONTHS_GEN[monthIdx(k)]}`
+// Между числом и его словом пробел неразрывный (\u00a0), и тире держится за первую
+// дату: иначе заголовок недели в архиве переносил «октября» на новую строку без своей
+// «4». Строки только для показа, на сервер уходят ключи дней.
+export const fmtDayMonth = (k: string): string => `${dayNum(k)}\u00a0${MONTHS_GEN[monthIdx(k)]}`
 export const fmtRange = (a: string, b: string): string =>
   monthIdx(a) === monthIdx(b) && yearOf(a) === yearOf(b)
-    ? `${dayNum(a)}–${dayNum(b)} ${MONTHS_GEN[monthIdx(b)]}`
-    : `${fmtDayMonth(a)} – ${fmtDayMonth(b)}`
+    ? `${dayNum(a)}–${dayNum(b)}\u00a0${MONTHS_GEN[monthIdx(b)]}`
+    : `${fmtDayMonth(a)}\u00a0– ${fmtDayMonth(b)}`
 export const fmtWeekdayDate = (k: string): string => `${WEEKDAYS_FULL[weekdayIdx(k)]}, ${fmtDayMonth(k)}`
-export const fmtShortDate = (k: string): string => `${WEEKDAYS_SHORT[weekdayIdx(k)]}, ${fmtDayMonth(k)}`
+export const fmtShortDate = (k: string): string => `${WEEKDAYS_SHORT[weekdayIdx(k)]},\u00a0${fmtDayMonth(k)}`
 
 /** ISO-метка времени (например, правка заметки) → «21 июля». */
 export const fmtIsoDay = (iso: string): string => {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`
+  return Number.isNaN(d.getTime()) ? '' : `${d.getDate()}\u00a0${MONTHS_GEN[d.getMonth()]}`
 }
 
 export function plural(n: number, one: string, few: string, many: string): string {
@@ -53,9 +56,9 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many
 }
 
-export const requestsWord = (n: number): string => `${n} ${plural(n, 'заявка', 'заявки', 'заявок')}`
-export const peopleWord = (n: number): string => `${n} ${plural(n, 'человек', 'человека', 'человек')}`
-export const visitsWord = (n: number): string => `${n} ${plural(n, 'визит', 'визита', 'визитов')}`
-export const monthsWord = (n: number): string => `${n} ${plural(n, 'месяц', 'месяца', 'месяцев')}`
-export const periodsWord = (n: number): string => `${n} ${plural(n, 'период', 'периода', 'периодов')}`
-export const duesWord = (n: number): string => `${n} ${plural(n, 'взнос', 'взноса', 'взносов')}`
+export const requestsWord = (n: number): string => `${n}\u00a0${plural(n, 'заявка', 'заявки', 'заявок')}`
+export const peopleWord = (n: number): string => `${n}\u00a0${plural(n, 'человек', 'человека', 'человек')}`
+export const visitsWord = (n: number): string => `${n}\u00a0${plural(n, 'визит', 'визита', 'визитов')}`
+export const monthsWord = (n: number): string => `${n}\u00a0${plural(n, 'месяц', 'месяца', 'месяцев')}`
+export const periodsWord = (n: number): string => `${n}\u00a0${plural(n, 'период', 'периода', 'периодов')}`
+export const duesWord = (n: number): string => `${n}\u00a0${plural(n, 'взнос', 'взноса', 'взносов')}`

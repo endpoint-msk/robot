@@ -6,7 +6,7 @@ import { sec } from '../theme'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
 import { BottomBar, DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
-import { Avatar, userLabel } from '../components/people'
+import { userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
 
 // Публичный чат спейса — константа фронта, как адрес в «Как пройти»: это конкретный
@@ -28,24 +28,13 @@ function VisitRow({ r }: { r: HostingRequest }) {
     <div className="status-square">{icons.clock(18, sec(0.5))}</div>
   )
 
+  // Хост - словом в подписи, как у прошедших визитов: пилл справа забирает ширину у
+  // даты, и на узком экране от неё остаётся «Четверг, 22…».
   let subText: string
   if (needsAnswer) subText = `Резидент предлагает ${pSlot} — нужен ответ`
   else if (p && p.by === 'guest') subText = `вы предложили ${pSlot} · ждём${approved ? ' хоста' : ''}`
-  else if (approved) subText = `к ${r.time} · подтверждён`
+  else if (approved) subText = `к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'подтверждён'}`
   else subText = `к ${r.time} · ждём резидента`
-
-  const right =
-    approved && r.approvedBy ? (
-      <div className="approver">
-        <span className="approver-label">хостит</span>
-        <div className="pill">
-          <Avatar user={r.approvedBy} />
-          <span className="pill-name">{userLabel(r.approvedBy)}</span>
-        </div>
-      </div>
-    ) : (
-      <span className="waiting-label">В ожидании</span>
-    )
 
   return (
     <button
@@ -58,7 +47,7 @@ function VisitRow({ r }: { r: HostingRequest }) {
         <div className="req-name">{fmtWeekdayDate(r.dateKey)}</div>
         <div className={'req-sub' + (needsAnswer ? ' attn' : '')}>{subText}</div>
       </div>
-      {right}
+      <div className="row-right">{icons.chevron()}</div>
     </button>
   )
 }
@@ -170,39 +159,34 @@ export function MyVisits() {
           ) : null}
         </>
       ) : null}
-      <div className="card" style={{ marginTop: 22 }}>
-        <button type="button" className="row tappable" onClick={() => push('route')}>
+      {/* Разделы - плитками, а не строками со стрелками: под визитами такой список
+          выглядит экраном настроек, а это места, куда с главной уходят. */}
+      <div className="home-tiles">
+        <button type="button" className="home-tile" onClick={() => push('route')}>
           <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.pin(17, '#fff')}
           </div>
-          <span className="row-label">Как пройти</span>
-          <div className="row-right">{icons.chevron()}</div>
+          <span className="home-tile-label">Как пройти</span>
         </button>
-        <Sep left={54} />
-        <button type="button" className="row tappable" onClick={() => push('peek')}>
-          {/* Календарь и фиолетовый — те же, что у ивентов: за этой строкой не только
+        <button type="button" className="home-tile" onClick={() => push('peek')}>
+          {/* Календарь и фиолетовый - те же, что у ивентов: за этой плиткой не только
               список людей, но и то, что в спейсе происходит. */}
           <div className="row-icon" style={{ background: 'var(--purple)' }}>
             {icons.calendar(17, '#fff')}
           </div>
-          <span className="row-label">Активность</span>
-          <div className="row-right">{icons.chevron()}</div>
+          <span className="home-tile-label">Активность</span>
         </button>
-        <Sep left={54} />
-        <button type="button" className="row tappable" onClick={() => openUrl(SPACE_CHAT_URL)}>
+        <button type="button" className="home-tile" onClick={() => openUrl(SPACE_CHAT_URL)}>
           <div className="row-icon" style={{ background: 'var(--green)' }}>
             {icons.chat(17, '#fff')}
           </div>
-          <span className="row-label">Чат спейса</span>
-          <div className="row-right">{icons.chevron()}</div>
+          <span className="home-tile-label">Чат спейса</span>
         </button>
-        <Sep left={54} />
-        <button type="button" className="row tappable" onClick={() => push('settings')}>
+        <button type="button" className="home-tile" onClick={() => push('settings')}>
           <div className="row-icon" style={{ background: 'var(--gray)' }}>
             {icons.gear()}
           </div>
-          <span className="row-label">Настройки</span>
-          <div className="row-right">{icons.chevron()}</div>
+          <span className="home-tile-label">Настройки</span>
         </button>
       </div>
       <BottomBar>

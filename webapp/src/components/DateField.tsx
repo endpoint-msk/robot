@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addDays, dayNum, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
+import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
 import { useSheetDrag } from './useSheetDrag'
 
@@ -54,6 +55,8 @@ function DateSheet({
     setShown(false)
     setTimeout(() => onClose(next), 220)
   }
+  // Системная «Назад» закрывает шторку, а не уводит из редактора под ней.
+  useEffect(() => pushOverlay(() => close(null)), [])
   const overlayRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
   useSheetDrag(sheetRef, overlayRef, () => close(null))

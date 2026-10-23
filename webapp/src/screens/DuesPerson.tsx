@@ -118,14 +118,12 @@ export function DuesPerson() {
     data.user.username ? `@${data.user.username}` : 'без ника',
     <>
       {data.missed > 0 && data.rate.amount > 0 ? (
-        <div className="status-card" style={{ background: data.missed >= 2 ? 'rgba(255,59,48,0.1)' : 'rgba(255,149,0,0.1)' }}>
+        <div className={'status-card debt-card ' + (data.missed >= 2 ? 'crit' : 'warn')}>
           <div className="status-card-head">
-            <div className="status-card-icon" style={{ background: data.missed >= 2 ? 'var(--red)' : 'var(--orange)' }}>
+            <div className="status-card-icon">
               {data.missed >= 2 ? icons.stopSign(15, '#fff') : icons.warnTriangle(15, '#fff')}
             </div>
-            <div className="status-card-title" style={{ color: data.missed >= 2 ? 'var(--red)' : 'var(--orange)' }}>
-              {`${debtWord(data.missed)} без взноса`}
-            </div>
+            <div className="status-card-title">{`${debtWord(data.missed)} без взноса`}</div>
           </div>
           <div className="status-card-note">
             {data.missed >= 2
@@ -138,7 +136,7 @@ export function DuesPerson() {
       {current ? (
         <>
           <SectionTitle>{current.label}</SectionTitle>
-          <div className="card">
+          <div className="card dues-kv">
             <div className="row kv-block">
               <span className="kv-key">Ставка</span>
               <span className="kv-val">{money(current.amount, data.currency)}</span>

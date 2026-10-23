@@ -40,7 +40,7 @@ export function EventRow({
           <span className="ev-row-title">{event.title}</span>
           {event.residentsOnly ? <span className="ev-chip">резидентам</span> : null}
         </div>
-        <div className="ev-row-sub">{[dateLabel, `в ${event.time}`, host].filter(Boolean).join(' · ')}</div>
+        <div className="ev-row-sub">{[dateLabel, `в\u00a0${event.time}`, host].filter(Boolean).join(' · ')}</div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
     </button>
@@ -63,7 +63,7 @@ export function LaterEvents({ backLabel }: { backLabel: string }) {
       <div className="card">
         {events.map((event, i) => (
           <Fragment key={event.id}>
-            {i > 0 ? <Sep left={62} /> : null}
+            {i > 0 ? <Sep left={64} /> : null}
             <EventRow
               event={event}
               backLabel={backLabel}

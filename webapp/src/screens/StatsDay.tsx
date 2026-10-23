@@ -6,7 +6,7 @@ import { api } from '../api'
 import { fmtWeekdayDate, plural } from '../dates'
 import { useRemote } from '../remote'
 import { push, useParams } from '../store'
-import { fmtDuration, fmtMinutes, statsAvatarUser } from '../stats'
+import { dayEnd, fmtDuration, fmtMinutes, statsAvatarUser } from '../stats'
 import type { StatsDayRow, StatsDayView } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
 import { Avatar } from '../components/people'
@@ -21,6 +21,20 @@ import { SkBlock, SkCard } from '../components/skeleton'
  * строку цифр.
  */
 const MAX_TICKS = 3
+
+/** Конец суток пишем как 24:00: «00:00» в конце дорожки читалось как её начало. */
+const clock = (minutes: number): string => (minutes >= 24 * 60 ? '24:00' : fmtMinutes(minutes))
+
+/** Провалы роутера: двухчасовые интервалы, как у клеток карты, соседние склеены. */
+const gapRanges = (gaps: number[]): { from: number; to: number }[] => {
+  const out: { from: number; to: number }[] = []
+  for (const b of [...gaps].sort((x, y) => x - y)) {
+    const last = out[out.length - 1]
+    if (last && last.to === b * 120) last.to += 120
+    else out.push({ from: b * 120, to: b * 120 + 120 })
+  }
+  return out
+}
 
 /** Окно таймлайна: от начала первого визита до конца последнего, по целым часам. */
 const rangeOf = (data: StatsDayView): { start: number; end: number } => {
@@ -184,6 +198,13 @@ export function StatsDay() {
   for (let i = 0; i < MAX_TICKS; i++) ticks.push(start + step * i)
   const pct = (minutes: number): number => ((minutes - start) / span) * 100
   const people = groupByPerson(data.rows)
+  const gaps = gapRanges(data.gaps)
+  // Провал внутри окна штрихуется прямо на дорожках, как клетка карты: пустая дорожка
+  // там утверждала бы, что никого не было, а мы этого не знаем.
+  const shownGaps = gaps
+    .map((g) => ({ from: Math.max(g.from, start), to: Math.min(g.to, end) }))
+    .filter((g) => g.to > g.from)
+  const gapSpans = gaps.map((g) => `с ${clock(g.from)} до ${clock(g.to)}`)
 
   return frame(
     <>
@@ -191,7 +212,7 @@ export function StatsDay() {
         <div className="stats-figure">
           <span className="sf-main sf-mid">{fmtDuration(data.openMinutes)}</span>
         </div>
-        <div className="stats-note">{`Открыт с ${data.from} до ${data.to}`}</div>
+        <div className="stats-note">{`Открыт с ${data.from} до ${dayEnd(data.to)}`}</div>
         <div className="sep" style={{ margin: '14px 0 12px' }} />
         <div className="stats-pair">
           <div>
@@ -222,7 +243,7 @@ export function StatsDay() {
                   ...(i === ticks.length - 1 ? { transform: 'translateX(-100%)' } : {}),
                 }}
               >
-                {fmtMinutes(t)}
+                {clock(t)}
               </span>
             ))}
           </div>
@@ -243,6 +264,13 @@ export function StatsDay() {
               {ticks.slice(1, -1).map((t) => (
                 <i className="tl-grid" key={t} style={{ left: `${pct(t)}%` }} />
               ))}
+              {shownGaps.map((g) => (
+                <i
+                  className="tl-gap"
+                  key={`gap-${g.from}`}
+                  style={{ left: `${pct(g.from)}%`, width: `${pct(g.to) - pct(g.from)}%` }}
+                />
+              ))}
               {p.visits.map((v, j) => (
                 <i
                   key={`${v.fromMin}-${j}`}
@@ -255,7 +283,7 @@ export function StatsDay() {
                 через нативный title время визита было не прочитать вовсе. У нескольких
                 визитов это от первого прихода до последнего ухода — перерывы видно по
                 самой дорожке. */}
-            <div className="tl-when">{`${fmtMinutes(p.fromMin)}–${fmtMinutes(p.toMin)}`}</div>
+            <div className="tl-when">{`${clock(p.fromMin)}–${clock(p.toMin)}`}</div>
           </button>
         ))}
         <div className="tl-legend">
@@ -267,14 +295,20 @@ export function StatsDay() {
             <i className="tl-swatch mac" />
             по MAC
           </span>
+          {shownGaps.length > 0 ? (
+            <span>
+              <i className="tl-swatch gap" />
+              роутер был недоступен
+            </span>
+          ) : null}
         </div>
       </div>
 
-      {data.gaps.length > 0 ? (
+      {gapSpans.length > 0 ? (
         <Footnote>
-          {`Часть дня данных не было: роутер не отвечал (${data.gaps
-            .map((b) => `${String(b * 2).padStart(2, '0')}:00`)
-            .join(', ')}). Отметок в это время могло быть больше.`}
+          {`Часть дня данных не было: роутер не отвечал в ${gapSpans.length > 1 ? 'промежутках' : 'промежутке'} ${
+            gapSpans.length > 1 ? `${gapSpans.slice(0, -1).join(', ')} и ${gapSpans[gapSpans.length - 1]}` : gapSpans[0]
+          }. Отметок в это время могло быть больше.`}
         </Footnote>
       ) : null}
     </>,

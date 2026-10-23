@@ -53,7 +53,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
               const weekEnd = addDays(week.weekStart, 6)
               return (
                 <Fragment key={week.weekStart}>
-                  {i > 0 ? <Sep left={70} /> : null}
+                  {i > 0 ? <Sep left={66} /> : null}
                   <button
                     type="button"
                     className="row tappable"
@@ -70,11 +70,13 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                       <div className="week-sub">{weeksAgoLabel(week.weekStart, data!.todayKey)}</div>
                     </div>
                     <div className="row-right">
-                      <div className="approved-count" style={{ fontSize: 14 }}>
-                        {icons.check(14, '#34c759')}
-                        {String(week.approved)}
+                      <div className="frac">
+                        <span className="approved-count">
+                          {icons.check(14, '#34c759')}
+                          {String(week.approved)}
+                        </span>
+                        <span className="count-muted">{`/ ${week.total}`}</span>
                       </div>
-                      <span className="count-muted">{`/ ${week.total}`}</span>
                       {icons.chevron()}
                     </div>
                   </button>
@@ -160,7 +162,7 @@ function GuestSearch({
       <div className="card">
         {guests.map((g, i) => (
           <Fragment key={g.user.userId}>
-            {i > 0 ? <Sep left={66} /> : null}
+            {i > 0 ? <Sep left={64} /> : null}
             <button
               type="button"
               className="row tappable"
@@ -172,16 +174,19 @@ function GuestSearch({
                 <div className="week-title">{g.user.name}</div>
                 <div className="week-sub">
                   {g.user.username ? `@${g.user.username} · ` : ''}
-                  {`последняя ${fmtShortDate(g.lastDateKey)}`}
+                  {/* Дата не рвётся: иначе число оставалось в конце строки, а месяц уезжал на следующую. */}
+                  {`последняя ${fmtShortDate(g.lastDateKey).replace(/ /g, '\u00a0')}`}
                 </div>
               </div>
               {/* Визиты из всех записей человека: «был 4 раза из 5 заявок». */}
               <div className="row-right">
-                <div className="approved-count" style={{ fontSize: 14 }}>
-                  {icons.check(14, '#34c759')}
-                  {String(g.visits)}
+                <div className="frac">
+                  <span className="approved-count">
+                    {icons.check(14, '#34c759')}
+                    {String(g.visits)}
+                  </span>
+                  <span className="count-muted">{`/ ${g.total}`}</span>
                 </div>
-                <span className="count-muted">{`/ ${g.total}`}</span>
                 {icons.chevron()}
               </div>
             </button>

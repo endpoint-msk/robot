@@ -155,6 +155,7 @@ export function NewRequest() {
           days={days}
           selected={day}
           onSelect={(k) => {
+            if (k !== day) haptic.tick()
             markOwnTap()
             selectDay(k)
           }}
@@ -199,7 +200,6 @@ export function NewRequest() {
         <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit}>
           Отправить заявку
         </ActionButton>
-        <div className="bar-hint">Ваша заявка будет отправлена резидентам</div>
       </BottomBar>
     </Screen>
   )

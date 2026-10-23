@@ -60,13 +60,6 @@ export function DayRow({
     // Две строки внутри — своя вертикальная подложка (та же, что в «Активности»).
     ((event || agendaText) && people ? ' day-stack' : '')
 
-  const dayCol = (
-    <div className="day-col">
-      <div className="dow">{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</div>
-      <div className="date">{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</div>
-    </div>
-  )
-
   // Резиденты и гости в одном стеке, резиденты первыми (тот же порядок, что у
   // attendeesForDay). Раньше при непустом списке заявок отметившиеся резиденты
   // из строки пропадали целиком: день, на который собрались трое своих, выглядел
@@ -84,6 +77,16 @@ export function DayRow({
   // читается как статус дня, хотя относится к части заявок.
   const needsAction = day.total > day.approved && !lock
 
+  const dayCol = (
+    <div className="day-col">
+      <div className="dow">
+        {WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}
+        {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
+      </div>
+      <div className="date">{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</div>
+    </div>
+  )
+
   // Кнопкой строка становится только когда по ней есть куда перейти: <button> без
   // обработчика всё равно ловил бы фокус и объявлялся как действие.
   const Tag = tappable ? 'button' : 'div'
@@ -93,7 +96,6 @@ export function DayRow({
     // (скринридер, наведение мышью): текстовой метки в строке нет намеренно.
     <Tag className={cls} title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined} {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}>
       {dayCol}
-      {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
       {empty ? (
         // «Пока никого» в закрытом дне — неправда: никого и не будет.
         <span className="day-none">{lock ? lock.reason || 'Закрыт для гостей' : 'Пока никого'}</span>
@@ -104,7 +106,8 @@ export function DayRow({
           {event ? (
             <div className="ev-day-label">
               {icons.calendar(13, '#bf5af2')}
-              <span>{`${event.title} · ${event.time}`}</span>
+              <span>{event.title}</span>
+              <span className="ev-day-time">{`· ${event.time}`}</span>
             </div>
           ) : agendaText ? (
             <div className="agenda-day-label">
@@ -116,19 +119,17 @@ export function DayRow({
             <div className="day-people">
               {faces.length > 0 ? <AvatarStack users={faces} /> : null}
               <span className="day-count">{label}</span>
+              {day.approved > 0 || alwaysApproved ? (
+                <div className="approved-count">
+                  {icons.check(14, '#34c759')}
+                  {String(day.approved)}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
       )}
-      <div className="row-right">
-        {!empty && (day.approved > 0 || alwaysApproved) ? (
-          <div className="approved-count">
-            {icons.check(14, '#34c759')}
-            {String(day.approved)}
-          </div>
-        ) : null}
-        {tappable ? icons.chevron(isToday ? sec(0.4) : undefined) : null}
-      </div>
+      {tappable ? <div className="row-right">{icons.chevron(isToday ? sec(0.4) : undefined)}</div> : null}
     </Tag>
   )
 }

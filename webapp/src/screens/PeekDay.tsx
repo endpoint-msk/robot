@@ -22,7 +22,7 @@ export function PeekDay() {
       <BackRow label="Активность" />
       <Header
         title={WEEKDAYS_FULL[weekdayIdx(params.dateKey)]}
-        subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)} · ${peopleWord(att.length)}`}
+        subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(params.dateKey)}${att.length > 0 ? ` · ${peopleWord(att.length)}` : ''}`}
       />
       {lock ? (
         <div className="lock-banner">

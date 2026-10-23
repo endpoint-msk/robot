@@ -59,7 +59,7 @@ function HistoryRow({ item, todayKey }: { item: HistoryItem; todayKey: string })
         <span className="ws-month">{MONTHS_ABBR[monthIdx(item.dateKey)]}</span>
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="week-title">{r ? `${fmtShortDate(r.dateKey)} · к ${r.time}` : fmtShortDate(item.dateKey)}</div>
+        <div className="week-title">{r ? `${fmtShortDate(r.dateKey)} · к ${r.time}` : fmtShortDate(item.dateKey)}</div>
         <div className={'week-sub visit-status ' + line.tone}>
           {line.text}
           {r?.anon ? ' · инкогнито' : ''}
@@ -194,7 +194,7 @@ export function GuestVisits() {
           <div className="card">
             {items.map((item, i) => (
               <Fragment key={item.key}>
-                {i > 0 ? <Sep left={70} /> : null}
+                {i > 0 ? <Sep left={66} /> : null}
                 <HistoryRow item={item} todayKey={todayKey} />
               </Fragment>
             ))}
