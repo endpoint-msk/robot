@@ -2309,7 +2309,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 
 /* Ивент на чтение (EventView): афиша во всю ширину на полосе в тон ивента, под ней дата
    плиткой и «Придут», как в шапке дня. */
-.evv-top { position: relative; padding-bottom: 18px; margin-bottom: 18px; }
+/* flow-root: в Telegram строки «назад» нет, афиша идёт первой, и без него её отступ
+   схлопывался с .evv-top и сдвигал полосу вниз, открывая чёрный фон под шапкой. */
+.evv-top { position: relative; display: flow-root; padding-bottom: 18px; margin-bottom: 18px; }
 .evv-band {
     position: absolute;
     z-index: 0;
