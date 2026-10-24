@@ -33,6 +33,8 @@ import { applyTheme } from '../theme'
 
 /** Сколько страниц смонтировано с каждой стороны от открытой. */
 const REACH = 2
+/** Насколько полоса заходит под шапку; дальше до следующего блока — фон (CSS `.pgr-page [data-pager-head]`). */
+const BAND_PAD = 16
 
 type Drag = { x0: number; y0: number; p0: number; id: number; dir: 0 | 1; mouse: boolean }
 
@@ -87,11 +89,12 @@ export function Pager<T>({
       const rootTop = root.getBoundingClientRect().top
       S.bandTop = band.getBoundingClientRect().top - rootTop
       S.heads.clear()
-      // Полоса доходит до следующего блока, а не до низа шапки: иначе её край ложится
-      // впритык под аватарку и подзаголовок.
+      // Полоса заходит под шапку на BAND_PAD, а не обрывается по её низу (край лёг бы
+      // впритык под подзаголовок) и не доходит до следующего блока (карточка прилипла бы
+      // к краю): так же, как у листалки дня.
       pageEls.current.forEach((el, i) => {
         const head = el.querySelector('[data-pager-head]')
-        if (head) S.heads.set(i, head.getBoundingClientRect().bottom + parseFloat(getComputedStyle(head).marginBottom) - rootTop)
+        if (head) S.heads.set(i, head.getBoundingClientRect().bottom + BAND_PAD - rootTop)
       })
     }
 

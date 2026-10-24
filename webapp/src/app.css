@@ -1279,6 +1279,8 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .pgr-track { margin: 0 -16px; overflow: hidden; touch-action: pan-y; }
 .pgr-page { padding: 0 16px; }
 .pgr-page:not(.active) { position: absolute; top: 0; left: 0; right: 0; }
+/* 16px полосы (BAND_PAD в Pager.tsx) и 18px фона до следующего блока, как у листалки дня. */
+.pgr-page [data-pager-head] { margin-bottom: 34px; }
 .dpg-dots { display: flex; justify-content: center; margin: -6px 0 0; touch-action: pan-y; }
 .dpg-dot {
     display: flex;
