@@ -256,6 +256,12 @@ export const icons = {
       <path d="M2.8 7.4h12.4M6.2 1.8v3M11.8 1.8v3" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   ),
+  sparkles: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <path d="M7.5 2.5c.5 3.2 1.8 4.5 5 5-3.2.5-4.5 1.8-5 5-.5-3.2-1.8-4.5-5-5 3.2-.5 4.5-1.8 5-5z" fill={color} stroke={color} strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M13.6 10.8c.25 1.6.9 2.25 2.5 2.5-1.6.25-2.25.9-2.5 2.5-.25-1.6-.9-2.25-2.5-2.5 1.6-.25 2.25-.9 2.5-2.5z" fill={color} stroke={color} strokeWidth="1" strokeLinejoin="round" />
+    </svg>
+  ),
   /** Облачко реплики — вход в чат спейса. */
   chat: (size: number, color: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 18 18">

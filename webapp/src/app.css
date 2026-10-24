@@ -5187,19 +5187,6 @@ button.heat-cell.picked {
    что и шаги знакомства, и так же ужимаются на низком экране (--ob-k). */
 
 /* Значок строки в «Статистике»: месяц точками, вечера горят. */
-.wrap-mini {
-    display: grid;
-    grid-template-columns: repeat(7, 3px);
-    grid-auto-rows: 3px;
-    gap: 1px;
-    align-content: center;
-    justify-content: center;
-    background: var(--indigo);
-}
-.wrap-mini i { border-radius: 1px; background: rgba(255, 255, 255, 0.32); }
-.wrap-mini i.on { background: #fff; }
-.wrap-mini i.pad { background: none; }
-
 /* Крутилка - только если итоги затянулись, как каркас (320 мс). */
 .wrap-wait {
     position: absolute;

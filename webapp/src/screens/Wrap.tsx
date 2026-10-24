@@ -17,7 +17,7 @@ import { getState, pop, push, useStore } from '../store'
 import { heatLevel, hoursNum, hoursNumWord, hoursWord } from '../stats'
 import { applyTheme } from '../theme'
 import { haptic, setBottomBarColor, setHeaderColor } from '../telegram'
-import { ApiError, type User, type WrapInfo, type WrapMonth } from '../types'
+import { ApiError, type User, type WrapMonth } from '../types'
 import { ActionButton, Sep } from '../components/common'
 import { Avatar } from '../components/people'
 import { AnimContext } from '../components/Screen'
@@ -675,22 +675,6 @@ const loadWrap = (month: string): Promise<WrapMonth> => {
 
 // --- вход ------------------------------------------------------------------------
 
-/** Месяц точками, вечера горят: значок строки в статистике. */
-function WrapMini({ info, className }: { info: WrapInfo; className: string }) {
-  const pad = padOf(info.month)
-  const lit = new Set(info.days)
-  const cells: ReactNode[] = []
-  for (let i = 0; i < pad + daysInMonth(info.month); i++) {
-    const day = i - pad + 1
-    cells.push(<i key={i} className={day < 1 ? 'pad' : lit.has(day) ? 'on' : undefined} />)
-  }
-  return (
-    <div className={className + ' wrap-mini'} aria-hidden="true">
-      {cells}
-    </div>
-  )
-}
-
 /** Строка в «Статистике»: история прошлого месяца. */
 export function WrapRow() {
   const { data } = useStore()
@@ -707,7 +691,9 @@ export function WrapRow() {
           push('wrap')
         }}
       >
-        <WrapMini info={info} className="row-icon" />
+        <div className="row-icon" style={{ background: 'var(--orange)' }}>
+          {icons.sparkles(17, '#fff')}
+        </div>
         <span className="row-label">{`Ваш ${monthLower(info.month)} в спейсе`}</span>
         <div className="row-right">
           <span className="dues-amount stat-count" style={{ color: 'var(--text-3)' }}>
