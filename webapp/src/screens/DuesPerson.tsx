@@ -8,15 +8,17 @@ import { money } from '../format'
 import { icons } from '../icons'
 import { numberPrompt } from '../modals'
 import { useRemote } from '../remote'
-import { useParams } from '../store'
+import { mixc, palette } from '../motion'
+import { setTopParams, useParams } from '../store'
 import { haptic } from '../telegram'
 import { ApiError, type DuesPerson as DuesPersonData, type DuesRateKind } from '../types'
 import { BackRow, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
-import { userLabel } from '../components/people'
+import { avatarTone, userLabel } from '../components/people'
+import { Pager } from '../components/Pager'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
-import { debtWord } from './Dues'
+import { debtWord, type DuesRef } from './Dues'
 
 const RATE_ROWS: { kind: DuesRateKind; label: string }[] = [
   { kind: 'common', label: 'Общая' },
@@ -53,8 +55,42 @@ function PersonSkeleton() {
   )
 }
 
+/**
+ * Карточки листаются в порядке разделов «Взносов» (`people` в параметрах): дев сверяет
+ * выписку с людьми одного за другим, не возвращаясь в список.
+ */
 export function DuesPerson() {
-  const { userId } = useParams()
+  const params = useParams()
+  const userId = params.userId as number
+  const people = (params.people as DuesRef[] | undefined) ?? null
+  const index = people ? people.findIndex((p) => p.userId === userId) : -1
+  if (!people || index < 0 || people.length < 2) {
+    return (
+      <Screen>
+        <BackRow label="Взносы" />
+        <DuesPage userId={userId} known={people?.[index] ?? null} />
+      </Screen>
+    )
+  }
+  return (
+    <Screen>
+      <Pager
+        items={people}
+        index={index}
+        keyOf={(p) => String(p.userId)}
+        onCommit={(i) => setTopParams({ ...params, userId: people[i]!.userId })}
+        tone={(p) => {
+          const C = palette()
+          return mixc(C.bg, avatarTone(p.userId), C.mixp)
+        }}
+        top={<BackRow label="Взносы" />}
+        renderPage={(p) => <DuesPage userId={p.userId} known={p} />}
+      />
+    </Screen>
+  )
+}
+
+function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) {
   const { data, error, loading, pending, reload } = useRemote<DuesPersonData | null>(async () => {
     try {
       return await api<DuesPersonData>('dues.person', { userId })
@@ -71,17 +107,22 @@ export function DuesPerson() {
   // Скелет только на первой загрузке: перезапрос после смены ставки должен
   // обновлять карточку на месте, а не подменять экран.
   const frame = (title: ReactNode, subtitle: ReactNode, body: ReactNode) => (
-    <Screen>
-      <BackRow label="Взносы" />
-      <Header title={title} subtitle={subtitle} />
+    <>
+      <div data-pager-head>
+        <Header title={title} subtitle={subtitle} />
+      </div>
       <Swap loading={loading && !data} skeleton={pending ? <PersonSkeleton /> : null}>
         {body}
       </Swap>
-    </Screen>
+    </>
   )
 
-  // Шапка тут целиком из ответа: в экран приходит только userId.
-  if (loading && !data) return frame(<SkBlock w={186} h={30} />, <SkBlock w={108} h={14} />, null)
+  // Шапка из ответа, а пока его нет — из списка, откуда открыли, если он есть.
+  if (loading && !data) {
+    return known
+      ? frame(known.name, known.username ? `@${known.username}` : 'без ника', null)
+      : frame(<SkBlock w={186} h={30} />, <SkBlock w={108} h={14} />, null)
+  }
   if (error) return frame('Взносы', undefined, <ErrorState onRetry={reload} />)
   if (!data) return frame('Не нашёл', 'Человека нет ни в одном периоде взносов.', null)
 

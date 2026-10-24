@@ -1,9 +1,10 @@
 // Поля форм новой заявки / правки: чипы дней, выбор дня+времени, цель, анонимность,
 // напоминание о визите.
 
-import { useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
+import { clamp, spring } from '../motion'
 import { getState } from '../store'
 import { sec } from '../theme'
 import type { Day, ReminderChoice } from '../types'
@@ -50,6 +51,63 @@ export function useDayTime(initialDay: string, initialTime: string | null) {
 /** Первый день, на который вообще можно проситься: закрытые пропускаем. */
 export const firstOpenDay = (days: Day[]): string => (days.find((d) => !d.lock) ?? days[0]!).dateKey
 
+/** Передний край заливки резче заднего: на ходу она вытягивается и догоняет сама себя. */
+const FILL_LEAD = { response: 0.3, damping: 0.8 }
+const FILL_TRAIL = { response: 0.46, damping: 0.88 }
+
+/** Смена дня позже этого срока после тапа пришла не от пальца, а с данными (сдвинулась неделя). */
+const DAY_TAP_MS = 600
+
+const CLIP_NONE = 'inset(0 0 0 100%)'
+
+/** Края заливки в номерах чипов: левый у левого края чипа `l`, правый у правого края чипа `r`. */
+type FillEdges = { l: number; r: number }
+
+/** Скругление чипа ряда: читается один раз, на кадрах пересчёт стилей не нужен. */
+const chipRound = new WeakMap<HTMLElement, string>()
+
+/**
+ * Ставит заливку по краям и проявляет белые цифры ровно под ней. Пиксели считаются на
+ * каждом кадре заново, а не один раз на тап: поворот экрана посреди переезда иначе
+ * сдвинул бы заливку с чипов.
+ */
+function paintDayFill(row: HTMLElement, fill: HTMLElement, at: FillEdges | null): void {
+  const chips = Array.from(row.querySelectorAll<HTMLElement>(':scope > .day-chip'))
+  const inkOf = (chip: HTMLElement) => chip.querySelector<HTMLElement>(':scope > .dc-ink')
+  const first = chips[0]
+  const second = chips[1]
+  if (!at || !first) {
+    fill.style.clipPath = CLIP_NONE
+    for (const chip of chips) {
+      const ink = inkOf(chip)
+      if (ink) ink.style.clipPath = CLIP_NONE
+    }
+    return
+  }
+  const w = first.offsetWidth
+  const step = second ? second.offsetLeft - first.offsetLeft : w
+  const left = first.offsetLeft + at.l * step
+  const right = first.offsetLeft + at.r * step + w
+  let round = chipRound.get(row)
+  if (!round) {
+    round = getComputedStyle(first).borderTopLeftRadius
+    chipRound.set(row, round)
+  }
+  fill.style.clipPath = `inset(0 ${(row.clientWidth - right).toFixed(2)}px 0 ${left.toFixed(2)}px round ${round})`
+  for (const chip of chips) {
+    const ink = inkOf(chip)
+    if (!ink) continue
+    const a = clamp(left - chip.offsetLeft, 0, w)
+    const b = clamp(chip.offsetLeft + w - right, 0, w)
+    ink.style.clipPath = a + b >= w - 0.5 ? CLIP_NONE : `inset(0 ${b.toFixed(2)}px 0 ${a.toFixed(2)}px round ${round})`
+  }
+}
+
+/**
+ * Ряд дней. Синяя заливка одна на весь ряд и переезжает на выбранный день пружиной,
+ * как бегунок периода в статистике. Цифры белеют там, куда она наехала: белая копия
+ * лежит в каждом чипе отдельным слоем и открывается по положению заливки.
+ */
 export function DayChips({
   days,
   selected,
@@ -61,39 +119,122 @@ export function DayChips({
   onSelect: (dateKey: string) => void
   showCounts?: boolean
 }) {
+  const rowRef = useRef<HTMLDivElement>(null)
+  const fillRef = useRef<HTMLElement>(null)
+  const at = useRef<FillEdges | null>(null)
+  const runs = useRef<{ l: ReturnType<typeof spring> | null; r: ReturnType<typeof spring> | null }>({ l: null, r: null })
+  const tapAt = useRef(-Infinity)
+  const index = days.findIndex((d) => d.dateKey === selected)
+
+  const paint = (): void => {
+    if (rowRef.current && fillRef.current) paintDayFill(rowRef.current, fillRef.current, at.current)
+  }
+
+  // Заливка встаёт на выбранный день до первой отрисовки. Переезжает она только после
+  // своего тапа и подхватывает скорость, если по дням стучат подряд.
+  useLayoutEffect(() => {
+    const own = performance.now() - tapAt.current < DAY_TAP_MS
+    tapAt.current = -Infinity
+    const from = at.current
+    const vl = runs.current.l?.velocity() ?? 0
+    const vr = runs.current.r?.velocity() ?? 0
+    runs.current.l?.stop()
+    runs.current.r?.stop()
+    runs.current = { l: null, r: null }
+    if (index < 0 || !from || !own) {
+      at.current = index < 0 ? null : { l: index, r: index }
+      paint()
+      return
+    }
+    paint()
+    const ahead = index > (from.l + from.r) / 2
+    runs.current.l = spring(
+      from.l,
+      index,
+      vl,
+      ahead ? FILL_TRAIL : FILL_LEAD,
+      (x) => {
+        at.current = { l: x, r: at.current?.r ?? x }
+        paint()
+      },
+      () => {
+        runs.current.l = null
+      },
+      0.002,
+    )
+    runs.current.r = spring(
+      from.r,
+      index,
+      vr,
+      ahead ? FILL_LEAD : FILL_TRAIL,
+      (x) => {
+        at.current = { l: at.current?.l ?? x, r: x }
+        paint()
+      },
+      () => {
+        runs.current.r = null
+      },
+      0.002,
+    )
+  }, [index, days.length])
+
+  useEffect(() => {
+    const row = rowRef.current
+    const ro = row && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => paint()) : null
+    if (row) ro?.observe(row)
+    return () => {
+      ro?.disconnect()
+      runs.current.l?.stop()
+      runs.current.r?.stop()
+    }
+  }, [])
+
   return (
-    <div className="day-chips">
+    <div className="day-chips dc-track" ref={rowRef}>
+      <i className="dc-fill" ref={fillRef} aria-hidden="true" />
       {days.map((d) => {
         // Закрытый день не выбирается вовсе: сервер такую заявку всё равно отобьёт, а
         // штриховка объясняет отказ до тапа, а не алертом после.
         const locked = Boolean(d.lock)
-        return (
-          <button
-            key={d.dateKey}
-            className={'day-chip' + (d.dateKey === selected ? ' selected' : '') + (locked ? ' locked' : '')}
-            disabled={locked}
-            title={locked ? (d.lock!.reason ? `Закрыт: ${d.lock!.reason}` : 'День закрыт для заявок') : undefined}
-            onClick={() => onSelect(d.dateKey)}
-          >
+        const face = (ink: boolean) => (
+          <>
             <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
             <span className="dc-num">{String(dayNum(d.dateKey))}</span>
             {/* Ивент дня — точкой в углу. Гостю сюда приезжают только открытые
                 ивенты (сервер фильтрует residentsOnly), так что метка честная. */}
             {d.events.length > 0 ? (
-              <i className="dc-event" title={d.events.map((e) => e.title).join(', ')} />
+              <i className="dc-event" title={ink ? undefined : d.events.map((e) => e.title).join(', ')} />
             ) : null}
             {locked ? (
               <span className="dc-dash">—</span>
             ) : showCounts ? (
               d.total > 0 ? (
                 <div className="dc-counts">
-                  {icons.check(10, d.dateKey === selected ? '#fff' : '#34c759', 2.2)}
+                  {icons.check(10, ink ? '#fff' : '#34c759', 2.2)}
                   <span className="dc-approved">{String(d.approved)}</span>
                 </div>
               ) : (
                 <span className="dc-dash">—</span>
               )
             ) : null}
+          </>
+        )
+        return (
+          <button
+            key={d.dateKey}
+            className={'day-chip' + (locked ? ' locked' : '')}
+            aria-pressed={d.dateKey === selected}
+            disabled={locked}
+            title={locked ? (d.lock!.reason ? `Закрыт: ${d.lock!.reason}` : 'День закрыт для заявок') : undefined}
+            onClick={() => {
+              if (d.dateKey !== selected) tapAt.current = performance.now()
+              onSelect(d.dateKey)
+            }}
+          >
+            {face(false)}
+            <span className="dc-ink" aria-hidden="true">
+              {face(true)}
+            </span>
           </button>
         )
       })}
@@ -136,7 +277,7 @@ export function DayChipsLegend({ days }: { days: Day[] }) {
     <div className="chips-legend">
       <span className="cl-row">
         {icons.check(12, '#34c759', 2.2)}
-        число заявок и уже одобренных в этот день
+        число одобренных заявок в этот день
       </span>
       {days.some((d) => d.events.length > 0) ? (
         <span className="cl-row">

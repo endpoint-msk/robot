@@ -2,10 +2,12 @@ import { Fragment } from 'react'
 import { api } from '../api'
 import { addDays, fmtRange, requestsWord } from '../dates'
 import { useRemote } from '../remote'
-import { push, useParams, useStore } from '../store'
+import { stageTint } from '../motion'
+import { push, setTopParams, useParams, useStore } from '../store'
 import type { ArchiveWeekResponse } from '../types'
 import { BackRow, EmptyState, ErrorState, ReadonlyBadge, Sep } from '../components/common'
 import { DayRow } from '../components/DayRow'
+import { Pager } from '../components/Pager'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkBlock } from '../components/skeleton'
@@ -40,9 +42,39 @@ function WeekSkeleton() {
   )
 }
 
+/**
+ * Недели листаются той же листалкой, что дни, если их открыли из архива (`weeks` в
+ * параметрах): соседняя неделя справа, как следующий день у листалки дня. Тон нейтральный.
+ */
 export function ArchiveWeek() {
   const params = useParams()
   const weekStart = params.weekStart as string
+  const weeks = (params.weeks as string[] | undefined) ?? null
+  const index = weeks ? weeks.indexOf(weekStart) : -1
+  if (!weeks || index < 0 || weeks.length < 2) {
+    return (
+      <Screen>
+        <BackRow label="Архив" />
+        <WeekPage weekStart={weekStart} />
+      </Screen>
+    )
+  }
+  return (
+    <Screen>
+      <Pager
+        items={weeks}
+        index={index}
+        keyOf={(w) => w}
+        onCommit={(i) => setTopParams({ ...params, weekStart: weeks[i]! })}
+        tone={() => stageTint('gray')}
+        top={<BackRow label="Архив" />}
+        renderPage={(w) => <WeekPage weekStart={w} />}
+      />
+    </Screen>
+  )
+}
+
+function WeekPage({ weekStart }: { weekStart: string }) {
   const weekEnd = addDays(weekStart, 6)
   const boot = useStore().data!
   // Вчерашний вечер до утра отмечают отсюда, в том числе гостей без заявки в день, на
@@ -101,9 +133,8 @@ export function ArchiveWeek() {
   }
 
   return (
-    <Screen>
-      <BackRow label="Архив" />
-      <div className="header">
+    <>
+      <div className="header" data-pager-head>
         <div className="title">{fmtRange(weekStart, weekEnd)}</div>
         <div className="subtitle">{sub}</div>
       </div>
@@ -111,6 +142,6 @@ export function ArchiveWeek() {
       <Swap loading={!data && !error} skeleton={pending ? <WeekSkeleton /> : null}>
         {body}
       </Swap>
-    </Screen>
+    </>
   )
 }

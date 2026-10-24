@@ -4,11 +4,12 @@
 // Содержимое — во фронте, как и текст правил (screens/Rules.tsx): это константа
 // конкретного спейса, а не настройка, и в стейте ей делать нечего.
 
-import { useEffect, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 import { icons } from '../icons'
 import { showAlert, showImage } from '../modals'
-import { haptic, openUrl } from '../telegram'
+import { openUrl } from '../telegram'
 import { BackRow, Footnote, Header } from '../components/common'
+import { useCopyFeedback } from '../components/CopyFeedback'
 import { Screen } from '../components/Screen'
 
 /** Адрес нужен и на карточке визита — там он и есть ответ на «куда идти». */
@@ -154,27 +155,14 @@ function RouteMap() {
 
 const MAPS_URL = `https://yandex.ru/maps/?text=${encodeURIComponent(`Москва, ${ADDRESS}`)}`
 
-/** Сколько кнопка держит галочку после копирования. */
-const COPIED_MS = 1600
-
 export function Route() {
-  const [copied, setCopied] = useState(false)
-  const timer = useRef<number | null>(null)
-  useEffect(() => () => window.clearTimeout(timer.current ?? undefined), [])
+  const clip = useCopyFeedback(15)
 
-  const copyAddress = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(ADDRESS)
-      haptic.impact('light')
-      // Ответ — сменой иконки в самой кнопке: модалка ради «скопировано» слишком громкая.
-      setCopied(true)
-      window.clearTimeout(timer.current ?? undefined)
-      timer.current = window.setTimeout(() => setCopied(false), COPIED_MS)
-    } catch {
-      // В вебвью буфер обмена может быть недоступен — тогда просто показываем адрес,
-      // выделить и скопировать его руками всё равно можно.
-      showAlert(ADDRESS)
-    }
+  // Ответ на месте пальца, а не модалкой: «скопировано» на весь экран слишком громкое.
+  const copyAddress = async (e: MouseEvent): Promise<void> => {
+    // В вебвью буфер обмена может быть недоступен — тогда просто показываем адрес,
+    // выделить и скопировать его руками всё равно можно.
+    if (!(await clip.copy(ADDRESS, e))) showAlert(ADDRESS)
   }
 
   return (
@@ -183,19 +171,20 @@ export function Route() {
       <Header title="Как пройти" />
 
       <div className="card">
-        <button type="button" className="row tappable route-address" onClick={copyAddress}>
+        <button type="button" className="row tappable route-address" onClick={(e) => void copyAddress(e)}>
           <div className="row-icon route-pin">{icons.pin(18, '#007aff')}</div>
           <div className="route-address-main">
             <div className="route-label">Адрес</div>
-            <div className="route-value">{ADDRESS}</div>
+            <div className="route-value">
+              {ADDRESS}
+            </div>
             <div className="route-sub">{ENTRANCE}</div>
           </div>
           <div className="row-right">
-            <div className={'route-copy' + (copied ? ' done' : '')}>
-              {copied ? icons.check(15, '#34c759', 2.6) : icons.copy(15, '#007aff')}
-            </div>
+            <div className={'route-copy' + (clip.copied ? ' done' : '')}>{clip.glyph}</div>
           </div>
         </button>
+        {clip.toast}
         <div className="sep" style={{ marginLeft: 58 }} />
         <div className="route-metro">
           <div className="route-label">Метро</div>

@@ -65,10 +65,11 @@ export function GuestNote() {
           <button
             className="destructive-btn"
             onClick={async () => {
-              const ok = await confirmDialog(`Удалить заметку о ${guest.name}?`, {
+              const ok = await confirmDialog('Удалить заметку?', {
                 confirmLabel: 'Удалить заметку',
                 cancelLabel: 'Оставить',
                 destructive: true,
+                subject: { user: guest, line: guest.username ? '@' + guest.username : undefined },
               })
               if (ok) await save('')
             }}

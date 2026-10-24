@@ -34,6 +34,8 @@ function weeksAgoLabel(weekStart: string, todayKey: string): string {
 }
 
 function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
+  // Неделя листается к соседним по времени: старые слева, новые справа, как дни.
+  const order = weeks.map((w) => w.weekStart).sort()
   const { data } = useStore()
   // Группируем недели по месяцу понедельника: «Июль 2026».
   const groups: { label: string; weeks: ArchiveWeekSummary[] }[] = []
@@ -57,7 +59,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                   <button
                     type="button"
                     className="row tappable"
-                    onClick={() => push('archiveWeek', { weekStart: week.weekStart })}
+                    onClick={() => push('archiveWeek', { weekStart: week.weekStart, weeks: order })}
                   >
                     {/* Плитка-календарь: число старта + месяц. Диапазон целиком стоит
                         в заголовке справа, а «20 / –26» в две строки читалось как минус. */}

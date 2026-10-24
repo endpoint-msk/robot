@@ -2,21 +2,25 @@
 // Вход двойной — «Создать ивент» на экране дня и заготовка из пересланного в личку
 // поста канала (тогда поля уже заполнены, см. params.draft).
 
-import { Fragment, useEffect, useState, type ChangeEvent } from 'react'
+import { Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
 import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_ABBR, plural, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
-import { compressImage } from '../image'
+import { compressImage, imageToneAt } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { eventPhotoUrl, useIcsLink } from '../links'
-import { stageTint, toHex } from '../motion'
+import { reducedMotion, stageTint, toHex, toneColors } from '../motion'
+import { afterHero } from '../hero'
+import { UnderContext } from '../screenContext'
+import { usePullDismiss } from '../components/usePullDismiss'
 import { haptic, openUrl, setHeaderColor } from '../telegram'
 import { getState, pop, push, setBusy, startNewRequest, useParams, useStore } from '../store'
 import { applyTheme } from '../theme'
 import type { Attendee, ReviewerScope, SpaceEvent, User } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { DateField } from '../components/DateField'
+import { eventTone, toneVars } from '../components/EventRow'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
 import { ResponsibleSheet } from '../components/ResponsiblePicker'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
@@ -25,7 +29,8 @@ import { Screen } from '../components/Screen'
 import { usePasteImages } from '../usePasteImages'
 
 const MAX_TITLE = 120
-const MAX_DESCRIPTION = 2000
+/** Столько же держит сервер (MAX_EVENT_DESCRIPTION): длина сообщения в Telegram. */
+const MAX_DESCRIPTION = 4096
 /** Столько же держит сервер (MAX_EVENT_PHOTOS): ивент — анонс, а не фотоальбом. */
 const MAX_PHOTOS = 6
 /** Столько же держит сервер (EVENT_DAYS_AHEAD): дальше даты не выставить. */
@@ -79,6 +84,7 @@ export function Event() {
 
   const [title, setTitle] = useState(existing?.title ?? draft?.title ?? '')
   const [description, setDescription] = useState(existing?.description ?? draft?.description ?? '')
+  const descRef = useRef<HTMLTextAreaElement>(null)
   const [dateKey, setDateKey] = useState(initialDay)
   // Фиксированные «19:00» на сегодня к восьми вечера уже прошли — стартуем с ближайшего
   // слота, как форма заявки (defaultTimeFor).
@@ -104,6 +110,25 @@ export function Event() {
   const [photos, setPhotos] = useState<string[]>(existing?.photos ?? (draft?.hasPhoto ? [`draft-${data!.me.id}`] : []))
   const canSave = title.trim().length > 0
 
+  // Тон каждой афиши, которую редактор уже знает: null - насыщенного оттенка нет, нет
+  // ключа - ещё не считали. Залитые здесь приносят тон из compressImage, остальные
+  // (заготовка из канала, сохранённые раньше) считаются по картинке с сервера.
+  const [tones, setTones] = useState<Record<string, string | null>>(() => {
+    const head = existing?.photos?.[0]
+    return head && existing?.tone ? { [head]: existing.tone } : {}
+  })
+  const toneLoads = useRef(new Map<string, Promise<string | null>>())
+  const toneOf = (id: string): Promise<string | null> => {
+    let load = toneLoads.current.get(id)
+    if (!load) {
+      load = imageToneAt(eventPhotoUrl(id))
+      toneLoads.current.set(id, load)
+    }
+    return load
+  }
+  const first = photos[0]
+  const firstTone = first ? tones[first] : null
+
   const addFiles = async (picked: File[]): Promise<void> => {
     if (picked.length === 0) return
     const room = MAX_PHOTOS - photos.length
@@ -114,7 +139,14 @@ export function Event() {
     setBusy(true)
     try {
       const added: string[] = []
-      for (const file of picked.slice(0, room)) added.push(await uploadEventPhoto(await compressImage(file)))
+      const found: Record<string, string | null> = {}
+      for (const file of picked.slice(0, room)) {
+        const { blob, tone } = await compressImage(file)
+        const id = await uploadEventPhoto(blob)
+        added.push(id)
+        found[id] = tone
+      }
+      setTones((prev) => ({ ...prev, ...found }))
       setPhotos((prev) => [...prev, ...added])
       haptic.notify('success')
       if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
@@ -130,6 +162,25 @@ export function Event() {
   const readOnly = Boolean(existing) && (asGuest || (existing!.host.userId !== data!.me.id && !data!.me.isDev))
   // Вставка картинок из буфера (Ctrl/Cmd+V) на десктопе; в режиме чтения не нужна.
   usePasteImages(addFiles, !readOnly)
+
+  // Первой стоит афиша без известного тона: заготовка из канала, ивент до тонов или
+  // первую фото убрали. Считаем по картинке, превью перекрасится, когда он будет.
+  useEffect(() => {
+    if (readOnly || !first || firstTone !== undefined) return
+    void (async () => {
+      const tone = await toneOf(first)
+      setTones((prev) => ({ ...prev, [first]: tone }))
+    })()
+  }, [readOnly, first, firstTone])
+
+  // Поле описания растёт по тексту: заготовка из канала приносит весь пост, и в окне на
+  // пять строк с прокруткой внутри он выглядел обрезанным.
+  useLayoutEffect(() => {
+    const el = descRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [description, readOnly])
 
   if (readOnly) return <EventView event={existing!} asGuest={asGuest} />
 
@@ -163,6 +214,17 @@ export function Event() {
 
   const save = async (): Promise<void> => {
     if (!canSave) return
+    // Тон уходит от первой афиши. Заготовку публикуют и сразу, раньше, чем он досчитался:
+    // тогда ждём его, иначе ивент ушёл бы фиолетовым.
+    let tone = firstTone ?? null
+    if (first && firstTone === undefined) {
+      setBusy(true)
+      try {
+        tone = await toneOf(first)
+      } finally {
+        setBusy(false)
+      }
+    }
     // Сервер сам нормализует форму (обрежет пустые блоки/варианты; пустая → null).
     const payload = {
       dateKey,
@@ -171,6 +233,7 @@ export function Event() {
       description,
       residentsOnly,
       photos,
+      tone,
       form: formOn ? form : null,
       responsibles: responsibles.map((u) => u.userId),
     }
@@ -217,6 +280,7 @@ export function Event() {
         <div className="sep" style={{ marginLeft: 14 }} />
         <div className="ev-field">
           <textarea
+            ref={descRef}
             className="ev-desc-input"
             placeholder="Описание: что будет, кому интересно, что взять с собой"
             rows={3}
@@ -366,6 +430,7 @@ export function Event() {
           description,
           residentsOnly,
           photos,
+          tone: firstTone ?? undefined,
           host: existing?.host ?? { userId: data!.me.id, username: data!.me.username, name: data!.me.name },
           responsibles,
           createdAt: '',
@@ -422,16 +487,45 @@ export function DateTile({ dateKey, small = false }: { dateKey: string; small?: 
  * же языком, что пост в знакомстве. Под ней дата плиткой, кто придёт и ведущий.
  */
 function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) {
-  const { data, theme } = useStore()
+  const { data, stack } = useStore()
   const photos = event.photos ?? []
+  const rootRef = useRef<HTMLDivElement>(null)
+  const posterRef = useRef<HTMLDivElement>(null)
+  const under = useContext(UnderContext)
+  // Потянули экран вниз: ивент уходит карточкой в свою строку.
+  usePullDismiss(rootRef, { enabled: !under && stack.length > 1 })
+  // При прокрутке снимок внутри рамки едет медленнее страницы: у афиши появляется глубина.
+  useEffect(() => {
+    if (under || reducedMotion()) return
+    const photo = posterRef.current?.querySelector<HTMLElement>('.evv-photo')
+    if (!photo) return
+    const onScroll = (): void => {
+      const y = Math.max(0, window.scrollY)
+      const h = posterRef.current?.offsetHeight ?? 212
+      photo.style.transform = y > 0 ? `translate3d(0, ${Math.min(y * 0.25, h * 0.08).toFixed(1)}px, 0)` : ''
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [under, photos.length])
   const openIcs = useIcsLink('event', event.id, true)
   const day = data!.days.find((d) => d.dateKey === event.dateKey) ?? null
+  // Тон афиши ложится на каждый блок с цветом ивента: своего style у экрана нет.
+  const tone = eventTone(event)
+  const tv = toneVars(tone)
 
-  // Шапка Telegram в тон полосы, как на экране дня; на выходе возвращаем тему.
+  // Шапка Telegram в тон полосы, как на экране дня; на выходе возвращаем тему. Цвет
+  // считается под текущую тему, поэтому сам и служит условием перекраски.
+  // Под верхним экраном (жест «вниз») ивент только картинка: шапка остаётся за верхним.
+  const header = tone ? toneColors(tone).band : toHex(stageTint('purple'))
   useEffect(() => {
-    setHeaderColor(toHex(stageTint('purple')))
-  }, [theme])
-  useEffect(() => () => applyTheme(getState().theme), [])
+    if (!under) afterHero(() => setHeaderColor(header))
+  }, [header, under])
+  useEffect(
+    () => () => {
+      if (!under) afterHero(() => applyTheme(getState().theme))
+    },
+    [under],
+  )
 
   // Кто придёт в этот день: ивент и есть повод, а решают, глядя на людей. У ивента с
   // формой к ним добавляются принятые заявители. День вне обзора людей не знает.
@@ -453,7 +547,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
   const canAsk = asGuest && !event.form && Boolean(day) && !day!.lock && !isPastForToday(event.dateKey, event.time)
 
   const poster = (
-    <div className={'evv-poster' + (photos.length > 0 ? ' photo' : '')}>
+    <div className={'evv-poster' + (photos.length > 0 ? ' photo' : '')} ref={posterRef}>
       {photos.length > 0 ? <EventPoster photoId={photos[0]!} className="evv-photo" /> : null}
       <div className="evv-pt">{event.title}</div>
       <div className="evv-ps">{posterWhen(event)}</div>
@@ -462,7 +556,8 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
 
   return (
     <Screen>
-      <div className="evv-top">
+      <div className="evv" ref={rootRef}>
+      <div className="evv-top" style={tv}>
         <div className="evv-band" aria-hidden="true" />
         <BackRow />
         {poster}
@@ -555,20 +650,21 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
         </div>
       ) : null}
       {canAsk && !mine ? (
-        <div className="evv-acts">
+        <div className="evv-acts" style={tv}>
           <button type="button" className="primary-btn" onClick={() => startNewRequest({ dateKey: event.dateKey, time: event.time })}>
             Хочу прийти
           </button>
           <button type="button" className="evv-cal" aria-label="В календарь" title="В календарь" onClick={() => void openIcs()}>
-            {icons.calendarPlus(20, '#bf5af2')}
+            {icons.calendarPlus(20, 'currentColor')}
           </button>
         </div>
       ) : (
-        <button type="button" className="secondary-btn evv-cal-wide" onClick={() => void openIcs()}>
-          {icons.calendarPlus(18, '#bf5af2')}
+        <button type="button" className="secondary-btn evv-cal-wide" style={tv} onClick={() => void openIcs()}>
+          {icons.calendarPlus(18, 'currentColor')}
           В календарь
         </button>
       )}
+      </div>
     </Screen>
   )
 }
@@ -635,9 +731,9 @@ export function EventCard({
   const photos = event.photos ?? []
   const openIcs = useIcsLink('event', event.id, calendar)
   return (
-    <div className="event-card">
+    <div className="event-card" style={toneVars(eventTone(event))}>
       <div className="ev-head">
-        {icons.calendar(14, '#bf5af2')}
+        {icons.calendar(14, 'currentColor')}
         <span className="ev-kicker">Ивент · в {event.time}</span>
         {event.residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
       </div>
@@ -657,14 +753,14 @@ export function EventCard({
       {/* Ивент из пересланного поста: в канале лежит полный анонс — с версткой и обсуждением. */}
       {event.sourceUrl ? (
         <button className="ev-source" onClick={() => openUrl(event.sourceUrl!)}>
-          {icons.external('#bf5af2')}
+          {icons.external('currentColor')}
           Пост в канале
         </button>
       ) : null}
       {/* .ics отдаёт сервер (GET /event.ics) - разовая ссылка, как у визита. */}
       {calendar ? (
         <button className="ev-source" onClick={() => void openIcs()}>
-          {icons.calendarPlus(15, '#bf5af2')}
+          {icons.calendarPlus(15, 'currentColor')}
           В календарь
         </button>
       ) : null}

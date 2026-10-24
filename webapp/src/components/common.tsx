@@ -179,12 +179,15 @@ export function ActionButton({
   children,
   disabled,
   label,
+  hero,
 }: {
   className: string
   onClick: () => unknown
   children: ReactNode
   disabled?: boolean
   label?: string
+  /** Кнопка — общая часть перехода между экранами (hero.ts): та же на соседнем экране. */
+  hero?: string
 }) {
   const [pending, setPending] = useState(false)
   // Успешный ответ часто уносит кнопку вместе со строкой.
@@ -200,6 +203,7 @@ export function ActionButton({
       type="button"
       className={className + ' pend' + (pending ? ' pending' : '')}
       disabled={disabled}
+      {...(hero ? { 'data-hero': hero, 'data-hero-screen': hero, 'data-hero-part': hero } : {})}
       aria-busy={pending || undefined}
       aria-label={label}
       title={label}
@@ -215,7 +219,9 @@ export function ActionButton({
         }
       }}
     >
-      <span className="pend-label">{children}</span>
+      <span className="pend-label" data-hero-part={hero ? `${hero}-label` : undefined}>
+        {children}
+      </span>
       <span className="pend-spin" aria-hidden="true" />
     </button>
   )
@@ -226,6 +232,7 @@ export function BottomBar({ children }: { children: ReactNode }) {
   // Панель живёт вне .screen и без класса перехода стояла бы целиком, пока экран над
   // ней ещё прозрачный.
   const anim = useContext(AnimContext)
+  // Экран под верхним на время жеста «вниз» получает свой узел в картинке (App.tsx).
   if (!node) return null
   return createPortal(<div className={'bottom-bar' + (anim ? ' ' + anim : '')}>{children}</div>, node)
 }

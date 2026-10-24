@@ -3,6 +3,7 @@ import { api } from '../api'
 import { icons } from '../icons'
 import { showAlert } from '../modals'
 import { markOwnTap } from '../motion'
+import { heroSupported } from '../hero'
 import { replaceTop, resetRoot, setData, useParams, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { Bootstrap, ReminderChoice } from '../types'
@@ -24,7 +25,7 @@ import {
 } from '../components/forms'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Screen } from '../components/Screen'
-import { TimeField } from '../components/TimeField'
+import { TimeRow } from '../components/TimeField'
 
 type RemindValue = ReminderChoice | 'off'
 
@@ -136,6 +137,12 @@ export function NewRequest() {
       // форму открыли.
       const created = boot.myRequests.find((x) => x.dateKey === day && x.time === time)
       markOwnTap()
+      // С переходом кнопка сама вырастает в карточку статуса визита, а форма гаснет под ней;
+      // без него форма сначала гаснет, и визит поднимается на её месте.
+      if (created && heroSupported()) {
+        replaceTop('visit', { id: created.id, fresh: 1 }, 'cta')
+        return
+      }
       setLeaving(true)
       await new Promise((r) => setTimeout(r, 300))
       if (created) replaceTop('visit', { id: created.id, fresh: 1 })
@@ -168,10 +175,7 @@ export function NewRequest() {
         {/* Всё про визит одной карточкой: время, напоминание, видимость и цель. */}
         <div className="nt-host" ref={remindUi.hostRef}>
           <div className="card">
-            <div className="row" style={{ padding: '6px 14px' }}>
-              <span style={{ fontSize: 16 }}>Приду к</span>
-              <TimeField value={time} min={min} onChange={onTimeChange} />
-            </div>
+            <TimeRow label="Приду к" value={time} min={min} onChange={onTimeChange} />
             <Sep left={14} />
             {remindUi.row}
             <Sep left={14} />
@@ -197,7 +201,7 @@ export function NewRequest() {
         </div>
       </div>
       <BottomBar>
-        <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit}>
+        <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit} hero="cta">
           Отправить заявку
         </ActionButton>
       </BottomBar>

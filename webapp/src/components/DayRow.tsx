@@ -80,10 +80,12 @@ export function DayRow({
   const dayCol = (
     <div className="day-col">
       <div className="dow">
-        {WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}
+        <span>{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</span>
         {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
       </div>
-      <div className="date">{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</div>
+      <div className="date">
+        <span>{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</span>
+      </div>
     </div>
   )
 
@@ -94,7 +96,11 @@ export function DayRow({
   return (
     // title — единственный след закрытия для тех, кому штриховка ни о чём не говорит
     // (скринридер, наведение мышью): текстовой метки в строке нет намеренно.
-    <Tag className={cls} title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined} {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}>
+    <Tag
+      className={cls}
+      title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined}
+      {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}
+    >
       {dayCol}
       {empty ? (
         // «Пока никого» в закрытом дне — неправда: никого и не будет.

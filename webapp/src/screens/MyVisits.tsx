@@ -44,8 +44,11 @@ function VisitRow({ r }: { r: HostingRequest }) {
     >
       {iconSquare}
       <div className="req-main">
-        <div className="req-name">{fmtWeekdayDate(r.dateKey)}</div>
-        <div className={'req-sub' + (needsAnswer ? ' attn' : '')}>{subText}</div>
+        <div className="req-name">
+          {fmtWeekdayDate(r.dateKey)}
+        </div>
+        <div className={'req-sub' + (needsAnswer ? ' attn' : '')}>{subText}
+        </div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
     </button>
@@ -90,9 +93,10 @@ function PastVisitRow({ r }: { r: HostingRequest }) {
     <button type="button" className="row tappable" onClick={() => push('visit', { id: r.id })}>
       <div className="status-square">{missed ? icons.xmark(15, sec(0.4)) : icons.check(20, sec(0.4))}</div>
       <div className="req-main">
-        <div className="req-name past">{fmtWeekdayDate(r.dateKey)}</div>
-        <div className="req-sub">
-          {`к ${r.time}` + (missed ? ' · неявка' : host ? ` · хостил ${userLabel(host)}` : '')}
+        <div className="req-name past">
+          {fmtWeekdayDate(r.dateKey)}
+        </div>
+        <div className="req-sub">{`к ${r.time}` + (missed ? ' · неявка' : host ? ` · хостил ${userLabel(host)}` : '')}
         </div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
@@ -117,7 +121,7 @@ export function MyVisits() {
   const { data } = useStore()
   const my = data!.myRequests
   const past = data!.myPast ?? []
-  const tally = data!.myVisits ?? { visits: 0, missed: 0 }
+  const tally = data!.myVisits ?? { visits: 0 }
   const approved = my.filter((r) => r.status === 'approved')
   const pending = my.filter((r) => r.status !== 'approved')
 
@@ -152,10 +156,7 @@ export function MyVisits() {
           {/* В списке только последние визиты, а счёт - за всё время, вместе с визитами
               без заявки, которые отметили резиденты. */}
           {tally.visits > 0 ? (
-            <div className="visits-tally">
-              {`Вы были в спейсе ${tally.visits} ${plural(tally.visits, 'раз', 'раза', 'раз')}`}
-              {tally.missed > 0 ? `, неявок: ${tally.missed}` : ''}
-            </div>
+            <div className="visits-tally">{`Вы были в спейсе ${tally.visits} ${plural(tally.visits, 'раз', 'раза', 'раз')}`}</div>
           ) : null}
         </>
       ) : null}
@@ -190,9 +191,13 @@ export function MyVisits() {
         </button>
       </div>
       <BottomBar>
-        <button className="primary-btn" onClick={() => startNewRequest()}>
-          {icons.plus()}
-          Новая заявка
+        {/* Одна кнопка на весь путь заявки: в форме она меняет подпись на месте, после
+            отправки вырастает в карточку статуса визита (hero.ts, ключ cta). */}
+        <button className="primary-btn" data-hero="cta" data-hero-part="cta" onClick={() => startNewRequest()}>
+          <span className="cta-label" data-hero-part="cta-label">
+            {icons.plus()}
+            Новая заявка
+          </span>
         </button>
       </BottomBar>
     </Screen>

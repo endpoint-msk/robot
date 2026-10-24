@@ -171,10 +171,11 @@ export function Dev() {
                   aria-label="Удалить заявку"
                   onClick={async (e) => {
                     e.stopPropagation() // иначе откроется правка
-                    const ok = await confirmDialog(`Удалить заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)}?`, {
+                    const ok = await confirmDialog('Удалить заявку?', {
                       confirmLabel: 'Удалить заявку',
                       cancelLabel: 'Оставить',
                       destructive: true,
+                      subject: { user: r.guest, line: `${fmtShortDate(r.dateKey)} к\u00a0${r.time}` },
                     })
                     if (ok) {
                       await action('dev.delete', { id: r.id })
@@ -209,9 +210,10 @@ export function Dev() {
                 <button
                   className="small-btn gray"
                   onClick={async () => {
-                    const ok = await confirmDialog(`Разблокировать ${b.name}? Бот снимет бан во всех чатах.`, {
+                    const ok = await confirmDialog('Разблокировать? Бот снимет бан во всех чатах.', {
                       confirmLabel: 'Разблокировать',
                       cancelLabel: 'Оставить блокировку',
+                      subject: { user: b, line: b.username ? '@' + b.username : undefined },
                     })
                     if (ok) {
                       const res = await action('unblock', { userId: b.userId })

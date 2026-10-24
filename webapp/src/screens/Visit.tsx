@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { action, api } from '../api'
 import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
@@ -16,6 +16,9 @@ import { markOwnTap } from '../motion'
 import { RemindCard } from '../components/forms'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
+import { usePullDismiss } from '../components/usePullDismiss'
+import { heroRunning } from '../hero'
+import { UnderContext } from '../screenContext'
 import { ADDRESS, ENTRANCE } from './Route'
 
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
@@ -107,18 +110,30 @@ function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null 
 
 export function Visit() {
   const params = useParams()
-  const { data } = useStore()
+  const { data, stack } = useStore()
+  const rootRef = useRef<HTMLDivElement>(null)
+  const under = useContext(UnderContext)
+  usePullDismiss(rootRef, { enabled: !under && stack.length > 1 })
   const past = data!.myPast ?? []
   // Прошедший визит открывается из «Были раньше» - тот же экран, только читать.
-  const r = data!.myRequests.find((x) => x.id === params.id) ?? past.find((x) => x.id === params.id)
+  const found = data!.myRequests.find((x) => x.id === params.id) ?? past.find((x) => x.id === params.id)
+  // Отменённая заявка пропадает из данных раньше, чем экран: «назад» идёт переходом, и до
+  // его конца экран показывает визит, каким он был, а не пустоту.
+  const kept = useRef(found)
+  if (found) kept.current = found
+  const r = found ?? kept.current
   const isPast = Boolean(r && past.some((x) => x.id === r.id))
-  // Заявку могли отменить/она протухла — возвращаемся к списку.
+  // Заявку отменили или закрыли не отсюда — возвращаемся к списку. Своя отмена уже уводит
+  // с экрана переходом, второй pop снял бы ещё один экран.
   useEffect(() => {
-    if (!r) pop()
-  }, [r])
-  const openIcs = useIcsLink('visit', r?.id ?? '', !!r && !isPast)
-  // Поднимается один раз: вернулись на визит позже, и он просто стоит.
+    if (!found && !heroRunning()) pop()
+  }, [found])
+  const openIcs = useIcsLink('visit', r?.id ?? '', !!found && !isPast)
+  const nowMin = useNowMin()
+  // Поднимается один раз: вернулись на визит позже, и он просто стоит. Если форма перешла в
+  // визит переходом (кнопка выросла в карточку статуса), подниматься ему уже незачем.
   const fresh = params.fresh === 1
+  const [rise] = useState(() => fresh && !heroRunning())
   useEffect(() => {
     if (!fresh) return
     const timer = window.setTimeout(() => setTopParams({ ...params, fresh: undefined }), 1200)
@@ -257,19 +272,23 @@ export function Visit() {
       </div>
     )
   } else if (!approved) {
+    // Только что отправленная заявка: в эту карточку вырастает кнопка «Отправить заявку».
     statusCard = (
-      <div className="status-card pending">
-        <div className="status-card-head">
-          <div className="status-card-icon">{icons.clock(15, sec(0.55))}</div>
-          <span className="status-card-title">Заявка ждёт ответа</span>
-        </div>
-        <div className="status-card-note">
-          Резиденты видят вашу заявку.
-          <br />
-          <span className="note-warn">
-            {icons.warning()}
-            Одобрение заявки обязательно для посещения.
-          </span>
+      <div className="status-card pending" data-hero-screen="cta" data-hero-part="cta">
+        {/* Содержимое проявляется, когда кнопка отправки уже выросла в карточку. */}
+        <div data-hero-part="cta-body">
+          <div className="status-card-head">
+            <div className="status-card-icon">{icons.clock(15, sec(0.55))}</div>
+            <span className="status-card-title">Заявка ждёт ответа</span>
+          </div>
+          <div className="status-card-note">
+            Резиденты видят вашу заявку.
+            <br />
+            <span className="note-warn">
+              {icons.warning()}
+              Одобрение заявки обязательно для посещения.
+            </span>
+          </div>
         </div>
       </div>
     )
@@ -281,7 +300,6 @@ export function Visit() {
   // открывают по дороге (адрес, «Как пройти»), и к двери человек приходит с уже
   // открытым экраном — на замороженном снимке карточка просто не появлялась.
   const slotMin = minuteOfDay(r.time)
-  const nowMin = useNowMin()
   const arrivalOpen =
     approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
 
@@ -321,10 +339,14 @@ export function Visit() {
     <Screen>
       <BackRow label="Мои визиты" />
       {/* Только что отправленная заявка: форма погасла, и визит поднимается на её месте. */}
-      <div className={fresh ? 'visit-rise' : undefined}>
+      <div className={rise ? 'visit-rise' : undefined} ref={rootRef}>
       <Header
-        title={<XText text={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]!} />}
-        subtitle={<XText text={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} delay={120} />}
+        title={
+          <XText text={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]!} />
+        }
+        subtitle={
+          <XText text={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} delay={120} />
+        }
       />
       {arrivalOpen ? <ArrivalCard id={r.id} arrivedAt={r.arrivedAt} /> : null}
       {isPast ? null : statusCard}

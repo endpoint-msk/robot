@@ -1914,6 +1914,39 @@ export const icsFold = (line: string): string => {
     return out.join('\r\n')
 }
 
+/**
+ * Свои одобренные визиты человека для подписки календаря: только где он гость.
+ * Сегодняшние и будущие, как ивенты в той же подписке.
+ */
+export const feedVisits = (storage: Storage, userId: number, tzOffsetMinutes: number): HostingRequest[] => {
+    const today = todayKey(tzOffsetMinutes)
+    return Object.values(storage.get().hostingRequests)
+        .filter((r) => r.status === 'approved' && r.dateKey >= today && r.guest.userId === userId)
+        .sort((a, b) => (a.dateKey === b.dateKey ? a.time.localeCompare(b.time) : a.dateKey.localeCompare(b.dateKey)))
+}
+
+/**
+ * Свой визит в подписке календаря: время и кто хостит. Ссылку подписки календарь хранит
+ * годами и может отдать кому угодно, поэтому цели визита здесь нет, в отличие от
+ * разового `.ics`. UID тот же, что у него.
+ */
+export const visitFeedVevent = (request: HostingRequest, tzOffsetMinutes: number, now: Date): string[] => {
+    const startUtc = new Date(slotStartUtc(request.dateKey, request.time, tzOffsetMinutes))
+    const endUtc = new Date(startUtc.getTime() + ICS_EVENT_HOURS * 3600_000)
+    const host = request.approvedBy
+    return [
+        'BEGIN:VEVENT',
+        `UID:${request.id}@endpoint-hosting`,
+        `DTSTAMP:${icsStamp(now)}`,
+        `DTSTART:${icsStamp(startUtc)}`,
+        `DTEND:${icsStamp(endUtc)}`,
+        `SUMMARY:${icsEscape('Визит в хакспейс')}`,
+        ...(host ? [`DESCRIPTION:${icsEscape(`Хостит: ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}`)}`] : []),
+        'STATUS:CONFIRMED',
+        'END:VEVENT',
+    ]
+}
+
 /** Событие визита для календаря гостя. */
 export const buildVisitIcs = (
     request: HostingRequest,

@@ -15,7 +15,17 @@
   "overrides": {
     "BottomBar": { "cardMode": "single", "primaryStory": "PrimaryAction", "viewport": "390x300" },
     "RequestRow": { "cardMode": "column" },
-    "RequestsCard": { "cardMode": "column" }
+    "RequestsCard": { "cardMode": "column" },
+    "MacSheet": { "cardMode": "single", "primaryStory": "Open", "viewport": "390x760" },
+    "CoverScene": { "cardMode": "column" },
+    "PresenceScene": { "cardMode": "column" },
+    "MacScene": { "cardMode": "column" },
+    "NotifyScene": { "cardMode": "column" },
+    "GuestsScene": { "cardMode": "column" },
+    "EventsScene": { "cardMode": "column" },
+    "DuesScene": { "cardMode": "column" },
+    "BotScene": { "cardMode": "column" },
+    "DoneScene": { "cardMode": "column" }
   },
   "componentSrcMap": {
     "ApiError": null,

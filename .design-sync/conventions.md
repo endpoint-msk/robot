@@ -78,6 +78,32 @@ Bootstrap     = { me: { id; username; name; isResident; isDev; acceptedRules }
 Пропсы и назначение компонента — в `components/general/<Name>/<Name>.d.ts` и
 `<Name>.prompt.md`.
 
+## Сцены знакомства и шторка телефона
+
+`CoverScene`, `PresenceScene`, `MacScene`, `NotifyScene`, `GuestsScene`,
+`EventsScene`, `DuesScene`, `BotScene`, `DoneScene` — иллюстрации шагов знакомства
+резидента на холсте 393×320 (`.ob-scene`, абсолютная позиция). Клади сцену в
+`.ob-stage` с явной высотой. **Сама по себе сцена стоит в первом кадре анимации**
+(соты обложки вовсе невидимы) — конечный кадр рисует движок:
+
+```jsx
+const { SCENES, createHive, PresenceScene } = window.EndpointDS
+const ref = useRef(null)
+useLayoutEffect(() => { SCENES.presence.render(ref.current, Infinity, createHive(hive)) })
+<div ref={ref} className="ob-stage" style={{ height: 320 }}>
+  <PresenceScene board={{ nicks: ['dasha'], total: 2, me: 'max_k', time: '19:42' }}
+                 botName="Endpoint Robot" dayLabel="Ср, 5 августа" />
+</div>
+```
+
+`hive` — `{ name, username, inside }[]` в том же порядке, что `people` у
+`CoverScene`; остальным сценам хватает `createHive([])`. Счётчик доски в конечном
+кадре показывает `total + 1`: вы встали в список. Подложка шага — 12% тона поверх
+`--bg` (`color-mix(in srgb, var(--bg) 88%, var(--green))`).
+
+`MacSheet` — шторка привязки MAC, сама рендерится порталом в `body` поверх всего
+экрана (`.ob-sheet-overlay`); проп `onClose` обязателен.
+
 ## Пример
 
 ```jsx

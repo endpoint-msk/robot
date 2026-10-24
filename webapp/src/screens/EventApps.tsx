@@ -99,10 +99,11 @@ export function EventApps() {
 
   const decide = async (app: EventApplication, approve: boolean): Promise<void> => {
     if (!approve) {
-      const ok = await confirmDialog(`Отклонить заявку ${app.guest.name}?`, {
+      const ok = await confirmDialog('Отклонить заявку на ивент?', {
         confirmLabel: 'Отклонить',
         cancelLabel: 'Оставить',
         destructive: true,
+        subject: { user: app.guest, line: event.title },
       })
       if (!ok) return
     }

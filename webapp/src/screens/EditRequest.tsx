@@ -18,7 +18,7 @@ import {
   useDayTime,
 } from '../components/forms'
 import { Screen } from '../components/Screen'
-import { TimeField } from '../components/TimeField'
+import { TimeRow } from '../components/TimeField'
 import { useRemind } from './NewRequest'
 
 export function EditRequest() {
@@ -92,10 +92,7 @@ export function EditRequest() {
       <SectionTitle>Детали</SectionTitle>
       <div className="nt-host" ref={remindUi.hostRef}>
         <div className="card">
-          <div className="row" style={{ padding: '6px 14px' }}>
-            <span style={{ fontSize: 16 }}>Приду к</span>
-            <TimeField value={time} min={min} onChange={onTimeChange} />
-          </div>
+          <TimeRow label="Приду к" value={time} min={min} onChange={onTimeChange} />
           <Sep left={14} />
           {remindUi.row}
           <Sep left={14} />

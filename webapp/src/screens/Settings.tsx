@@ -3,7 +3,7 @@ import { action, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
 import { confirmDialog } from '../modals'
 import { CHOICE_LABEL, choiceOf, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
-import { push, setTheme, useStore } from '../store'
+import { push, setThemeFrom, useStore } from '../store'
 import { botCanWrite, openUrl, requestWriteAccess } from '../telegram'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Header, SectionTitle, Sep, Switch } from '../components/common'
@@ -46,9 +46,9 @@ function ThemeSection() {
           place={menu.place}
           items={THEMES}
           value={theme}
-          onPick={(v) => {
+          onPick={(v, e) => {
             menu.close()
-            if (v !== theme) setTheme(v)
+            if (v !== theme) setThemeFrom(v, e.clientX, e.clientY)
           }}
         />
       </div>
@@ -57,10 +57,10 @@ function ThemeSection() {
 }
 
 /**
- * Подписка календаря на ивенты: строка ведёт на `/events-subscribe`, тот редиректит на
- * ту же ссылку схемой `webcal://`, и календарь заводит подписку, которая дальше
- * обновляется сама. Https-ссылка на `.ics` дала бы разовый импорт, а `webcal://` из
- * вебвью не открыть: `openLink` берёт только http/https.
+ * Подписка календаря на ивенты и свои одобренные визиты: строка ведёт на
+ * `/events-subscribe`, тот редиректит на ту же ссылку схемой `webcal://`, и календарь
+ * заводит подписку, которая дальше обновляется сама. Https-ссылка на `.ics` дала бы
+ * разовый импорт, а `webcal://` из вебвью не открыть: `openLink` берёт только http/https.
  */
 function CalendarRow() {
   const [busy, setBusy] = useState(false)
@@ -78,7 +78,7 @@ function CalendarRow() {
       <div className="row-icon" style={{ background: 'var(--purple)' }}>
         {icons.calendar(17, '#fff')}
       </div>
-      <span className="row-label">Ивенты в календаре</span>
+      <span className="row-label">Ивенты и визиты в календаре</span>
       <div className="row-right">{icons.chevron()}</div>
     </button>
   )

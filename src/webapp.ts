@@ -28,6 +28,7 @@ import {
     deleteHostingRequest,
     displayName,
     editHostingRequest,
+    feedVisits,
     guestProfile,
     guestVisitStats,
     guestVisitTally,
@@ -180,6 +181,7 @@ import {
     setResidentSince,
     type StatsPeriod,
 } from './stats.js'
+import { buildWrapView, refreshWrapCache, wrapBrief } from './wrap.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { audit } from './audit.js'
 import {
@@ -455,6 +457,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'stats.days': 'read',
     'stats.day': 'read',
     'stats.person': 'read',
+    'wrap.month': 'read',
     'visits.day': 'read',
     'dues.period': 'read',
     'dues.history': 'read',
@@ -942,6 +945,16 @@ const photosFrom = (body: Record<string, unknown>): string[] =>
         ? body.photos.filter((id): id is string => typeof id === 'string').slice(0, MAX_EVENT_PHOTOS)
         : []
 
+/**
+ * Тон первой афиши из тела (см. `SpaceEvent.tone`). Строку получит каждый, кто откроет
+ * ивент, и из неё считаются цвета его экрана, поэтому кладём только `#rrggbb`, а не то,
+ * что прислали.
+ */
+const toneFrom = (body: Record<string, unknown>): string | null => {
+    const tone = typeof body.tone === 'string' ? body.tone.trim().toLowerCase() : ''
+    return /^#[0-9a-f]{6}$/.test(tone) ? tone : null
+}
+
 /** id ответственных из тела: сервер сам разрешит их в `HostingUser` (`resolveResponsibles`). */
 const responsibleIdsFrom = (body: Record<string, unknown>): number[] =>
     Array.isArray(body.responsibles)
@@ -1219,9 +1232,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         laterEvents: eventsLater(storage, tzOffsetMinutes, resident).map((e) => eventView(e, ctx)),
         myRequests: requestsView(myRequests, dates, { viewerId: user.userId }),
         myPast: requestsView(myPast, dates, { viewerId: user.userId }),
-        // Свои визиты гость видит сам: сколько был и сколько раз не пришёл. «Без
-        // отметки» ему не отдаём: это про то, что резиденты забыли, а не про него.
-        myVisits: { visits: myTally.visits, missed: myTally.missed },
+        // Гостю только сколько раз он был. Число неявок резиденты видят в его профиле, а
+        // ему самому оно читалось бы упрёком.
+        myVisits: { visits: myTally.visits },
         settings,
         // Гостевая настройка, но едет всем: перспектива «гость» у дева читает этот же
         // bootstrap, а сервер про перспективу не знает.
@@ -1257,6 +1270,9 @@ const buildBootstrap = (ctx: ApiContext) => {
                 },
             }
             : {}),
+        // Итоги прошлого месяца: плашка на главной и строка в статистике. Только кэш, без
+        // чтения журнала: bootstrap собирается на каждую мутацию.
+        ...(resident ? { wrap: wrapBrief(storage, user.userId, tzOffsetMinutes) } : {}),
         // Код домофона - ключ от подъезда: только резидентам и дев-аккаунтам, которые
         // его правят. Гостю не уходит никогда.
         ...(resident || isDevUser(ctx) ? { door: doorView(ctx) } : {}),
@@ -1566,6 +1582,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
 
     switch (method) {
         case 'bootstrap': {
+            // Плашка итогов месяца читает кэш журнала, а сам bootstrap синхронный: кэш
+            // освежаем здесь, где подождать чтение файла не страшно.
+            if (resident) await refreshWrapCache(storage, tzOffsetMinutes)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -2023,7 +2042,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             // Залитые в редакторе картинки (и афиша заготовки) переезжают под id ивента.
-            await syncEventPhotos(storage, storage.path(), created.event.id, photosFrom(body), user.userId)
+            await syncEventPhotos(storage, storage.path(), created.event.id, photosFrom(body), user.userId, toneFrom(body))
             // Заготовка отработала — снимаем, иначе миниапп предложил бы завести тот же
             // ивент второй раз. Её афишу к этому моменту уже забрал syncEventPhotos.
             if (body.fromDraft === true) await clearEventDraft(storage, storage.path(), user.userId)
@@ -2062,7 +2081,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, updated.error, EVENT_ERRORS[updated.error])
                 return
             }
-            await syncEventPhotos(storage, storage.path(), id, photosFrom(body), user.userId)
+            await syncEventPhotos(storage, storage.path(), id, photosFrom(body), user.userId, toneFrom(body))
             // Перенос - в фоне и только если слот реально сменился (проверка внутри).
             void notifyEventMoved(client, storage, residents, tzOffsetMinutes, config.publicUrl, existing, before, user.userId)
                 .catch((err) => console.error('[events] не удалось разослать перенос ивента:', err))
@@ -2637,9 +2656,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
 
         // Уведомления об ивентах — отдельный тумблер от заявок (см. DEFAULT_EVENT_NOTIFY).
         case 'calendar.link': {
-            // Гейта резидентства нет намеренно: в фиде только те ивенты, что и так
-            // видит любой гость в миниаппе. Ответ — не bootstrap: ссылка нужна разово,
-            // на тап по строке, и в стейт фронта ей не место.
+            // Гейта резидентства нет намеренно: в фиде ивенты, которые и так видит любой
+            // гость в миниаппе, и свои визиты человека. Ответ — не bootstrap: ссылка нужна
+            // разово, на тап по строке, и в стейт фронта ей не место.
             const token = await ensureEventFeedToken(storage, user.userId)
             sendJson(res, 200, { token })
             return
@@ -2760,6 +2779,20 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             await setResidentSince(storage, userId, raw || null)
             sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Итоги прошлого месяца. Резидентские, как и весь журнал: «с кем вы были» - это
+        // данные о людях.
+        case 'wrap.month': {
+            if (!requireResident()) return
+            const view = await buildWrapView(storage, user.userId, tzOffsetMinutes)
+            if (!view) {
+                sendError(res, 404, 'no_wrap', 'За прошлый месяц итогов нет.')
+                return
+            }
+            if (view.companion) discloseUser(view.companion.userId)
+            sendJson(res, 200, view)
             return
         }
 
@@ -3853,10 +3886,11 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
-            // Подписка календаря на ивенты. Вторая после /board ручка без initData: фид
-            // дёргает календарь месяцами и в фоне, а подпись живёт сутки. Гейт — личный
-            // токен из ссылки; за ним лежит ровно то, что видит в миниаппе любой гость
-            // (резидентские ивенты в фид не попадают, см. feedEvents).
+            // Подписка календаря на ивенты и свои визиты. Вторая после /board ручка без
+            // initData: фид дёргает календарь месяцами и в фоне, а подпись живёт сутки.
+            // Гейт — личный токен из ссылки; за ним ивенты, которые видит в миниаппе любой
+            // гость (резидентские в фид не попадают, см. feedEvents), и свои одобренные
+            // визиты владельца токена без цели визита (см. visitFeedVevent).
             if (pathname === '/events.ics') {
                 if (req.method !== 'GET' && req.method !== 'HEAD') {
                     res.writeHead(405).end()
@@ -3881,7 +3915,13 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 res.writeHead(200, {
                     'Content-Type': 'text/calendar; charset=utf-8',
                     'Cache-Control': 'no-store',
-                }).end(buildEventsFeedIcs(feedEvents(deps.storage, deps.tzOffsetMinutes), deps.tzOffsetMinutes))
+                }).end(
+                    buildEventsFeedIcs(
+                        feedEvents(deps.storage, deps.tzOffsetMinutes),
+                        feedVisits(deps.storage, userId, deps.tzOffsetMinutes),
+                        deps.tzOffsetMinutes,
+                    ),
+                )
                 return
             }
 
@@ -4083,6 +4123,9 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             else res.end()
         })
     })
+    // Плашка итогов месяца читает кэш журнала: прогреваем его сразу, иначе первая же
+    // мутация после рестарта ответила бы bootstrap'ом без неё.
+    void refreshWrapCache(deps.storage, deps.tzOffsetMinutes)
     server.listen(deps.config.port, deps.config.host, () => {
         console.log(`[webapp] miniapp server on http://${deps.config.host}:${deps.config.port} (public: ${deps.config.publicUrl})`)
         console.log(`[webapp] dev-аккаунты (DEV_USER_IDS): ${deps.devUserIds.size > 0 ? [...deps.devUserIds].join(', ') : '— пусто, дев-меню и переключателя перспективы не будет'}`)

@@ -29,6 +29,23 @@ export { DayRow } from './components/DayRow'
 export { RequestRow, RequestsCard } from './components/RequestRow'
 export { AttendeeRow, AttendeesCard } from './components/attendees'
 export { EventCard, EventPoster } from './screens/Event'
+export { MacSheet } from './components/MacSheet'
+export {
+  CoverScene,
+  PresenceScene,
+  MacScene,
+  NotifyScene,
+  GuestsScene,
+  EventsScene,
+  DuesScene,
+  BotScene,
+  DoneScene,
+} from './components/OnboardingScenes'
+export type { BoardData, Banner, EventCardData, HivePeople } from './components/OnboardingScenes'
+// Сцена без движка стоит в начальном кадре анимации (соты обложки вовсе невидимы):
+// конечный кадр рисует SCENES[name].render(stage, Infinity, createHive(people)).
+export { SCENES, createHive } from './onboarding'
+export type { SceneName } from './onboarding'
 
 export { ModalHost, showAlert, showImage, confirmDialog, timePrompt, reschedulePrompt, numberPrompt } from './modals'
 

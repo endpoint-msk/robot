@@ -1,12 +1,14 @@
 // Один день журнала: сколько спейс был открыт и кто когда внутри был.
 // Таймлайн строится по сырым сессиям, поэтому доступен, пока живут месячные файлы.
 
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { fmtWeekdayDate, plural } from '../dates'
+import { clamp } from '../motion'
 import { useRemote } from '../remote'
 import { push, useParams } from '../store'
-import { dayEnd, fmtDuration, fmtMinutes, statsAvatarUser } from '../stats'
+import { dayEnd, fmtDuration, fmtMinutes, statsAvatarUser, useScrub } from '../stats'
+import { haptic } from '../telegram'
 import type { StatsDayRow, StatsDayView } from '../types'
 import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
 import { Avatar } from '../components/people'
@@ -89,6 +91,189 @@ const groupByPerson = (rows: StatsDayRow[]): PersonRow[] => {
     out.push(person)
   }
   return out
+}
+
+/** Кто был внутри в минуту `m`: люди, у которых визит её накрывает. */
+const insideAt = (people: PersonRow[], m: number): number[] =>
+  people.filter((p) => p.visits.some((v) => v.fromMin <= m && m < v.toMin)).map((p) => p.userId)
+
+/**
+ * Карточка «Кто когда был». По дорожкам ведут пальцем: линия встаёт на минуту под
+ * пальцем, над ней время и сколько было внутри, строки тех, кто был, остаются, остальные
+ * гаснут. Пик одновременно из карточки выше виден прямо здесь, и видно, кто его сделал.
+ * Отпустили, и всё гаснет: линия, оставшаяся без пальца, читалась бы забытой меткой.
+ */
+function DayTimeline({ data }: { data: StatsDayView }) {
+  // Кто внутри в минуту под пальцем. null: пальца на дорожках нет.
+  const [inside, setInside] = useState<Set<number> | null>(null)
+  const [scrub, setScrub] = useState(false)
+  const areaRef = useRef<HTMLDivElement>(null)
+  const lineRef = useRef<HTMLElement>(null)
+  const pillRef = useRef<HTMLDivElement>(null)
+  const geo = useRef({ left: 0, track: 0, width: 1, area: 0 })
+  const crowd = useRef<string | null>(null)
+
+  const { start, end } = rangeOf(data)
+  const span = Math.max(1, end - start)
+  // Делим окно на равные части, а не шагаем круглыми часами от начала: шаг, не
+  // делящий окно нацело, не доводил подписи до конца дорожки (14:00 → 00:00 шагом
+  // 4 ч упирается в 22:00), а последняя подпись всё равно прижималась к правому
+  // краю — и уезжала от своего деления на всю свою ширину. Окно кратно часу,
+  // поэтому деления попадают на :00 или :30.
+  const step = span / (MAX_TICKS - 1)
+  const ticks: number[] = []
+  for (let i = 0; i < MAX_TICKS; i++) ticks.push(start + step * i)
+  const pct = (minutes: number): number => ((minutes - start) / span) * 100
+  const people = groupByPerson(data.rows)
+  // Провал внутри окна штрихуется прямо на дорожках, как клетка карты: пустая дорожка
+  // там утверждала бы, что никого не было, а мы этого не знаем.
+  const shownGaps = gapRanges(data.gaps)
+    .map((g) => ({ from: Math.max(g.from, start), to: Math.min(g.to, end) }))
+    .filter((g) => g.to > g.from)
+
+  const show = (x: number, first: boolean): void => {
+    const g = geo.current
+    const frac = clamp((x - g.left - g.track) / g.width, 0, 1)
+    // Последняя минута окна, а не его конец: на самом краю дорожки все визиты уже кончились.
+    const m = Math.min(end - 1, Math.round(start + frac * span))
+    const ids = insideAt(people, m)
+    const key = ids.join(',')
+    if (first || key !== crowd.current) {
+      crowd.current = key
+      haptic.tick()
+      setInside(new Set(ids))
+    }
+    const line = lineRef.current
+    const pill = pillRef.current
+    if (!line || !pill) return
+    const lx = g.track + frac * g.width
+    line.style.transform = `translateX(${lx.toFixed(1)}px)`
+    pill.textContent = `${clock(m)} · ${ids.length > 0 ? `внутри ${ids.length}` : 'никого'}`
+    const w = pill.offsetWidth
+    pill.style.transform = `translate(${clamp(lx - w / 2, g.track - 6, g.area - w).toFixed(1)}px, -6px)`
+  }
+
+  useScrub(areaRef, {
+    start(x) {
+      const area = areaRef.current
+      if (!area) return
+      const box = area.getBoundingClientRect()
+      const tracks = area.querySelectorAll<HTMLElement>('.tl-row .tl-track')
+      const first = tracks[0]?.getBoundingClientRect()
+      const last = tracks[tracks.length - 1]?.getBoundingClientRect()
+      if (!first || !last) return
+      geo.current = { left: box.left, track: first.left - box.left, width: Math.max(1, first.width), area: box.width }
+      if (lineRef.current) {
+        lineRef.current.style.top = `${(first.top - box.top - 4).toFixed(1)}px`
+        lineRef.current.style.height = `${(last.bottom - first.top + 8).toFixed(1)}px`
+      }
+      setScrub(true)
+      show(x, true)
+    },
+    move(x) {
+      show(x, false)
+    },
+    end() {
+      crowd.current = null
+      setScrub(false)
+      setInside(null)
+    },
+  })
+
+  return (
+    <div className="card stats-card">
+      <div className="stats-card-title">Кто когда был</div>
+      <div
+        className={'tl-scrub' + (scrub ? ' scrubbing' : '') + (inside ? ' lit' : '')}
+        data-scrub=""
+        ref={areaRef}
+      >
+        <div className="tl-ticks">
+          <div className="tl-name" />
+          <div className="tl-track">
+            {ticks.map((t, i) => (
+              <span
+                key={t}
+                style={{
+                  left: `${pct(t)}%`,
+                  // Крайние подписи прижаты к концам дорожки, а не отцентрованы по
+                  // делению: иначе первая заезжает под колонку имени, а последняя
+                  // вылезает за карточку.
+                  ...(i === 0 ? { transform: 'none' } : {}),
+                  ...(i === ticks.length - 1 ? { transform: 'translateX(-100%)' } : {}),
+                }}
+              >
+                {clock(t)}
+              </span>
+            ))}
+          </div>
+          <div className="tl-when" />
+        </div>
+        {people.map((p) => (
+          <button
+            type="button"
+            className={'tl-row' + (inside ? (inside.has(p.userId) ? ' in' : ' out') : '')}
+            key={p.userId}
+            onClick={() =>
+              push('statsPerson', {
+                userId: p.userId,
+                // Карточки этого дня листаются в порядке дорожек.
+                people: people.map((x) => ({ userId: x.userId, label: x.label, username: x.username })),
+                backLabel: 'Назад',
+              })
+            }
+          >
+            <div className="tl-name">
+              <Avatar user={statsAvatarUser(p)} className="stat-avatar small" />
+              <span>{p.label}</span>
+            </div>
+            <div className="tl-track">
+              {ticks.slice(1, -1).map((t) => (
+                <i className="tl-grid" key={t} style={{ left: `${pct(t)}%` }} />
+              ))}
+              {shownGaps.map((g) => (
+                <i
+                  className="tl-gap"
+                  key={`gap-${g.from}`}
+                  style={{ left: `${pct(g.from)}%`, width: `${pct(g.to) - pct(g.from)}%` }}
+                />
+              ))}
+              {p.visits.map((v, j) => (
+                <i
+                  key={`${v.fromMin}-${j}`}
+                  className={'tl-bar' + (v.source === 'mac' ? ' mac' : '')}
+                  style={{ left: `${pct(v.fromMin)}%`, width: `${Math.max(1.5, pct(v.toMin) - pct(v.fromMin))}%` }}
+                />
+              ))}
+            </div>
+            {/* Интервал отдельной колонкой, а не под ником: в вебвью нет hover, и
+                через нативный title время визита было не прочитать вовсе. У нескольких
+                визитов это от первого прихода до последнего ухода — перерывы видно по
+                самой дорожке. */}
+            <div className="tl-when">{`${clock(p.fromMin)}–${clock(p.toMin)}`}</div>
+          </button>
+        ))}
+        <i className="tl-line" ref={lineRef} />
+        <div className="tl-pill" ref={pillRef} aria-hidden="true" />
+      </div>
+      <div className="tl-legend">
+        <span>
+          <i className="tl-swatch" />
+          отметился сам
+        </span>
+        <span>
+          <i className="tl-swatch mac" />
+          по MAC
+        </span>
+        {shownGaps.length > 0 ? (
+          <span>
+            <i className="tl-swatch gap" />
+            роутер был недоступен
+          </span>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 /**
@@ -186,25 +371,7 @@ export function StatsDay() {
     )
   }
 
-  const { start, end } = rangeOf(data)
-  const span = Math.max(1, end - start)
-  // Делим окно на равные части, а не шагаем круглыми часами от начала: шаг, не
-  // делящий окно нацело, не доводил подписи до конца дорожки (14:00 → 00:00 шагом
-  // 4 ч упирается в 22:00), а последняя подпись всё равно прижималась к правому
-  // краю — и уезжала от своего деления на всю свою ширину. Окно кратно часу,
-  // поэтому деления попадают на :00 или :30.
-  const step = span / (MAX_TICKS - 1)
-  const ticks: number[] = []
-  for (let i = 0; i < MAX_TICKS; i++) ticks.push(start + step * i)
-  const pct = (minutes: number): number => ((minutes - start) / span) * 100
-  const people = groupByPerson(data.rows)
-  const gaps = gapRanges(data.gaps)
-  // Провал внутри окна штрихуется прямо на дорожках, как клетка карты: пустая дорожка
-  // там утверждала бы, что никого не было, а мы этого не знаем.
-  const shownGaps = gaps
-    .map((g) => ({ from: Math.max(g.from, start), to: Math.min(g.to, end) }))
-    .filter((g) => g.to > g.from)
-  const gapSpans = gaps.map((g) => `с ${clock(g.from)} до ${clock(g.to)}`)
+  const gapSpans = gapRanges(data.gaps).map((g) => `с ${clock(g.from)} до ${clock(g.to)}`)
 
   return frame(
     <>
@@ -226,83 +393,7 @@ export function StatsDay() {
         </div>
       </div>
 
-      <div className="card stats-card">
-        <div className="stats-card-title">Кто когда был</div>
-        <div className="tl-ticks">
-          <div className="tl-name" />
-          <div className="tl-track">
-            {ticks.map((t, i) => (
-              <span
-                key={t}
-                style={{
-                  left: `${pct(t)}%`,
-                  // Крайние подписи прижаты к концам дорожки, а не отцентрованы по
-                  // делению: иначе первая заезжает под колонку имени, а последняя
-                  // вылезает за карточку.
-                  ...(i === 0 ? { transform: 'none' } : {}),
-                  ...(i === ticks.length - 1 ? { transform: 'translateX(-100%)' } : {}),
-                }}
-              >
-                {clock(t)}
-              </span>
-            ))}
-          </div>
-          <div className="tl-when" />
-        </div>
-        {people.map((p) => (
-          <button
-            type="button"
-            className="tl-row"
-            key={p.userId}
-            onClick={() => push('statsPerson', { userId: p.userId, backLabel: 'Назад' })}
-          >
-            <div className="tl-name">
-              <Avatar user={statsAvatarUser(p)} className="stat-avatar small" />
-              <span>{p.label}</span>
-            </div>
-            <div className="tl-track">
-              {ticks.slice(1, -1).map((t) => (
-                <i className="tl-grid" key={t} style={{ left: `${pct(t)}%` }} />
-              ))}
-              {shownGaps.map((g) => (
-                <i
-                  className="tl-gap"
-                  key={`gap-${g.from}`}
-                  style={{ left: `${pct(g.from)}%`, width: `${pct(g.to) - pct(g.from)}%` }}
-                />
-              ))}
-              {p.visits.map((v, j) => (
-                <i
-                  key={`${v.fromMin}-${j}`}
-                  className={'tl-bar' + (v.source === 'mac' ? ' mac' : '')}
-                  style={{ left: `${pct(v.fromMin)}%`, width: `${Math.max(1.5, pct(v.toMin) - pct(v.fromMin))}%` }}
-                />
-              ))}
-            </div>
-            {/* Интервал отдельной колонкой, а не под ником: в вебвью нет hover, и
-                через нативный title время визита было не прочитать вовсе. У нескольких
-                визитов это от первого прихода до последнего ухода — перерывы видно по
-                самой дорожке. */}
-            <div className="tl-when">{`${clock(p.fromMin)}–${clock(p.toMin)}`}</div>
-          </button>
-        ))}
-        <div className="tl-legend">
-          <span>
-            <i className="tl-swatch" />
-            отметился сам
-          </span>
-          <span>
-            <i className="tl-swatch mac" />
-            по MAC
-          </span>
-          {shownGaps.length > 0 ? (
-            <span>
-              <i className="tl-swatch gap" />
-              роутер был недоступен
-            </span>
-          ) : null}
-        </div>
-      </div>
+      <DayTimeline data={data} />
 
       {gapSpans.length > 0 ? (
         <Footnote>

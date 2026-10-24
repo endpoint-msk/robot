@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
-import { pop, push, useParams, useStore } from '../store'
+import { replaceTop, useParams, useStore } from '../store'
 import { haptic, openUrl } from '../telegram'
 import { BackRow, BottomBar, Header, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
@@ -24,9 +24,8 @@ export function Rules() {
   const submit = async (): Promise<void> => {
     const done = await action('rules.accept')
     if (!done) return
-    // Экран правил из стека убираем: назад с формы заявки надо возвращаться к визитам.
-    pop()
-    push('newRequest', { dateKey: params.dateKey, time: params.time })
+    // Экран правил в стеке не остаётся: назад с формы заявки надо возвращаться к визитам.
+    replaceTop('newRequest', { dateKey: params.dateKey, time: params.time }, 'cta', true)
   }
 
   return (
@@ -74,8 +73,17 @@ export function Rules() {
         </button>
       </div>
       <BottomBar>
-        <button className="primary-btn" disabled={!agreed} onClick={submit}>
-          Согласиться и продолжить
+        <button
+          className="primary-btn"
+          data-hero="cta"
+          data-hero-screen="cta"
+          data-hero-part="cta"
+          disabled={!agreed}
+          onClick={submit}
+        >
+          <span className="cta-label" data-hero-part="cta-label">
+            Согласиться и продолжить
+          </span>
         </button>
       </BottomBar>
     </Screen>

@@ -18,12 +18,14 @@ import {
 import { icons } from '../icons'
 import { datePrompt } from '../modals'
 import { useRemote } from '../remote'
-import { push, useParams, useStore } from '../store'
+import { mixc, palette } from '../motion'
+import { push, setTopParams, useParams, useStore } from '../store'
 import { fmtDuration, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
 import { haptic } from '../telegram'
 import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote } from '../components/common'
-import { Avatar } from '../components/people'
+import { Avatar, avatarTone } from '../components/people'
+import { Pager } from '../components/Pager'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkBlock, SkCard, SkGrid, SkQuad, SkRows } from '../components/skeleton'
@@ -34,16 +36,18 @@ const DOT_WEEKS = 12
 const ORIGIN = 'origin'
 
 /** Скелет карточки: шапка, четыре показателя, сетка визитов и список последних. */
-function PersonSkeleton() {
+function PersonSkeleton({ head }: { head: boolean }) {
   return (
     <div aria-busy="true" aria-label="Загружаем карточку резидента">
-      <div className="person-head">
-        <SkBlock w={54} h={54} style={{ borderRadius: '50%' }} />
-        <div className="person-head-text">
-          <SkBlock w={172} h={26} />
-          <SkBlock w={136} h={14} style={{ display: 'block', marginTop: 8 }} />
+      {head ? (
+        <div className="person-head">
+          <SkBlock w={54} h={54} style={{ borderRadius: '50%' }} />
+          <div className="person-head-text">
+            <SkBlock w={172} h={26} />
+            <SkBlock w={136} h={14} style={{ display: 'block', marginTop: 8 }} />
+          </div>
         </div>
-      </div>
+      ) : null}
       <SkQuad />
       <SkCard title="Когда приходит">
         <SkGrid rows={7} cols={DOT_WEEKS} />
@@ -69,23 +73,81 @@ const since = (sinceKey: string): string => {
   return `Резидент с ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`
 }
 
+/** Человек из списка, откуда открыли карточку: шапка рисуется сразу, до ответа сервера. */
+export type PersonRef = { userId: number; label: string; username: string | null }
+
+/** Тон полосы под шапкой — второй цвет градиента аватарки, тем же смешением, что тон дня. */
+const personTone = (userId: number): string => {
+  const C = palette()
+  return mixc(C.bg, avatarTone(userId), C.mixp)
+}
+
+/**
+ * Карточки листаются, если их открыли из списка (`people` в параметрах): «Кто держит спейс
+ * открытым», «Мои визиты» (вы первым) или дорожки дня. Порядок того списка, из которого
+ * пришли, запомнен в момент открытия: смена периода в статистике его не перетасует.
+ */
 export function StatsPerson() {
-  const { userId } = useParams() as { userId: number }
+  const params = useParams()
+  const userId = params.userId as number
+  const people = (params.people as PersonRef[] | undefined) ?? null
+  const index = people ? people.findIndex((p) => p.userId === userId) : -1
+  if (!people || index < 0 || people.length < 2) {
+    return (
+      <Screen>
+        <BackRow />
+        <PersonPage userId={userId} known={people?.[index] ?? null} />
+      </Screen>
+    )
+  }
+  return (
+    <Screen>
+      <Pager
+        items={people}
+        index={index}
+        keyOf={(p) => String(p.userId)}
+        onCommit={(i) => setTopParams({ ...params, userId: people[i]!.userId })}
+        tone={(p) => personTone(p.userId)}
+        top={<BackRow />}
+        renderPage={(p) => <PersonPage userId={p.userId} known={p} />}
+      />
+    </Screen>
+  )
+}
+
+function PersonPage({ userId, known }: { userId: number; known: PersonRef | null }) {
   const { data: boot } = useStore()
   const { data, error, pending, reload } = useRemote(
     () => api<StatsPersonView>('stats.person', { userId, period: 'quarter' }),
     [userId],
   )
+  const isMe = boot!.me.id === userId
+  const who = data?.user ?? known
 
-  // Подменяется только тело: каркас гаснет поверх проявляющейся карточки, а не
-  // пропадает в том же кадре, в котором приходят данные.
+  // Шапка стоит сразу, если человека знает список, из которого пришли: по ней листалка
+  // меряет полосу. Подменяется только тело:
+  // каркас гаснет поверх проявляющейся карточки, а не пропадает в том же кадре.
   const frame = (body: ReactNode) => (
-    <Screen>
-      <BackRow />
-      <Swap loading={!data && !error} skeleton={pending ? <PersonSkeleton /> : null}>
+    <>
+      {who ? (
+        <div className="person-head" data-pager-head>
+          <Avatar
+            user={statsAvatarUser(who)}
+            className="stat-avatar big"
+            profile
+          />
+          <div className="person-head-text">
+            <div className="title">
+              {isMe ? 'Мои визиты' : who.label}
+            </div>
+            <div className="subtitle">{data ? since(data.manualSince || data.joinedSince || data.firstDateKey) : '\u00a0'}</div>
+          </div>
+        </div>
+      ) : null}
+      <Swap loading={!data && !error} skeleton={pending ? <PersonSkeleton head={!who} /> : null}>
         {body}
       </Swap>
-    </Screen>
+    </>
   )
 
   if (error) return frame(<ErrorState onRetry={reload} />)
@@ -93,7 +155,6 @@ export function StatsPerson() {
   // прошлый ответ на экране, чтобы карточка не мигала спиннером после правки.
   if (!data) return frame(null)
 
-  const isMe = boot!.me.id === userId
   const sinceKey = data.manualSince || data.joinedSince || data.firstDateKey
   const sinceSource = data.manualSince
     ? 'выставлено вручную'
@@ -141,14 +202,6 @@ export function StatsPerson() {
 
   return frame(
     <>
-      <div className="person-head">
-        <Avatar user={statsAvatarUser(data.user)} className="stat-avatar big" profile />
-        <div className="person-head-text">
-          <div className="title">{isMe ? 'Мои визиты' : data.user.label}</div>
-          <div className="subtitle">{since(sinceKey)}</div>
-        </div>
-      </div>
-
       <div className="card stats-quad">
         <div className="sq-row">
           <div className="sq-cell">

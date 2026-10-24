@@ -3,8 +3,10 @@
 // «Я приду» живёт в шапке и отвечает на месте. Прошедший день открывается из архива
 // экраном «Кто пришёл» (screens/Visits.tsx).
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { action } from '../api'
+import { afterHero } from '../hero'
+import { UnderContext } from '../screenContext'
 import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { confirmDialog, numberPrompt, textPrompt } from '../modals'
@@ -12,20 +14,22 @@ import {
   animate,
   clamp,
   E,
+  holdSelection,
+  landing,
   markOwnTap,
   mix,
   mixc,
   ownTapRecent,
+  PAGE_SPRING,
+  pageTarget,
   palette,
   pr,
-  project,
   reducedMotion,
   rubber,
   springAt,
   stageTint,
   toHex,
   tracker,
-  type SpringOpts,
   type Tone,
 } from '../motion'
 import { getState, pop, push, setTopParams, useParams, useStore, type NavParams } from '../store'
@@ -43,6 +47,7 @@ import { RequestRow } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 import { defaultTimeFor } from '../components/forms'
 import { TimeField } from '../components/TimeField'
+import { usePullDismiss } from '../components/usePullDismiss'
 
 /** Причина закрытия: её вводят один раз при закрытии и правят строкой в карточке. */
 const askReason = (initial: string): Promise<string | null> =>
@@ -104,6 +109,7 @@ function DayCard({ day }: { day: DayData }) {
   // на непустом дне сначала спрашиваем. Открытие тоже подтверждается: день закрывает
   // любой резидент, и снять чужой замок промахом по тумблеру значит впустить гостей в
   // день, про который договорились иначе.
+  const roll = useContext(LockRollContext)
   const toggleLock = async (): Promise<void> => {
     if (lock) {
       const who = lock.by ? (lock.by.username ? '@' + lock.by.username : lock.by.name) : ''
@@ -119,7 +125,8 @@ function DayCard({ day }: { day: DayData }) {
       )
       if (!ok) return
       markOwnTap()
-      await action('day.lock', { dateKey, locked: false }, { quiet: true })
+      const settle = roll?.(dateKey, false)
+      settle?.(Boolean(await action('day.lock', { dateKey, locked: false }, { quiet: true })))
       return
     }
     if (requests > 0) {
@@ -132,7 +139,8 @@ function DayCard({ day }: { day: DayData }) {
     const reason = await askReason('')
     if (reason === null) return
     markOwnTap()
-    await action('day.lock', { dateKey, locked: true, reason }, { quiet: true })
+    const settle = roll?.(dateKey, true)
+    settle?.(Boolean(await action('day.lock', { dateKey, locked: true, reason }, { quiet: true })))
   }
 
   const editReason = async (): Promise<void> => {
@@ -251,7 +259,17 @@ const comingNames = (names: string[]): string => {
 }
 
 /**
- * Аватарка, которая после своего тапа встаёт в ряд с перелётом. Чужое появление ставит её сразу.
+ * Лицо проявляется, как содержимое пилла хоста после «Захостить»: из лёгкого размытия и
+ * чуть меньше своего размера, без перелёта. Конец — пустой style: дальше лицом владеет CSS.
+ */
+const faceIn = (el: HTMLElement, p: number): void => {
+  el.style.opacity = p < 1 ? p.toFixed(3) : ''
+  el.style.filter = p < 1 ? `blur(${(4 * (1 - p)).toFixed(2)}px)` : ''
+  el.style.transform = p < 1 ? `scale(${(0.88 + 0.12 * p).toFixed(4)})` : ''
+}
+
+/**
+ * Аватарка, которая после своего тапа встаёт в ряд. Чужое появление ставит её сразу.
  * `z` - место в стопке: каждый следующий в ряду лежит под предыдущим.
  */
 function FaceIn({ a, fly, z }: { a: Attendee; fly: boolean; z: number }) {
@@ -261,13 +279,9 @@ function FaceIn({ a, fly, z }: { a: Attendee; fly: boolean; z: number }) {
     const av = el?.firstElementChild as HTMLElement | null
     if (!fly || !el || !av || !ownTapRecent()) return
     return animate(
-      680,
-      (t) => {
-        av.style.transform = `scale(${Math.max(0, pr(t, 120, 560, E.back)).toFixed(4)})`
-      },
-      () => {
-        av.style.transform = ''
-      },
+      460,
+      (t) => faceIn(av, pr(t, 120, 340, E.crisp)),
+      () => faceIn(av, 1),
     )
   }, [])
   return (
@@ -284,7 +298,15 @@ function FaceIn({ a, fly, z }: { a: Attendee; fly: boolean; z: number }) {
  * строка с именами, счётчик. В ряду и гости: захостили своим тапом, и гость встаёт
  * на своё место в ряду тем же перелётом.
  */
-function ComingRow({ attendees, coming, onToggle }: { attendees: Attendee[]; coming: boolean; onToggle: () => void }) {
+export function ComingRow({
+  attendees,
+  coming,
+  onToggle,
+}: {
+  attendees: Attendee[]
+  coming: boolean
+  onToggle: () => void
+}) {
   const { data } = useStore()
   const me = data!.me
   const present = attendees.filter((a) => a.userId !== me.id)
@@ -310,29 +332,29 @@ function ComingRow({ attendees, coming, onToggle }: { attendees: Attendee[]; com
     was.current = coming
     if (prev === coming || !el || !slot) return
     if (!ownTapRecent()) {
-      el.style.transform = ''
+      faceIn(el, 1)
       slot.style.opacity = ''
       if (!coming) setShowMe(false)
       return
     }
     if (coming) {
       return animate(
-        620,
+        400,
         (t) => {
-          el.style.transform = `scale(${Math.max(0, pr(t, 60, 560, E.back)).toFixed(4)})`
+          faceIn(el, pr(t, 60, 340, E.crisp))
           slot.style.opacity = String(1 - pr(t, 60, 200))
         },
         () => {
-          el.style.transform = ''
+          faceIn(el, 1)
           slot.style.opacity = ''
         },
       )
     }
     return animate(
-      300,
+      240,
       (t) => {
-        el.style.transform = `scale(${(1 - pr(t, 0, 260, E.inOut)).toFixed(4)})`
-        slot.style.opacity = String(pr(t, 140, 160))
+        faceIn(el, 1 - pr(t, 0, 200, E.out))
+        slot.style.opacity = String(pr(t, 100, 140))
       },
       () => setShowMe(false),
     )
@@ -349,7 +371,9 @@ function ComingRow({ attendees, coming, onToggle }: { attendees: Attendee[]; com
           <span className="dpg-slot" ref={slotRef} />
           {showMe ? (
             <div className="dpg-me" ref={meRef}>
-              <Avatar user={{ userId: me.id, name: me.name, username: me.username }} />
+              <Avatar
+                user={{ userId: me.id, name: me.name, username: me.username }}
+              />
             </div>
           ) : null}
         </span>
@@ -660,13 +684,21 @@ function DayPage({
 }
 
 /** Тон шапки дня: закрытый оранжевый со штриховкой, сегодня синий, с ивентом фиолетовый. */
-const toneOf = (d: DayData, todayKey: string): Tone =>
-  d.lock ? 'orange' : d.dateKey === todayKey ? 'blue' : d.events.length > 0 ? 'purple' : 'gray'
+export const toneOf = (d: DayData, todayKey: string, locked = Boolean(d.lock)): Tone =>
+  locked ? 'orange' : d.dateKey === todayKey ? 'blue' : d.events.length > 0 ? 'purple' : 'gray'
 
-type Drag = { x0: number; y0: number; p0: number; start: number; id: number; dir: 0 | 1 }
+/**
+ * Закрытие дня своим тапом: штриховка накатывает на полосу шапки со стороны тумблера и
+ * уезжает туда же при открытии. Зовут сразу после подтверждения, не дожидаясь сервера;
+ * вернувшаяся функция получает ответ, и отказ откатывает полосу.
+ */
+type LockRoll = (dateKey: string, on: boolean) => (ok: boolean) => void
+const LockRollContext = createContext<LockRoll | null>(null)
+const ROLL_MS = 680
+// Край штриховки идёт наискось, как сами полосы.
+const ROLL_SLANT = 48
 
-// Без перелёта: соседний день не должен проскакивать и возвращаться.
-const PAGE_SPRING: SpringOpts = { response: 0.38, damping: 1 }
+type Drag = { x0: number; y0: number; p0: number; id: number; dir: 0 | 1; mouse: boolean }
 
 /**
  * Листалка дней. Всё, что меняется между днями (цвет и высота полосы под шапкой,
@@ -680,6 +712,11 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const bandRef = useRef<HTMLDivElement>(null)
   const hatchRef = useRef<HTMLDivElement>(null)
+  const rollRef = useRef<HTMLDivElement>(null)
+  // Своё закрытие или открытие, пока полоса катится и пока сервер не подтвердил: полоса
+  // рисуется по нему, а не по данным, иначе быстрый ответ перекрасил бы её раньше штриховки.
+  const lockView = useRef<Record<string, boolean>>({})
+  const rolling = useRef<{ key: string; stop: () => void } | null>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const dotsRef = useRef<HTMLDivElement>(null)
   const pageEls = useRef<(HTMLDivElement | null)[]>([])
@@ -723,24 +760,26 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       const f = pp - i0
       const A = list[i0]!
       const B = list[i1]!
-      const tA = toneOf(A, today)
-      const tB = toneOf(B, today)
+      const locked = (d: DayData): boolean => lockView.current[d.dateKey] ?? Boolean(d.lock)
+      const tA = toneOf(A, today, locked(A))
+      const tB = toneOf(B, today, locked(B))
       const stage = mixc(stageTint(tA, C), stageTint(tB, C), f)
       band.style.background = stage
       band.style.height = `${(mix(S.heads[i0] ?? 0, S.heads[i1] ?? 0, f) - S.bandTop).toFixed(1)}px`
-      hatch.style.opacity = mix(A.lock ? 1 : 0, B.lock ? 1 : 0, f).toFixed(3)
+      hatch.style.opacity = mix(locked(A) ? 1 : 0, locked(B) ? 1 : 0, f).toFixed(3)
+      // Катящаяся штриховка принадлежит своему дню: перелистнули — её не видно.
+      const roller = rollRef.current
+      if (roller) roller.style.visibility = rolling.current && rolling.current.key === list[Math.round(pp)]?.dateKey ? '' : 'hidden'
       root.style.setProperty('--dpg-ring', stage)
       pageEls.current.forEach((el, i) => {
         if (!el) return
         const d = i - S.p
-        const ad = Math.abs(d)
-        if (ad >= 1) {
+        if (Math.abs(d) >= 1) {
           el.style.visibility = 'hidden'
           return
         }
         el.style.visibility = ''
         el.style.transform = `translate3d(${(d * S.width).toFixed(2)}px,0,0)`
-        el.style.opacity = (1 - 0.35 * ad).toFixed(3)
       })
       const tone = mixc(C.tones[tA], C.tones[tB], f)
       Array.from(dots.children).forEach((el, k) => {
@@ -752,11 +791,14 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       })
     }
 
-    // Пока страницы едут, дорожка держит высоту большей из них, иначе соседний день
-    // обрезался бы по высоте открытого.
+    // Пока страницы едут, дорожка держит высоту большей из видимых, иначе соседний день
+    // обрезался бы по высоте открытого. До конца жеста высота только растёт: иначе
+    // страница под пальцем прыгала бы.
     const holdHeight = (from: number, to: number): void => {
-      let h = 0
-      for (let i = Math.min(from, to); i <= Math.max(from, to); i++) h = Math.max(h, pageEls.current[i]?.offsetHeight ?? 0)
+      let h = parseFloat(track.style.minHeight) || 0
+      for (let i = Math.floor(Math.min(from, to)); i <= Math.ceil(Math.max(from, to)); i++) {
+        h = Math.max(h, pageEls.current[i]?.offsetHeight ?? 0)
+      }
       track.style.minHeight = h ? `${h}px` : ''
     }
 
@@ -792,7 +834,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       const to = clamp(Math.round(target), 0, list.length - 1)
       // Щелчок на решении, а не в конце доводки: палец уже знает, куда поедет день.
       if (to !== cur) haptic.tick()
-      holdHeight(cur, to)
+      holdHeight(S.p, to)
       if (reducedMotion()) {
         S.anim = null
         S.p = to
@@ -800,11 +842,16 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
         commit(to)
         return
       }
-      S.anim = { to, x0: S.p - to, v0, t0: performance.now() }
+      S.anim = { to, x0: S.p - to, v0: landing(S.p - to, v0, PAGE_SPRING), t0: performance.now() }
       kick()
     }
     go.current = goTo
     sync.current = () => {
+      // Сервер догнал своё закрытие или открытие: полоса снова рисуется по данным.
+      for (const d of live.current.days) {
+        const want = lockView.current[d.dateKey]
+        if (want !== undefined && want === Boolean(d.lock) && rolling.current?.key !== d.dateKey) delete lockView.current[d.dateKey]
+      }
       if (!S.drag && !S.anim) S.p = live.current.index
       measure()
       render()
@@ -843,11 +890,12 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     // принадлежит строке. Касания у левого края не берём, там системный «назад» в iOS.
     // Направление решается по первым 8px, вертикаль отдаётся прокрутке.
     const vt = tracker()
+    let unselect: (() => void) | null = null
     const onDown = (e: PointerEvent): void => {
       if (e.button > 0 || S.drag) return
       if ((e.target as Element).closest('.swipe-row, input, textarea')) return
       if (e.clientX < 20) return
-      S.drag = { x0: e.clientX, y0: e.clientY, p0: S.p, start: live.current.index, id: e.pointerId, dir: 0 }
+      S.drag = { x0: e.clientX, y0: e.clientY, p0: S.p, id: e.pointerId, dir: 0, mouse: e.pointerType === 'mouse' }
       vt.start(e.clientX, e.timeStamp)
     }
     const onMove = (e: PointerEvent): void => {
@@ -864,13 +912,10 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
         }
         d.dir = 1
         measure()
-        // Доводку поймали на лету: день едет дальше с того места, где его взяли, и бросок
-        // считается от ближайшего к нему дня.
+        // Доводку поймали на лету: день едет дальше с того места, где его взяли.
         S.anim = null
         d.p0 = S.p + dx / (S.width || 393)
-        d.start = Math.round(S.p)
-        const cur = live.current.index
-        holdHeight(cur - 1 < 0 ? cur : cur - 1, Math.min(live.current.days.length - 1, cur + 1))
+        if (d.mouse) unselect = holdSelection()
         try {
           root.setPointerCapture(e.pointerId)
         } catch {
@@ -879,21 +924,20 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       }
       const w = S.width || 393
       S.p = edge(d.p0 - dx / w, w)
+      holdHeight(S.p, S.p)
       kick()
     }
     const onUp = (e: PointerEvent): void => {
       const d = S.drag
       if (!d || e.pointerId !== d.id) return
       S.drag = null
+      unselect?.()
+      unselect = null
       if (d.dir !== 1) return
       S.draggedAt = performance.now()
       const w = S.width || 393
-      const last = live.current.days.length - 1
       const v = -vt.release(e.timeStamp) / w
-      let to = Math.round(S.p + project(v, 0.99))
-      // Короткий, но быстрый бросок в ту же сторону всё равно листает.
-      if (to === d.start && Math.abs(v * w) > 500 && Math.sign(v) === Math.sign(S.p - d.start || v)) to = d.start + Math.sign(v)
-      goTo(clamp(to, Math.max(0, d.start - 1), Math.min(last, d.start + 1)), v)
+      goTo(pageTarget(S.p, v, w), v)
     }
     // Отпущенный после свайпа палец не должен нажать кнопку, над которой оказался.
     const onClickCapture = (e: MouseEvent): void => {
@@ -926,8 +970,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       if (!wheel) {
         S.anim = null
         measure()
-        const cur = live.current.index
-        holdHeight(cur > 0 ? cur - 1 : cur, Math.min(last, cur + 1))
+        holdHeight(Math.max(0, Math.floor(S.p) - 1), Math.min(last, Math.ceil(S.p) + 1))
         wheel = { p0: S.p, dx: 0, done: false }
         wt.start(0, e.timeStamp)
       }
@@ -965,6 +1008,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     return () => {
       if (S.raf) cancelAnimationFrame(S.raf)
       S.raf = 0
+      unselect?.()
       ro.disconnect()
       root.removeEventListener('touchstart', onTouchStart)
       root.removeEventListener('touchmove', onTouchMove)
@@ -983,18 +1027,68 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
   useLayoutEffect(() => sync.current(), [index, days, theme])
 
   // Шапку Telegram красим в тон дня, когда он встал: плавно вместе со свайпом она
-  // перекрашивается только в полноэкранном режиме.
+  // перекрашивается только в полноэкранном режиме. Под верхним экраном (жест «вниз»)
+  // день только картинка, и шапка остаётся за верхним.
+  const under = useContext(UnderContext)
+  usePullDismiss(rootRef, { enabled: !under })
   useEffect(() => {
     const d = days[index]
-    if (d) setHeaderColor(toHex(stageTint(toneOf(d, todayKey))))
-  }, [index, days, todayKey, theme])
-  useEffect(() => () => applyTheme(getState().theme), [])
+    if (d && !under) afterHero(() => setHeaderColor(toHex(stageTint(toneOf(d, todayKey)))))
+  }, [index, days, todayKey, theme, under])
+  useEffect(() => () => {
+    if (!under) afterHero(() => applyTheme(getState().theme))
+  }, [under])
+
+  const roll: LockRoll = (dateKey, on) => {
+    const el = rollRef.current
+    if (!el || reducedMotion()) return () => {}
+    rolling.current?.stop()
+    el.style.backgroundColor = stageTint('orange')
+    const clip = (c: number): void => {
+      const w = el.offsetWidth
+      const x = (w + ROLL_SLANT) * (1 - c) - ROLL_SLANT
+      el.style.clipPath = `polygon(${(x + ROLL_SLANT).toFixed(1)}px 0, 100% 0, 100% 100%, ${x.toFixed(1)}px 100%)`
+    }
+    // Полоса под штриховкой — открытый день: закрытие накрывает его, открытие открывает.
+    lockView.current[dateKey] = false
+    let cur = on ? 0 : 1
+    const run = (to: number, done: () => void): void => {
+      const from = cur
+      const stop = animate(
+        ROLL_MS * Math.abs(to - from),
+        (t) => {
+          cur = mix(from, to, pr(t, 0, ROLL_MS * Math.abs(to - from), E.inOut))
+          clip(cur)
+        },
+        () => {
+          rolling.current = null
+          done()
+          sync.current()
+        },
+      )
+      rolling.current = { key: dateKey, stop }
+      sync.current()
+    }
+    clip(cur)
+    run(on ? 1 : 0, () => {
+      if (on) lockView.current[dateKey] = true
+    })
+    return (ok) => {
+      if (ok) return
+      // Сервер отказал: штриховка уезжает туда, откуда пришла, полоса снова по данным.
+      rolling.current?.stop()
+      run(on ? 0 : 1, () => {
+        delete lockView.current[dateKey]
+      })
+    }
+  }
 
   return (
     <Screen>
       <div className="dpg" ref={rootRef}>
         <div className="dpg-band" ref={bandRef} aria-hidden="true">
           <div className="dpg-hatch" ref={hatchRef} />
+          <div className="dpg-lockroll" ref={rollRef} style={{ visibility: 'hidden' }} />
         </div>
         <BackRow label="Ближайшие дни" />
         <div className="dpg-dots" ref={dotsRef}>
@@ -1012,19 +1106,21 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
           ))}
         </div>
         <div className="dpg-track" ref={trackRef}>
-          {days.map((d, i) => (
-            <DayPage
-              key={d.dateKey}
-              day={d}
-              active={i === index}
-              headRef={(el) => {
-                headEls.current[i] = el
-              }}
-              pageRef={(el) => {
-                pageEls.current[i] = el
-              }}
-            />
-          ))}
+          <LockRollContext.Provider value={roll}>
+            {days.map((d, i) => (
+              <DayPage
+                key={d.dateKey}
+                day={d}
+                active={i === index}
+                headRef={(el) => {
+                  headEls.current[i] = el
+                }}
+                pageRef={(el) => {
+                  pageEls.current[i] = el
+                }}
+              />
+            ))}
+          </LockRollContext.Provider>
         </div>
       </div>
     </Screen>

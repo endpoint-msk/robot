@@ -4,6 +4,8 @@
 // перерисовку подписчиков.
 
 import { useSyncExternalStore } from 'react'
+import { heroRow, heroScreen, heroScreenOf, heroSwap, settleHero, themeSwap, type HeroKind } from './hero'
+import { pruneRemote } from './remote'
 import { applyTheme, loadTheme, saveTheme } from './theme'
 import type { Bootstrap, Perspective, ThemeChoice } from './types'
 
@@ -43,9 +45,17 @@ export type ScreenName =
   | 'residentProfile'
   | 'announce'
   | 'onboarding'
+  | 'wrap'
 
 export type NavParams = Record<string, any>
-export type NavEntry = { name: ScreenName; params: NavParams }
+export type NavEntry = {
+  name: ScreenName
+  params: NavParams
+  /** Своя у каждого входа в экран: по ней держатся данные экрана, пока он в стеке. */
+  id: number
+  /** Где был экран, когда с него ушли вперёд: «назад» возвращает его туда же. */
+  scrollY?: number
+}
 export type Anim = 'in-forward' | 'in-back' | 'in-fade' | null
 
 export type State = {
@@ -67,6 +77,9 @@ let state: State = {
   navId: 0,
   anim: null,
 }
+
+let entrySeq = 0
+const entry = (name: ScreenName, params: NavParams): NavEntry => ({ name, params, id: ++entrySeq })
 
 const listeners = new Set<() => void>()
 
@@ -93,14 +106,56 @@ export const useParams = (): NavParams => {
 
 // --- Навигация ---
 
-export function push(name: ScreenName, params: NavParams = {}): void {
-  set({ stack: [...state.stack, { name, params }], navId: state.navId + 1, anim: 'in-forward' })
+/**
+ * Смена стека. С общей главной кнопкой гостя (hero.ts) экран въезжает переходом, а класс
+ * въезда снимается, чтобы не наложиться на него.
+ */
+function navigate(patch: Partial<State>, hero?: { from: HTMLElement | null; to: () => HTMLElement | null; kind: HeroKind }): void {
+  if (hero && heroSwap(() => commit(patch, null), hero.from, hero.to, hero.kind)) return
+  commit(patch, patch.anim ?? null)
 }
 
+const commit = (patch: Partial<State>, anim: Anim): void => {
+  const next = { ...patch, anim }
+  if (next.stack) pruneRemote(new Set(next.stack.map((e) => e.id)))
+  setUnder(false)
+  set(next)
+}
+
+/** Уходящий вперёд экран запоминает прокрутку. */
+const leaving = (): NavEntry[] => {
+  const top = state.stack[state.stack.length - 1]
+  return top ? [...state.stack.slice(0, -1), { ...top, scrollY: window.scrollY }] : []
+}
+
+/**
+ * `hero` — ключ общей части (data-hero): главная кнопка гостя остаётся на месте, пока
+ * экран въезжает справа. Без ключа или без View Transitions экран просто въезжает.
+ */
+export function push(name: ScreenName, params: NavParams = {}, hero?: string): void {
+  settleHero()
+  const patch = { stack: [...leaving(), entry(name, params)], navId: state.navId + 1, anim: 'in-forward' as const }
+  navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: 'slide' } : undefined)
+}
+
+/** Экран с общей главной кнопкой гостя (data-hero-screen) уходит, оставляя её на месте. */
 export function pop(): void {
-  if (state.stack.length > 1) {
-    set({ stack: state.stack.slice(0, -1), navId: state.navId + 1, anim: 'in-back' })
-  }
+  settleHero()
+  if (state.stack.length <= 1) return
+  const patch = { stack: state.stack.slice(0, -1), navId: state.navId + 1, anim: 'in-back' as const }
+  const from = heroScreen()
+  const key = from?.dataset.heroScreen
+  navigate(patch, key ? { from, to: () => heroRow(key), kind: 'slide-back' } : undefined)
+}
+
+/**
+ * Экран уже убран жестом: карточка уехала вниз без перехода, и прежний экран под ней виден
+ * целиком. Въезжать ему незачем, он просто остаётся.
+ */
+export function popStill(): void {
+  settleHero()
+  if (state.stack.length <= 1) return
+  navigate({ stack: state.stack.slice(0, -1), navId: state.navId + 1, anim: null })
 }
 
 /**
@@ -109,14 +164,16 @@ export function pop(): void {
  * ложится в стек, иначе «назад» прошёл бы по всем пролистанным дням.
  */
 export function setTopParams(params: NavParams): void {
+  settleHero()
   const top = state.stack[state.stack.length - 1]
   if (!top) return
-  set({ stack: [...state.stack.slice(0, -1), { name: top.name, params }] })
+  set({ stack: [...state.stack.slice(0, -1), { ...top, params }] })
 }
 
 export function resetRoot(): void {
+  settleHero()
   const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
-  set({ stack: [{ name: root, params: {} }], navId: state.navId + 1, anim: 'in-fade' })
+  navigate({ stack: [entry(root, {})], navId: state.navId + 1, anim: 'in-fade' })
 }
 
 /**
@@ -124,18 +181,49 @@ export function resetRoot(): void {
  * и Telegram показывает на её месте «Закрыть».
  */
 export function openOnboardingRoot(params: NavParams): void {
-  set({ stack: [{ name: 'onboarding', params }], navId: state.navId + 1, anim: 'in-fade' })
+  settleHero()
+  navigate({ stack: [entry('onboarding', params)], navId: state.navId + 1, anim: 'in-fade' })
 }
 
 /** Новая заявка: до первой из них гость проходит через экран правил (сервер это тоже проверяет). */
 /** `params`: день и время, с которыми открыть форму (например, «Хочу прийти» на ивенте). */
+/** Главная кнопка гостя (data-hero="cta") остаётся на месте и меняет подпись на кнопку формы. */
 export function startNewRequest(params?: NavParams): void {
-  push(state.data?.me.acceptedRules ? 'newRequest' : 'rules', params)
+  push(state.data?.me.acceptedRules ? 'newRequest' : 'rules', params, 'cta')
 }
 
-/** Верхний экран сменяется другим без перехода: форма становится созданным визитом на месте. */
-export function replaceTop(name: ScreenName, params: NavParams = {}): void {
-  set({ stack: [...state.stack.slice(0, -1), { name, params }], navId: state.navId + 1, anim: null })
+/**
+ * Верхний экран сменяется другим без перехода: форма становится созданным визитом на месте.
+ * `hero` — часть формы (data-hero), которая вырастает в часть нового экрана с тем же ключом;
+ * `slide` — новый экран при этом въезжает, как обычный следующий (правила → форма).
+ */
+export function replaceTop(name: ScreenName, params: NavParams = {}, hero?: string, slide = false): void {
+  settleHero()
+  const patch = { stack: [...state.stack.slice(0, -1), entry(name, params)], navId: state.navId + 1, anim: slide ? ('in-forward' as const) : null }
+  navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: slide ? 'slide' : 'replace' } : undefined)
+}
+
+// --- Прежний экран под верхним ---
+// Флаг живёт отдельно от состояния: его ставит начало жеста «вниз», а смена состояния
+// перерисовывает все экраны, подписанные на стор, и рвала бы первые кадры жеста.
+
+let under = false
+const underListeners = new Set<() => void>()
+const subscribeUnder = (fn: () => void): (() => void) => {
+  underListeners.add(fn)
+  return () => {
+    underListeners.delete(fn)
+  }
+}
+
+/** Прежний экран нарисован под верхним: идёт жест «вниз» (см. usePullDismiss). */
+export const useUnder = (): boolean => useSyncExternalStore(subscribeUnder, () => under, () => under)
+
+/** Жест «вниз» начался или отменён: прежний экран рисуется под верхним, пока палец тянет. */
+export function setUnder(on: boolean): void {
+  if (under === on) return
+  under = on
+  underListeners.forEach((l) => l())
 }
 
 export function setPerspective(p: Perspective): void {
@@ -179,6 +267,11 @@ export function setTheme(next: ThemeChoice): void {
   applyTheme(next)
   // Иконки рисуются цветом темы прямо в разметке SVG — нужна перерисовка.
   set({ theme: next })
+}
+
+/** Тема выбрана своим тапом: новая расходится кругом от пальца (hero.ts). */
+export function setThemeFrom(next: ThemeChoice, x: number, y: number): void {
+  if (!themeSwap(() => setTheme(next), x, y)) setTheme(next)
 }
 
 /** Форсированная перерисовка (например, системная тема сменилась при выборе 'system'). */

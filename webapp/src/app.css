@@ -145,7 +145,7 @@
    правилу самого класса. Без этого он оказывался специфичнее (0-1-1 против 0-1-0)
    и молча перебивал их: баннер терял свой фон и становился прозрачным, кнопка
    «назад» растягивалась во всю ширину, у сегмента текст уезжал влево. */
-button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row, .seg, .bar-col) {
+button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row, .seg, .bar-slot) {
     width: 100%;
     padding: 0;
     border: none;
@@ -305,6 +305,82 @@ body {
     .bottom-bar.in-forward, .bottom-bar.in-back, .bottom-bar.in-fade { animation: screen-in 0.12s ease; }
 }
 
+/* Переходы View Transitions (hero.ts): главная кнопка гостя и тема. */
+/* Подложка перехода в цвет фона: пока старый кадр гаснет, а новый ещё проявляется, сквозь
+   оба просвечивал фон вебвью (в Telegram он бывает белым), и экран вспыхивал белым. */
+::view-transition { background: var(--bg); }
+::view-transition-group(*) {
+    animation-duration: 0.36s;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Главная кнопка гостя общая у соседних экранов, а сами экраны въезжают как обычно. */
+html[data-vt="slide"]::view-transition-new(root) { animation: slide-from-right 0.24s cubic-bezier(0.32, 0.72, 0, 1) both; }
+html[data-vt="slide-back"]::view-transition-new(root) { animation: slide-from-left 0.24s cubic-bezier(0.32, 0.72, 0, 1) both; }
+html[data-vt="slide"]::view-transition-old(*),
+html[data-vt="slide-back"]::view-transition-old(*) { animation: vt-out 0.1s ease both; }
+/* Тема расходится кругом из точки касания (store.ts, setThemeFrom). */
+html[data-vt="theme"]::view-transition-old(root) { animation: none; }
+html[data-vt="theme"]::view-transition-new(root) { animation: vt-theme 0.55s cubic-bezier(0.32, 0.72, 0, 1) both; }
+@keyframes vt-theme {
+    from { clip-path: circle(0 at var(--vt-x) var(--vt-y)); }
+    to { clip-path: circle(var(--vt-r) at var(--vt-x) var(--vt-y)); }
+}
+/* Форма становится визитом: форма уходит вверх и гаснет, визит поднимается на её месте, а
+   кнопка отправки тем временем вырастает в его карточку статуса. */
+html[data-vt="replace"]::view-transition-old(root) { animation: vt-leave 0.22s ease-out both; }
+html[data-vt="replace"]::view-transition-new(root) { animation: vt-rise 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both; }
+@keyframes vt-leave { to { opacity: 0; transform: translateY(-14px); } }
+@keyframes vt-rise { from { opacity: 0; transform: translateY(18px); } }
+/* Главная кнопка гостя (ключ cta), по эталону «Захостить» в пилл хоста: капсула меняет
+   размер и цвет, подпись внутри тает размытием и проявляется на том же месте, а при
+   отправке капсула вырастает в карточку статуса, и её содержимое проявляется следом.
+   Снимки капсулы без подписи (она отдельная часть), поэтому растягиваются по рамке
+   целиком, а углы держит пара снимков. */
+::view-transition-image-pair(h-cta) { border-radius: 16px; overflow: hidden; }
+::view-transition-old(h-cta), ::view-transition-new(h-cta) { width: 100%; height: 100%; object-fit: cover; }
+::view-transition-old(h-cta) { animation: vt-out 0.24s ease-out both; }
+::view-transition-new(h-cta) { animation: vt-in 0.24s ease-out both; }
+::view-transition-old(h-cta-label), ::view-transition-new(h-cta-label) {
+    width: auto;
+    height: 100%;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+}
+::view-transition-old(h-cta-label), ::view-transition-old(h-cta-body) { animation: vt-blur-out 0.18s ease-out both; }
+::view-transition-new(h-cta-label) { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both; }
+::view-transition-new(h-cta-body) { animation: vt-blur-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s both; }
+@keyframes vt-blur-out { to { opacity: 0; filter: blur(4px); transform: scale(0.9); } }
+@keyframes vt-blur-in { from { opacity: 0; filter: blur(4px); transform: scale(0.9); } }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; } }
+/* Прежний экран под верхним на время жеста «вниз» (App.tsx, usePullDismiss). Окно
+   прокручивает верхний, поэтому нижний стоит неподвижно и сдвинут на свою прокрутку. */
+.screen-under {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-width: 520px;
+    margin: 0 auto;
+    overflow: hidden;
+    background: var(--bg);
+}
+.screen-under-zoom { position: absolute; inset: 0; transform-origin: 50% 40%; }
+.screen-under-dim { position: absolute; inset: 0; background: #000; opacity: 0.32; }
+/* Карточку двигает и срезает usePullDismiss: сдвиг от левого верхнего угла, срез и
+   скругление через clip-path. Короткий экран добирает высоту до окна, иначе под его
+   низом был бы виден прежний. */
+.screen.pulled {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--bg);
+    transform-origin: 0 0;
+}
+
 /* Каркас → данные. Содержимое проявляется, каркас гаснет поверх него: одновременно,
    иначе между ними мелькает пустой экран. Уходящий слой вынут из потока, чтобы высота
    на время перехода оставалась высотой данных. */
@@ -389,21 +465,97 @@ body {
     user-select: none;
 }
 
-/* --- Модалки (вместо нативных window.alert/confirm) --- */
+/* --- Модалки (вместо нативных window.alert/confirm) ---
+   Все вопросы открываются одним листом снизу (modals.tsx). Положение листа и
+   затемнение ведёт JS (useSheetDrag): переходов на них нет, иначе каждая запись кадра
+   запускала бы переход заново. */
 
 .modal-overlay {
     position: fixed;
     inset: 0;
     z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
     background: var(--overlay);
-    opacity: 0;
-    transition: opacity 0.18s ease;
+    /* Палец на затемнении не должен прокручивать уменьшенный экран под листом. */
+    touch-action: none;
+    will-change: opacity;
 }
-.modal-overlay.shown { opacity: 1; }
+/* Уходящий лист пропускает тапы к экрану. */
+.modal-overlay.closing, .modal-sheet.closing { pointer-events: none; }
+
+/* Над клавиатурой на iOS лист поднимает эта обёртка: transform самого листа занят жестом. */
+.modal-lift {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 101;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.modal-sheet {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    border-radius: 22px 22px 0 0;
+    background: var(--bg);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.14);
+    pointer-events: auto;
+    will-change: transform;
+}
+/* Пружина подъёма перелетает вверх, резинка тянет лист вверх: фон продолжается под
+   листом, иначе в зазоре у нижнего края проступало бы затемнение. */
+.modal-sheet::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 120px;
+    background: inherit;
+}
+/* --modal-vh — высота видимой области (modals.tsx): с клавиатурой лист в неё помещается
+   и прокручивается сам. */
+.modal-scroll {
+    max-height: calc(var(--modal-vh, 100vh) - 35px - var(--tg-content-safe-area-inset-top, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 16px calc(16px + var(--tg-safe-area-inset-bottom, 0px));
+}
+.modal-swap { position: relative; }
+/* flow-root: отступы содержимого входят в замер высоты при смене вопроса. */
+.modal-layer { display: flow-root; padding-top: 12px; }
+.modal-layer.out { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
+.modal-layer.parked { display: none; }
+
+/* Шапка: кто и когда. */
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 0 4px 12px; }
+.modal-head .avatar { width: 42px; height: 42px; font-size: 17px; }
+.modal-who { min-width: 0; }
+.modal-name { font-size: 17px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal-line { margin-top: 1px; font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Экран под листом отъезжает вглубь (modals.tsx, stage): #app уменьшается, по бокам
+   проступает чёрная подложка. Она лежит под #app в корневом контексте наложения
+   (z-index: -1), поэтому на время листа фон несёт сам #app, а body прозрачен: иначе
+   он закрасил бы подложку. Подложка шириной в колонку приложения: на широком окне поля
+   вокруг остаются цвета фона. */
+.modal-back {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    max-width: 520px;
+    margin: 0 auto;
+    background: #000;
+}
+html.sheet-recede .modal-back { display: block; }
+html.sheet-recede body { background: transparent; }
+html.sheet-recede #app { background: var(--bg); will-change: transform; }
+/* transform на #app делает его containing block для fixed-потомков, и нижняя панель
+   встала бы к низу документа. --sheet-vb — низ видимой области в координатах #app. */
+html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 
 /* Просмотр картинки на весь экран. Фон непрозрачно-чёрный в обеих темах: под
    фотографией нужен нейтральный контекст, а не цвет интерфейса. */
@@ -443,47 +595,45 @@ body {
 }
 .lightbox-close:active { opacity: 0.6; }
 
-.modal-card {
-    width: 100%;
-    max-width: 300px;
-    background: var(--card);
-    border-radius: 20px;
-    overflow: hidden;
-    text-align: center;
-    transform: scale(0.92);
-    transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
-}
-.modal-overlay.shown .modal-card { transform: scale(1); }
+.modal-text { padding: 0 4px 12px; font-size: 16px; line-height: 1.38; color: var(--text); }
+/* Под шапкой с человеком вопрос только поясняет, что будет: главное сказано в ней. */
+.modal-head + .modal-body > .modal-text { font-size: 15px; color: var(--text-2); }
 
-.modal-text {
-    padding: 20px 20px 18px;
-    font-size: 15px;
-    line-height: 1.35;
-    color: var(--text);
-}
-.modal-actions { display: flex; border-top: 0.5px solid var(--sep); }
+/* Отступы с весом выше общего .card + .card: тот разводит карточки экрана, а не листа. */
+.modal-sheet .modal-body > * + .card { margin-top: 10px; }
+.modal-sheet .modal-text + .card, .modal-sheet .modal-resched-day + .card { margin-top: 0; }
+.modal-sheet .modal-actions + .modal-actions { margin-top: 8px; }
+/* Действия строками во всю ширину, как в системном меню iOS: подпись не делит ширину
+   с соседней кнопкой и не ломается на две строки. */
 .modal-btn {
-    flex: 1;
-    min-height: 46px;
-    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 54px;
+    padding: 0 14px;
     border: none;
     background: none;
     font-family: inherit;
     font-size: 17px;
     color: var(--blue);
+    text-align: center;
     cursor: pointer;
 }
 .modal-btn:active { background: rgba(var(--sec), 0.06); }
-.modal-btn + .modal-btn { border-left: 0.5px solid var(--sep); }
-/* Выбор действия — кнопки столбиком: в ряд помещаются две, а третья ужимает подписи
-   до многоточий. Разделитель тут горизонтальный, поэтому вертикальный снимаем. */
-.modal-choices { display: flex; flex-direction: column; border-top: 0.5px solid var(--sep); }
-.modal-choices .modal-btn + .modal-btn { border-left: none; border-top: 0.5px solid var(--sep); }
+.modal-btn + .modal-btn { border-top: 0.5px solid var(--sep); }
 .modal-btn.primary { font-weight: 600; }
 .modal-btn.destructive { color: var(--red); }
 
+/* В тёмной теме лист на тон светлее фона, как системные шторки: чёрный лист слился бы
+   с затемнённым экраном. Карточки и поля в нём ещё на тон светлее. */
+:root[data-theme="dark"] .modal-sheet { background: var(--card); }
+:root[data-theme="dark"] .modal-sheet .card { background: var(--chip); }
+:root[data-theme="dark"] .modal-sheet .day-chip:not(.selected) { background-color: var(--chip); }
+:root[data-theme="dark"] .modal-sheet .time-input { background: rgba(var(--sec), 0.12); }
+
 @media (prefers-reduced-motion: reduce) {
-    .modal-card { transition: none; transform: none; }
+    .modal-lift { transition: none; }
 }
 
 /* Вторичная кнопка (например, «Добавить в календарь»): подложка карточки, синий текст. */
@@ -750,7 +900,6 @@ body {
 
 .approver { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
 @keyframes host-in { from { opacity: 0; transform: translateY(4px); } }
-@keyframes host-pop { from { transform: scale(0); } }
 /* Свой «Захостить» → пилл хоста (RequestRow): капсула кнопки вспыхивает зелёным с
    галочкой, слово растворяется по буквам, капсула сжимается до пилла, и в ней
    проявляются аватарка и ник. Размеры «до» и «после» JS кладёт в переменные: их знает
@@ -967,15 +1116,16 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
 }
 /* Во время жеста мышью текст не выделяем — иначе drag тянет выделение по строке. */
 .swipe-content.dragging { user-select: none; }
+/* То же на время любого жеста мышью по экрану (holdSelection в motion.ts). */
+html.no-select, html.no-select * { -webkit-user-select: none; user-select: none; }
 /* Аватарки и ссылки внутри строки не должны утаскиваться нативным drag-and-drop:
    он перебивает pointer-жест (см. onDragStart в SwipeRow). */
 .swipe-content img, .swipe-content a { -webkit-user-drag: none; user-select: none; }
 
-/* Чипы дней в модалке переноса: узкая карточка (--card), поэтому чипам даём контраст (--chip). */
-.modal-resched-day { margin: 12px 14px 4px; }
+/* Чипы дней в листе переноса: без счётчиков, поэтому ниже, чем в форме заявки. */
+.modal-resched-day { margin-bottom: 10px; }
 .modal-resched-day .day-chips { margin: 0; gap: 4px; }
-.modal-resched-day .day-chip { min-height: 48px; background: var(--chip); box-shadow: none; }
-.modal-resched-day .day-chip.selected { background: var(--blue); }
+.modal-resched-day .day-chip { min-height: 54px; }
 
 /* Строка-плашка под заявкой с активным предложением времени. */
 .proposal-note {
@@ -1043,9 +1193,8 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
 }
 .chip-btn:active { opacity: 0.6; }
 
-/* Модалка выбора времени. */
-.modal-time-wrap { display: flex; justify-content: center; padding: 4px 20px 18px; }
-.time-input.modal-time { margin-left: 0; font-size: 22px; padding: 10px 18px; }
+/* Время и дата в листе вопроса: строкой с таблеткой справа, как в форме заявки. */
+.row.modal-row { padding: 6px 14px; }
 
 /* --- Кто придёт: пометка резидента + кнопка «Я приду» --- */
 
@@ -1104,7 +1253,32 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
     opacity: 0;
     background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
 }
+/* Штриховка, которая накатывает от тумблера «Закрыт для гостей» (Day.tsx, LockRoll): та же
+   заливка закрытого дня, срезанная наискось. */
+.dpg-lockroll {
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
+}
 .dpg > .back-row, .dpg-dots, .dpg-track { position: relative; z-index: 1; }
+
+/* --- Листалка карточек (components/Pager.tsx): человек в статистике, неделя архива,
+   человек во взносах. Тот же язык, что у листалки дня: полоса в тоне карточки, точки
+   над ней. Тон, высоту, сдвиг и точки рисует листалка правками style. */
+.pgr { position: relative; }
+.pgr-band {
+    position: absolute;
+    z-index: 0;
+    left: -16px;
+    right: -16px;
+    top: calc(-12px - var(--tg-content-safe-area-inset-top, 0px));
+    pointer-events: none;
+}
+.pgr > .back-row, .pgr-dots, .pgr-track { position: relative; z-index: 1; }
+.pgr-dots { display: flex; justify-content: center; margin: -6px 0 0; }
+.pgr-track { margin: 0 -16px; overflow: hidden; touch-action: pan-y; }
+.pgr-page { padding: 0 16px; }
+.pgr-page:not(.active) { position: absolute; top: 0; left: 0; right: 0; }
 .dpg-dots { display: flex; justify-content: center; margin: -6px 0 0; touch-action: pan-y; }
 .dpg-dot {
     display: flex;
@@ -1160,7 +1334,7 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
     white-space: nowrap;
     color: var(--blue);
     cursor: pointer;
-    transition: background-color 0.28s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.28s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 0.28s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.28s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .dpg-pill:active { transform: scale(0.95); transition-duration: 0.28s, 0.28s, 0.08s; }
 .dpg-pill.on { background: var(--green); box-shadow: none; }
@@ -1404,6 +1578,30 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
     background: var(--purple);
 }
 .day-chip.selected .dc-event { background: #fff; }
+/* Ряд выбора дня в формах (DayChips): синяя заливка одна на весь ряд и ездит слоем
+   поверх чипов, а белая копия цифр лежит в каждом чипе над ней и открывается ровно
+   там, где заливка (clip-path ставит forms.tsx). Классом selected красятся только
+   чипы редактора ивента: там у каждого чипа своя заливка. */
+.day-chips.dc-track { position: relative; isolation: isolate; }
+.dc-fill, .dc-ink { position: absolute; inset: 0; pointer-events: none; clip-path: inset(0 0 0 100%); }
+.dc-fill { z-index: 1; background: var(--blue); }
+/* Отступы и зазор берутся у самого чипа: копия обязана лечь на цифры пиксель в пиксель,
+   в том числе в узких чипах переноса визита. */
+.dc-ink {
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: inherit;
+    padding: inherit;
+}
+.day-chips.dc-track .dc-ink .dc-dow { color: rgba(255, 255, 255, 0.75); }
+.day-chips.dc-track .dc-ink .dc-num { color: #fff; }
+.day-chips.dc-track .dc-ink .dc-counts { color: rgba(255, 255, 255, 0.85); }
+.day-chips.dc-track .dc-ink .dc-approved { color: #fff; }
+.day-chips.dc-track .dc-ink .dc-dash { color: rgba(255, 255, 255, 0.6); }
+.day-chips.dc-track .dc-ink .dc-event { background: #fff; }
 
 /* Строка на пояснение: при переносе внутри одной строки маркер отрывался от
    своего текста и висел в конце предыдущей. */
@@ -1580,6 +1778,10 @@ button.agenda-banner:active { opacity: 0.6; }
 .time-field:active { opacity: 0.6; }
 /* Необязательное время пустым читается как вопрос, а не как значение. */
 .time-field.empty { color: var(--blue); }
+/* В форме заявки время раскрывает колесо прямо в карточке (TimeRow): пока оно открыто,
+   значение в тон, как у системного пикера. */
+.time-field.inline { transition: opacity 0.3s ease-out, color 0.2s ease; }
+.time-field.open { color: var(--blue); }
 /* Время прихода резидента в его строке «Придут резиденты»: таблетка размера пилюли
    строки, а не поле формы. Зону тапа добирает слой, как у .host-btn. */
 .time-field.attend-time {
@@ -1685,9 +1887,14 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .tp-colon { font-size: 22px; font-weight: 600; color: var(--text); }
 
+/* Столбец колеса: палец крутит прозрачный список (.tp-wheel), а цифры лежат над ним
+   барабаном (.tp-drum) и встают на цилиндр по его scrollTop (TimeField.tsx, paint).
+   Сам барабан не прокручивается: строки, которые скрипт поворачивает на кадр позже
+   нативной прокрутки, внутри списка дрожали бы на быстром броске. */
+.tp-col { position: relative; width: 74px; height: 100%; overflow: hidden; }
+
 .tp-wheel {
     height: 100%;
-    width: 74px;
     /* Отступ в две строки сверху и снизу — иначе крайние значения не встают в центр. */
     padding: calc(var(--tp-item-h) * 2) 0;
     overflow-y: scroll;
@@ -1695,13 +1902,30 @@ button.agenda-banner:active { opacity: 0.6; }
     /* Скролл колеса не должен уводить страницу и закрывать миниапп свайпом. */
     overscroll-behavior: contain;
     scrollbar-width: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
 }
+.tp-wheel:active { cursor: grabbing; }
 .tp-wheel::-webkit-scrollbar { display: none; }
+/* Строки списка держат прокрутку, привязку к строке и чтение скринридером. */
+.tp-slot { height: var(--tp-item-h); scroll-snap-align: center; color: transparent; }
 
+.tp-drum {
+    position: absolute;
+    inset: 0;
+    perspective: 520px;
+    pointer-events: none;
+}
+/* Видимые строки стоят на месте полосы, на цилиндр их ставит скрипт; дальние скрыты. */
 .tp-item {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--tp-item-h) * 2);
     height: var(--tp-item-h);
     line-height: var(--tp-item-h);
-    scroll-snap-align: center;
     text-align: center;
     font-size: 22px;
     font-weight: 500;
@@ -1711,6 +1935,10 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .tp-item.active { color: var(--text); font-weight: 600; }
 .tp-item.disabled { color: rgba(var(--sec), 0.22); }
+
+/* Колесо в карточке формы заявки: высоту ведёт пружина (TimeField.tsx, Unfold), всё
+   ниже съезжает вместе с ней. */
+.tp-unfold { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
     .tp-sheet { transition: none; transform: none; }
@@ -1825,7 +2053,7 @@ button.agenda-banner:active { opacity: 0.6; }
 .checkbox.on svg {
     opacity: 1;
     transform: none;
-    transition: opacity 0.15s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: opacity 0.15s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-reduced-motion: reduce) {
     .checkbox, .checkbox svg, .checkbox.on svg { transition: none; }
@@ -2074,9 +2302,13 @@ button.agenda-banner:active { opacity: 0.6; }
 .write-banner.invite .wb-icon { background: var(--blue); }
 .write-banner.invite > svg { opacity: 0.7; }
 
-/* Код домофона на главной: справа «Показать», по тапу сам код. Буква клавиши - в
+/* Код домофона на главной: справа пелена, по тапу сам код. Буква клавиши - в
    рамке, как на панели, цифры табличные: код читают с одного взгляда у двери. */
-.door-show { font-size: 16px; color: var(--blue); }
+.door-spoiler { position: relative; display: inline-flex; }
+/* Под пеленой заглушка той же ширины, а не код: строка не прыгает, когда пелена
+   рассыпается. Холст шире кода (размер ставит Overview.tsx): точки разлетаются за край. */
+.door-ghost { visibility: hidden; }
+.door-dust { position: absolute; pointer-events: none; color: var(--text); }
 .door-code {
     display: inline-flex;
     align-items: center;
@@ -2245,9 +2477,10 @@ button.agenda-banner:active { opacity: 0.6; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ActionButton: подпись обёрнута в .pend-label и наследует раскладку кнопки, чтобы
-   иконка, текст и отступы стояли как без обёртки. */
+   иконка, текст и отступы стояли как без обёртки. Так же обёрнута подпись главной
+   кнопки гостя (.cta-label): в переходе между экранами она отдельная часть. */
 .pend { position: relative; }
-.pend-label {
+.pend-label, .cta-label {
     display: inherit;
     flex: 1 1 auto;
     min-width: 0;
@@ -2307,6 +2540,10 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
    Фиолетовый — собственный тон подсистемы: синий занят действиями, зелёный
    одобрением, красный блокировкой. Ивент ничем из этого не является. */
 
+/* Ивент с фото красится в тон первой афиши (SpaceEvent.tone): toneVars кладёт на корень
+   экрана, карточки или плитки --ev-band, --ev-accent, --ev-soft и --ev-soft-accent, уже
+   посчитанные под тему. Без тона переменных нет, и цвета откатываются на фиолетовый. */
+
 /* Ивент на чтение (EventView): афиша во всю ширину на полосе в тон ивента, под ней дата
    плиткой и «Придут», как в шапке дня. */
 /* flow-root: в Telegram строки «назад» нет, афиша идёт первой, и без него её отступ
@@ -2320,10 +2557,10 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     top: calc(-12px - var(--tg-content-safe-area-inset-top, 0px));
     bottom: 0;
     background: var(--bg);
-    background: color-mix(in srgb, var(--purple) 12%, var(--bg));
+    background: var(--ev-band, color-mix(in srgb, var(--purple) 12%, var(--bg)));
     pointer-events: none;
 }
-:root[data-theme="dark"] .evv-band { background: color-mix(in srgb, var(--purple) 21%, var(--bg)); }
+:root[data-theme="dark"] .evv-band { background: var(--ev-band, color-mix(in srgb, var(--purple) 21%, var(--bg))); }
 .evv-top > :not(.evv-band) { position: relative; z-index: 1; }
 .evv-poster {
     height: 212px;
@@ -2358,7 +2595,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0) 64%);
     pointer-events: none;
 }
-.evv-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+/* Снимок чуть выше рамки: при прокрутке он едет медленнее страницы (Event.tsx), и запас
+   не даёт показаться краю. */
+.evv-photo { position: absolute; left: 0; top: -8%; width: 100%; height: 116%; object-fit: cover; cursor: zoom-in; }
 .evv-pt {
     position: relative;
     z-index: 2;
@@ -2393,11 +2632,11 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     justify-content: center;
     line-height: 1;
 }
-.ev-tile span { font-size: 11px; font-weight: 700; color: var(--purple); }
+.ev-tile span { font-size: 11px; font-weight: 700; color: var(--ev-accent, var(--purple)); }
 .ev-tile b { margin-top: 3px; font-size: 22px; font-weight: 800; }
 /* В строке «Позже» плитка встаёт на место значка ивента. */
-.ev-tile.small { width: 40px; height: 44px; border-radius: 10px; background: var(--ev-bg); box-shadow: none; }
-.ev-tile.small span { font-size: 10.5px; }
+.ev-tile.small { width: 40px; height: 44px; border-radius: 10px; background: var(--ev-soft, var(--ev-bg)); box-shadow: none; }
+.ev-tile.small span { font-size: 10.5px; color: var(--ev-soft-accent, var(--purple)); }
 .ev-tile.small b { margin-top: 2px; font-size: 18px; }
 .evv-desc { padding: 12px 14px 14px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .evv-gallery { margin-top: 12px; }
@@ -2412,26 +2651,27 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     border-radius: var(--radius-btn);
     background: var(--card);
     box-shadow: var(--shadow-card);
+    color: var(--ev-accent, var(--purple));
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
 }
-.evv-cal-wide { margin-top: 14px; color: var(--purple); }
+.evv-cal-wide { margin-top: 14px; color: var(--ev-accent, var(--purple)); }
 
 .event-card {
-    background: var(--ev-bg);
+    background: var(--ev-soft, var(--ev-bg));
     border-radius: var(--radius-card);
     padding: 18px 18px 16px;
     margin-bottom: 18px;
 }
-.ev-head { display: flex; align-items: center; gap: 7px; }
+.ev-head { display: flex; align-items: center; gap: 7px; color: var(--ev-soft-accent, var(--purple)); }
 .ev-kicker {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--purple);
+    color: var(--ev-soft-accent, var(--purple));
 }
 .ev-chip {
     flex-shrink: 0;
@@ -2473,7 +2713,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     font-family: inherit;
     font-size: 14px;
     font-weight: 600;
-    color: var(--purple);
+    color: var(--ev-soft-accent, var(--purple));
     cursor: pointer;
 }
 .ev-source:active { opacity: 0.6; }
@@ -2518,8 +2758,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     padding: 0;
 }
 .ev-title-input { font-size: 17px; font-weight: 600; }
-/* Описание — до 2000 символов, а заготовка из канала приносит сразу весь пост: три строки под это мало. */
-.ev-desc-input { font-size: 16px; line-height: 1.4; resize: none; min-height: 132px; }
+/* Описание растёт по тексту (Event.tsx), прокрутки внутри поля нет: заготовка из канала
+   приносит сразу весь пост. */
+.ev-desc-input { font-size: 16px; line-height: 1.4; resize: none; min-height: 132px; overflow: hidden; }
 /* Лента афиш в редакторе: квадратные плитки, последняя — «добавить». */
 .ev-photos {
     display: flex;
@@ -2693,13 +2934,33 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     justify-content: center;
     transition: background 160ms ease;
 }
-/* Подтверждение копирования живёт в самой кнопке: модалка на весь экран ради
+/* Подтверждение копирования живёт там, где палец: модалка на весь экран ради
    «скопировано» перекрывает то, что человек и хотел увидеть. */
 .route-copy.done { background: rgba(52, 199, 89, 0.16); }
-.route-copy svg { animation: copy-pop 200ms ease-out; }
-@keyframes copy-pop {
-    from { transform: scale(0.5); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
+
+/* Копирование (components/CopyFeedback.tsx): рамки и галочка в одной ячейке, между
+   ними ходит движение; без него состояние держит класс on. */
+.copy-glyph { display: grid; place-items: center; }
+.copy-glyph > * { grid-area: 1 / 1; }
+.cg-frames { display: flex; }
+.cg-check, .copy-glyph.on .cg-frames { opacity: 0; }
+.copy-glyph.on .cg-check { opacity: 1; }
+.copy-toast {
+    position: fixed;
+    z-index: 300;
+    left: 0;
+    top: 0;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform-origin: 50% 100%;
+    box-shadow: 0 8px 22px -8px rgba(0, 0, 0, 0.35);
 }
 .route-metro { padding: 13px 14px 15px; }
 /* Те же колонки, что у адреса над ним: значок линии под булавкой (34px), подпись и
@@ -2940,24 +3201,17 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
    зависимости от числа разрядов, и столбец полос разъезжался. */
 .period-sum { min-width: 4.4em; text-align: right; }
 
-/* Поле ввода числа в модалке (ставка взноса, день сбора). */
-.modal-num-wrap { padding: 0 18px 4px; }
+/* Поле ввода в листе вопроса (ставка взноса, день сбора, причина, комментарий): карточка. */
+.modal-field { padding: 0 14px; }
 /* width: 100% обязателен: .text-input рассчитан на flex-строку (`flex: 1`), а здесь
    он лежит в обычном блоке — без ширины инпут берёт природную (те самые ~20 символов),
    вылезает за карточку и обрезается её `overflow: hidden`. */
-.modal-num { width: 100%; text-align: center; font-size: 22px; font-weight: 700; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.08); }
-/* Нижний отступ — за разделитель кнопок: без него подпись лежит прямо на линии. */
-.modal-num-hint { padding: 8px 18px 16px; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: center; }
+.modal-num { display: block; width: 100%; text-align: center; font-size: 22px; font-weight: 700; padding: 12px 0; }
+.modal-num-hint { padding: 8px 4px 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
 /* Тот же блок, что у числа, но текст идёт слева: причину читают, а не сверяют цифру. */
-.modal-text-input {
-    width: 100%;
-    font-size: 17px;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(var(--sec), 0.08);
-}
-/* Комментарий к действию: несколько строк, растягивать руками в модалке незачем. */
-.modal-textarea { display: block; resize: none; line-height: 1.35; }
+.modal-text-input { display: block; width: 100%; font-size: 17px; padding: 13px 0; }
+/* Комментарий к действию: несколько строк, растягивать руками в листе незачем. */
+.modal-textarea { resize: none; min-height: 92px; line-height: 1.35; }
 .modal-btn.disabled { opacity: 0.4; pointer-events: none; }
 
 /* Какой это по счёту визит гостя - пилюля рядом с именем в строке заявки.
@@ -3063,13 +3317,23 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease-out, opacity 0.3s ease-out;
+    transition: opacity 0.3s ease-out;
 }
 .vm-btn::after { content: ""; position: absolute; inset: -5px -4px; }
 .vm-btn:active { opacity: 0.6; transition-duration: 0s; }
-.vm-btn.came.on { background: var(--green); }
-.vm-btn.missed.on { background: var(--orange); }
+/* Отметка - круг поверх кнопки, а не её фон: после своего тапа он вырастает с
+   перелётом за край кнопки, а белый штрих дорисовывается поверх серого (Visits.tsx). */
+.vm-fill { position: absolute; inset: 0; border-radius: 50%; transform: scale(0); }
+.vm-btn.came .vm-fill { background: var(--green); }
+.vm-btn.missed .vm-fill { background: var(--orange); }
+.vm-btn.on .vm-fill { transform: none; }
+.vm-btn svg { position: relative; }
+.vm-base { stroke: rgba(var(--sec), 0.45); }
+.vm-ink { stroke: #fff; opacity: 0; }
+.vm-btn.on .vm-base { opacity: 0; }
+.vm-btn.on .vm-ink { opacity: 1; }
 .vm-btn[disabled] { opacity: 0.35; cursor: default; }
+.visits-all-gap { height: 22px; }
 .vm-remove {
     position: relative;
     flex-shrink: 0;
@@ -3106,7 +3370,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 }
 .arrival-head { display: flex; align-items: center; gap: 10px; }
 .ptb-keep { margin-top: 12px; }
-.arrival-icon.pop svg { animation: host-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.arrival-icon.pop svg { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .arrival-icon {
     width: 36px;
     height: 36px;
@@ -3211,6 +3475,66 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 :root[data-theme="dark"] .stats-seg { background: var(--chip); }
 :root[data-theme="dark"] .stats-seg .seg-thumb { box-shadow: none; }
 
+/* Переключатель прилипает к верху экрана на полупрозрачной подложке, как полоса
+   навигации в списках iOS: период меняется там, где смотрит глаз. Подложка проявляется
+   за первые пиксели прокрутки под ним (--stuck ставит Stats.tsx) и в полноэкранном
+   режиме уходит вверх под шапку Telegram, чтобы не просвечивал текст. */
+.stats-seg-bar {
+    position: sticky;
+    top: calc(8px + var(--tg-content-safe-area-inset-top, 0px));
+    z-index: 5;
+    margin: 0 0 18px;
+}
+.stats-seg-bar .segmented { margin: 0; }
+.stats-seg-bar::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: -16px;
+    right: -16px;
+    top: calc(-8px - var(--tg-content-safe-area-inset-top, 0px));
+    bottom: -8px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+    backdrop-filter: blur(18px) saturate(1.6);
+    box-shadow: 0 0.5px 0 var(--sep);
+    opacity: var(--stuck, 0);
+    pointer-events: none;
+}
+/* Размытие на слабом Android рвёт прокрутку: подложка просто плотная. */
+.low-motion .stats-seg-bar::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--bg);
+}
+/* Метка исходного места переключателя. Пиксель высоты с отрицательным отступом: пустой
+   блок схлопнул бы отступы сквозь себя, и метка встала бы не там, где переключатель. */
+.stats-seg-mark { height: 1px; margin-bottom: -1px; }
+
+/* Области, по которым ведут пальцем (useScrub в stats.ts). Вертикаль остаётся прокрутке,
+   горизонталь жесту; долгое нажатие не выделяет текст и не открывает меню картинки. */
+[data-scrub] {
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+[data-scrub] img { -webkit-user-drag: none; }
+
+/* Хвостик лупы и пилюли смотрит на палец. Фон берёт у своей плашки. */
+.stats-tail {
+    position: absolute;
+    bottom: -5px;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    border-radius: 2px;
+    background: inherit;
+    transform: rotate(45deg);
+    box-shadow: 1px 1px 0 0 rgba(var(--sec), 0.1);
+}
+
 .stats-card { padding: 16px 16px 14px; margin-bottom: 18px; }
 .stats-card-title { font-size: 17px; font-weight: 700; margin: 0 2px 13px; }
 .stats-figure { display: flex; align-items: baseline; gap: 9px; }
@@ -3244,7 +3568,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 /* Тепловая карта 7×12: строка — день недели, колонка — двухчасовой интервал. */
 .heat { display: flex; flex-direction: column; gap: 3px; }
 .heat-row { display: flex; gap: 3px; align-items: center; }
-.heat-dow { width: 22px; flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--axis-ink); }
+.heat-dow { width: 22px; flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--axis-ink); transition: color 0.15s ease; }
+/* День недели строки под пальцем, пока по карте ведут. */
+.heat-dow.on { color: var(--text); }
 /* Смена окна перекрашивает клетки на месте, а не подменяет карту целиком. На
    открытии экрана перехода нет: клетка сразу рождается в своём цвете. */
 .heat-cell {
@@ -3323,10 +3649,46 @@ button.heat-cell.picked {
 }
 .heat-readout b { color: var(--text); font-weight: 600; }
 
-/* Часы по месяцам. Ось и сетка обязательны: без них прочитать можно только
-   выбранный столбик, а остальные восемь месяцев не сравнить ни с чем. */
+/* Лупа над пальцем, пока ведут по карте: клетка крупно, день, интервал и значение.
+   Лежит поверх всего экрана (портал в body): у верхнего ряда она выше карточки, а
+   карточка режет всё, что за неё выходит. После отпускания садится в строку над картой. */
+.stats-loupe {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 8px;
+    border-radius: 16px;
+    background: var(--card);
+    box-shadow: 0 0 0 0.5px rgba(var(--sec), 0.18), 0 12px 30px -6px rgba(0, 0, 0, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
+    transform-origin: 0 0;
+}
+/* На чёрном фоне плашка цвета карточки сливалась бы с картой под ней. */
+:root[data-theme="dark"] .stats-loupe { background: var(--chip); }
+.stats-loupe .heat-cell { flex: none; width: 38px; height: 38px; border-radius: 10px; transition: none; }
+.stats-loupe-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 13px;
+    line-height: 1.25;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+}
+.stats-loupe-text b { color: var(--text); font-size: 15px; font-weight: 700; }
+
+/* График часов с шагом периода: месяц по дням, 3 месяца по неделям, всё время по
+   месяцам. Ось и сетка обязательны: без них прочитать можно только выбранный
+   столбик. Столбики стоят абсолютно: раскладку и перестройку считает Stats.tsx. */
+.chart-card { position: relative; }
 .bars-plot { position: relative; margin-top: 18px; padding-left: 28px; }
-/* Слой сетки ровно по высоте дорожки столбиков — подписи месяцев ниже её не касаются. */
+/* Слой сетки ровно по высоте дорожки столбиков — подписи под столбиками её не касаются. */
 .bars-grid { position: absolute; left: 28px; right: 0; top: 0; height: 92px; pointer-events: none; }
 .bar-grid { position: absolute; left: 0; right: 0; height: 1px; background: var(--sep); }
 .bar-base { position: absolute; left: 0; right: 0; height: 1px; background: rgba(var(--sec), 0.3); }
@@ -3339,8 +3701,17 @@ button.heat-cell.picked {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
-.bars { display: flex; align-items: flex-end; gap: 5px; position: relative; }
-.bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.bars-area { position: relative; height: 92px; }
+.bars-static { position: absolute; inset: 0; }
+/* Место столбика во всю высоту дорожки: тап куда угодно над днём выбирает его, а не
+   только по самому столбику в 9 px. */
+.bar-slot { position: absolute; top: 0; bottom: 0; cursor: pointer; }
+/* Скругляем только конец данных: круглый низ отрывает столбик от базовой линии,
+   а на минимальной высоте радиус превращает его в плавающую каплю. */
+.bar-slot i { position: absolute; bottom: 0; display: block; background: var(--heat-3); }
+/* Ступень шкалы, а не тон акцента с альфой: у прежней заливки было 1.41:1 к карточке,
+   и невыбранные столбики читались как призраки. */
+.bar-slot.on i { background: var(--heat-5); }
 .bar-val {
     position: absolute;
     left: 50%;
@@ -3350,17 +3721,44 @@ button.heat-cell.picked {
     color: var(--text);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    pointer-events: none;
 }
-.bar-track { position: relative; width: 100%; height: 92px; display: flex; align-items: flex-end; }
-/* Скругляем только конец данных: круглый низ отрывает столбик от базовой линии,
-   а на минимальной высоте радиус превращает его в плавающую каплю. */
-.bar-track i { display: block; width: 100%; border-radius: 5px 5px 0 0; }
+.bars-x { position: relative; height: 15px; margin-top: 6px; }
+/* Подписи прошлого шага гаснут поверх новых, пока график сменяется. */
+.bars-x.leaving { position: absolute; left: 28px; right: 0; bottom: 0; margin: 0; pointer-events: none; }
+.bars-x .bar-label { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
 .bar-label { font-size: 11px; color: var(--axis-ink); }
-/* Текущий месяц ещё не кончился: подпись в цвет графика, как «сегодня» в календаре,
-   без отдельной марки на самом столбике. */
+/* Сегодня и текущий месяц ещё не кончились: подпись в цвет графика, как «сегодня» в
+   календаре, без отдельной марки на самом столбике. */
 .bar-label.now { color: var(--chart-blue); font-weight: 600; }
 .bar-label.on { font-weight: 700; color: var(--text); }
 .bar-label.now.on { color: var(--chart-blue); }
+
+/* Пилюля над столбиком под пальцем: шаг говорит своим языком («пт, 23 октября»,
+   «неделя 12–18 октября», «сентябрь»). Между столбиками переезжает переходом. */
+.bars-pill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 2;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--text);
+    box-shadow: 0 0 0 0.5px rgba(var(--sec), 0.18), 0 10px 24px -6px rgba(0, 0, 0, 0.26);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.15s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.bars-pill.on { opacity: 1; }
+.bars-pill span { color: var(--text-2); }
+.bars-pill b { font-weight: 700; }
+:root[data-theme="dark"] .bars-pill { background: var(--chip); }
 
 /* Размеры аватарок журнала. Сама аватарка общая (.avatar): градиент с буквой —
    только подложка, поверх неё приезжает настоящее фото из /avatar.jpg. */
@@ -3449,6 +3847,46 @@ button.heat-cell.picked {
 .tl-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 12px 2px 0; font-size: 11.5px; color: var(--text-2); }
 .tl-legend span { display: flex; align-items: center; gap: 6px; }
 .tl-swatch { width: 16px; height: 9px; border-radius: 999px; background: var(--chart-blue); }
+
+/* Ведение по дорожкам: линия под пальцем, над ней время и сколько было внутри. Строки
+   тех, кто был в спейсе в эту минуту, остаются, остальные гаснут. Встаёт всё сразу под
+   пальцем, после отпускания гаснет. */
+.tl-scrub { position: relative; }
+.tl-line {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 3;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--text);
+    opacity: 0;
+    pointer-events: none;
+}
+.tl-pill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 4;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--text);
+    color: var(--card);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    pointer-events: none;
+}
+.tl-line, .tl-pill { transition: opacity 0.18s ease-out; }
+.tl-scrub.lit .tl-line, .tl-scrub.lit .tl-pill { opacity: 1; transition-duration: 0s; }
+/* Строка, с которой начался жест, под пальцем не гаснет как нажатая. */
+.tl-scrub.scrubbing .tl-row:active { opacity: 1; }
+.tl-scrub.lit .tl-row.out { opacity: 0.3; }
+.tl-row.in .tl-name span { font-weight: 600; }
 
 /* Плитка даты в списках журнала. */
 .date-tile {
@@ -3640,20 +4078,34 @@ button.heat-cell.picked {
 /* Число в строке-переходе (История по дням, Мои визиты) перещёлкивается на месте. */
 .stat-count { font-variant-numeric: tabular-nums; }
 
-/* Столбик месяца и его подпись переезжают, а не перещёлкиваются. Подпись выбранного
-   месяца проявляется только после тапа: пик подписан с открытия экрана и не мигает. */
-.bar-track i { transition: height 0.3s cubic-bezier(0.32, 0.72, 0, 1), background 0.2s ease; }
+/* Выбранный столбик темнеет переходом. Высоты не переходят: без своего тапа график
+   меняется на месте. Подпись выбранного проявляется только после тапа: пик подписан с
+   открытия экрана и не мигает. */
+.bar-slot i { transition: background-color 0.18s ease; }
 .bar-val.on { animation: bar-val-in 0.2s ease; }
 @keyframes bar-val-in {
     from { opacity: 0; transform: translate(-50%, 4px); }
     to { opacity: 1; transform: translate(-50%, 0); }
 }
+/* Смена периода своим тапом (Stats.tsx, HoursChart): прежние столбики, ось и подписи
+   гаснут, новые столбики вырастают от базы все разом, ось и подписи проявляются, а
+   подпись пика встаёт, когда столбики почти выросли. */
+.bars-leave { animation: bars-leave 0.14s ease-out both; pointer-events: none; }
+.bars-enter { animation: bars-enter 0.22s ease-out 0.06s both; }
+.bars-static.growing .bar-slot i { animation: bar-grow 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.bar-val.bars-late { animation: bars-enter 0.18s ease-out 0.26s both; }
+@keyframes bars-leave { to { opacity: 0; } }
+@keyframes bars-enter { from { opacity: 0; } }
+@keyframes bar-grow { from { height: 0; } }
 .share-bar i { transition: width 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
 
 @media (prefers-reduced-motion: reduce) {
     .collapsible,
     .seg-thumb,
-    .bar-track i,
+    .bar-slot i,
+    .bars-pill,
+    .heat-dow,
+    .tl-row,
     .share-bar i,
     .compare-bar i,
     .chev { transition: none; }
@@ -3902,7 +4354,7 @@ button.heat-cell.picked {
 
 :root {
     --ob-material: rgba(255, 255, 255, 0.8);
-    --ob-menu: rgba(249, 249, 249, 0.88);
+    --ob-menu: #ffffff;
     --ob-lift: 0 14px 34px -16px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.05);
     --ob-mix: 12%;
     --ob-warn-ink: #c77700;
@@ -3916,7 +4368,7 @@ button.heat-cell.picked {
 }
 :root[data-theme="dark"] {
     --ob-material: rgba(44, 44, 46, 0.82);
-    --ob-menu: rgba(40, 40, 42, 0.9);
+    --ob-menu: #2c2c2e;
     --ob-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 16px 34px -18px rgba(0, 0, 0, 0.9);
     --ob-mix: 21%;
     --ob-warn-ink: #ffb340;
@@ -4275,6 +4727,8 @@ button.heat-cell.picked {
     cursor: pointer;
 }
 .ob-popup svg { color: rgba(var(--sec), 0.4); }
+/* Фон сплошной: в Telegram Desktop размытия под меню нет, и полупрозрачное меню
+   оставалось просто прозрачным, с текстом экрана сквозь пункты. */
 .ob-menu {
     position: absolute;
     z-index: 20;
@@ -4282,15 +4736,13 @@ button.heat-cell.picked {
     width: 222px;
     border-radius: 14px;
     background: var(--ob-menu);
-    -webkit-backdrop-filter: blur(30px) saturate(1.8);
-    backdrop-filter: blur(30px) saturate(1.8);
     box-shadow: 0 16px 44px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.07);
     overflow: hidden;
     transform-origin: 88% 0;
     opacity: 0;
-    transform: scale(0.82);
+    transform: scale(0.86);
     pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.12);
+    transition: opacity 0.16s ease-out, transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ob-menu.open { opacity: 1; transform: none; pointer-events: auto; }
 .ob-menu button {
@@ -4660,6 +5112,123 @@ button.heat-cell.picked {
     .my-dues.md-moving .md-s, .my-dues.md-moving .md-req, .dues-summary.ds-moving .dues-bar > i { transition: none; }
 }
 
+/* --- Итоги месяца (screens/Wrap.tsx) --------------------------------------------
+   История на раскладке знакомства (.ob-*): листалка пишет в style тон подложки, сдвиги
+   слайдов и всё, что движется в сценах. Сцены нарисованы на том же холсте 393×320,
+   что и шаги знакомства, и так же ужимаются на низком экране (--ob-k). */
+
+/* Значок строки в «Статистике»: месяц точками, вечера горят. */
+.wrap-mini {
+    display: grid;
+    grid-template-columns: repeat(7, 3px);
+    grid-auto-rows: 3px;
+    gap: 1px;
+    align-content: center;
+    justify-content: center;
+    background: var(--indigo);
+}
+.wrap-mini i { border-radius: 1px; background: rgba(255, 255, 255, 0.32); }
+.wrap-mini i.on { background: #fff; }
+.wrap-mini i.pad { background: none; }
+
+/* Крутилка - только если итоги затянулись, как каркас (320 мс). */
+.wrap-wait {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: var(--ob-stage-h, 320px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: busy-in 0.2s ease 0.32s both;
+}
+.ob-slide.wrap-fail { display: flex; }
+.wrap-primary { position: relative; }
+
+/* Календарь: вечера залиты индиго по числу часов, самый долгий обведён. */
+.wrap-cal { position: absolute; left: 0; right: 0; top: 0; height: 292px; display: flex; align-items: center; justify-content: center; }
+.wrap-cal-in { width: 268px; }
+.wrap-cal-m { margin: 0 0 10px 2px; font-size: 15px; font-weight: 700; }
+.wrap-cal-h, .wrap-cal-g { display: grid; grid-template-columns: repeat(7, 34px); gap: 5px; }
+.wrap-cal-h { margin-bottom: 6px; }
+.wrap-cal-h b { font-size: 11px; font-weight: 600; color: var(--text-3); text-align: center; }
+.wrap-cal-g { grid-auto-rows: 34px; }
+.wrap-day { position: relative; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-card); }
+.wrap-day > i { position: absolute; inset: 0; border-radius: inherit; background: var(--indigo); opacity: 0; }
+.wrap-day > b { position: absolute; left: 5px; top: 3px; font-size: 11px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.wrap-day.on > b { color: #fff; }
+.wrap-day.best { box-shadow: 0 0 0 2px var(--ring, var(--bg)), 0 0 0 4px var(--indigo); }
+/* Неделя, когда роутер не отвечал: та же штриховка, что у клеток тепловой карты без
+   данных. Вечер, в который вы были, не штрихуется: про него данные есть. */
+.wrap-day.gap {
+    background:
+        repeating-linear-gradient(
+            135deg,
+            rgba(var(--sec), 0.3) 0,
+            rgba(var(--sec), 0.3) 1.5px,
+            transparent 2px,
+            transparent 4.5px,
+            rgba(var(--sec), 0.3) 5px
+        ),
+        var(--card);
+}
+
+/* Когда вы приходите: двухчасовые клетки, как тепловая карта статистики. */
+.wrap-heat { position: absolute; left: 50%; top: 76px; width: 298px; margin-left: -149px; }
+.wrap-heat-g { display: grid; grid-template-columns: 22px repeat(12, 19px); grid-auto-rows: 19px; gap: 4px; }
+.wrap-heat-dow { font-size: 11px; font-weight: 600; line-height: 19px; color: var(--axis-ink); }
+.wrap-hc { border-radius: 5px; background: var(--card); }
+.wrap-hc.zero { box-shadow: inset 0 0 0 1px var(--sep); }
+.wrap-heat-x { display: flex; padding-left: 26px; margin-top: 7px; font-size: 11px; color: var(--axis-ink); font-variant-numeric: tabular-nums; }
+.wrap-heat-x span { width: 46px; }
+.wrap-ring { position: absolute; width: 19px; height: 19px; border-radius: 6px; box-shadow: 0 0 0 2.5px var(--blue), 0 0 0 5px var(--ring, var(--bg)); pointer-events: none; }
+.wrap-chip {
+    position: absolute;
+    z-index: 2;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: var(--card);
+    box-shadow: var(--ob-lift);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    transform: translateX(-50%);
+}
+
+/* Вечера, которые вы открыли: полосы как «Кто когда был» на экране дня, чужие без имён. */
+.wrap-strips { position: absolute; left: 22px; right: 22px; }
+.wrap-axis { position: relative; height: 16px; margin-left: 64px; font-size: 11px; color: var(--axis-ink); font-variant-numeric: tabular-nums; }
+.wrap-axis span { position: absolute; top: 0; transform: translateX(-50%); }
+.wrap-strip { display: flex; align-items: center; height: 52px; }
+.wrap-strip-l { width: 64px; flex-shrink: 0; }
+.wrap-strip-l b { display: block; font-size: 13px; font-weight: 700; }
+.wrap-strip-l span { display: block; margin-top: 1px; font-size: 12px; font-weight: 600; color: var(--ob-warn-ink); font-variant-numeric: tabular-nums; }
+.wrap-lane { position: relative; flex: 1; height: 42px; border-radius: 12px; background: var(--card); box-shadow: var(--shadow-card); overflow: hidden; }
+.wrap-lane i { position: absolute; top: 22px; height: 6px; border-radius: 3px; background: rgba(var(--sec), 0.26); transform-origin: 0 50%; }
+.wrap-lane i.me { top: 9px; height: 8px; border-radius: 4px; background: var(--orange); }
+
+/* С кем вы были: вы, нить и один человек. */
+.wrap-net { position: absolute; inset: 0; }
+.wrap-net svg { position: absolute; left: 0; top: 0; }
+.wrap-net line { stroke: var(--green); stroke-opacity: 0.55; stroke-width: 6; stroke-linecap: round; }
+.wrap-node { position: absolute; transform: translate(-50%, -50%); }
+.wrap-node .avatar { width: 72px; height: 72px; font-size: 28px; box-shadow: 0 0 0 4px var(--ring, var(--bg)); }
+.wrap-node.me .avatar { width: 88px; height: 88px; font-size: 34px; box-shadow: 0 0 0 4px var(--card); }
+.wrap-tag-at { position: absolute; transform: translateX(-50%); }
+.wrap-tag {
+    display: block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--card);
+    box-shadow: var(--ob-lift);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.wrap-tag.me { background: var(--blue); color: #fff; box-shadow: 0 0 0 3px var(--ring, var(--bg)); }
+
 /* --- Нажатия одним слоем ---------------------------------------------------
    Подсветка встаёт в момент касания, а снимается плавно: переход висит на обычном
    состоянии, поэтому работает только при отпускании. Одним кадром туда и обратно
@@ -4680,8 +5249,8 @@ button.heat-cell.picked {
 }
 .evv-cal:active { opacity: 0.6; transition-duration: 0s; }
 
-/* Главная кнопка сжимается заметно и возвращается с лёгким перелётом. */
-.primary-btn { transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease-out; }
+/* Главная кнопка сжимается заметно и возвращается без перелёта. */
+.primary-btn { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease-out; }
 .primary-btn:active { transform: scale(0.97); transition: transform 0.1s ease-out; }
 /* В знакомстве кнопки двигает движок покадрово: переход тянул бы каждый его кадр. */
 .ob .primary-btn, .ob .primary-btn:active { transition: none; }
@@ -4721,7 +5290,7 @@ button.heat-cell.picked {
 .visit-rise > :nth-child(4) { animation-delay: 0.18s; }
 .visit-rise > :nth-child(5) { animation-delay: 0.24s; }
 .visit-rise > :nth-child(n + 6) { animation-delay: 0.3s; }
-.visit-rise .status-card-icon { animation: host-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both; }
+.visit-rise .status-card-icon { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s both; }
 @keyframes visit-rise { from { opacity: 0; transform: translateY(18px); } }
 @media (prefers-reduced-motion: reduce) {
     .nr-form, .primary-btn.nr-sent { transition: none; }

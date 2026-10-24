@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useState, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { BarContext } from './barContext'
 import { ModalHost } from './modals'
-import { useStore, type ScreenName } from './store'
+import { EntryContext, UnderContext } from './screenContext'
+import { useStore, useUnder, type NavEntry, type ScreenName } from './store'
 import { tg } from './telegram'
 import { AnimContext } from './components/Screen'
 import { Overview } from './screens/Overview'
@@ -43,6 +44,7 @@ import { Residents } from './screens/Residents'
 import { ResidentProfile } from './screens/ResidentProfile'
 import { Announce } from './screens/Announce'
 import { Onboarding } from './screens/Onboarding'
+import { Wrap } from './screens/Wrap'
 
 const SCREENS: Record<ScreenName, ComponentType> = {
   overview: Overview,
@@ -80,6 +82,7 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   residentProfile: ResidentProfile,
   announce: Announce,
   onboarding: Onboarding,
+  wrap: Wrap,
 }
 
 function BusyOverlay() {
@@ -91,13 +94,46 @@ function BusyOverlay() {
   )
 }
 
+/**
+ * Прежний экран под верхним на время жеста «вниз»: картинка в той прокрутке, в которой его
+ * оставили. Окно прокручивает верхний экран, поэтому нижний сдвинут сам и тапы не ловит.
+ * Его нижняя панель тоже в картинке, под затемнением: появись она только после жеста,
+ * в последнем кадре посадки она выскочила бы рывком.
+ */
+function UnderScreen({ entry }: { entry: NavEntry }) {
+  const Comp = SCREENS[entry.name]
+  const [bar, setBar] = useState<HTMLDivElement | null>(null)
+  return (
+    <div className="screen-under" inert aria-hidden="true">
+      <div className="screen-under-zoom">
+        <div className="screen-under-in" style={{ transform: `translateY(${-(entry.scrollY ?? 0)}px)` }}>
+          <BarContext.Provider value={bar}>
+            <UnderContext.Provider value>
+              <EntryContext.Provider value={entry.id}>
+                <Comp />
+              </EntryContext.Provider>
+            </UnderContext.Provider>
+          </BarContext.Provider>
+        </div>
+        <div ref={setBar} />
+      </div>
+      <div className="screen-under-dim" />
+    </div>
+  )
+}
+
 export function App() {
   const { stack, navId, anim } = useStore()
+  const under = useUnder()
   const [barNode, setBarNode] = useState<HTMLDivElement | null>(null)
 
-  // Скролл в начало — только на навигации (смена navId), не при обновлении данных.
+  // Прокрутка — только на навигации (смена navId), не при обновлении данных: вперёд экран
+  // открывается сначала, «назад» возвращает его туда, где с него ушли. Именно layout-эффект:
+  // переход из строки (hero.ts) снимает новый кадр сразу после отрисовки, и строка в нём
+  // должна уже стоять на своём месте.
   useLayoutEffect(() => {
-    window.scrollTo(0, 0)
+    window.scrollTo(0, stack[stack.length - 1]?.scrollY ?? 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navId])
 
   // Системная кнопка «назад» видна, когда есть куда возвращаться.
@@ -112,12 +148,16 @@ export function App() {
   }, [stack.length])
 
   const top = stack[stack.length - 1]!
+  const below = under ? stack[stack.length - 2] : undefined
   const ScreenComp = SCREENS[top.name]
 
   return (
     <BarContext.Provider value={barNode}>
+      {below ? <UnderScreen entry={below} /> : null}
       <AnimContext.Provider value={anim}>
-        <ScreenComp key={navId} />
+        <EntryContext.Provider value={top.id}>
+          <ScreenComp key={navId} />
+        </EntryContext.Provider>
       </AnimContext.Provider>
       <div className="bar-portal" ref={setBarNode} />
       <BusyOverlay />

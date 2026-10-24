@@ -1,7 +1,7 @@
 // Всплывающее меню под строкой («Новые заявки», тема, срок напоминания): тот же вид,
 // что в шаге «Что присылать» знакомства.
 
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { icons } from '../icons'
 import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
@@ -58,7 +58,7 @@ export function MenuItems<V extends string>({
   place: { top?: number; bottom?: number }
   items: { value: V; label: string; off?: boolean }[]
   value: V
-  onPick: (v: V) => void
+  onPick: (v: V, e: MouseEvent<HTMLButtonElement>) => void
   gapBefore?: V
 }) {
   return (
@@ -71,7 +71,7 @@ export function MenuItems<V extends string>({
             role="menuitemradio"
             aria-checked={value === it.value}
             disabled={it.off}
-            onClick={() => onPick(it.value)}
+            onClick={(e) => onPick(it.value, e)}
           >
             <span className="ob-mk">{icons.check(14, 'currentColor', 2.2)}</span>
             {it.label}

@@ -13,11 +13,38 @@ export { clamp, E, mix, mixc, palette, pr, toHex, type Ease, type Palette, type 
 const q = (el: Element, s: string): HTMLElement | null => el.querySelector<HTMLElement>(s)
 const qa = (el: Element, s: string): HTMLElement[] => Array.from(el.querySelectorAll<HTMLElement>(s))
 
-const rise = (el: HTMLElement | null, t: number, a: number, d: number, dy = 14): void => {
+/** Всплытие: элемент проявляется и поднимается на dy пикселей. */
+export const rise = (el: HTMLElement | null, t: number, a: number, d: number, dy = 14): void => {
   if (!el) return
   const p = pr(t, a, d)
   el.style.opacity = String(p)
   el.style.transform = `translateY(${((1 - p) * dy).toFixed(2)}px)`
+}
+
+// --- листалка -----------------------------------------------------------------
+
+/** Близость дробной позиции к шагу i: 1 на самом шаге, 0 на соседнем. */
+export const prox = (p: number, i: number): number => clamp(1 - Math.abs(p - i), 0, 1)
+
+/**
+ * Подпись кнопки меняется наплывом: старая уходит вверх, новая приходит снизу. `la` и
+ * `lb` - подписи соседних шагов, `f` - дробная часть позиции между ними.
+ */
+export const crossLabel = (a: HTMLElement, b: HTMLElement, la: string, lb: string, f: number): void => {
+  if (la === lb) {
+    a.textContent = la
+    a.style.opacity = '1'
+    a.style.transform = ''
+    b.style.opacity = '0'
+    return
+  }
+  const kl = pr(f, 0.3, 0.4, E.inOut)
+  a.textContent = la
+  b.textContent = lb
+  a.style.opacity = String(clamp(1 - kl * 1.6, 0, 1))
+  a.style.transform = `translateY(${(-10 * kl).toFixed(2)}px)`
+  b.style.opacity = String(clamp(kl * 1.6 - 0.6, 0, 1))
+  b.style.transform = `translateY(${(10 * (1 - kl)).toFixed(2)}px)`
 }
 
 // --- соты ---------------------------------------------------------------------

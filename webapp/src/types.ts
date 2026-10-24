@@ -171,6 +171,11 @@ export type SpaceEvent = {
   residentsOnly: boolean
   /** Афиши в порядке показа — id файлов, каждый грузится через /event-photo.jpg?id=. */
   photos: string[]
+  /**
+   * Тон первой афиши, '#rrggbb': экран ивента красится в него. Считает сам миниапп при
+   * загрузке фото (image.ts), сервер его только хранит. Нет - ивент в своём фиолетовом.
+   */
+  tone?: string
   /** Пост канала, из которого сделан ивент, — только у заведённых пересылкой. */
   sourceUrl?: string
   host: User
@@ -284,6 +289,12 @@ export type StatsTopPerson = {
   visits: number
 }
 
+/** Столбик графика часов: дни `from`–`to` включительно и сколько спейс был открыт за них. */
+export type StatsBar = { from: string; to: string; minutes: number }
+
+/** Шаг графика идёт от периода: месяц по дням, 3 месяца по неделям, всё время по месяцам. */
+export type StatsChart = { step: 'day' | 'week' | 'month'; bars: StatsBar[] }
+
 export type StatsOverview = {
   period: StatsPeriod
   periodLabel: string
@@ -293,7 +304,7 @@ export type StatsOverview = {
   avgInside: number
   prevOpenMinutes: number | null
   heat: { max: number; rows: { dow: number; cells: StatsHeatCell[] }[] }
-  months: { key: string; label: string; minutes: number }[]
+  chart: StatsChart
   top: StatsTopPerson[]
   daysCount: number
   myMinutes: number
@@ -365,6 +376,51 @@ export type StatsPersonView = {
   lastVisits: StatsPersonVisit[]
 }
 
+// --- Итоги месяца (src/wrap.ts) --------------------------------------------
+
+/** Итоги прошлого месяца в bootstrap: строка в статистике. */
+export type WrapInfo = {
+  /** 'YYYY-MM'. */
+  month: string
+  evenings: number
+  minutes: number
+  /** Числа месяца, в которые человек приходил. */
+  days: number[]
+}
+
+export type WrapStrip = {
+  dateKey: string
+  /** Минуты от полуночи дня прихода; конец бывает больше суток. */
+  me: [number, number]
+  /** Кто был в спейсе вместе с вами: только интервалы, без имён. */
+  others: [number, number][]
+}
+
+export type WrapMonth = {
+  month: string
+  minutes: number
+  prevMinutes: number
+  evenings: { dateKey: string; minutes: number }[]
+  /** Дни, когда роутер не отвечал: календарь штрихует их неделю. */
+  gapDays: string[]
+  longest: { dateKey: string; minutes: number }
+  /** 7×12: в скольких вечерах человек был в спейсе в этот день недели и интервал. */
+  heat: number[][]
+  usual: {
+    /** Обычный день недели (0 - понедельник). null - день не повторялся. */
+    dow: number | null
+    count: number
+    of: number
+    arrival: string
+    /** Минуты от полуночи дня прихода. */
+    leave: number
+    ring: { dow: number; bucket: number }
+  }
+  opened: { count: number; closed: number; strips: WrapStrip[] }
+  companion: { userId: number; username: string | null; label: string; minutes: number } | null
+  companions: number
+}
+
 // --- Права резидента (dev, src/resident-admin.ts) --------------------------
 
 export type AdminTargetKind = 'group' | 'channel'
@@ -421,7 +477,7 @@ export type Bootstrap = {
   /** Свои прошедшие визиты, свежие сверху (последние 5): «Были раньше» в «Моих визитах». */
   myPast: HostingRequest[]
   /** Свои визиты: сколько засчитано и сколько раз резиденты отметили неявку. */
-  myVisits: { visits: number; missed: number }
+  myVisits: { visits: number }
   /** Ключ - userId гостя. Только резидентам: чужая история визитов гостю не полагается. */
   guestStats?: Record<string, GuestVisitStats>
   /** Вчерашний день, пока его ещё можно отметить (ночь после него). Только резидентам. */
@@ -448,6 +504,8 @@ export type Bootstrap = {
   onboarding?: OnboardingInfo
   /** Код домофона. Только резидентам и dev; null: не задан. */
   door?: DoorCode | null
+  /** Итоги прошлого месяца. Только резидентам; null: итогов нет. */
+  wrap?: WrapInfo | null
 }
 
 export type OnboardingInfo = {

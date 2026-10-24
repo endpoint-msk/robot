@@ -7,7 +7,7 @@ import { action } from '../api'
 import { fmtShortDate, plural } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { choiceDialog, confirmDialog, reschedulePrompt, showAlert, textPrompt } from '../modals'
+import { choiceDialog, confirmDialog, reschedulePrompt, showAlert, textPrompt, type SheetSubject } from '../modals'
 import { push, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
@@ -54,13 +54,22 @@ function PurposeBlock({ text }: { text: string }) {
   )
 }
 
-/** Предложить гостю перенос дня/времени (резидент): модалка с выбором → API `propose`. */
-async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
+/**
+ * Шапка листа для вопросов о заявке: гость, слот и кто он резиденту, как в самой строке.
+ * Имя стоит над вопросом, и вопрос обходится без него: склонять имя гостя не получается.
+ */
+function sheetSubject(r: HostingRequest, status: string): SheetSubject {
+  return { user: r.guest, line: `${fmtShortDate(r.dateKey)} к\u00a0${r.time}` + (status ? ` · ${status}` : '') }
+}
+
+/** Предложить гостю перенос дня/времени (резидент): лист с выбором → API `propose`. */
+async function proposeRescheduleFor(r: HostingRequest, subject: SheetSubject): Promise<void> {
   const p = r.proposal
   const slot = await reschedulePrompt({
-    text: `Предложить ${r.guest.name} перенести визит на другой день или время?`,
+    text: 'Предложить перенести визит на другой день или время?',
     initialDay: (p && p.dateKey) || r.dateKey,
     initialTime: (p && p.time) || r.time,
+    subject,
   })
   // Согласованный слот не изменился — предлагать нечего (сервер тоже это гасит).
   if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
@@ -73,22 +82,22 @@ async function proposeRescheduleFor(r: HostingRequest): Promise<void> {
  * Закрыть заявку со стороны спейса: визит не состоится. Заявка удаляется, гостю уходит
  * DM с предложением выбрать другой день — он не остаётся ждать ответа, которого не будет.
  *
- * Подтверждение и комментарий гостю - одна модалка: комментарий необязательный, и
+ * Подтверждение и комментарий гостю - один лист: комментарий необязательный, и
  * второй шаг ради него удлинял бы каждое закрытие.
  */
-async function closeRequest(r: HostingRequest): Promise<void> {
-  const approved = r.status === 'approved'
+async function closeRequest(r: HostingRequest, subject: SheetSubject): Promise<void> {
   const comment = await textPrompt({
-    text: approved
-      ? `Закрыть подтверждённый визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`
-      : `Закрыть заявку ${r.guest.name} на ${fmtShortDate(r.dateKey)} к ${r.time}? Гость получит уведомление и сможет выбрать другой день.`,
-    placeholder: 'Комментарий для гостя',
-    hint: 'Необязательно. Уйдёт гостю вместе с уведомлением.',
+    text:
+      r.status === 'approved'
+        ? 'Подтверждённый визит отменится. Гостю придёт сообщение, и он сможет выбрать другой день.'
+        : 'Гостю придёт сообщение, и он сможет выбрать другой день.',
+    placeholder: 'Комментарий гостю, по желанию',
     maxLength: 500,
     multiline: true,
     destructive: true,
     confirmLabel: 'Закрыть заявку',
     cancelLabel: 'Оставить',
+    subject,
   })
   if (comment === null) return
   const res = await action('close', { id: r.id, comment }, { quiet: true })
@@ -100,10 +109,10 @@ async function closeRequest(r: HostingRequest): Promise<void> {
 }
 
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
-async function blockGuest(r: HostingRequest): Promise<void> {
+async function blockGuest(r: HostingRequest, subject: SheetSubject): Promise<void> {
   const ok = await confirmDialog(
-    `Заблокировать ${r.guest.name}? Бот забанит его во всех чатах, удалит его заявки и закроет ему миниапп. Снять блокировку может только дев — сами вы её не откатите.`,
-    { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true },
+    'Бот забанит гостя во всех чатах, удалит его заявки и закроет ему миниапп. Снять блокировку сможет только дев.',
+    { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true, subject },
   )
   if (!ok) return
   await action('block', { id: r.id })
@@ -116,20 +125,19 @@ async function blockGuest(r: HostingRequest): Promise<void> {
  * перенос, закрыть, блокировка), а пятая иконка занимает почти всю ширину строки.
  * Да и пилл — это и есть «кто хостит», передача меняет ровно его.
  */
-async function hostMenu(r: HostingRequest): Promise<void> {
+async function hostMenu(r: HostingRequest, subject: SheetSubject): Promise<void> {
   // Пока висит своя просьба, второго адресата назначить нельзя (сервер ответит busy),
   // поэтому в меню на этом месте её отзыв.
   const pending = r.transfer ?? null
   const choice = await choiceDialog(
-    pending
-      ? `Ждём ответа ${userLabel(pending.to)} по визиту ${r.guest.name} ${fmtShortDate(r.dateKey)} к\u00a0${r.time}.`
-      : `Визит ${r.guest.name} ${fmtShortDate(r.dateKey)} к\u00a0${r.time} на вас.`,
+    pending ? `Передаёте визит ${userLabel(pending.to)}, ждём ответа.` : '',
     [
       pending
         ? { key: 'withdraw', label: 'Отозвать передачу' }
         : { key: 'transfer', label: 'Передать другому резиденту' },
       { key: 'unapprove', label: 'Отменить хостинг', destructive: true },
     ],
+    { subject },
   )
   if (choice === 'transfer') {
     push('invite', { dateKey: r.dateKey, transferId: r.id, transferGuest: r.guest.name })
@@ -142,9 +150,13 @@ async function hostMenu(r: HostingRequest): Promise<void> {
     return
   }
   if (choice !== 'unapprove') return
-  const ok = await confirmDialog(`Отменить хостинг? Заявка ${r.guest.name} снова будет ждать ответа.`, {
+  // Подтверждение встаёт в тот же лист под той же шапкой, и действие в нём красное, как
+  // строка меню, которая к нему привела.
+  const ok = await confirmDialog('Заявка снова будет ждать ответа, гостю придёт сообщение.', {
     confirmLabel: 'Отменить хостинг',
     cancelLabel: 'Оставить',
+    destructive: true,
+    subject,
   })
   if (!ok) return
   markOwnTap()
@@ -259,6 +271,9 @@ export function RequestRow({
   const guestNote = (data.notes || []).find((n) => n.userId === r.guest.userId) || null
   // Строка заявки живёт только на экране дня (живого или архивного) — туда и возвращаемся.
   const openNote = (): void => push('guestNote', { guest: r.guest, backLabel: 'День' })
+  // «Впервые» в шапке листа по тому же счёту, что и значок у имени гостя ниже.
+  const firstVisit = me.isResident && !archive && (data.guestStats?.[String(r.guest.userId)]?.past ?? 0) === 0
+  const subject = sheetSubject(r, hostedByMe ? 'хостите вы' : firstVisit ? 'впервые' : '')
 
   // Переговоры о переносе адресные: пока висит предложение, работать с ним вправе
   // только его автор и адресат (тот же гейт стоит на сервере, см. proposalSides).
@@ -283,7 +298,7 @@ export function RequestRow({
     )
     const pill = mine ? (
       // Многоточие, а не крестик: за пиллом теперь два действия — передать и снять с себя.
-      <button type="button" className="pill mine" aria-label="Вы хостите. Действия с хостингом" onClick={() => hostMenu(r)}>
+      <button type="button" className="pill mine" aria-label="Вы хостите. Действия с хостингом" onClick={() => hostMenu(r, subject)}>
         {host}
         <span className="pill-name">{userLabel(r.approvedBy)}</span>
         <span className="pill-x">···</span>
@@ -464,7 +479,7 @@ export function RequestRow({
       key: 'reschedule',
       label: 'Перенести',
       icon: icons.clock(21, '#fff'),
-      onSelect: () => proposeRescheduleFor(r),
+      onSelect: () => proposeRescheduleFor(r, subject),
     })
   }
   // Закрыть заявку: ничью — любой резидент, подтверждённый визит — только его хост
@@ -475,12 +490,12 @@ export function RequestRow({
       label: 'Закрыть заявку',
       icon: icons.xmark(21, '#fff'),
       tone: 'orange',
-      onSelect: () => closeRequest(r),
+      onSelect: () => closeRequest(r, subject),
     })
   }
   // Блокировать гостя вправе любой резидент, но не в архиве (там только чтение).
   if (me.isResident && !archive) {
-    swipeActions.push({ key: 'block', label: 'Заблокировать', icon: icons.ban(21, '#fff'), tone: 'red', onSelect: () => blockGuest(r) })
+    swipeActions.push({ key: 'block', label: 'Заблокировать', icon: icons.ban(21, '#fff'), tone: 'red', onSelect: () => blockGuest(r, subject) })
   }
 
   // Кто перед резидентом: новичок (встретить, объяснить про дверь), завсегдатай или

@@ -11,6 +11,9 @@ const GRADIENTS = [
   ['#5fe0c4', '#14a58a'], ['#8b96ff', '#4c56d8'], ['#ff9d8a', '#e0483e'], ['#f79bff', '#c44fe0'],
 ]
 
+/** Второй цвет градиента аватарки: тон, в который красится карточка человека. */
+export const avatarTone = (userId: number): string => GRADIENTS[Math.abs(userId) % GRADIENTS.length]![1]!
+
 export const userLabel = (u: { username: string | null; name: string }): string =>
   u.username ? '@' + u.username : u.name
 

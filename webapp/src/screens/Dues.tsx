@@ -2,7 +2,7 @@
 // тот же для текущего сбора (данные из bootstrap) и для прошлого, открытого из
 // истории (грузится ручкой dues.period) — форма ответа у них общая.
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay, monthsWord } from '../dates'
 import { money } from '../format'
@@ -15,6 +15,7 @@ import { haptic } from '../telegram'
 import type { DuesRow, DuesSnapshot, DuesStatus } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
 import { Collapse } from '../components/Collapse'
+import { useCopyFeedback } from '../components/CopyFeedback'
 import { Flip } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
@@ -44,7 +45,16 @@ const isExempt = (row: DuesRow): boolean => row.amount <= 0
 /** Смена отметки девом: экран держит строку на месте и сам ведёт её в новую секцию. */
 type Mark = (row: DuesRow, to: DuesStatus) => void
 
+/**
+ * Состав в порядке разделов на экране: по нему листаются карточки людей. Запоминается в
+ * момент открытия карточки, поэтому сверка, переставляющая строки, его не тасует.
+ */
+export type DuesRef = { userId: number; name: string; username: string | null }
+const DuesOrderContext = createContext<DuesRef[]>([])
+
 function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow; snap: DuesSnapshot; mark: Mark; meId: number; flash?: boolean }) {
+  const order = useContext(DuesOrderContext)
+  const open = (): void => push('duesPerson', { userId: row.userId, people: order })
   const left =
     row.status === 'paid' ? (
       <div className="dues-mark ok">{icons.check(13, '#fff', 2.2)}</div>
@@ -69,7 +79,7 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
     <button
       type="button"
       className={'row' + (flash || (row.userId === meId && row.status === 'claimed' && ownTapRecent()) ? ' row-flash' : '')}
-      onClick={() => push('duesPerson', { userId: row.userId })}
+      onClick={open}
     >
       {left}
       <div className="dues-main">
@@ -98,7 +108,7 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
   if (!snap.canEdit) return body
 
   const actions: SwipeAction[] = [
-    { key: 'rate', label: 'Ставка', icon: icons.tag(19, '#fff'), tone: 'neutral', onSelect: () => push('duesPerson', { userId: row.userId }) },
+    { key: 'rate', label: 'Ставка', icon: icons.tag(19, '#fff'), tone: 'neutral', onSelect: open },
     row.status === 'paid'
       ? { key: 'undo', label: 'Снять отметку', icon: icons.undo(19, '#fff'), tone: 'red', onSelect: () => mark(row, 'none') }
       : { key: 'ok', label: 'Отметить взнос', icon: icons.check(18, '#fff', 2), onSelect: () => mark(row, 'paid') },
@@ -179,7 +189,7 @@ function DuesSection({
  * момент на экран не смотрит, поэтому «Внесён» встаёт без движения.
  */
 function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void }) {
-  const [copied, setCopied] = useState(false)
+  const clip = useCopyFeedback(17)
   const [claiming, setClaiming] = useState(false)
   const [moving, setMoving] = useState(false)
   useEffect(() => setClaiming(false), [snap.me.status])
@@ -200,15 +210,8 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
     if (done) onChanged()
     else setClaiming(false)
   }
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(snap.requisites)
-      setCopied(true)
-      haptic.impact('light')
-      setTimeout(() => setCopied(false), 1600)
-    } catch {
-      showAlert('Не получилось скопировать. Выделите текст вручную.')
-    }
+  const copy = async (e: MouseEvent) => {
+    if (!(await clip.copy(snap.requisites, e))) showAlert('Не получилось скопировать. Выделите текст вручную.')
   }
 
   // Ставка 0 — человек освобождён: плашка остаётся, но без реквизитов и кнопки.
@@ -255,9 +258,11 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
           <div className="md-req">
             <div className="md-req-in">
               <div className="my-dues-req">
-                <div className="mdr-text">{snap.requisites}</div>
-                <button className="mdr-copy" aria-label="Скопировать реквизиты" onClick={() => void copy()}>
-                  {copied ? icons.check(17, '#34c759', 2.2) : icons.copy(17, '#007aff')}
+                <div className="mdr-text">
+                  {snap.requisites}
+                </div>
+                <button className="mdr-copy" aria-label="Скопировать реквизиты" onClick={(e) => void copy(e)}>
+                  {clip.glyph}
                 </button>
               </div>
             </div>
@@ -284,6 +289,7 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
           </div>
         </div>
       </div>
+      {clip.toast}
     </div>
   )
 }
@@ -503,13 +509,17 @@ export function DuesScreen() {
     ? [section('Ждут подтверждения', claimed, true), section('Не внесли', unpaid), section('Внесли', paid)]
     : [section('Не внесли', unpaid), section('Ждут подтверждения', claimed), section('Внесли', paid)]
   sections.push(section('Не платят', exempt))
+  const order: DuesRef[] = [...(snap.canEdit ? [claimed, unpaid, paid] : [unpaid, claimed, paid]), exempt]
+    .flat()
+    .filter((it) => !it.leaving)
+    .map((it) => ({ userId: it.row.userId, name: it.row.name, username: it.row.username }))
 
   return frame(
     `${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`,
     <>
       <MyDues snap={snap} onChanged={onChanged} />
       <Summary snap={snap} />
-      {sections}
+      <DuesOrderContext.Provider value={order}>{sections}</DuesOrderContext.Provider>
       {!periodKey ? (
         <div className="card" style={{ marginTop: 22 }}>
           <button type="button" className="row tappable" onClick={() => push('duesHistory')}>

@@ -20,6 +20,7 @@ import {
     mentionLabel,
     slotStartUtc,
     todayKey,
+    visitFeedVevent,
 } from './hosting.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -32,6 +33,7 @@ import type {
     EventFormField,
     EventFormOption,
     HostingNotifyPrefs,
+    HostingRequest,
     HostingUser,
     ReviewerScope,
     SpaceEvent,
@@ -46,7 +48,11 @@ export const MAX_EVENT_TITLE = 120
  * после которой ивент уехал бы в 2099-й и остался бы там навсегда.
  */
 export const EVENT_DAYS_AHEAD = 365
-export const MAX_EVENT_DESCRIPTION = 2000
+/**
+ * Длина сообщения в Telegram: пост канала, пересланный боту, помещается в описание целиком.
+ * При 2000 длинные анонсы молча обрезались прямо в заготовке.
+ */
+export const MAX_EVENT_DESCRIPTION = 4096
 /** Потолок афиши: посты канала — это фото на сотни килобайт, мегабайты тут не нужны. */
 export const MAX_EVENT_PHOTO_BYTES = 4 * 1024 * 1024
 /** Сколько афиш вешаем на ивент: это анонс, а не фотоальбом. */
@@ -158,6 +164,8 @@ export const sweepStagedPhotos = async (dataFile: string, userId: number, now = 
  *
  * Чужой id молча игнорируем: без этого, подставив id из другого ивента, его афишу
  * можно было бы утащить к себе — файл переименовывается, а не копируется.
+ *
+ * `tone` - тон первой присланной афиши (см. `SpaceEvent.tone`), уже проверенный по формату.
  */
 export const syncEventPhotos = async (
     storage: Storage,
@@ -165,21 +173,28 @@ export const syncEventPhotos = async (
     eventId: string,
     wanted: string[],
     userId: number,
+    tone: string | null,
 ): Promise<void> => {
     const event = own(storage.get().events, eventId)
     if (!event) return
     const current = eventPhotoIds(event)
     const next: string[] = []
+    let firstFrom: string | null = null
     for (const id of wanted.slice(0, MAX_EVENT_PHOTOS)) {
         if (next.includes(id)) continue
         if (current.includes(id)) {
             next.push(id)
-            continue
+        } else {
+            if (!isStagedPhotoOf(id, userId) && id !== draftPhotoId(userId)) continue
+            const adopted = `${eventId}-${randomUUID().slice(0, 8)}`
+            if (!(await movePhoto(dataFile, id, adopted))) continue
+            next.push(adopted)
         }
-        if (!isStagedPhotoOf(id, userId) && id !== draftPhotoId(userId)) continue
-        const adopted = `${eventId}-${randomUUID().slice(0, 8)}`
-        if (await movePhoto(dataFile, id, adopted)) next.push(adopted)
+        if (next.length === 1) firstFrom = id
     }
+    // Клиент считал тон по первой присланной афише. Не доехала она (чужой id, стейджинг
+    // уже подчистили) - первой стала другая, и тон был бы от чужой картинки.
+    const keptTone = firstFrom !== null && firstFrom === wanted[0] ? tone : null
     for (const id of current) if (!next.includes(id)) await deleteEventPhoto(dataFile, id)
     await storage.update((s) => {
         const e = s.events[eventId]
@@ -187,6 +202,8 @@ export const syncEventPhotos = async (
         e.photos = next
         // Легаси-флаг держим согласованным: на него смотрит `eventPhotoIds` у старых записей.
         e.hasPhoto = next.length > 0
+        if (keptTone) e.tone = keptTone
+        else delete e.tone
     })
     await sweepStagedPhotos(dataFile, userId)
 }
@@ -870,11 +887,14 @@ export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: D
 }
 
 // ---------------------------------------------------------------------------
-// Подписка календаря на ивенты (GET /events.ics)
+// Подписка календаря на ивенты и свои визиты (GET /events.ics)
 // ---------------------------------------------------------------------------
 
-/** Имя календаря у подписчика. Клиенты показывают его в списке календарей. */
-const FEED_NAME = 'Ивенты хакспейса'
+/**
+ * Имя календаря у подписчика. Клиенты берут его в момент подписки, поэтому у тех, кто
+ * подписался раньше, остаётся прежнее.
+ */
+const FEED_NAME = 'Хакспейс: ивенты и визиты'
 
 /** Как часто календарю стоит перечитывать фид: подсказка, а не гарантия. */
 const FEED_REFRESH = 'PT1H'
@@ -893,9 +913,14 @@ export const feedEvents = (storage: Storage, tzOffsetMinutes: number): SpaceEven
         .sort((a, b) => (a.dateKey === b.dateKey ? a.time.localeCompare(b.time) : a.dateKey.localeCompare(b.dateKey)))
 }
 
-/** Фид подписки: тот же VEVENT, что и в одиночном `.ics`, но пачкой и с именем календаря. */
+/**
+ * Фид подписки: те же VEVENT, что и в одиночных `.ics`, но пачкой и с именем календаря.
+ * Ивенты общие для всех, визиты свои у каждого: одобренные, где подписчик гость
+ * (`feedVisits`).
+ */
 export const buildEventsFeedIcs = (
     events: SpaceEvent[],
+    visits: HostingRequest[],
     tzOffsetMinutes: number,
     now: Date = new Date(),
 ): string => {
@@ -910,6 +935,7 @@ export const buildEventsFeedIcs = (
         `REFRESH-INTERVAL;VALUE=DURATION:${FEED_REFRESH}`,
         `X-PUBLISHED-TTL:${FEED_REFRESH}`,
         ...events.flatMap((e) => eventVevent(e, tzOffsetMinutes, now)),
+        ...visits.flatMap((r) => visitFeedVevent(r, tzOffsetMinutes, now)),
         'END:VCALENDAR',
     ]
     return lines.map(icsFold).join('\r\n') + '\r\n'

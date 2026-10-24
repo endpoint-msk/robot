@@ -1,6 +1,6 @@
 // Счётчик знакомства для рабочих экранов: когда число меняется в ответ на свой тап,
-// старое уходит вверх, новое приходит снизу с перелётом. Смену от чужих действий
-// показывает без движения (см. ownTapRecent).
+// старое уходит вверх, новое приходит снизу. Смену от чужих действий показывает без
+// движения (см. ownTapRecent).
 
 import { useLayoutEffect, useRef, useState } from 'react'
 import { animate, E, ownTapRecent, pr } from '../motion'
@@ -25,9 +25,9 @@ export function Flip({ value, delay = 0 }: { value: number | string; delay?: num
     const b = bRef.current
     if (from === null || !a || !b) return
     return animate(
-      delay + 420,
+      delay + 340,
       (t) => {
-        const p = pr(t, delay, 420, E.back)
+        const p = pr(t, delay, 340, E.crisp)
         a.style.transform = `translateY(${(-p * 100).toFixed(2)}%)`
         a.style.opacity = String(Math.max(0, 1 - p * 1.2))
         b.style.transform = `translateY(${((1 - p) * 100).toFixed(2)}%)`

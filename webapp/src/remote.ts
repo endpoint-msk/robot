@@ -2,7 +2,8 @@
 // гасилась в `null` и рисовалась пустым состоянием, то есть экран утверждал про
 // спейс то, чего в этот момент не знал («Сбор выключен» на упавшей сети).
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useState } from 'react'
+import { EntryContext } from './screenContext'
 
 /**
  * Пока запрос укладывается в это время, скелет не показывается вовсе: на быстром
@@ -10,6 +11,20 @@ import { useCallback, useEffect, useState } from 'react'
  * шапку четверть секунды глазу спокойнее, чем поймать вспышку каркаса.
  */
 const SKELETON_DELAY_MS = 320
+
+/**
+ * Последний ответ каждого экрана, который ещё лежит в стеке. «Назад» монтирует экран
+ * заново, и без этого он вставал бы каркасом: прокрутке было бы не к чему вернуться, а
+ * строке, в которую садится карточка, негде стоять. Свежий ответ догоняет без каркаса.
+ */
+const cache = new Map<string, unknown>()
+
+/** Записи, ушедшие из стека, больше не вернутся: их ответы не нужны. */
+export function pruneRemote(alive: Set<number>): void {
+  for (const key of cache.keys()) {
+    if (!alive.has(Number(key.slice(0, key.indexOf('|'))))) cache.delete(key)
+  }
+}
 
 export type Remote<T> = {
   data: T | null
@@ -26,9 +41,13 @@ export type Remote<T> = {
  * `deps` вызывающего — как в обычном `useEffect` с запросом внутри.
  */
 export function useRemote<T>(load: () => Promise<T>, deps: unknown[]): Remote<T> {
-  const [data, setData] = useState<T | null>(null)
+  const entry = useContext(EntryContext)
+  const depsKey = deps.map(String).join('\u0001')
+  const cacheKey = `${entry}|${depsKey}`
+  const cached = cache.has(cacheKey) ? (cache.get(cacheKey) as T) : null
+  const [data, setData] = useState<T | null>(cached)
   const [error, setError] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(cached === null)
   const [pending, setPending] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
@@ -37,26 +56,30 @@ export function useRemote<T>(load: () => Promise<T>, deps: unknown[]): Remote<T>
   // выдаёт за правду. Сбрасываем прямо в рендере, иначе кадр со старыми числами
   // всё равно успевает показаться. На reload (attempt) данные, наоборот, остаются:
   // там запрос тот же самый, и мигать содержимым незачем.
-  const depsKey = deps.map(String).join('\u0001')
   const [seenKey, setSeenKey] = useState(depsKey)
   if (seenKey !== depsKey) {
     setSeenKey(depsKey)
-    setData(null)
+    setData(cached)
     setError(false)
-    setLoading(true)
+    setLoading(cached === null)
   }
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
+    // Ответ из стека уже на экране: новый запрос идёт тихо и подменяет его на месте.
+    const quiet = cache.has(cacheKey)
+    if (!quiet) setLoading(true)
     setError(false)
     setPending(false)
-    const timer = window.setTimeout(() => {
-      if (alive) setPending(true)
-    }, SKELETON_DELAY_MS)
+    const timer = quiet
+      ? 0
+      : window.setTimeout(() => {
+          if (alive) setPending(true)
+        }, SKELETON_DELAY_MS)
     const run = async (): Promise<void> => {
       try {
         const res = await load()
+        cache.set(cacheKey, res)
         if (alive) setData(res)
       } catch {
         if (alive) setError(true)

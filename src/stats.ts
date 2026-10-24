@@ -5,7 +5,7 @@
 // Сегодняшний день всегда пересчитывается на лету с учётом тех, кто внутри прямо
 // сейчас: их сессии ещё не закрыты и в журнал не попали.
 
-import { addDaysToKey, dayKeyOf, hostedGuestCount, todayKey, weekdayOfKey } from './hosting.js'
+import { addDaysToKey, dayKeyOf, hostedGuestCount, todayKey, weekStartOf, weekdayOfKey } from './hosting.js'
 import {
     BUCKETS_PER_DAY,
     BUCKET_MINUTES,
@@ -26,8 +26,8 @@ const MONTHS_NOM = [
 ]
 const MONTHS_ABBR = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
-/** Сколько столбиков «часы по месяцам» отдаём. */
-const MONTH_BARS = 9
+/** Недель в графике «3 месяца»: тринадцать календарных, последняя — текущая. */
+const QUARTER_WEEKS = 13
 /** Недель в точечной сетке на карточке человека. */
 const DOT_WEEKS = 12
 /** Сколько последних визитов человека показываем списком. */
@@ -40,6 +40,11 @@ export type StatsPeriod = 'month' | 'quarter' | 'all'
 export type StatsHeatCell = { v: number; noData: boolean }
 export type StatsTopPerson = { userId: number; label: string; username: string | null; minutes: number; visits: number }
 
+/** Столбик графика часов: дни `from`–`to` включительно и сколько спейс был открыт за них. */
+export type StatsBar = { from: string; to: string; minutes: number }
+/** Шаг графика идёт от периода: месяц по дням, 3 месяца по неделям, всё время по месяцам. */
+export type StatsChart = { step: 'day' | 'week' | 'month'; bars: StatsBar[] }
+
 export type StatsOverview = {
     period: StatsPeriod
     periodLabel: string
@@ -50,7 +55,7 @@ export type StatsOverview = {
     /** Тот же показатель за предыдущее окно такой же длины. null — сравнивать не с чем. */
     prevOpenMinutes: number | null
     heat: { max: number; rows: { dow: number; cells: StatsHeatCell[] }[] }
-    months: { key: string; label: string; minutes: number }[]
+    chart: StatsChart
     top: StatsTopPerson[]
     daysCount: number
     /** Свои минуты за окно — строка «Мои визиты» показывает их без отдельного запроса. */
@@ -121,9 +126,67 @@ const hhmm = (minutes: number): string => {
     return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
-const monthLabelOf = (monthKey: string): string => {
-    const idx = Number(monthKey.slice(5, 7)) - 1
-    return MONTHS_ABBR[idx] ?? monthKey
+/** Последний день месяца 'YYYY-MM'. */
+const monthEndOf = (monthKey: string): string => {
+    const d = new Date(`${monthKey}-01T12:00:00Z`)
+    d.setUTCMonth(d.getUTCMonth() + 1, 0)
+    return d.toISOString().slice(0, 10)
+}
+
+const nextMonthOf = (monthKey: string): string => {
+    const d = new Date(`${monthKey}-01T12:00:00Z`)
+    d.setUTCMonth(d.getUTCMonth() + 1)
+    return d.toISOString().slice(0, 7)
+}
+
+/**
+ * Столбики графика под период. Окно у них своё, а не окно чисел: месяц показывается
+ * целиком (будущие дни пустые), а «3 месяца» это тринадцать календарных недель с
+ * понедельника, и первая из них может начаться на пару дней раньше девяноста.
+ */
+const chartOf = (
+    period: StatsPeriod,
+    from: string,
+    today: string,
+    stored: Record<string, PresenceDay>,
+    openOf: (key: string) => number,
+): StatsChart => {
+    const sumOf = (a: string, b: string): number => {
+        let minutes = 0
+        for (let key = a; key <= b && key <= today; key = addDaysToKey(key, 1)) minutes += openOf(key)
+        return Math.round(minutes)
+    }
+    if (period === 'month') {
+        const bars: StatsBar[] = []
+        const end = monthEndOf(today.slice(0, 7))
+        for (let key = `${today.slice(0, 7)}-01`; key <= end; key = addDaysToKey(key, 1)) {
+            bars.push({ from: key, to: key, minutes: sumOf(key, key) })
+        }
+        return { step: 'day', bars }
+    }
+    if (period === 'quarter') {
+        const monday = weekStartOf(today)
+        const bars: StatsBar[] = []
+        for (let w = QUARTER_WEEKS - 1; w >= 0; w--) {
+            const start = addDaysToKey(monday, -7 * w)
+            const end = addDaysToKey(start, 6)
+            bars.push({ from: start, to: end, minutes: sumOf(start, end) })
+        }
+        return { step: 'week', bars }
+    }
+    // Месяцев за всё время набирается на годы: дни раскладываем по месяцам одним
+    // проходом, а не перебираем все дни журнала на каждый столбик.
+    const byMonth = new Map<string, number>()
+    for (const [key, day] of Object.entries(stored)) {
+        if (key >= today) continue
+        byMonth.set(key.slice(0, 7), (byMonth.get(key.slice(0, 7)) ?? 0) + day.openMinutes)
+    }
+    byMonth.set(today.slice(0, 7), (byMonth.get(today.slice(0, 7)) ?? 0) + openOf(today))
+    const bars: StatsBar[] = []
+    for (let month = from.slice(0, 7); month <= today.slice(0, 7); month = nextMonthOf(month)) {
+        bars.push({ from: `${month}-01`, to: monthEndOf(month), minutes: Math.round(byMonth.get(month) ?? 0) })
+    }
+    return { step: 'month', bars }
 }
 
 const periodLabelOf = (period: StatsPeriod, from: string, to: string): string => {
@@ -270,19 +333,11 @@ export const buildStatsOverview = async (
         }),
     }))
 
-    // Столбики по месяцам — по долгой памяти, окно на них не влияет.
-    const months: { key: string; label: string; minutes: number }[] = []
-    for (let i = MONTH_BARS - 1; i >= 0; i--) {
-        const d = new Date(`${today.slice(0, 7)}-01T12:00:00Z`)
-        d.setUTCMonth(d.getUTCMonth() - i)
-        const key = d.toISOString().slice(0, 7)
-        let minutes = 0
-        for (const [dateKey, day] of days) if (dateKey.startsWith(key)) minutes += day.openMinutes
-        for (const [dateKey, day] of Object.entries(stored)) {
-            if (dateKey.startsWith(key) && !days.has(dateKey)) minutes += day.openMinutes
-        }
-        months.push({ key, label: monthLabelOf(key), minutes })
-    }
+    // Сегодняшний день берём живым, как и в числах выше: в дневных итогах его ещё нет,
+    // и столбик сегодня стоял бы пустым до первого ухода.
+    const chart = chartOf(period, from, today, stored, (key) =>
+        key === today ? (days.get(today)?.openMinutes ?? 0) : (stored[key]?.openMinutes ?? 0),
+    )
 
     // Ники берём из сырых сессий окна: в агрегате дня только userId и минуты.
     const visits = toVisits(await sessionsInRange(storage, from, to))
@@ -311,7 +366,7 @@ export const buildStatsOverview = async (
         avgInside: openMinutes > 0 ? Math.round((manMinutes / openMinutes) * 10) / 10 : 0,
         prevOpenMinutes,
         heat: { max: Math.round(max * 100) / 100, rows },
-        months,
+        chart,
         top,
         daysCount: [...days.values()].filter((d) => d.openMinutes > 0).length,
         myMinutes: Math.round(userMinutes.get(meId) ?? 0),
