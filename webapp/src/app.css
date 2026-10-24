@@ -732,6 +732,9 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     overflow: hidden;
 }
 .card + .card, button + .card { margin-top: 22px; }
+/* То же через обёртку подмены (Swap): первая карточка в ней соседом поля сверху не
+   считается, и пустой поиск в «Позвать» («Никого не нашлось») прилипал к полю. */
+.card + .swap > div > .card:first-child { margin-top: 22px; }
 
 .row {
     display: flex;
