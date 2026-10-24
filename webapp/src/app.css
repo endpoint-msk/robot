@@ -1045,6 +1045,29 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
 }
 .host-btn.armed { background: var(--blue); color: #fff; }
 .host-btn.armed.over { background: var(--orange); }
+/* «Позвать» своим тапом (Invite.tsx): подпись меняется буквами, как у «Захостить», а
+   кнопка гаснет в метку «Позвал» на своём месте, и галочка вырастает впереди. */
+.invite-btn { display: inline-flex; align-items: center; }
+/* Подписи прижаты вправо: «Позвал» уже, чем «Позвать», и метка встаёт к краю, как «Придёт». */
+.invite-btn .hb-labels { justify-items: end; }
+button.invite-btn {
+    transition: background-color 0.28s ease-out, color 0.28s ease-out, padding 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+        font-size 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ib-check {
+    display: inline-flex;
+    width: 0;
+    margin-right: 0;
+    overflow: hidden;
+    opacity: 0;
+    filter: blur(3px);
+    transform: scale(0.6);
+    transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), margin-right 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+        opacity 0.2s ease-out 0.12s, filter 0.24s ease-out 0.12s, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s;
+}
+.invite-btn.invited { padding-left: 0; padding-right: 0; background-color: transparent; font-size: 13px; color: rgba(var(--sec), 0.5); cursor: default; }
+.invite-btn.invited .ib-check { width: 13px; margin-right: 4px; opacity: 1; filter: none; transform: none; }
+.invite-btn.invited:active { opacity: 1; }
 /* Сколько занято, пока «Захостить» взведена сверх вместимости: число тем же оранжевым. */
 .cap-note .pn-time { color: var(--orange); }
 .waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.5); flex-shrink: 0; }
@@ -1888,6 +1911,20 @@ button.agenda-banner:active { opacity: 0.6; }
     pointer-events: none;
 }
 .tp-colon { font-size: 22px; font-weight: 600; color: var(--text); }
+/* Колесо числа (вместимость дня): подпись единиц стоит справа от колеса и не сдвигает его,
+   когда слово меняет форму («человек» → «человека»). */
+.tp-number .tp-band { width: 220px; }
+.tp-number .tp-col { margin-right: 70px; }
+.tp-unit {
+    position: absolute;
+    left: calc(50% - 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--text);
+    pointer-events: none;
+}
 
 /* Столбец колеса: палец крутит прозрачный список (.tp-wheel), а цифры лежат над ним
    барабаном (.tp-drum) и встают на цилиндр по его scrollTop (TimeField.tsx, paint).
@@ -1970,15 +2007,28 @@ button.agenda-banner:active { opacity: 0.6; }
 .dp-nav:disabled { opacity: 0.3; cursor: default; }
 /* Стрелка «назад» — та же шеврон-иконка зеркально: отдельной левой в наборе нет. */
 .dp-nav-back { display: flex; transform: scaleX(-1); }
-.dp-grid {
+.dp-dows, .dp-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     /* Ячейка квадратная и по центру своей колонки: растянутая на всю колонку кнопка
        давала под выделением эллипс вместо круга. */
     justify-items: center;
-    row-gap: 4px;
-    padding: 2px 10px max(14px, env(safe-area-inset-bottom));
+    padding: 0 10px;
 }
+.dp-dows { padding-top: 2px; }
+.dp-grid { row-gap: 4px; }
+/* Месяцы листаются (DateField.tsx): страницы лежат друг на друге и сдвигаются по позиции
+   листалки. Высота на шесть строк, поэтому месяц в пять строк не дёргает шторку. */
+.dp-pager {
+    position: relative;
+    height: calc(38px * 6 + 4px * 5);
+    margin-bottom: max(14px, env(safe-area-inset-bottom));
+    overflow: hidden;
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.dp-page { position: absolute; inset: 0; }
 .dp-dow {
     padding-bottom: 6px;
     font-size: 12px;
@@ -2620,7 +2670,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .evv-when-text { min-width: 0; }
 .evv-wt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 17px; font-weight: 700; }
 .evv-ws { margin-top: 2px; font-size: 14px; color: var(--text-2); }
-.evv-coming { margin-top: 10px; }
+/* Обводка лиц в тон полосы, как в шапке дня: на ивенте тот же ряд «Придут» с «Я приду». */
+.evv-coming { margin-top: 10px; --dpg-ring: var(--ev-band, color-mix(in srgb, var(--purple) 12%, var(--bg))); }
+:root[data-theme="dark"] .evv-coming { --dpg-ring: var(--ev-band, color-mix(in srgb, var(--purple) 21%, var(--bg))); }
 .ev-tile {
     width: 48px;
     height: 52px;
@@ -2772,6 +2824,18 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     scrollbar-width: none;
 }
 .ev-photos::-webkit-scrollbar { display: none; }
+/* Плитки переставляются перетаскиванием (components/useReorder.ts): удержание пальцем не
+   должно открывать системное меню картинки и выделять текст. */
+.ev-photos { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.ev-photos img { -webkit-user-drag: none; -webkit-touch-callout: none; }
+/* Соседи расступаются, а поднятая плитка идёт за пальцем без перехода. */
+.ev-photos.reordering .ev-thumb:not(.lifted) { transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ev-thumb.lifted { z-index: 2; overflow: visible; }
+.ev-thumb.lifted .ev-thumb-img { border-radius: 12px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28); }
+.ev-thumb.dropping { transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+    .ev-photos.reordering .ev-thumb:not(.lifted), .ev-thumb.dropping { transition: none; }
+}
 .ev-thumb {
     position: relative;
     flex: 0 0 auto;

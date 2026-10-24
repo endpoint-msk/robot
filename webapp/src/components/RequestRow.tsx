@@ -168,7 +168,7 @@ async function hostMenu(r: HostingRequest, subject: SheetSubject): Promise<void>
  * волной, а нового на том же месте проявляются следом (см. .hb-ch). Морф идёт по
  * буквам, а не словом целиком: слово, сменившееся разом, читалось как мигание.
  */
-function MorphWord({ text, on }: { text: string; on: boolean }) {
+export function MorphWord({ text, on }: { text: string; on: boolean }) {
   return (
     <span className={'hb-l' + (on ? ' on' : '')}>
       {Array.from(text).map((ch, i) => (

@@ -14,6 +14,7 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import { audit, auditUser } from './audit.js'
+import { DUES_TARGET, webappAt } from './deeplink.js'
 import { monthNameRu } from './fundraiser.js'
 import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
@@ -298,7 +299,7 @@ export const CB_CLAIM = 'dues:claim:'
 const claimKeyboard = (periodKey: string) =>
     BotKeyboard.inline([
         [BotKeyboard.callback('✅ Я внёс', `${CB_CLAIM}${periodKey}`)],
-        ...(duesMiniappUrl ? [[BotKeyboard.webView('Открыть взносы', duesMiniappUrl)]] : []),
+        ...(duesMiniappUrl ? [[BotKeyboard.webView('Открыть взносы', webappAt(duesMiniappUrl, DUES_TARGET))]] : []),
     ])
 
 /**
@@ -505,7 +506,7 @@ export const notifyDevsAboutClaim = async (
         'Сверь с выпиской и подтверди.',
     ].join('<br>')
     const markup = duesMiniappUrl
-        ? BotKeyboard.inline([[BotKeyboard.webView('Открыть взносы', duesMiniappUrl)]])
+        ? BotKeyboard.inline([[BotKeyboard.webView('Открыть взносы', webappAt(duesMiniappUrl, DUES_TARGET))]])
         : undefined
     for (const userId of devUserIds) {
         try {

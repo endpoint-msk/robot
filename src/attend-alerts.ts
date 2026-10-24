@@ -7,6 +7,7 @@
 // них в личке неправдой.
 
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import { newRequestTarget, webappAt } from './deeplink.js'
 import {
     addDaysToKey,
     formatDayKey,
@@ -114,7 +115,6 @@ export const startAttendAlertScheduler = (
 
             const near = new Set([today, addDaysToKey(today, 1)])
             const labels = new Map<number, string>()
-            const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Оставить заявку', webappUrl)]])
             for (const sub of subscribers) {
                 // Резиденту подписка ни к чему, у него своя, на день. Но и выключить её
                 // ему нечем: в резидентских настройках карточки нет, а повышают в
@@ -127,9 +127,12 @@ export const startAttendAlertScheduler = (
                 for (const a of mine) {
                     if (!labels.has(a.user.userId)) labels.set(a.user.userId, await mentionLabel(client, a.user))
                 }
+                // Про один день: форма открывается на нём. Про несколько: выбирать гостю.
+                const days = new Set(mine.map((a) => a.dateKey))
+                const target = days.size === 1 ? newRequestTarget(mine[0]!.dateKey) : newRequestTarget()
                 try {
                     await client.sendText(sub.userId, html(buildText(mine, labels, today)), {
-                        replyMarkup: keyboard,
+                        replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Оставить заявку', webappAt(webappUrl, target))]]),
                         disableWebPreview: true,
                     })
                 } catch {

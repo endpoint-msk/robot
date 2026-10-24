@@ -11,6 +11,7 @@ import {
     requestsForDay,
     todayKey,
 } from './hosting.js'
+import { requestTarget, startappAt } from './deeplink.js'
 import { activeDayForBoard, boardMarkup, buildBoardMessage } from './hosting-board.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -23,8 +24,9 @@ const BOARD_ID = 'board'
 const REQUEST_PREFIX = 'req:'
 
 /**
- * Deep link на миниапп для кнопки под отправленной заявкой. Ставится после логина
- * (нужен username бота), как hostingBoardLink — до этого кнопки просто нет.
+ * Ссылка на бота (https://t.me/<бот>) для кнопки под отправленной заявкой: заявка едет
+ * в `startapp`. Ставится после логина (нужен username бота), как hostingBoardLink — до
+ * этого кнопки просто нет.
  */
 let miniappLink: string | null = null
 
@@ -32,8 +34,8 @@ export const setInlineMiniappLink = (link: string | null): void => {
     miniappLink = link
 }
 
-const requestMarkup = () =>
-    miniappLink ? BotKeyboard.inline([[BotKeyboard.url('🚪 Открыть заявки', miniappLink)]]) : undefined
+const requestMarkup = (id: string) =>
+    miniappLink ? BotKeyboard.inline([[BotKeyboard.url('🚪 Открыть заявки', startappAt(miniappLink, requestTarget(id)))]]) : undefined
 
 /** Подстрока запроса в любом из полей; пустой запрос совпадает со всем. */
 const matches = (query: string, ...fields: (string | null)[]): boolean => {
@@ -135,7 +137,7 @@ export const registerInlineHandlers = (
                         // кнопки «Хочу прийти» у него быть не должно. Здесь именно undefined —
                         // пустая разметка нужна только чтобы гасить кнопку у существующего
                         // сообщения, а этого ещё не существует.
-                        replyMarkup: isDayLocked(storage, boardDay) ? undefined : boardMarkup(),
+                        replyMarkup: isDayLocked(storage, boardDay) ? undefined : boardMarkup(boardDay),
                     }),
                 }),
             )
@@ -153,7 +155,7 @@ export const registerInlineHandlers = (
                     description: `${r.anon ? 'инкогнито · ' : ''}${purpose || 'цель не указана'}`,
                     message: BotInlineMessage.text(html(renderRequest(r)), {
                         disableWebPreview: true,
-                        replyMarkup: requestMarkup(),
+                        replyMarkup: requestMarkup(r.id),
                     }),
                 }),
             )

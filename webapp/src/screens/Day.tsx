@@ -7,11 +7,12 @@ import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef
 import { action } from '../api'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
-import { fmtDayMonth, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { fmtDayMonth, plural, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { confirmDialog, numberPrompt, textPrompt } from '../modals'
 import {
   animate,
+  arrowStep,
   clamp,
   E,
   holdSelection,
@@ -24,6 +25,7 @@ import {
   pageTarget,
   palette,
   pr,
+  pulse,
   reducedMotion,
   rubber,
   springAt,
@@ -160,6 +162,7 @@ function DayCard({ day }: { day: DayData }) {
       hint: `Рекомендуем ${capacity.defaultCap}: это комфортное количество человек в подвале. Захостить сверх лимита можно, бот предупредит об этом.`,
       min: 1,
       max: 200,
+      wheel: { unit: (n) => plural(n, 'человек', 'человека', 'человек') },
       confirmLabel: 'Сохранить',
     })
     if (value === null || value === capacity.cap) return
@@ -292,6 +295,29 @@ function FaceIn({ a, fly, z }: { a: Attendee; fly: boolean; z: number }) {
 }
 
 /**
+ * Своё «Я приду» на день: отметка ставится сразу, не дожидаясь ответа, и шапка со
+ * списком показывают её вместе. Запрос идёт без оверлея, отказ возвращает как было.
+ * Тот же переключатель стоит под афишей ивента. Без дня (ивент дальше обзора) отметки нет.
+ */
+export function useAttend(day: DayData | null): { coming: boolean; toggle: () => Promise<void> } {
+  const me = useStore().data!.me
+  const onServer = Boolean(day?.attendees.some((a) => a.resident && a.userId === me.id))
+  const [mine, setMine] = useState<boolean | null>(null)
+  useEffect(() => setMine(null), [onServer])
+  const coming = mine ?? onServer
+  const toggle = async (): Promise<void> => {
+    if (!day) return
+    const next = !coming
+    haptic.impact(next ? 'light' : 'soft')
+    markOwnTap()
+    setMine(next)
+    const done = await action('attend', { dateKey: day.dateKey, coming: next }, { quiet: true })
+    if (!done) setMine(null)
+  }
+  return { coming, toggle }
+}
+
+/**
  * Кто придёт и своё «Я приду» в шапке дня. Первое место в ряду всегда ваше: пунктир,
  * пока вы не собираетесь, и ваша аватарка, когда собрались, поэтому соседи не
  * сдвигаются. После тапа такты идут волной: подпись кнопки, аватарка с перелётом,
@@ -302,10 +328,12 @@ export function ComingRow({
   attendees,
   coming,
   onToggle,
+  className,
 }: {
   attendees: Attendee[]
   coming: boolean
   onToggle: () => void
+  className?: string
 }) {
   const { data } = useStore()
   const me = data!.me
@@ -363,7 +391,7 @@ export function ComingRow({
   const names = [...(coming ? ['вы'] : []), ...others.map((a) => userLabel(a))]
   const faces = others.slice(0, 3)
   return (
-    <div className="dpg-coming">
+    <div className={'dpg-coming' + (className ? ' ' + className : '')}>
       <div className="dpg-faces" aria-hidden="true">
         {/* Ваше место - первое и, когда вы собрались, верхнее в стопке. Пунктир пустого
             места лежит под соседом: это ещё не человек. */}
@@ -443,7 +471,7 @@ function RequestSection({
         {list.map((r, i) => (
           <Fragment key={r.id}>
             {i > 0 ? <Sep left={66} /> : null}
-            <div className={flash.includes(r.id) ? 'row-flash' : undefined}>
+            <div className={flash.includes(r.id) ? 'row-flash' : undefined} data-req={r.id}>
               <RequestRow r={r} onHost={onHost} capacity={capacity} />
             </div>
           </Fragment>
@@ -523,21 +551,8 @@ function DayPage({
   const isToday = day.dateKey === data!.todayKey
   const cameToday = (day.requests ?? []).filter((r) => r.visit?.status === 'came').length + (day.walkIns ?? []).length
 
-  // Отметка ставится сразу, не дожидаясь ответа: шапка и список ниже показывают её
-  // вместе. Запрос идёт без оверлея, отказ возвращает как было.
   const myMark = day.attendees.find((a) => a.resident && a.userId === me.id) ?? null
-  const onServer = myMark !== null
-  const [mine, setMine] = useState<boolean | null>(null)
-  useEffect(() => setMine(null), [onServer])
-  const coming = mine ?? onServer
-  const toggle = async (): Promise<void> => {
-    const next = !coming
-    haptic.impact(next ? 'light' : 'soft')
-    markOwnTap()
-    setMine(next)
-    const done = await action('attend', { dateKey: day.dateKey, coming: next }, { quiet: true })
-    if (!done) setMine(null)
-  }
+  const { coming, toggle } = useAttend(day)
   // Время прихода - необязательная часть отметки: его ставят уже после «Я приду», в
   // своей строке списка, и видят его гости и доска. Ставится сразу, как и сама отметка.
   const serverTime = myMark?.time ?? null
@@ -699,6 +714,28 @@ const ROLL_MS = 680
 const ROLL_SLANT = 48
 
 type Drag = { x0: number; y0: number; p0: number; id: number; dir: 0 | 1; mouse: boolean }
+
+/**
+ * Заявка, на которую пришли кнопкой бота: строка один раз вспыхивает синим, как отметка
+ * в «Кто пришёл» своим тоном. Красится сама строка, а не обёртка: фон слоя свайпа
+ * непрозрачный и закрыл бы её.
+ */
+const flashRow = (row: HTMLElement): (() => void) => {
+  const clear = (): void => {
+    row.style.backgroundColor = ''
+  }
+  const stop = animate(
+    1100,
+    (t) => {
+      row.style.backgroundColor = `rgba(0, 122, 255, ${(0.16 * pulse(t, 120, 900)).toFixed(3)})`
+    },
+    clear,
+  )
+  return () => {
+    stop()
+    clear()
+  }
+}
 
 /**
  * Листалка дней. Всё, что меняется между днями (цвет и высота полосы под шапкой,
@@ -986,6 +1023,14 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       }
       kick()
     }
+    // Стрелки листают дни в Telegram Desktop, как знакомство и итоги месяца. Копия дня
+    // под верхним экраном (жест «вниз») на них не отвечает.
+    const onKey = (e: KeyboardEvent): void => {
+      const step = arrowStep(e)
+      if (step === 0 || S.drag || root.closest('.screen-under')) return
+      e.preventDefault()
+      goTo((S.anim ? S.anim.to : Math.round(S.p)) + step)
+    }
     const ro = new ResizeObserver(() => {
       measure()
       render()
@@ -1001,6 +1046,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     // Нативно и не пассивно: React вешает wheel пассивно, а без preventDefault macOS
     // уводит горизонтальный жест в навигацию «назад».
     root.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKey)
     ro.observe(root)
     measure()
     render()
@@ -1018,6 +1064,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       root.removeEventListener('pointercancel', onUp)
       root.removeEventListener('click', onClickCapture, true)
       root.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKey)
       clearTimeout(wheelIdle)
     }
   }, [])
@@ -1025,6 +1072,25 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
   // Перелистнули или пришли новые данные: страницы встают на свои места, полоса меряется
   // заново по шапке открытого дня.
   useLayoutEffect(() => sync.current(), [index, days, theme])
+
+  // Пришли кнопкой бота на заявку: её строка встаёт к середине экрана и один раз
+  // вспыхивает. Параметр снимается сразу, иначе вспышку повторил бы возврат на день.
+  // Обычный эффект, а не layout: App в своём layout-эффекте ставит прокрутку экрана в начало.
+  const flashId = typeof params.flash === 'string' ? params.flash : null
+  const flashStop = useRef<(() => void) | null>(null)
+  useEffect(() => () => flashStop.current?.(), [])
+  useEffect(() => {
+    if (!flashId) return
+    const { flash: _flash, ...rest } = params
+    setTopParams(rest)
+    const row = rootRef.current?.querySelector<HTMLElement>(`.dpg-page.active [data-req="${CSS.escape(flashId)}"] .req-row`)
+    if (!row) return
+    const box = row.getBoundingClientRect()
+    const gap = Math.max(16, (window.innerHeight - box.height) / 2)
+    window.scrollTo(0, Math.max(0, window.scrollY + box.top - gap))
+    flashStop.current = flashRow(row)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flashId])
 
   // Шапку Telegram красим в тон дня, когда он встал: плавно вместе со свайпом она
   // перекрашивается только в полноэкранном режиме. Под верхним экраном (жест «вниз»)

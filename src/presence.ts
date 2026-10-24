@@ -1,5 +1,6 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
+import { newRequestTarget, startappAt } from './deeplink.js'
 import { startHeartbeatInterval } from './health.js'
 import { remindAboutTodayRequests } from './hosting.js'
 import { isValidMac, normalizeMac, type KeeneticClient } from './keenetic.js'
@@ -57,10 +58,11 @@ const CB_SETTINGS_ANON = 'presence:settings:anon'
 export const ANON_LABEL = 'Без ника'
 
 /**
- * Deep link на миниапп хостинга (t.me/<bot>?startapp=…) для кнопки «Хочу прийти»
- * под списками присутствующих. null — миниапп не настроен, кнопки нет.
- * URL-кнопка вместо webview-кнопки: в группах Telegram запрещает web_app-кнопки.
- * Ставится один раз на старте (setHostingMiniappLink), когда известен username бота.
+ * Ссылка на бота (https://t.me/<bot>) для кнопки «Хочу прийти» под списками
+ * присутствующих: миниапп открывается по `startapp` сразу в форме заявки. null:
+ * миниапп не настроен, кнопки нет. URL-кнопка вместо webview-кнопки: в группах
+ * Telegram запрещает web_app-кнопки. Ставится один раз на старте
+ * (setHostingMiniappLink), когда известен username бота.
  */
 let hostingMiniappLink: string | null = null
 
@@ -91,7 +93,7 @@ const remindOnArrival = (client: TelegramClient, storage: Storage, userId: numbe
 /** Клавиатура под списком присутствующих: кнопка заявки на визит для гостей, читающих чат. */
 const presenceListMarkup = () =>
     hostingMiniappLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', hostingMiniappLink)]])
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(hostingMiniappLink, newRequestTarget()))]])
         : undefined
 
 /** Клавиатура настроек авто-отметки по MAC. У текущего выбора — галочка. */

@@ -123,7 +123,8 @@ export function useSheetDrag(
       dragged = false
       const t = e.target as Element
       if (handle ? !t.closest(handle) : scrolledInside(t)) return
-      if (t.closest('input, textarea')) return
+      // Колесо крутится само: жест вниз по нему это прокрутка, а не смахивание.
+      if (t.closest('input, textarea, .tp-wheel')) return
       settle?.stop()
       h = sheet.offsetHeight || 1
       drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY - y, on: false }

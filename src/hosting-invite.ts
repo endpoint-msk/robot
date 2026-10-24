@@ -20,6 +20,7 @@ import {
     setResidentAttendance,
     todayKey,
 } from './hosting.js'
+import { dayTarget, newRequestTarget, webappAt } from './deeplink.js'
 import { syncHostingBoard } from './hosting-board.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -107,9 +108,9 @@ export const sendHostingInvite = async (
         isResident
             ? [
                 [BotKeyboard.callback('✅ Приду', `${CB_COME}${dateKey}`)],
-                [BotKeyboard.webView('Открыть хостинг', webappUrl)],
+                [BotKeyboard.webView('Открыть хостинг', webappAt(webappUrl, dayTarget(dateKey)))],
             ]
-            : [[BotKeyboard.webView('Оставить заявку', webappUrl)]],
+            : [[BotKeyboard.webView('Оставить заявку', webappAt(webappUrl, newRequestTarget(dateKey)))]],
     )
 
     try {

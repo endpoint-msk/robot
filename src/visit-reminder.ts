@@ -20,6 +20,7 @@ import {
     todayKey,
 } from './hosting.js'
 import { audit, auditUser } from './audit.js'
+import { requestTarget, webappAt } from './deeplink.js'
 import { syncHostingBoard } from './hosting-board.js'
 import { startHeartbeatInterval } from './health.js'
 import type { Storage } from './storage.js'
@@ -160,7 +161,7 @@ export const notifyVisitReminder = async (
     await client.sendText(request.guest.userId, html(lines.join('<br>')), {
         replyMarkup: BotKeyboard.inline([
             [BotKeyboard.callback('Не смогу прийти', `${CB_CANCEL}${request.id}`)],
-            [BotKeyboard.webView('Мои визиты', webappUrl)],
+            [BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))],
         ]),
         disableWebPreview: true,
     })

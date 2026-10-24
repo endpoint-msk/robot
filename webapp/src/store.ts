@@ -177,6 +177,18 @@ export function resetRoot(): void {
 }
 
 /**
+ * Место из кнопки бота (deeplink.ts): корень и экраны над ним встают разом. Миниапп только
+ * открылся, въезжать экрану неоткуда, поэтому первый же кадр показывает целевой экран, а
+ * «назад» ведёт по стеку, как если бы до места дошли тапами.
+ */
+export function openAt(entries: { name: ScreenName; params?: NavParams }[]): void {
+  settleHero()
+  const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
+  const stack = [entry(root, {}), ...entries.map((e) => entry(e.name, e.params ?? {}))]
+  navigate({ stack, navId: state.navId + 1, anim: null })
+}
+
+/**
  * Знакомство, открытое само, встаёт корнем стека: с обложки «назад» вести некуда,
  * и Telegram показывает на её месте «Закрыть».
  */

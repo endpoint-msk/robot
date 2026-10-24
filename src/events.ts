@@ -22,6 +22,7 @@ import {
     todayKey,
     visitFeedVevent,
 } from './hosting.js'
+import { dayTarget, eventAppsTarget, eventTarget, startappAt, webappAt } from './deeplink.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type {
@@ -636,7 +637,7 @@ export const notifyReviewersNewApplication = async (
         `${formatDayKey(event.dateKey)} к ${event.time}.`,
         `От: ${await mentionLabel(client, app.guest)}.`,
     ].join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]])
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, eventAppsTarget(event.id)))]])
     for (const userId of ids) {
         if (userId === app.guest.userId) continue
         try {
@@ -661,7 +662,7 @@ export const notifyApplicantApproved = async (
         `Заявка на ивент принята: <b>${html.escape(event.title)}</b>`,
         `Ждём вас ${formatDayKey(event.dateKey)} к ${event.time}.`,
     ].join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappUrl)]])
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappAt(webappUrl, eventTarget(event.id)))]])
     try {
         await client.sendText(guest.userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
     } catch {
@@ -719,13 +720,13 @@ export const notifyResidentsAboutEvent = async (
         // Переносы внутри описания живут только как <br>: html() схлопывает \n в пробел.
         lines.push('', ...short.split('\n').map((line) => html.escape(line)))
     }
-    await broadcastEventNotice(client, storage, directory, lines.join('<br>'), webappUrl, isForToday, event.host.userId)
+    await broadcastEventNotice(client, storage, directory, lines.join('<br>'), webappUrl, eventTarget(event.id), isForToday, event.host.userId)
 }
 
 /**
  * Общая рассылка резидентам про ивент: один тумблер (`eventNotify`) и одни правила
  * на создание, перенос и отмену - иначе человек, выключивший анонсы, всё равно получал
- * бы про них половину сообщений.
+ * бы про них половину сообщений. `target`: куда ведёт кнопка (см. deeplink.ts).
  */
 const broadcastEventNotice = async (
     client: TelegramClient,
@@ -733,11 +734,12 @@ const broadcastEventNotice = async (
     directory: ResidentDirectory,
     text: string,
     webappUrl: string,
+    target: string,
     isForToday: boolean,
     skipUserId: number,
 ): Promise<void> => {
     const residents = await directory.listIds()
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappUrl)]])
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappAt(webappUrl, target))]])
     for (const userId of residents) {
         if (userId === skipUserId) continue
         const prefs = eventNotifyPrefsFor(storage, userId)
@@ -756,8 +758,9 @@ const broadcastEventNotice = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Deep link миниаппа для кнопки под анонсом: в группах web_app-кнопки запрещены, поэтому
- * та же ссылка, что у доски (`setHostingBoardLink`). null — миниапп не настроен, кнопки нет.
+ * Ссылка на бота (https://t.me/<бот>) для кнопки под анонсом: в группах web_app-кнопки
+ * запрещены, ивент едет в `startapp` (как у доски, `setHostingBoardLink`). null: миниапп
+ * не настроен, кнопки нет.
  */
 let eventAnnounceLink: string | null = null
 
@@ -824,7 +827,7 @@ export const announceEventToChats = async (
     }
     const text = lines.join('<br>')
     const markup = eventAnnounceLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', eventAnnounceLink)]])
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))]])
         : undefined
 
     // Афиша — первая: анонс с картинкой в ленте чата заметнее, а разводить ради этого
@@ -985,7 +988,7 @@ export const notifyEventMoved = async (
         `Было ${formatDayKey(before.dateKey)} к ${before.time}.`,
         `Стало ${formatDayKey(event.dateKey)} к ${event.time}.`,
     ].join('<br>')
-    await broadcastEventNotice(client, storage, directory, text, webappUrl, isForToday, byUserId)
+    await broadcastEventNotice(client, storage, directory, text, webappUrl, eventTarget(event.id), isForToday, byUserId)
 }
 
 /** Отмена ивента: DM тем же, кому уходил анонс. */
@@ -1002,8 +1005,9 @@ export const notifyEventCancelled = async (
         `Ивент отменён: <b>${html.escape(event.title)}</b>`,
         `${formatDayKey(event.dateKey)} к ${event.time} - не состоится.`,
     ].join('<br>')
+    // Ивента больше нет: кнопка ведёт в день, где он был.
     await broadcastEventNotice(
-        client, storage, directory, text, webappUrl, event.dateKey === todayKey(tzOffsetMinutes), byUserId,
+        client, storage, directory, text, webappUrl, dayTarget(event.dateKey), event.dateKey === todayKey(tzOffsetMinutes), byUserId,
     )
 }
 

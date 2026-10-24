@@ -12,7 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import { createPortal } from 'react-dom'
 import { DayChips, isPastForToday, useDayTime } from './components/forms'
 import { Avatar } from './components/people'
-import { TimeField } from './components/TimeField'
+import { NumberWheel, TimeField } from './components/TimeField'
 import { useSheetDrag } from './components/useSheetDrag'
 import { icons } from './icons'
 import { animate, clamp, E, mix, pr, reducedMotion } from './motion'
@@ -61,6 +61,8 @@ type NumberInput = {
   hint?: string
   min: number
   max: number
+  /** Колесо вместо клавиатуры; `unit` подписывает число справа («15 человек»). */
+  wheel?: { unit: (n: number) => string }
   confirmLabel: string
   subject?: SheetSubject
 }
@@ -447,6 +449,22 @@ function NumberBody({ modal, active }: { modal: Of<'number'>; active: boolean })
 }
 
 /**
+ * Число колесом, как время: вместимость дня. Клавиатура ради одной-двух цифр лишняя, а
+ * колесо держит значение в границах без проверки ввода.
+ */
+function NumberWheelBody({ modal }: { modal: Of<'number'> }) {
+  const [value, setValue] = useState(() => clamp(Math.round(modal.initial), modal.min, modal.max))
+  return (
+    <>
+      <Question text={modal.text} />
+      <NumberWheel value={value} min={modal.min} max={modal.max} unit={modal.wheel!.unit} onChange={setValue} />
+      {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
+      <Actions label={modal.confirmLabel} onConfirm={() => settle(modal.id, value)} cancel="Отмена" onCancel={() => settle(modal.id, null)} />
+    </>
+  )
+}
+
+/**
  * Ввод строки: причина закрытия дня, повестка, комментарий гостю. Пустой текст — тоже
  * ответ («без пояснения», «снять повестку»), поэтому кнопка активна всегда, а отмена
  * возвращает null, а не пустую строку.
@@ -548,7 +566,7 @@ function Layer({ modal, state }: { modal: SheetModal; state: 'on' | 'out' | 'par
       body = <RescheduleBody modal={modal} />
       break
     case 'number':
-      body = <NumberBody modal={modal} active={active} />
+      body = modal.wheel ? <NumberWheelBody modal={modal} /> : <NumberBody modal={modal} active={active} />
       break
     case 'text':
       body = <TextBody modal={modal} active={active} />
@@ -875,6 +893,7 @@ export const numberPrompt = (opts: {
   hint?: string
   min?: number
   max?: number
+  wheel?: { unit: (n: number) => string }
   confirmLabel?: string
   subject?: SheetSubject
 }): Promise<number | null> =>
@@ -885,6 +904,7 @@ export const numberPrompt = (opts: {
     hint: opts.hint,
     min: opts.min ?? 0,
     max: opts.max ?? 1_000_000,
+    wheel: opts.wheel,
     confirmLabel: opts.confirmLabel ?? 'Сохранить',
     subject: opts.subject,
   })

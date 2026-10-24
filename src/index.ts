@@ -261,12 +261,13 @@ const main = async () => {
         })
         if (self.username) {
             // В группах web_app-кнопки запрещены — используем deep link на Main Mini App
-            // (его нужно один раз включить в BotFather, указав тот же WEBAPP_URL).
-            const deepLink = `https://t.me/${self.username}?startapp=hosting`
-            setHostingMiniappLink(deepLink)
-            setHostingBoardLink(deepLink)
-            setInlineMiniappLink(deepLink)
-            setEventAnnounceLink(deepLink)
+            // (его нужно один раз включить в BotFather, указав тот же WEBAPP_URL). Место
+            // каждая кнопка дописывает сама, в `startapp` (см. deeplink.ts).
+            const botLink = `https://t.me/${self.username}`
+            setHostingMiniappLink(botLink)
+            setHostingBoardLink(botLink)
+            setInlineMiniappLink(botLink)
+            setEventAnnounceLink(botLink)
         }
         // Появился в спейсе — напомнить про сегодняшние заявки без хоста.
         setHostingReminder({ webappUrl: webappConfig.publicUrl, tzOffsetMinutes: hostingTzOffset })

@@ -26,7 +26,9 @@ import { ResponsibleSheet } from '../components/ResponsiblePicker'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
+import { useReorder } from '../components/useReorder'
 import { usePasteImages } from '../usePasteImages'
+import { ComingRow, useAttend } from './Day'
 
 const MAX_TITLE = 120
 /** Столько же держит сервер (MAX_EVENT_DESCRIPTION): длина сообщения в Telegram. */
@@ -162,6 +164,8 @@ export function Event() {
   const readOnly = Boolean(existing) && (asGuest || (existing!.host.userId !== data!.me.id && !data!.me.isDev))
   // Вставка картинок из буфера (Ctrl/Cmd+V) на десктопе; в режиме чтения не нужна.
   usePasteImages(addFiles, !readOnly)
+  const stripRef = useRef<HTMLDivElement>(null)
+  useReorder(stripRef, photos, setPhotos)
 
   // Первой стоит афиша без известного тона: заготовка из канала, ивент до тонов или
   // первую фото убрали. Считаем по картинке, превью перекрасится, когда он будет.
@@ -291,10 +295,10 @@ export function Event() {
         </div>
         <div className="sep" style={{ marginLeft: 14 }} />
         {/* Афиши: лента миниатюр, последняя плитка — «добавить». Порядок в ленте
-            и есть порядок показа в карточке. */}
-        <div className="ev-photos">
+            и есть порядок показа в карточке, плитки переставляются перетаскиванием. */}
+        <div className="ev-photos" ref={stripRef}>
           {photos.map((id) => (
-            <div className="ev-thumb" key={id}>
+            <div className="ev-thumb" key={id} data-photo={id}>
               <EventPoster photoId={id} className="ev-thumb-img" />
               <button
                 className="ev-thumb-del"
@@ -509,6 +513,10 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
   }, [under, photos.length])
   const openIcs = useIcsLink('event', event.id, true)
   const day = data!.days.find((d) => d.dateKey === event.dateKey) ?? null
+  // Резидент отмечается прямо под афишей: это та же отметка дня, отдельной у ивента нет.
+  // Дня вне обзора сервер не примет, там ряд лиц остаётся без кнопки.
+  const attend = useAttend(day)
+  const canAttend = !asGuest && day !== null
   // Тон афиши ложится на каждый блок с цветом ивента: своего style у экрана нет.
   const tone = eventTone(event)
   const tv = toneVars(tone)
@@ -571,7 +579,9 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
             <div className="evv-ws">{`в\u00a0${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`}</div>
           </div>
         </div>
-        {day || people.length > 0 ? (
+        {canAttend ? (
+          <ComingRow attendees={people} coming={attend.coming} onToggle={() => void attend.toggle()} className="evv-coming" />
+        ) : day || people.length > 0 ? (
           <div className="dpg-coming evv-coming">
             <div className="dpg-faces" aria-hidden="true">
               {people.length === 0 ? (

@@ -14,6 +14,7 @@ import {
     residentsAttendingDay,
     todayKey,
 } from './hosting.js'
+import { newRequestTarget, startappAt } from './deeplink.js'
 import { eventsForDay } from './events.js'
 import { startHeartbeatInterval } from './health.js'
 import { insideBoardLines } from './presence.js'
@@ -23,8 +24,9 @@ import type { Storage } from './storage.js'
 const TICK_INTERVAL_MS = 60 * 1000
 
 /**
- * Deep link на миниапп хостинга для кнопки «Хочу прийти» под доской. null — миниапп
- * не настроен, кнопки нет. Ставится на старте (setHostingBoardLink), как в presence.
+ * Ссылка на бота (https://t.me/<бот>) для кнопки «Хочу прийти» под доской: день доски
+ * едет в `startapp`. null: миниапп не настроен, кнопки нет. Ставится на старте
+ * (setHostingBoardLink), как в presence.
  */
 let hostingBoardLink: string | null = null
 
@@ -33,14 +35,15 @@ export const setHostingBoardLink = (link: string | null): void => {
 }
 
 /**
- * Кнопка под доской. `locked` — день закрыт для гостей: зовём пустой разметкой, а не
- * `undefined`, потому что у `editMessage` пропущенное поле оставило бы кнопку на месте.
+ * Кнопка под доской: форма заявки на день доски, резидента миниапп ведёт в сам день.
+ * `locked` — день закрыт для гостей: зовём пустой разметкой, а не `undefined`, потому
+ * что у `editMessage` пропущенное поле оставило бы кнопку на месте.
  */
-export const boardMarkup = (locked = false) =>
+export const boardMarkup = (dateKey: string, locked = false) =>
     locked
         ? BotKeyboard.inline([])
         : hostingBoardLink
-            ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', hostingBoardLink)]])
+            ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(hostingBoardLink, newRequestTarget(dateKey)))]])
             : undefined
 
 const escapeHtml = (s: string): string =>
@@ -101,7 +104,7 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     // Закрытый день доску не заводит (`dayHasActivity`), но уже висящая на него попадает:
     // если активности впереди нет, `syncChatBoard` откатывается на сегодня. Звать в чат
     // «приходите» в день, когда спейс не берёт гостей, нельзя — поэтому у такого дня свой
-    // короткий текст, а кнопку гасит `boardMarkup(true)`. Кто внутри — оставляем: чат свой,
+    // короткий текст, а кнопку гасит `boardMarkup(day, true)`. Кто внутри — оставляем: чат свой,
     // и «закрыт для гостей» не значит «внутри никого».
     const lock = dayLockFor(storage, dateKey)
     // Повестка доску не заводит (её нет в `dayHasActivity`): доска про людей, а строка
@@ -224,7 +227,7 @@ const syncChatBoard = async (
                 message: entry.messageId,
                 text: html(text),
                 disableWebPreview: true,
-                replyMarkup: boardMarkup(locked),
+                replyMarkup: boardMarkup(displayDay, locked),
             })
             if (entry.shownDay !== displayDay) {
                 await storage.update((s) => {
@@ -254,7 +257,7 @@ const syncChatBoard = async (
 
     // Доски нет (или её удалили) и есть активность — постим новую и тихо закрепляем.
     try {
-        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: boardMarkup(locked) })
+        const sent = await client.sendText(chatId, html(text), { disableWebPreview: true, replyMarkup: boardMarkup(displayDay, locked) })
         await storage.update((s) => {
             s.hostingBoard[key] = { chatId, messageId: sent.id, postedDay: today, shownDay: displayDay }
         })

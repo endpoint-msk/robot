@@ -8,6 +8,7 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { CallbackQueryContext, Dispatcher } from '@mtcute/dispatcher'
 import { PropagationAction } from '@mtcute/dispatcher'
+import { requestTarget, webappAt } from './deeplink.js'
 import { acceptTransfer, clearTransfer, displayName, formatDayKey, mentionLabel } from './hosting.js'
 import type { Storage } from './storage.js'
 import type { HostingRequest, HostingUser, HostTransfer } from './types.js'
@@ -22,7 +23,7 @@ const slotOf = (request: HostingRequest): string => `<b>${formatDayKey(request.d
 const offerKeyboard = (id: string, webappUrl: string) =>
     BotKeyboard.inline([
         [BotKeyboard.callback('✅ Беру', `${CB_TAKE}${id}`), BotKeyboard.callback('Не смогу', `${CB_PASS}${id}`)],
-        ...(webappUrl ? [[BotKeyboard.webView('Открыть хостинг', webappUrl)]] : []),
+        ...(webappUrl ? [[BotKeyboard.webView('Открыть хостинг', webappAt(webappUrl, requestTarget(id)))]] : []),
     ])
 
 /** Резиденту в личку: его просят взять чужой подтверждённый визит на себя. */
@@ -97,7 +98,9 @@ export const notifyGuestHostChanged = async (
     const text = `Ваш визит ${slotOf(request)} теперь хостит ${who}.`
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: webappUrl ? BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]) : undefined,
+            replyMarkup: webappUrl
+                ? BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]])
+                : undefined,
             disableWebPreview: true,
         })
     } catch {

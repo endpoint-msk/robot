@@ -6,9 +6,10 @@ import { api, loadOnboardingPeople } from './api'
 import { App } from './App'
 import { Swap } from './components/Swap'
 import { BootSkeleton } from './components/skeleton'
+import { launchTarget, targetEntries } from './deeplink'
 import { icons } from './icons'
 import { closeTopOverlay } from './overlays'
-import { bump, getState, openOnboardingRoot, pop, push, setData, setPerspective } from './store'
+import { bump, getState, openAt, openOnboardingRoot, pop, push, setData, setPerspective } from './store'
 import { applyTheme } from './theme'
 import { tg } from './telegram'
 import { ApiError, type Bootstrap } from './types'
@@ -158,6 +159,7 @@ export function Root() {
     if (!tg || !tg.initData) return
     const wantsDraft = wantsEventDraft()
     const wantsIntro = wantsOnboarding()
+    const target = launchTarget()
     let cancelled = false
     void (async () => {
       let data: Bootstrap
@@ -173,11 +175,16 @@ export function Root() {
       if (cancelled) return
       setData(data)
       setPerspective(data.me.isResident ? 'resident' : 'guest')
+      const place = target && !wantsIntro ? targetEntries(target, data, getState().perspective) : []
       // Кнопка «Создать ивент» из лички ведёт сюда с ?draft=1 — открываем редактор
       // с уже вставленным текстом поста. Проверяем и саму заготовку: её могли
       // отработать с другого устройства, и тогда открывать нечего.
       if (wantsDraft && data.me.isResident && data.eventDraft) {
         push('event', { fromDraft: true, backLabel: 'Обзор' })
+      } else if (place.length > 0) {
+        // Остальные кнопки бота ведут на своё место. Это ответ на тап, поэтому знакомство,
+        // которое открылось бы само, ждёт следующего входа.
+        openAt(place)
       } else if (data.me.isResident && (wantsIntro || data.onboarding?.show)) {
         // Знакомство открывается само один раз, пока его не прошли, и по кнопке из
         // лички. Люди для сот грузятся до показа: обложка без них пустая.

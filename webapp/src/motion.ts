@@ -5,6 +5,7 @@
 // Анимируется только ответ на нажатие самого человека: если данные поменял кто-то
 // другой, экран просто показывает новое состояние (см. markOwnTap).
 
+import { hasOverlay } from './overlays'
 import { resolvedTheme } from './theme'
 import type { ResolvedTheme } from './types'
 
@@ -364,6 +365,14 @@ export const pageTarget = (p: number, v: number, width: number): number => {
   if (to === near && Math.abs(v * width) > 500) to = near + Math.sign(v)
   const flat = Number.isInteger(p)
   return clamp(to, Math.floor(p) - (flat ? 1 : 0), Math.ceil(p) + (flat ? 1 : 0))
+}
+
+/** Стрелка на клавиатуре листает, если её не ждёт поле ввода, шторка или сочетание клавиш. */
+export const arrowStep = (e: KeyboardEvent): -1 | 0 | 1 => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return 0
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || hasOverlay()) return 0
+  if ((e.target as Element | null)?.closest?.('input, textarea, select, [contenteditable]')) return 0
+  return e.key === 'ArrowRight' ? 1 : -1
 }
 
 /**

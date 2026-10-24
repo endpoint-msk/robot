@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import { dayTarget, newRequestTarget, requestTarget, webappAt } from './deeplink.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { BlockedUser, DayAgenda, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder, WalkIn } from './types.js'
@@ -344,6 +345,7 @@ export const isDaySubscribed = (storage: Storage, dateKey: string, userId: numbe
 /**
  * Шлёт подписчикам дня(ей) уведомление о событии на нём. Автора события
  * (`exceptUserId`) пропускаем — он и так знает, что сделал. Закрытая личка не фатальна.
+ * `target`: куда ведёт кнопка (см. deeplink.ts).
  */
 export const notifyDaySubscribers = async (
     client: TelegramClient,
@@ -352,6 +354,7 @@ export const notifyDaySubscribers = async (
     dateKeys: string[],
     text: string,
     exceptUserId: number,
+    target: string,
 ): Promise<void> => {
     const recipients = new Set<number>()
     for (const dateKey of dateKeys) {
@@ -360,7 +363,7 @@ export const notifyDaySubscribers = async (
         }
     }
     if (recipients.size === 0) return
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть', webappUrl)]])
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть', webappAt(webappUrl, target))]])
     for (const userId of recipients) {
         try {
             await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
@@ -379,7 +382,7 @@ export const notifySubsHosted = async (
     host: HostingUser,
 ): Promise<void> => {
     const text = `✅ ${await mentionLabel(client, host)} захостил ${await mentionLabel(client, request.guest)} — ${slotLabel(request.dateKey, request.time)}.`
-    await notifyDaySubscribers(client, storage, webappUrl, [request.dateKey], text, host.userId)
+    await notifyDaySubscribers(client, storage, webappUrl, [request.dateKey], text, host.userId, requestTarget(request.id))
 }
 
 /** Подписчикам дня: резидент отметился «я приду». */
@@ -392,7 +395,7 @@ export const notifySubsAttending = async (
     time: string | null,
 ): Promise<void> => {
     const text = `🙋 ${await mentionLabel(client, resident)} придёт <b>${formatDayKey(dateKey)}</b>${time ? ` к ${time}` : ''}.`
-    await notifyDaySubscribers(client, storage, webappUrl, [dateKey], text, resident.userId)
+    await notifyDaySubscribers(client, storage, webappUrl, [dateKey], text, resident.userId, dayTarget(dateKey))
 }
 
 /** Подписчикам дня(ей): визит перенесён. Уведомляем и старый день, и новый. */
@@ -411,7 +414,7 @@ export const notifySubsRescheduled = async (
     const to = dayChanged ? slotLabel(request.dateKey, request.time) : request.time
     const text = `🔁 Перенос визита ${guest}: ${from} → ${to}.`
     const days = dayChanged ? [oldDateKey, request.dateKey] : [request.dateKey]
-    await notifyDaySubscribers(client, storage, webappUrl, days, text, actorId)
+    await notifyDaySubscribers(client, storage, webappUrl, days, text, actorId, requestTarget(request.id))
 }
 
 /** Одна строка публичного списка «кто придёт»: резидент «я приду» или подтверждённый неанонимный гость. */
@@ -1230,7 +1233,7 @@ export const notifyResidentsAboutRequest = async (
     ]
     if (request.purpose) lines.push(`Цель: ${html.escape(request.purpose)}`)
     const text = lines.join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]])
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, requestTarget(request.id)))]])
 
     for (const userId of residents) {
         if (userId === request.guest.userId) continue
@@ -1274,9 +1277,11 @@ export const remindAboutTodayRequests = async (
             : '👋 Ты в спейсе — на сегодня есть заявки без хоста:',
         ...(await Promise.all(pending.map(async (r) => `• ${r.time} — ${await mentionLabel(client, r.guest)}`))),
     ]
+    // Одна заявка: её строка под пальцем, несколько: день, где они все.
+    const target = pending.length === 1 ? requestTarget(pending[0]!.id) : dayTarget(today)
     try {
         await client.sendText(userId, html(lines.join('<br>')), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, target))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1296,7 +1301,7 @@ export const notifyGuestApproved = async (
     const text = `✅ Ваш визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time} подтверждён!<br>Вас хостит ${who}.`
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1313,7 +1318,7 @@ export const notifyGuestUnapproved = async (
     const text = `⚠️ Резидент отменил хостинг вашего визита <b>${formatDayKey(request.dateKey)}</b> к ${request.time}. Заявка снова ждёт ответа.`
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1357,7 +1362,8 @@ export const notifyGuestClosed = async (
         : [`Резидент ${who} закрывает заявку на визит ${slot}: в этот день не получится.`, 'Можно выбрать другой день.']
     try {
         await client.sendText(request.guest.userId, html(lines.join('<br>')), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Выбрать другой день', webappUrl)]]),
+            // Тот день только что закрыли, поэтому форма открывается без него.
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Выбрать другой день', webappAt(webappUrl, newRequestTarget()))]]),
             disableWebPreview: true,
         })
         return true
@@ -1398,7 +1404,7 @@ export const notifyGuestReschedule = async (
     const text = `🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Откройте «Мои визиты», чтобы принять или предложить свой вариант.`
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1418,7 +1424,7 @@ export const notifyResidentRescheduleCountered = async (
     const text = `🕘 Гость ${await mentionLabel(client, request.guest)} предлагает <b>${slotLabel(p.dateKey, p.time)}</b> (было ${slotLabel(request.dateKey, request.time)}).<br>Открой заявки, чтобы принять или предложить другое.`
     try {
         await client.sendText(recipientId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1446,7 +1452,7 @@ export const notifyProposalAccepted = async (
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1479,7 +1485,7 @@ export const notifyProposalCancelled = async (
     const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
     try {
         await client.sendText(targetId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
@@ -1503,7 +1509,7 @@ export const notifyProposalDroppedByEdit = async (
     const text = `✏️ Гость ${who} переносит заявку на <b>${slotLabel(request.dateKey, request.time)}</b> — предложение перенести на ${slotLabel(proposed.dateKey, proposed.time)} снято.`
     try {
         await client.sendText(targetId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappUrl)]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {

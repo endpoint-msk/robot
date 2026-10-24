@@ -10,6 +10,7 @@ import {
     renderPresenceText,
 } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
+import { newRequestTarget, webappAt } from './deeplink.js'
 import { doorAlertText, doorCodeOf } from './door.js'
 import { inviteOnStart } from './onboarding.js'
 import {
@@ -259,7 +260,7 @@ export const registerMenuHandlers = (
             if (webappUrl) {
                 await msg.answerText(
                     'Привет! Это бот хакспейса. Хотите зайти в гости — оставьте заявку на визит, резиденты увидят её и откликнутся.',
-                    { replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]]) },
+                    { replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappAt(webappUrl, newRequestTarget()))]]) },
                 )
                 return
             }

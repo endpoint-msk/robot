@@ -23,6 +23,7 @@ import {
     MAX_RESET_DAY,
 } from './fundraiser.js'
 import { audit, auditUser } from './audit.js'
+import { newRequestTarget, webappAt } from './deeplink.js'
 import { postPresenceList, renderPresenceText } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -290,7 +291,7 @@ export const registerHandlers = (
                 ].join('\n'),
                 {
                     replyMarkup: webappUrl
-                        ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]])
+                        ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappAt(webappUrl, newRequestTarget()))]])
                         : undefined,
                 },
             )
@@ -386,7 +387,7 @@ export const registerHandlers = (
                         : 'Список тех, кто в спейсе, виден участникам сообщества.',
                     {
                         replyMarkup: webappUrl
-                            ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappUrl)]])
+                            ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappAt(webappUrl, newRequestTarget()))]])
                             : undefined,
                     },
                 )
@@ -395,7 +396,7 @@ export const registerHandlers = (
             await msg.answerText(html(renderPresenceText(storage)), {
                 disableWebPreview: true,
                 replyMarkup: webappUrl
-                    ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Хочу прийти', webappUrl)]])
+                    ? BotKeyboard.inline([[BotKeyboard.webView('🚪 Хочу прийти', webappAt(webappUrl, newRequestTarget()))]])
                     : undefined,
             })
             return

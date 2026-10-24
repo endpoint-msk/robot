@@ -8,6 +8,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -291,6 +292,38 @@ function Wheel({
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Колесо числа (вместимость дня) тем же барабаном, что время. Число уходит наверх на
+ * каждой смене строки, и подпись единиц справа склоняется вместе с ним.
+ */
+export function NumberWheel({
+  value,
+  min,
+  max,
+  unit,
+  onChange,
+}: {
+  value: number
+  min: number
+  max: number
+  unit: (n: number) => string
+  onChange: (n: number) => void
+}) {
+  const values = useMemo(() => Array.from({ length: max - min + 1 }, (_, i) => String(min + i)), [min, max])
+  const [n, setN] = useState(() => clamp(Math.round(value), min, max))
+  const pick = (i: number): void => {
+    setN(min + i)
+    onChange(min + i)
+  }
+  return (
+    <div className="tp-wheels tp-number">
+      <div className="tp-band" />
+      <Wheel values={values} index={n - min} minIndex={0} label="Число" onLive={pick} onSettle={pick} />
+      <span className="tp-unit">{unit(n)}</span>
     </div>
   )
 }

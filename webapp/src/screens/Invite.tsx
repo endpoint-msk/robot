@@ -12,12 +12,14 @@ import { action, api } from '../api'
 import { fmtShortDate } from '../dates'
 import { icons } from '../icons'
 import { showAlert } from '../modals'
+import { markOwnTap } from '../motion'
 import { useRemote } from '../remote'
 import { pop, useParams } from '../store'
 import { haptic } from '../telegram'
 import type { InviteCandidate, InviteListResponse } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
+import { MorphWord } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
@@ -39,17 +41,30 @@ function PersonRow({
   // В зове «уже придёт» заменяет кнопку: звать второй раз незачем. В передаче — наоборот,
   // это лучший кандидат, поэтому там метка уезжает под имя, а кнопка остаётся.
   if (person.attending && !transfer) right = <span className="waiting-label">Придёт</span>
-  else if (invited) {
-    right = (
-      <span className="waiting-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {icons.check(13, '#34c759', 2.4)}
-        {transfer ? 'Предложил' : 'Позвал'}
-      </span>
-    )
-  } else {
+  else if (transfer) {
     right = (
       <button type="button" className="host-btn" disabled={busy} onClick={onInvite}>
-        {transfer ? 'Передать' : 'Позвать'}
+        Передать
+      </button>
+    )
+  } else {
+    // Позвали своим тапом: подпись меняется буквами, как у «Захостить», а кнопка гаснет в
+    // метку на своём месте, с галочкой впереди.
+    right = (
+      <button
+        type="button"
+        className={'host-btn invite-btn' + (invited ? ' invited' : '')}
+        aria-label={invited ? 'Позвали' : 'Позвать'}
+        aria-disabled={invited}
+        onClick={invited ? undefined : onInvite}
+      >
+        <span className="ib-check" aria-hidden="true">
+          {icons.check(13, '#34c759', 2.4)}
+        </span>
+        <span className="hb-labels" aria-hidden="true">
+          <MorphWord text="Позвать" on={!invited} />
+          <MorphWord text="Позвал" on={invited} />
+        </span>
       </button>
     )
   }
@@ -139,9 +154,9 @@ export function Invite() {
   )
 
   const invite = async (p: InviteCandidate): Promise<void> => {
-    setBusyId(p.userId)
-    try {
-      if (transfer) {
+    if (transfer) {
+      setBusyId(p.userId)
+      try {
         // Ответ — свежий bootstrap, и строка заявки на экране дня уже покажет
         // «передаёте @x», поэтому возвращаемся туда сразу.
         const done = await action('transfer.offer', { id: transferId, userId: p.userId })
@@ -149,15 +164,25 @@ export function Invite() {
           haptic.notify('success')
           pop()
         }
-        return
+      } finally {
+        setBusyId(null)
       }
+      return
+    }
+    // Метка встаёт сразу, зов догоняет: отказ (личка закрыта) возвращает кнопку.
+    haptic.impact('light')
+    markOwnTap()
+    setInvited((prev) => new Set(prev).add(p.userId))
+    try {
       await api('invite', { dateKey, userId: p.userId })
-      setInvited((prev) => new Set(prev).add(p.userId))
-      haptic.notify('success')
     } catch (err) {
+      setInvited((prev) => {
+        const next = new Set(prev)
+        next.delete(p.userId)
+        return next
+      })
+      haptic.notify('error')
       showAlert((err as Error).message)
-    } finally {
-      setBusyId(null)
     }
   }
 

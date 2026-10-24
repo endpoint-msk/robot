@@ -12,6 +12,7 @@
 import { useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { afterHero } from '../hero'
 import {
+  arrowStep,
   clamp,
   holdSelection,
   landing,
@@ -316,6 +317,15 @@ export function Pager<T>({
       }
       kick()
     }
+    // Стрелки листают карточки в Telegram Desktop, как дни. Дальше смонтированных соседей
+    // не уходят, а копия под верхним экраном (жест «вниз») на них не отвечает.
+    const onKey = (e: KeyboardEvent): void => {
+      const step = arrowStep(e)
+      if (step === 0 || S.drag || live.current.items.length < 2 || root.closest('.screen-under')) return
+      e.preventDefault()
+      const cur = live.current.index
+      goTo(clamp((S.anim ? S.anim.to : Math.round(S.p)) + step, cur - REACH, cur + REACH))
+    }
     const ro = new ResizeObserver(() => {
       measure()
       render()
@@ -329,6 +339,7 @@ export function Pager<T>({
     root.addEventListener('pointercancel', onUp)
     root.addEventListener('click', onClickCapture, true)
     root.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKey)
     ro.observe(root)
     measure()
     render()
@@ -346,6 +357,7 @@ export function Pager<T>({
       root.removeEventListener('pointercancel', onUp)
       root.removeEventListener('click', onClickCapture, true)
       root.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKey)
       clearTimeout(wheelIdle)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
