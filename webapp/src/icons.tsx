@@ -129,6 +129,18 @@ export const icons = {
       <path d="M9.5 16.5h7M13 13v7" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   ),
+  /** «Переслать»: стрелка, как у пересылки сообщения в Telegram. */
+  forward: (size = 19, color = '#007aff'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 24 24">
+      <path
+        d="M13.6 5.2l6.2 5.6-6.2 5.6v-3.2c-4.4 0-7.4 1.3-9.6 4.6.6-4.7 3.1-8.6 9.6-9.4z"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.9"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
   people: (): ReactElement => (
     <svg width="18" height="18" viewBox="0 0 20 20">
       <circle cx="7" cy="6.5" r="2.6" fill="none" stroke="#fff" strokeWidth="1.6" />

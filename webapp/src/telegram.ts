@@ -30,6 +30,17 @@ interface TelegramWebApp {
   BackButton: { show(): void; hide(): void; onClick(callback: () => void): void }
   /** Bot API 7.0: пункт «Настройки» в меню «⋯» миниаппа. */
   SettingsButton?: { show(): void; hide(): void; onClick(callback: () => void): void }
+  /** Bot API 6.9: хранилище Telegram на человека и бота, одно на все его устройства. */
+  CloudStorage?: CloudStorage
+  /** Bot API 8.0: свой выбор чата Telegram для сообщения, подготовленного ботом. */
+  shareMessage?(id: string, callback?: (sent: boolean) => void): void
+}
+
+export type CloudStorage = {
+  setItem(key: string, value: string, callback?: (err: string | null, ok?: boolean) => void): void
+  getItems(keys: string[], callback: (err: string | null, values?: Record<string, string>) => void): void
+  removeItems(keys: string[], callback?: (err: string | null, ok?: boolean) => void): void
+  getKeys(callback: (err: string | null, keys?: string[]) => void): void
 }
 
 declare global {
@@ -123,6 +134,38 @@ export function switchInline(): boolean {
     /* старый клиент */
   }
   return false
+}
+
+/** Облако Telegram для черновиков. null: клиент старше 6.9 или миниапп открыт вне Telegram. */
+export const cloudStorage = (): CloudStorage | null => {
+  try {
+    return tg?.CloudStorage && (tg.isVersionAtLeast?.('6.9') ?? false) ? tg.CloudStorage : null
+  } catch {
+    return null
+  }
+}
+
+export const shareSupported = (): boolean => {
+  try {
+    return typeof tg?.shareMessage === 'function' && (tg.isVersionAtLeast?.('8.0') ?? false)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Выбор чата Telegram для подготовленной ботом карточки. true: отправили, false: закрыли
+ * выбор или клиент отказал. null: клиент бросил, не открыв выбор. Так бывает, если прошлый
+ * выбор закрыли, а клиент об этом не сообщил: тогда он считает его открытым до перезапуска.
+ */
+export function shareMessage(id: string): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    try {
+      tg!.shareMessage!(id, (sent) => resolve(Boolean(sent)))
+    } catch {
+      resolve(null)
+    }
+  })
 }
 
 /**

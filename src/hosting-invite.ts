@@ -3,7 +3,7 @@
 // гостю — вход в миниапп: у гостя визит это заявка со временем и одобрением, одной
 // кнопкой её не оформить.
 
-import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
+import { BotInline, BotInlineMessage, BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { CallbackQueryContext, Dispatcher } from '@mtcute/dispatcher'
 import { PropagationAction } from '@mtcute/dispatcher'
 import {
@@ -20,7 +20,7 @@ import {
     setResidentAttendance,
     todayKey,
 } from './hosting.js'
-import { dayTarget, newRequestTarget, webappAt } from './deeplink.js'
+import { dayTarget, newRequestTarget, startappAt, webappAt } from './deeplink.js'
 import { syncHostingBoard } from './hosting-board.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
@@ -119,6 +119,42 @@ export const sendHostingInvite = async (
     } catch {
         return { ok: false, error: 'dm_closed' }
     }
+}
+
+/**
+ * Карточка «Позвать из Telegram» для выбора чата (`WebApp.shareMessage`): так резидент
+ * зовёт тех, кого бот не знает и кому первым написать не может. Уходит сообщением самого
+ * резидента, поэтому от первого лица; кнопка открывает форму заявки на этот день.
+ */
+export const prepareDayShare = async (
+    client: TelegramClient,
+    storage: Storage,
+    tzOffsetMinutes: number,
+    botLink: string | null,
+    dateKey: string,
+    userId: number,
+): Promise<{ ok: true; id: string; expireDate: number } | { ok: false; error: 'bad_date' | 'day_locked' }> => {
+    const today = todayKey(tzOffsetMinutes)
+    const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
+    if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
+    // Карточка зовёт оставить заявку, а в закрытый день её не примут.
+    if (isDayLocked(storage, dateKey)) return { ok: false, error: 'day_locked' }
+
+    const when = `${formatDayKey(dateKey)}${dateKey === today ? ' (сегодня)' : ''}`
+    const text = html(`👋 Зову в спейс: <b>${when}</b>.<br>Оставьте заявку на визит по кнопке, и резиденты её подтвердят.`)
+    const replyMarkup = botLink
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(botLink, newRequestTarget(dateKey)))]])
+        : undefined
+    const prepared = await client.prepareInlineMessage({
+        userId,
+        result: BotInline.article(newRequestTarget(dateKey), {
+            title: 'Позвать в спейс',
+            description: when,
+            message: BotInlineMessage.text(text, { disableWebPreview: true, replyMarkup }),
+        }),
+        filter: { private: true, chats: true, supergroups: true, channels: true },
+    })
+    return { ok: true, id: prepared.id, expireDate: prepared.expireDate }
 }
 
 /**

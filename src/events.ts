@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
+import { BotInline, BotInlineMessage, BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
 import {
     addDaysToKey,
     displayName,
@@ -785,6 +785,9 @@ export const setEventAnnounceLink = (link: string | null): void => {
     eventAnnounceLink = link
 }
 
+/** Та же ссылка на бота для карточек «Переслать» из миниаппа. */
+export const botLinkBase = (): string | null => eventAnnounceLink
+
 /**
  * Сколько описания уносим в чат: у сообщения с фото подпись ограничена 1024 символами
  * на всё, включая заголовок и организатора.
@@ -800,6 +803,31 @@ const hostLabel = (host: HostingUser): string =>
     host.username
         ? `<a href="https://t.me/${encodeURIComponent(host.username)}">@${host.username}</a>`
         : html.escape(displayName(host.name))
+
+/**
+ * Название ивента. Ивент из пересылки ведёт на исходный пост канала: там вёрстка, картинки
+ * и комментарии, которых в сообщении быть не может (так же сделано на доске).
+ */
+const eventTitleHtml = (event: SpaceEvent): string =>
+    event.sourceUrl
+        ? `<a href="${html.escape(event.sourceUrl)}">${html.escape(event.title)}</a>`
+        : `<b>${html.escape(event.title)}</b>`
+
+/** Слот, организатор и начало описания: общее у анонса в чатах и карточки «Переслать». */
+const eventCardLines = (event: SpaceEvent, tzOffsetMinutes: number): string[] => {
+    const lines = [
+        `${formatDayKey(event.dateKey)} к ${event.time}${event.dateKey === todayKey(tzOffsetMinutes) ? ' (сегодня)' : ''}`,
+        `Организатор: ${hostLabel(event.host)}`,
+    ]
+    if (event.description) {
+        const short =
+            event.description.length > CHAT_DESCRIPTION_LIMIT
+                ? `${event.description.slice(0, CHAT_DESCRIPTION_LIMIT).trimEnd()}…`
+                : event.description
+        lines.push('', ...short.split('\n').map((line) => html.escape(line)))
+    }
+    return lines
+}
 
 /** Чаты, которые получат анонс ивента: allowlist минус замьюченные через /eventmute. */
 export const eventAnnounceTargets = (storage: Storage, allowedChats: ReadonlySet<number>): number[] =>
@@ -825,24 +853,7 @@ export const announceEventToChats = async (
     const targets = eventAnnounceTargets(storage, allowedChats)
     if (targets.length === 0) return
 
-    // Ивент из пересылки ведёт на исходный пост канала: там вёрстка, картинки и
-    // комментарии, которых в анонсе быть не может (так же сделано на доске).
-    const title = event.sourceUrl
-        ? `<a href="${html.escape(event.sourceUrl)}">${html.escape(event.title)}</a>`
-        : `<b>${html.escape(event.title)}</b>`
-    const lines = [
-        `📅 Новый ивент: ${title}`,
-        `${formatDayKey(event.dateKey)} к ${event.time}${event.dateKey === todayKey(tzOffsetMinutes) ? ' (сегодня)' : ''}`,
-        `Организатор: ${hostLabel(event.host)}`,
-    ]
-    if (event.description) {
-        const short =
-            event.description.length > CHAT_DESCRIPTION_LIMIT
-                ? `${event.description.slice(0, CHAT_DESCRIPTION_LIMIT).trimEnd()}…`
-                : event.description
-        lines.push('', ...short.split('\n').map((line) => html.escape(line)))
-    }
-    const text = lines.join('<br>')
+    const text = [`📅 Новый ивент: ${eventTitleHtml(event)}`, ...eventCardLines(event, tzOffsetMinutes)].join('<br>')
     const markup = eventAnnounceLink
         ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))]])
         : undefined
@@ -865,6 +876,56 @@ export const announceEventToChats = async (
             console.error(`[events] не удалось отправить анонс ивента в чат ${chatId}:`, err)
         }
     }
+}
+
+/**
+ * Афиша, уже залитая в Telegram для «Переслать»: file id на картинку, в памяти процесса.
+ * Без него каждая пересылка заново качала бы файл тем же клиентом, которым бот отвечает
+ * в чатах.
+ */
+const sharedPhotoIds = new Map<string, string>()
+
+/** Куда можно переслать: любые чаты человека, кроме переписок с ботами. */
+const SHARE_PEERS = { private: true, chats: true, supergroups: true, channels: true }
+
+export type PreparedShare = { id: string; expireDate: number }
+
+/**
+ * Карточка ивента для «Переслать» в миниаппе (`WebApp.shareMessage`, Bot API 8.0):
+ * человек сам выбирает чат в выборе Telegram, и туда уходит его сообщение через бота.
+ * Текст как у анонса в чатах, только без «Новый ивент»: это не объявление спейса, а
+ * приглашение от человека. Ивент «только резидентам» сюда не попадает: гейт в webapp.ts.
+ */
+export const prepareEventShare = async (
+    client: TelegramClient,
+    dataFile: string,
+    tzOffsetMinutes: number,
+    event: SpaceEvent,
+    userId: number,
+): Promise<PreparedShare> => {
+    const text = html([eventTitleHtml(event), ...eventCardLines(event, tzOffsetMinutes)].join('<br>'))
+    const replyMarkup = eventAnnounceLink
+        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))]])
+        : undefined
+    const photoId = eventPhotoIds(event)[0]
+    let fileId = photoId ? (sharedPhotoIds.get(photoId) ?? null) : null
+    if (photoId && !fileId) {
+        const photo = await readEventPhoto(dataFile, photoId)
+        if (photo) {
+            fileId = (await client.uploadMedia(InputMedia.photo(photo), { peer: userId })).fileId
+            sharedPhotoIds.set(photoId, fileId)
+        }
+    }
+    const resultId = eventTarget(event.id)
+    const result = fileId
+        ? BotInline.photo(resultId, fileId, { message: BotInlineMessage.media({ text, replyMarkup }) })
+        : BotInline.article(resultId, {
+              title: event.title,
+              description: `${formatDayKey(event.dateKey)} к ${event.time}`,
+              message: BotInlineMessage.text(text, { disableWebPreview: true, replyMarkup }),
+          })
+    const prepared = await client.prepareInlineMessage({ userId, result, filter: SHARE_PEERS })
+    return { id: prepared.id, expireDate: prepared.expireDate }
 }
 
 /**

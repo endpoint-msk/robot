@@ -2298,6 +2298,8 @@ button.agenda-banner:active { opacity: 0.6; }
 .row-label { font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-label .row-sublabel { display: block; font-size: 13px; color: var(--text-2); margin-top: 1px; }
 .row-label .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 14px; }
+/* Недописанный ивент: красное «Черновик:», как недописанное сообщение в списке чатов Telegram. */
+.draft-mark { color: var(--red); }
 
 /* Зона тапа тумблера. Размер самого тумблера нативный и менять его нельзя —
    расширяем только область попадания: псевдоэлемент у .switch занят бегунком. */
@@ -2737,6 +2739,24 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     cursor: pointer;
 }
 .evv-cal-wide { margin-top: 14px; color: var(--ev-accent, var(--purple)); }
+/* «Переслать» рядом с «В календарь»: две кнопки поровну. */
+.evv-pair { display: flex; gap: 10px; margin-top: 14px; }
+.evv-pair > .secondary-btn { flex: 1 1 0; min-width: 0; width: auto; margin-top: 0; }
+/* Отправили своим тапом: значок пересылки тает в галочку по эталону «Захостить», подпись
+   меняется буквами (MorphWord), кнопка зеленеет. */
+.share-ico { display: inline-grid; flex-shrink: 0; }
+.share-ico > span {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease-out, filter 0.24s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.share-ico .si-b, .share-ico.sent .si-a { opacity: 0; filter: blur(4px); transform: scale(0.82); }
+.share-ico.sent .si-b { opacity: 1; filter: none; transform: none; transition-delay: 0.09s; }
+.share-btn { transition: color 0.28s ease-out, opacity 0.3s ease-out; }
+.share-btn.sent { color: var(--green); }
+.share-row-labels { justify-items: start; }
 
 .event-card {
     background: var(--ev-soft, var(--ev-bg));
@@ -4869,6 +4889,67 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .ob-mk { width: 16px; flex-shrink: 0; display: flex; justify-content: center; visibility: hidden; }
 .ob-menu button[aria-checked="true"] .ob-mk { visibility: visible; }
 
+/* Меню правой кнопки у строки со свайпом (Telegram Desktop): вид меню под строкой, у
+   пунктов значки действий в квадратах тех же тонов, что кнопки под свайпом. */
+.ctx-menu {
+    position: fixed;
+    z-index: 300;
+    min-width: 210px;
+    max-width: calc(100vw - 16px);
+    padding: 5px 0;
+    border-radius: 12px;
+    background: var(--ob-menu);
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.07);
+}
+/* Меню вырастает из курсора и тает туда же по эталону «Захостить»: масштаб, прозрачность и
+   размытие, кривая без перелёта. Пункты проявляются следом, по одному. */
+.ctx-menu.open { animation: ctx-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.ctx-menu.open.closing { animation: ctx-out 0.17s ease-out both; pointer-events: none; }
+@keyframes ctx-in {
+    from { opacity: 0; transform: scale(0.82); filter: blur(4px); }
+    60% { filter: blur(0); }
+}
+@keyframes ctx-out { to { opacity: 0; transform: scale(0.92); filter: blur(3px); } }
+.ctx-menu.open .ctx-item { animation: ctx-item-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(40ms + var(--i, 0) * 22ms); }
+@keyframes ctx-item-in { from { opacity: 0; transform: translateY(-5px); } }
+.ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 38px;
+    padding: 0 18px 0 10px;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 15px;
+    color: var(--text);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.ctx-menu:focus, .ctx-menu:focus-visible { outline: none; }
+.ctx-item { transition: background-color 0.14s ease-out; }
+.ctx-item:active, .ctx-menu .ctx-item.picked { background: rgba(var(--sec), 0.1); transition-duration: 0s; }
+.ctx-ico {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blue);
+}
+.ctx-ico svg { width: 15px; height: 15px; }
+.ctx-item.neutral .ctx-ico { background: var(--gray); }
+.ctx-item.warn .ctx-ico { background: var(--orange); }
+.ctx-item.danger .ctx-ico { background: var(--red); }
+.ctx-item.danger { color: var(--red); }
+@media (prefers-reduced-motion: reduce) {
+    .ctx-menu.open, .ctx-menu.open.closing, .ctx-menu.open .ctx-item { animation: none; }
+}
+
 /* Гости: дверь спейса. */
 .ob-door { position: absolute; inset: 0; background: url("/door.jpg") 50% 46% / cover no-repeat, #6b4a3a; }
 .ob-door::after {
@@ -5349,11 +5430,25 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .row.tappable, .modal-btn, .destructive-btn, .ob-menu button { transition: background-color 0.3s ease-out; }
 .row.tappable:active, .modal-btn:active, .destructive-btn:active, .ob-menu button:active { transition: background-color 0s 0.06s; }
 
-/* Мышь (Telegram Desktop): строка под курсором чуть подсвечена. Слоем тени, а не фоном:
-   фон строки занят подложкой «сегодня» и штриховкой закрытого дня. Сенсорные экраны
-   сюда не попадают, иначе подсветка залипала бы после тапа. */
+/* Мышь (Telegram Desktop): всё, на что можно нажать, подсвечено под курсором, как в самом
+   Telegram Desktop. Слоем тени, а не фоном: фон строки занят подложкой «сегодня» и
+   штриховкой закрытого дня, у кнопок и чипов он свой, а у карточек к тени слоя добавляется
+   их собственная. Сенсорные экраны сюда не попадают, иначе подсветка залипала бы после тапа. */
 @media (hover: hover) and (pointer: fine) {
     .row.tappable:hover, .write-banner:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.05); }
+    .host-btn:not(:disabled):hover, .pill.mine:hover, .accept-btn:hover, .chip-btn:hover, .time-field:hover,
+    .ev-step:not(:disabled):hover, .tp-bar-btn:hover, .dp-nav:hover, .retry-btn:hover, .ev-thumb-add:hover {
+        box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07);
+    }
+    .secondary-btn:hover, .evv-cal:hover, .attend-btn:hover, .dpg-pill:hover, .destructive-btn:hover,
+    .day-chip:not(.selected):not(:disabled):hover {
+        box-shadow: var(--shadow-card), inset 0 0 0 100vmax rgba(var(--sec), 0.05);
+    }
+    .primary-btn:not(:disabled):hover { box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.1); }
+    .modal-btn:hover, .ob-menu button:not(:disabled):hover, .ctx-item:hover { background: rgba(var(--sec), 0.05); }
+    .swipe-action:hover { filter: brightness(1.08); }
+    .link-btn:hover, .linkified:hover, .purpose-toggle:hover, .build-link:hover, .ev-source:hover,
+    .ob-popup:not(:disabled):hover { opacity: 0.75; }
 }
 
 /* Ожидание в кнопке не мигает подсветкой поверх своей крутилки. */

@@ -6,6 +6,7 @@ import { Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, typ
 import { action, uploadEventPhoto } from '../api'
 import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_ABBR, plural, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
+import { NEW_EVENT_DRAFT, useDraft, type EventDraft } from '../drafts'
 import { compressImage, imageToneAt } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
@@ -23,6 +24,7 @@ import { DateField } from '../components/DateField'
 import { eventTone, toneVars } from '../components/EventRow'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
 import { ResponsibleSheet } from '../components/ResponsiblePicker'
+import { ShareButton, ShareIconButton } from '../components/ShareButton'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
@@ -178,6 +180,27 @@ export function Event() {
   const stripRef = useRef<HTMLDivElement>(null)
   useReorder(stripRef, photos, setPhotos)
 
+  // Недописанный новый ивент переживает закрытие миниаппа, как черновик в Telegram. У правки
+  // опубликованного черновика нет: несохранённое выглядело бы сохранённым. У заготовки из
+  // пересланного поста черновик свой, серверный. Афиши в него не идут: несохранённая
+  // картинка живёт на сервере час (STAGED_TTL_MS).
+  const eventDraft = useDraft<EventDraft>(
+    readOnly || draft || existing ? null : NEW_EVENT_DRAFT,
+    { title, description, dateKey, time, residentsOnly },
+    {
+      isEmpty: (d) => !d.title.trim() && !d.description.trim(),
+      restore: (d) => {
+        // День черновика мог пройти, а время сегодняшнего дня уже наступить.
+        const day = d.dateKey >= data!.todayKey ? d.dateKey : initialDay
+        setTitle(d.title)
+        setDescription(d.description)
+        setDateKey(day)
+        setTime(isPastForToday(day, d.time) ? defaultTimeFor(day) : d.time)
+        setResidentsOnly(d.residentsOnly)
+      },
+    },
+  )
+
   // Первой стоит афиша без известного тона: заготовка из канала, ивент до тонов или
   // первую фото убрали. Считаем по картинке, превью перекрасится, когда он будет.
   useEffect(() => {
@@ -256,6 +279,7 @@ export function Event() {
       ? await action('event.update', { id: existing.id, ...payload })
       : await action('event.create', { ...payload, fromDraft: Boolean(draft) })
     if (done) {
+      eventDraft.clear()
       haptic.notify('success')
       pop()
     }
@@ -564,6 +588,9 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
   // временем. Заявка на этот день уже есть: вместо кнопки она сама.
   const mine = asGuest ? (data!.myRequests ?? []).find((r) => r.dateKey === event.dateKey) ?? null : null
   const canAsk = asGuest && !event.form && Boolean(day) && !day!.lock && !isPastForToday(event.dateKey, event.time)
+  // Пересылается то же, что анонсируется в общих чатах: ивент «только резидентам» нет.
+  const canShare = !event.residentsOnly && !isPastForToday(event.dateKey, event.time)
+  const shareTarget = { kind: 'event' as const, id: event.id }
 
   const poster = (
     <div className={'evv-poster' + (photos.length > 0 ? ' photo' : '')} ref={posterRef}>
@@ -678,6 +705,15 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
           <button type="button" className="evv-cal" aria-label="В календарь" title="В календарь" onClick={() => void openIcs()}>
             {icons.calendarPlus(20, 'currentColor')}
           </button>
+          {canShare ? <ShareIconButton target={shareTarget} /> : null}
+        </div>
+      ) : canShare ? (
+        <div className="evv-pair">
+          <button type="button" className="secondary-btn evv-cal-wide" style={tv} onClick={() => void openIcs()}>
+            {icons.calendarPlus(18, 'currentColor')}
+            В календарь
+          </button>
+          <ShareButton target={shareTarget} style={tv} />
         </div>
       ) : (
         <button type="button" className="secondary-btn evv-cal-wide" style={tv} onClick={() => void openIcs()}>

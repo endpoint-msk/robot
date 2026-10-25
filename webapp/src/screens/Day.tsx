@@ -8,6 +8,7 @@ import { action } from '../api'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
 import { fmtDayMonth, plural, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { NEW_EVENT_DRAFT, readDraft, useDrafts, type EventDraft } from '../drafts'
 import { icons } from '../icons'
 import { confirmDialog, numberPrompt, textPrompt } from '../modals'
 import {
@@ -79,6 +80,22 @@ const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<vo
   if (text === null || text === current) return
   markOwnTap()
   await action('day.agenda', { dateKey, text }, { quiet: true })
+}
+
+/**
+ * Вход в редактор ивента. Недописанный ивент стоит в нём красным «Черновик:», как
+ * недописанное сообщение в списке чатов Telegram: черновик один и открывается с любого дня.
+ */
+function NewEventLabel({ more }: { more: boolean }) {
+  useDrafts()
+  const d = readDraft<EventDraft>(NEW_EVENT_DRAFT)
+  const text = d ? d.title.trim() || d.description.trim().split('\n')[0]! : ''
+  if (!text) return <span className="row-label">{more ? 'Ещё ивент' : 'Создать ивент'}</span>
+  return (
+    <span className="row-label">
+      <span className="draft-mark">Черновик:</span> {text}
+    </span>
+  )
 }
 
 /** Плашка «день закрыт» под шапкой — отдельно от переключателя в карточке «День». */
@@ -628,7 +645,7 @@ function DayPage({
             <div className="row-icon" style={{ background: 'var(--purple)' }}>
               {icons.calendar(17, '#fff')}
             </div>
-            <span className="row-label">{events.length > 0 ? 'Ещё ивент' : 'Создать ивент'}</span>
+            <NewEventLabel more={events.length > 0} />
             <div className="row-right">{icons.chevron()}</div>
           </button>
           {/* Отмечать, кто пришёл, можно только в день визита: будущего ещё не было, а

@@ -134,10 +134,25 @@ export function Root() {
     } catch {
       /* старый клиент */
     }
-    // На десктопе тот же смысл несёт Escape: до системной «Назад» тянуться мышью.
+    // На десктопе тот же смысл несёт Escape, как в Telegram Desktop: до системной «Назад»
+    // тянуться мышью. Из поля ввода первый Escape только выходит: черновик есть не у каждой
+    // формы, и случайное нажатие посреди текста не должно уводить с экрана.
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return
-      if (closeTopOverlay()) e.preventDefault()
+      if (e.key !== 'Escape' || e.repeat) return
+      if (closeTopOverlay()) {
+        e.preventDefault()
+        return
+      }
+      const field = document.activeElement
+      if (field instanceof HTMLElement && field.matches('input, textarea, select, [contenteditable]')) {
+        field.blur()
+        e.preventDefault()
+        return
+      }
+      if (getState().stack.length > 1) {
+        e.preventDefault()
+        pop()
+      }
     }
     window.addEventListener('keydown', onKey)
 

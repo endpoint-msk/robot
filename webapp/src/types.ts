@@ -468,6 +468,8 @@ export type Bootstrap = {
   build: BuildInfo | null
   /** Токен для `src` картинок (/avatar.jpg, /event-photo.jpg) вместо initData в URL. */
   mediaToken: string
+  /** Ник бота: из него «Переслать» собирает ссылку t.me на клиентах старше Bot API 8.0. */
+  bot?: string | null
   todayKey: string
   nowTime: string
   days: Day[]

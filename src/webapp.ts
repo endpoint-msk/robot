@@ -37,6 +37,7 @@ import {
     HOSTING_DAYS_AHEAD,
     isBlocked,
     isFakeUserId,
+    isPastSlot,
     isValidDayKey,
     isVisitDayEditable,
     listBlockedUsers,
@@ -97,7 +98,7 @@ import {
     weekStartOf,
 } from './hosting.js'
 import { guestAttendPrefsFor } from './attend-alerts.js'
-import { listInviteCandidates, sendHostingInvite } from './hosting-invite.js'
+import { listInviteCandidates, prepareDayShare, sendHostingInvite } from './hosting-invite.js'
 import {
     notifyGuestHostChanged,
     notifyTransferAccepted,
@@ -125,6 +126,7 @@ import {
     normalizeEventForm,
     notifyApplicantApproved,
     notifyReviewersNewApplication,
+    botLinkBase,
     draftPhotoId,
     ensureEventFeedToken,
     eventDraftFor,
@@ -141,6 +143,7 @@ import {
     notifyEventCancelled,
     notifyEventMoved,
     notifyResidentsAboutEvent,
+    prepareEventShare,
     MAX_EVENT_PHOTO_BYTES,
     MAX_EVENT_PHOTOS,
     readEventPhoto,
@@ -528,6 +531,8 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.app.approve': 'dm',
     'event.app.decline': 'dm',
     'dues.claim': 'dm',
+    // Карточка для выбора чата: вызов Telegram, а за ивентом с афишей ещё и заливка картинки.
+    'share.prepare': 'dm',
 
     'invite.list': 'heavy',
     'dev.seed': 'heavy',
@@ -567,6 +572,8 @@ const METHOD_LIMITS: Record<string, RateRule> = {
     block: { limit: 10, windowMs: HOUR },
     // Выгрузка = файл со всей таблицей взносов в личку.
     'dues.export': { limit: 6, windowMs: HOUR },
+    // Пересылка ивентов и зова: живому человеку столько за час не нужно.
+    'share.prepare': { limit: 30, windowMs: HOUR },
 }
 
 /**
@@ -1224,6 +1231,8 @@ const buildBootstrap = (ctx: ApiContext) => {
             ? { commit: commit.slice(0, 7), url: `https://github.com/${ctx.githubRepo}/commit/${commit}` }
             : null,
         mediaToken: mediaLinkToken(ctx.botToken, user.userId),
+        // Ник бота для ссылки t.me на ивент: ею «Переслать» делится на клиентах старше Bot API 8.0.
+        bot: ctx.bot.username,
         me: {
             id: user.userId,
             username: user.username,
@@ -2783,6 +2792,52 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const exp = Math.floor(Date.now() / 1000) + ICS_LINK_TTL_SEC
             const token = signLink(ctx.botToken, icsScope(kind, id), user.userId, exp)
             sendJson(res, 200, { url: `/${kind}.ics?id=${encodeURIComponent(id)}&t=${token}`, exp })
+            return
+        }
+
+        // «Переслать»: карточка для выбора чата Telegram (WebApp.shareMessage, Bot API 8.0).
+        // Миниапп готовит её на касании кнопки, а не на входе в экран: за каждой стоит
+        // вызов Telegram, а у ивента с афишей при первой пересылке ещё и заливка картинки.
+        case 'share.prepare': {
+            try {
+                if (body.kind === 'event') {
+                    const id = typeof body.id === 'string' ? body.id : ''
+                    const state = storage.get()
+                    const event = Object.hasOwn(state.events, id) ? own(state.events, id)! : null
+                    // Ивент «только резидентам» не пересылается и резидентом: карточка уходит в
+                    // чаты, где её читают гости, по тому же правилу, что анонс и доска.
+                    if (!event || event.residentsOnly) {
+                        sendError(res, 404, 'not_found', 'Этот ивент нельзя переслать.')
+                        return
+                    }
+                    if (isPastSlot(event.dateKey, event.time, tzOffsetMinutes)) {
+                        sendError(res, 400, 'past', 'Ивент уже прошёл.')
+                        return
+                    }
+                    sendJson(res, 200, await prepareEventShare(client, storage.path(), tzOffsetMinutes, event, user.userId))
+                    return
+                }
+                if (body.kind === 'day') {
+                    if (!requireResident()) return
+                    const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
+                    const prepared = await prepareDayShare(client, storage, tzOffsetMinutes, botLinkBase(), dateKey, user.userId)
+                    if (!prepared.ok) {
+                        const messages = {
+                            bad_date: 'Позвать можно только на ближайшую неделю.',
+                            day_locked: 'В этот день спейс закрыт для гостей: звать их некуда.',
+                        } as const
+                        sendError(res, 400, prepared.error, messages[prepared.error])
+                        return
+                    }
+                    sendJson(res, 200, { id: prepared.id, expireDate: prepared.expireDate })
+                    return
+                }
+            } catch (err) {
+                console.error('[webapp] не удалось подготовить карточку для пересылки:', err)
+                sendError(res, 502, 'share_failed', 'Telegram не принял карточку. Попробуйте ещё раз.')
+                return
+            }
+            sendError(res, 400, 'bad_kind', 'Непонятно, что пересылать.')
             return
         }
 

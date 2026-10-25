@@ -14,13 +14,14 @@ import { icons } from '../icons'
 import { showAlert } from '../modals'
 import { markOwnTap } from '../motion'
 import { useRemote } from '../remote'
-import { pop, useParams } from '../store'
+import { pop, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { InviteCandidate, InviteListResponse } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
 import { MorphWord } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
+import { ShareRow } from '../components/ShareButton'
 import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 
@@ -142,6 +143,7 @@ function InviteSkeleton({ transfer }: { transfer: boolean }) {
 
 export function Invite() {
   const { dateKey, transferId, transferGuest } = useParams()
+  const { data: boot } = useStore()
   // Передача визита — тот же выбор человека на день, только адресатом может быть
   // исключительно резидент: гость чужой визит не хостит.
   const transfer = typeof transferId === 'string' && transferId.length > 0
@@ -230,6 +232,13 @@ export function Invite() {
             : fmtShortDate(dateKey)
         }
       />
+      {/* Того, кого бот не знает, зовут карточкой в любой чат: первым написать ему бот не
+          может. В закрытый день гостю заявку не оставить, и звать его некуда. */}
+      {!transfer && !boot!.days.find((d) => d.dateKey === dateKey)?.lock ? (
+        <div className="card">
+          <ShareRow target={{ kind: 'day', dateKey }} label="Из контактов Telegram" />
+        </div>
+      ) : null}
       <div className="card">
         <div className="row">
           <input
