@@ -904,9 +904,9 @@ export const prepareEventShare = async (
     userId: number,
 ): Promise<PreparedShare> => {
     const text = html([eventTitleHtml(event), ...eventCardLines(event, tzOffsetMinutes)].join('<br>'))
-    const replyMarkup = eventAnnounceLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))]])
-        : undefined
+    const button = eventAnnounceLink
+        ? BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))
+        : null
     const photoId = eventPhotoIds(event)[0]
     let fileId = photoId ? (sharedPhotoIds.get(photoId) ?? null) : null
     if (photoId && !fileId) {
@@ -917,14 +917,39 @@ export const prepareEventShare = async (
         }
     }
     const resultId = eventTarget(event.id)
-    const result = fileId
-        ? BotInline.photo(resultId, fileId, { message: BotInlineMessage.media({ text, replyMarkup }) })
-        : BotInline.article(resultId, {
-              title: event.title,
-              description: `${formatDayKey(event.dateKey)} к ${event.time}`,
-              message: BotInlineMessage.text(text, { disableWebPreview: true, replyMarkup }),
-          })
-    const prepared = await client.prepareInlineMessage({ userId, result, filter: SHARE_PEERS })
+    if (fileId) {
+        const replyMarkup = button ? BotKeyboard.inline([[button]]) : undefined
+        const result = BotInline.photo(resultId, fileId, { message: BotInlineMessage.media({ text, replyMarkup }) })
+        const prepared = await client.prepareInlineMessage({ userId, result, filter: SHARE_PEERS })
+        return { id: prepared.id, expireDate: prepared.expireDate }
+    }
+    // Без афиши карточка собирается в обход mtcute: его BotInlineMessage.text теряет
+    // disableWebPreview, и ссылка на организатора (или пост канала) разворачивалась
+    // в превью профиля под текстом.
+    const prepared = await client.call({
+        _: 'messages.savePreparedInlineMessage',
+        userId: await client.resolveUser(userId),
+        result: {
+            _: 'inputBotInlineResult',
+            id: resultId,
+            type: 'article',
+            title: event.title,
+            description: `${formatDayKey(event.dateKey)} к ${event.time}`,
+            sendMessage: {
+                _: 'inputBotInlineMessageText',
+                noWebpage: true,
+                message: text.text,
+                entities: text.entities,
+                replyMarkup: button ? { _: 'replyInlineMarkup', rows: [{ _: 'keyboardButtonRow', buttons: [button] }] } : undefined,
+            },
+        },
+        peerTypes: [
+            { _: 'inlineQueryPeerTypePM' },
+            { _: 'inlineQueryPeerTypeChat' },
+            { _: 'inlineQueryPeerTypeMegagroup' },
+            { _: 'inlineQueryPeerTypeBroadcast' },
+        ],
+    })
     return { id: prepared.id, expireDate: prepared.expireDate }
 }
 
