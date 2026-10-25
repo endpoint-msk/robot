@@ -8,6 +8,7 @@
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import type { CallbackQueryContext, Dispatcher } from '@mtcute/dispatcher'
 import { PropagationAction } from '@mtcute/dispatcher'
+import { audit, auditUser } from './audit.js'
 import { requestTarget, webappAt } from './deeplink.js'
 import { acceptTransfer, clearTransfer, displayName, formatDayKey, mentionLabel } from './hosting.js'
 import type { Storage } from './storage.js'
@@ -18,6 +19,36 @@ const CB_TAKE = 'hosttransfer:take:'
 const CB_PASS = 'hosttransfer:pass:'
 
 const slotOf = (request: HostingRequest): string => `<b>${formatDayKey(request.dateKey)}</b> к ${request.time}`
+
+const whoOf = (u: HostingUser): string => (u.username ? `@${u.username}` : displayName(u.name))
+
+/**
+ * Строка журнала на ответ кнопкой из лички. Кнопки идут мимо диспетчера API, и без неё
+ * в журнале оставалось бы только предложение передачи, а кто и когда визит взял, знал бы
+ * один `approvedAt`. Текст и коды отказов те же, что у `transfer.accept`/`transfer.decline`
+ * в webapp.ts, отказы пишем так же.
+ */
+const auditAnswer = (
+    ctx: CallbackQueryContext,
+    take: boolean,
+    id: string,
+    request: HostingRequest | undefined,
+    transfer: HostTransfer | null,
+    error?: string,
+): void => {
+    const what = request ? ` заявки ${whoOf(request.guest)} на ${request.dateKey} ${request.time}` : ` заявки ${id} на ?`
+    const text = take
+        ? `взял${what} на себя (${transfer ? `от ${whoOf(transfer.by)}, ` : ''}кнопка в личке)`
+        : `отказался подхватить${what} (кнопка в личке)`
+    audit({
+        action: take ? 'transfer.accept' : 'transfer.decline',
+        actor: auditUser(ctx.user),
+        ok: !error,
+        ...(error ? { error } : {}),
+        text: error ? `${text} — отказ (${error})` : text,
+        meta: { id },
+    })
+}
 
 /** Кнопки под просьбой подхватить визит. Гасим их пустой разметкой, как только ответили. */
 const offerKeyboard = (id: string, webappUrl: string) =>
@@ -127,11 +158,13 @@ export const registerHostingTransferHandlers = (
         const request = own(storage.get().hostingRequests, id)
         const transfer = request?.transfer ?? null
         if (!request || !transfer) {
+            auditAnswer(ctx, take, id, request, transfer, request ? 'no_transfer' : 'not_found')
             await ctx.answer({ text: 'Эта просьба уже неактуальна.', alert: true })
             await ctx.editMessage({ replyMarkup: BotKeyboard.inline([]) }).catch(() => {})
             return
         }
         if (transfer.to.userId !== ctx.user.id) {
+            auditAnswer(ctx, take, id, request, transfer, 'not_allowed')
             await ctx.answer({ text: 'Эта просьба адресована другому резиденту.', alert: true })
             return
         }
@@ -144,6 +177,7 @@ export const registerHostingTransferHandlers = (
 
         if (take) {
             const result = await acceptTransfer(storage, id, user)
+            auditAnswer(ctx, true, id, request, transfer, result.ok ? undefined : result.error)
             if (!result.ok) {
                 await ctx.answer({ text: 'Эта просьба уже неактуальна.', alert: true })
                 return
@@ -161,6 +195,7 @@ export const registerHostingTransferHandlers = (
         }
 
         const result = await clearTransfer(storage, id)
+        auditAnswer(ctx, false, id, request, transfer, result.ok ? undefined : result.error)
         if (!result.ok) {
             await ctx.answer({ text: 'Эта просьба уже неактуальна.', alert: true })
             return
