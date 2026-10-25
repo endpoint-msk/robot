@@ -6,9 +6,10 @@ import { createPortal } from 'react-dom'
 import { BarContext } from './barContext'
 import { ModalHost } from './modals'
 import { EntryContext, UnderContext } from './screenContext'
-import { useStore, useUnder, type NavEntry, type ScreenName } from './store'
+import { useStore, useUnder, type NavEntry, type ScreenName, type UnderMode } from './store'
 import { tg } from './telegram'
 import { AnimContext } from './components/Screen'
+import { UndoToast } from './components/UndoToast'
 import { Overview } from './screens/Overview'
 import { Day } from './screens/Day'
 import { Invite } from './screens/Invite'
@@ -95,16 +96,16 @@ function BusyOverlay() {
 }
 
 /**
- * Прежний экран под верхним на время жеста «вниз»: картинка в той прокрутке, в которой его
- * оставили. Окно прокручивает верхний экран, поэтому нижний сдвинут сам и тапы не ловит.
+ * Прежний экран под верхним на время жеста «вниз» или свайпа назад: картинка в той прокрутке,
+ * в которой его оставили. Окно прокручивает верхний экран, поэтому нижний сдвинут сам и тапы не ловит.
  * Его нижняя панель тоже в картинке, под затемнением: появись она только после жеста,
  * в последнем кадре посадки она выскочила бы рывком.
  */
-function UnderScreen({ entry }: { entry: NavEntry }) {
+function UnderScreen({ entry, mode }: { entry: NavEntry; mode: UnderMode }) {
   const Comp = SCREENS[entry.name]
   const [bar, setBar] = useState<HTMLDivElement | null>(null)
   return (
-    <div className="screen-under" inert aria-hidden="true">
+    <div className={`screen-under ${mode}`} inert aria-hidden="true">
       <div className="screen-under-zoom">
         <div className="screen-under-in" style={{ transform: `translateY(${-(entry.scrollY ?? 0)}px)` }}>
           <BarContext.Provider value={bar}>
@@ -153,7 +154,7 @@ export function App() {
 
   return (
     <BarContext.Provider value={barNode}>
-      {below ? <UnderScreen entry={below} /> : null}
+      {below && under ? <UnderScreen entry={below} mode={under} /> : null}
       <AnimContext.Provider value={anim}>
         <EntryContext.Provider value={top.id}>
           <ScreenComp key={navId} />
@@ -162,6 +163,7 @@ export function App() {
       <div className="bar-portal" ref={setBarNode} />
       <BusyOverlay />
       <ModalHost />
+      <UndoToast />
     </BarContext.Provider>
   )
 }

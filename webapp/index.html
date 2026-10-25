@@ -5,13 +5,89 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="format-detection" content="telephone=no">
 <title>Хостинг · endpoint</title>
+<!-- Первая строка страницы, до бандла и до скрипта Telegram: тема ставится до первого кадра,
+     а bootstrap уходит, пока бандл ещё качается и разбирается (его забирает Root.tsx).
+     initData и тема разбираются так же, как в telegram-web-app.js; любой сбой молча
+     оставляет обычный путь. Классический скрипт, а не модуль: модули Vite выносит в файл. -->
+<script>
+(function () {
+  try {
+    var dec = function (s) {
+      try { return decodeURIComponent(s.replace(/\+/g, '%20')) } catch (e) { return s }
+    }
+    var hash = location.hash.replace(/^#/, '')
+    var q = hash.indexOf('?')
+    if (q >= 0) hash = hash.slice(q + 1)
+    else if (hash.indexOf('=') < 0) hash = ''
+    var p = {}
+    if (hash) {
+      var parts = hash.split('&')
+      for (var i = 0; i < parts.length; i++) {
+        var kv = parts[i].split('=')
+        p[dec(kv[0])] = kv[1] == null ? null : dec(kv[1])
+      }
+    }
+    var stored = function (key) {
+      try { return JSON.parse(sessionStorage.getItem('__telegram__' + key)) } catch (e) { return null }
+    }
+    var kept = stored('initParams')
+    if (kept) for (var k in kept) if (p[k] === undefined) p[k] = kept[k]
+
+    var choice = null
+    try { choice = localStorage.getItem('endpoint-hosting-theme') } catch (e) {}
+    var theme = choice === 'light' || choice === 'dark' ? choice : 'light'
+    if (theme !== choice) {
+      var tp = stored('themeParams')
+      if (!tp && p.tgWebAppThemeParams) try { tp = JSON.parse(p.tgWebAppThemeParams) } catch (e) {}
+      var bg = tp && typeof tp.bg_color === 'string' ? tp.bg_color.replace(/[\s#]/g, '') : ''
+      if (bg.length === 3) bg = bg.charAt(0) + bg.charAt(0) + bg.charAt(1) + bg.charAt(1) + bg.charAt(2) + bg.charAt(2)
+      if (/^[0-9a-f]{6}$/i.test(bg)) {
+        var r = parseInt(bg.substr(0, 2), 16)
+        var g = parseInt(bg.substr(2, 2), 16)
+        var b = parseInt(bg.substr(4, 2), 16)
+        theme = Math.sqrt(0.299 * r * r + 0.587 * g * g + 0.114 * b * b) < 120 ? 'dark' : 'light'
+      }
+    }
+    document.documentElement.setAttribute('data-theme', theme)
+    // Шапку и низ Telegram красим в фон приложения до ready(): бандл сделает это позже,
+    // и шапка успела бы мигнуть цветом клиента (THEME_BG в theme.ts).
+    window.__tgReady = function () {
+      var w = window.Telegram && window.Telegram.WebApp
+      if (!w) return
+      var bg = theme === 'dark' ? '#000000' : '#f2f2f7'
+      try { w.setHeaderColor(bg); w.setBackgroundColor(bg) } catch (e) {}
+      try { if (w.isVersionAtLeast('7.10')) w.setBottomBarColor(bg) } catch (e) {}
+      try { w.ready(); w.expand(); if (w.disableVerticalSwipes) w.disableVerticalSwipes() } catch (e) {}
+    }
+
+    var data = p.tgWebAppData
+    if (data && window.fetch) {
+      window.__boot = {
+        initData: data,
+        res: fetch('/api/bootstrap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData: data }),
+        }),
+      }
+    }
+  } catch (e) {}
+})()
+</script>
 <!-- Своя копия, а не telegram.org: у части гостей из России он не открывается, а вебвью
      ходит в сеть мимо прокси, через который у них работает сам Telegram. Копию раз в сутки
-     сверяет с оригиналом .github/workflows/telegram-web-app.yml. -->
-<script src="/telegram-web-app.js"></script>
+     сверяет с оригиналом .github/workflows/telegram-web-app.yml.
+     defer: скрипт не держит отрисовку каркаса, а выполняется до бандла. ready() сразу по
+     загрузке (__tgReady выше): Telegram прячет свой экран загрузки, как только каркас на
+     месте, а не когда смонтируется React. expand() тут же, иначе полуоткрытое окно
+     дорастало бы на глазах. -->
+<script defer src="/telegram-web-app.js" onload="window.__tgReady && window.__tgReady()"></script>
 </head>
 <body>
-<div id="app"></div>
+<!-- Каркас до бандла: копия BootSkeleton (components/skeleton.tsx), её заменит первый же
+     кадр React. Блик здесь стоит (.boot-still): React начнёт его с края, и не будет видно,
+     как он отматывается при подмене. -->
+<div id="app"><div class="swap boot-still"><div class="screen"><div class="header"><i class="sk-block" style="width:196px;height:32px;display:block"></i><i class="sk-block" style="width:132px;height:15px;display:block;margin-top:10px"></i></div><i class="sk-block" style="width:104px;height:11px;display:block;margin:0 18px 9px"></i><div class="card sk-list"><div class="sk-row" style="animation-delay:0ms"><div class="sk-lines"><i class="sk-block" style="width:62%;height:13px"></i><i class="sk-block" style="width:40%;height:11px"></i></div><i class="sk-block" style="width:52px;height:13px;margin-left:auto"></i></div><div class="sk-row" style="animation-delay:90ms"><div class="sk-lines"><i class="sk-block" style="width:53%;height:13px"></i><i class="sk-block" style="width:34%;height:11px"></i></div><i class="sk-block" style="width:52px;height:13px;margin-left:auto"></i></div><div class="sk-row" style="animation-delay:180ms"><div class="sk-lines"><i class="sk-block" style="width:44%;height:13px"></i><i class="sk-block" style="width:28%;height:11px"></i></div><i class="sk-block" style="width:52px;height:13px;margin-left:auto"></i></div><div class="sk-row" style="animation-delay:270ms"><div class="sk-lines"><i class="sk-block" style="width:62%;height:13px"></i><i class="sk-block" style="width:40%;height:11px"></i></div><i class="sk-block" style="width:52px;height:13px;margin-left:auto"></i></div></div></div></div></div>
 <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

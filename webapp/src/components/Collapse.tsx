@@ -2,19 +2,24 @@
 // как строка с ником на доске в знакомстве. Чужую смену показывает сразу: появился или
 // пропал без движения.
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createElement, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { animate, clamp, E, ownTapRecent, pr } from '../motion'
 
-/** `appear`: блок, смонтированный уже открытым, тоже вырастает из нуля, если это ответ на свой тап. */
+/**
+ * `appear`: блок, смонтированный уже открытым, тоже вырастает из нуля, если это ответ на свой тап.
+ * `as="span"` — внутри строки-кнопки, где блочный div недопустим.
+ */
 export function Collapse({
   open,
   delay = 0,
   appear = false,
+  as = 'div',
   children,
 }: {
   open: boolean
   delay?: number
   appear?: boolean
+  as?: 'div' | 'span'
   children: ReactNode
 }) {
   const [shown, setShown] = useState(open)
@@ -23,7 +28,7 @@ export function Collapse({
   // бы уже пустую карточку.
   const kept = useRef<ReactNode>(children)
   if (open) kept.current = children
-  const ref = useRef<HTMLDivElement>(null)
+  const ref = useRef<HTMLElement>(null)
   const was = useRef(appear ? false : open)
 
   useLayoutEffect(() => {
@@ -60,9 +65,5 @@ export function Collapse({
   }, [open, shown])
 
   if (!shown) return null
-  return (
-    <div className="collapse" ref={ref}>
-      {open ? children : kept.current}
-    </div>
-  )
+  return createElement(as, { className: 'collapse', ref }, open ? children : kept.current)
 }

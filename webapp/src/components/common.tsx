@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { BarContext } from '../barContext'
 import { cooldownSnapshot, subscribeCooldown } from '../cooldown'
 import { icons } from '../icons'
+import { netLabel, useNetState } from '../net'
 import { pop, push, setPerspective, useStore } from '../store'
 import { haptic, nativeBack } from '../telegram'
 import { screenTitle } from '../titles'
@@ -20,11 +21,13 @@ export const SectionTitle = ({ children }: { children: ReactNode }) => (
 )
 
 export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?: ReactNode; chip?: ReactNode }) {
+  // Пока своё действие ждёт сети, подзаголовок говорит об этом, как шапка Telegram.
+  const net = netLabel(useNetState())
   return (
     <div className="header">
       {chip ? <div className="header-chip-row">{chip}</div> : null}
       <div className="title">{title}</div>
-      {subtitle ? <div className="subtitle">{subtitle}</div> : null}
+      {net ? <div className="subtitle net-wait">{net}</div> : subtitle ? <div className="subtitle">{subtitle}</div> : null}
     </div>
   )
 }

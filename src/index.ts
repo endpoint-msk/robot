@@ -40,6 +40,7 @@ import { registerDuesHandlers, setDuesMiniappUrl, startDuesScheduler } from './d
 import { startDailyFundraiserPoster, startMonthlyScheduler } from './scheduler.js'
 import { Storage } from './storage.js'
 import { drainAudit, initAuditLog } from './audit.js'
+import { flushUndo } from './undo.js'
 import { drainErrorLog, initErrorLog, readRecentErrors } from './error-log.js'
 import { installErrorReporting } from './errors.js'
 import { ensureVisitsSince, parseHostingTzOffset } from './hosting.js'
@@ -298,6 +299,7 @@ const main = async () => {
     // Необработанное исключение роняет процесс - но сначала дописав стейт, иначе
     // подтверждённая пользователю правка ушла бы в никуда.
     installErrorReporting(tg, devUserIds, async () => {
+        await flushUndo()
         await storage.drain()
         await drainAudit()
         await drainErrorLog()
@@ -513,8 +515,9 @@ const main = async () => {
         webappServer?.stop()
         // Записи в Storage поставлены в очередь и могут быть ещё в полёте: без ожидания
         // подтверждённая пользователю правка (донат, одобренный визит, чек-ин) терялась.
+        // Личка, отложенная до конца отсчёта «Вернуть» (src/undo.ts), уходит сейчас.
         await Promise.race([
-            Promise.all([storage.drain(), drainAudit(), drainErrorLog()]),
+            Promise.all([flushUndo().then(() => storage.drain()), drainAudit(), drainErrorLog()]),
             new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
         ])
         await tg.destroy()

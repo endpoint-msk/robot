@@ -7,6 +7,7 @@ import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
 import { BottomBar, DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
 import { userLabel } from '../components/people'
+import { growIn } from '../dust'
 import { Screen } from '../components/Screen'
 
 // Публичный чат спейса — константа фронта, как адрес в «Как пройти»: это конкретный
@@ -40,6 +41,7 @@ function VisitRow({ r }: { r: HostingRequest }) {
     <button
       type="button"
       className={'row tappable' + (needsAnswer ? ' needs-action' : '')}
+      data-dust={'visit-' + r.id}
       onClick={() => push('visit', { id: r.id })}
     >
       {iconSquare}
@@ -130,7 +132,7 @@ export function MyVisits() {
       <Header title="Мои визиты" chip={<DevChips />} />
       <WriteAccessBanner />
       {my.length === 0 && past.length === 0 ? (
-        <div className="card">
+        <div className="card" ref={growIn} data-dust-empty="">
           <EmptyState
             title="Пока нет заявок"
             text="Выберите день и время визита — резиденты увидят заявку и откликнутся."

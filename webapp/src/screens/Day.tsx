@@ -15,6 +15,7 @@ import {
   arrowStep,
   clamp,
   E,
+  EDGE_ZONE,
   holdSelection,
   landing,
   markOwnTap,
@@ -50,6 +51,8 @@ import { Screen } from '../components/Screen'
 import { defaultTimeFor } from '../components/forms'
 import { TimeField } from '../components/TimeField'
 import { usePullDismiss } from '../components/usePullDismiss'
+import { growIn } from '../dust'
+import { canSwipeBack, registerPagerStart, swipingBack } from '../components/useSwipeBack'
 
 /** Причина закрытия: её вводят один раз при закрытии и правят строкой в карточке. */
 const askReason = (initial: string): Promise<string | null> =>
@@ -224,9 +227,11 @@ function DayCard({ day }: { day: DayData }) {
             <button type="button" className="row tappable" onClick={editCap}>
               <span className="row-label">
                 Вместимость
-                {capacity.pending > 0 ? (
+                {/* Последнюю заявку без хоста убрали своим тапом: строка сворачивается, а не
+                    пропадает рывком, который у низа страницы дёргал прокрутку. */}
+                <Collapse open={capacity.pending > 0} as="span">
                   <span className="row-sublabel">{`ещё ${requestsWord(capacity.pending)} без хоста`}</span>
-                ) : null}
+                </Collapse>
               </span>
               <div className="row-right">
                 <span className={'cap-value' + (over ? ' over' : full ? ' full' : '')}>
@@ -471,7 +476,7 @@ function RequestSection({
         {list.map((r, i) => (
           <Fragment key={r.id}>
             {i > 0 ? <Sep left={66} /> : null}
-            <div className={flash.includes(r.id) ? 'row-flash' : undefined} data-req={r.id}>
+            <div className={flash.includes(r.id) ? 'row-flash' : undefined} data-req={r.id} data-dust={'req-' + r.id}>
               <RequestRow r={r} onHost={onHost} capacity={capacity} />
             </div>
           </Fragment>
@@ -645,7 +650,7 @@ function DayPage({
           ) : null}
         </div>
         {requests.length === 0 && events.length === 0 ? (
-          <div className="card">
+          <div className="card" ref={growIn} data-dust-empty="">
             <EmptyState title="Нет заявок гостей" text="На этот день пока никто не оставил заявку." />
           </div>
         ) : null}
@@ -909,7 +914,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     let touch: { x: number; y: number; axis: 0 | 1 | 2 } | null = null
     const onTouchStart = (e: TouchEvent): void => {
       const t = e.touches[0]
-      touch = e.touches.length === 1 && t && isOwn(e.target) && t.clientX >= 20 ? { x: t.clientX, y: t.clientY, axis: 0 } : null
+      touch = e.touches.length === 1 && t && isOwn(e.target) && t.clientX >= EDGE_ZONE ? { x: t.clientX, y: t.clientY, axis: 0 } : null
     }
     const onTouchMove = (e: TouchEvent): void => {
       const t = e.touches[0]
@@ -924,14 +929,16 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     }
 
     // Листает весь экран, кроме строк заявок: у них свой свайп с действиями, и жест
-    // принадлежит строке. Касания у левого края не берём, там системный «назад» в iOS.
-    // Направление решается по первым 8px, вертикаль отдаётся прокрутке.
+    // принадлежит строке. Касания у левого края не берём, там жест перехода Telegram iOS.
+    // Направление решается по первым 8px, вертикаль отдаётся прокрутке. Правее первого дня
+    // ничего нет: туда тот же свайп уводит назад к списку (useSwipeBack).
+    const atStart = (): boolean => S.p <= 0.001
     const vt = tracker()
     let unselect: (() => void) | null = null
     const onDown = (e: PointerEvent): void => {
-      if (e.button > 0 || S.drag) return
+      if (e.button > 0 || S.drag || swipingBack()) return
       if ((e.target as Element).closest('.swipe-row, input, textarea')) return
-      if (e.clientX < 20) return
+      if (e.clientX < EDGE_ZONE) return
       S.drag = { x0: e.clientX, y0: e.clientY, p0: S.p, id: e.pointerId, dir: 0, mouse: e.pointerType === 'mouse' }
       vt.start(e.clientX, e.timeStamp)
     }
@@ -944,6 +951,10 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       if (d.dir === 0) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
         if (touch ? touch.axis === 2 : Math.abs(dy) >= Math.abs(dx)) {
+          S.drag = null
+          return
+        }
+        if (dx > 0 && atStart() && canSwipeBack()) {
           S.drag = null
           return
         }
@@ -994,6 +1005,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     const onWheel = (e: WheelEvent): void => {
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
       if ((e.target as Element).closest('.swipe-row, input, textarea')) return
+      if (swipingBack() || (!wheel && e.deltaX < 0 && atStart() && canSwipeBack())) return
       e.preventDefault()
       if (S.drag) return
       clearTimeout(wheelIdle)
@@ -1047,6 +1059,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
     // уводит горизонтальный жест в навигацию «назад».
     root.addEventListener('wheel', onWheel, { passive: false })
     window.addEventListener('keydown', onKey)
+    const unregister = registerPagerStart(root, atStart)
     ro.observe(root)
     measure()
     render()
@@ -1055,6 +1068,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
       if (S.raf) cancelAnimationFrame(S.raf)
       S.raf = 0
       unselect?.()
+      unregister()
       ro.disconnect()
       root.removeEventListener('touchstart', onTouchStart)
       root.removeEventListener('touchmove', onTouchMove)

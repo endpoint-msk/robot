@@ -2,13 +2,16 @@
 // Данные грузятся отдельной ручкой (event.apps) — ответы объёмные, в bootstrap им не место.
 
 import { useState } from 'react'
-import { action, api } from '../api'
+import { action, api, mutate } from '../api'
 import { fmtShortDate } from '../dates'
 import { icons } from '../icons'
-import { confirmDialog, showAlert } from '../modals'
+import { showAlert } from '../modals'
+import { markOwnTap } from '../motion'
 import { useRemote } from '../remote'
-import { useParams } from '../store'
+import { setData, useParams } from '../store'
 import { haptic } from '../telegram'
+import { bringBack, dustRow, offerUndo, removeRow, type Undoable } from '../undo'
+import { growIn } from '../dust'
 import type { EventAnswer, EventApplication, EventAppsResponse, SpaceEvent } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
@@ -52,7 +55,7 @@ function AppCard({
   onDecline: () => void
 }) {
   return (
-    <div className="card ea-card">
+    <div className="card ea-card" data-dust={'app-' + app.id}>
       <div className="ea-head">
         <Avatar user={app.guest} className="req-avatar" profile />
         <div className="req-main">
@@ -92,27 +95,45 @@ export function EventApps() {
   const params = useParams()
   const event = params.event as SpaceEvent
   const [busy, setBusy] = useState(false)
-  const { data, error, loading, pending, reload } = useRemote(
+  // Отклонённые своим тапом: в данных они ещё есть, пока «Вернуть» может их вернуть.
+  const [gone, setGone] = useState<string[]>([])
+  const remote = useRemote(
     async () => (await api<EventAppsResponse>('event.apps', { eventId: event.id })).applications,
     [event.id],
   )
+  const { error, loading, pending, reload } = remote
+  const data = remote.data ? remote.data.filter((a) => !gone.includes(a.id)) : null
+
+  // Без вопроса: отклонение обратимо. Карточка рассыпается, внизу пять секунд «Вернуть».
+  const decline = async (app: EventApplication): Promise<void> => {
+    markOwnTap()
+    haptic.impact('soft')
+    const key = 'app-' + app.id
+    const res = await removeRow(dustRow(key), mutate<Undoable>('event.app.decline', { id: app.id }))
+    if (!res) return
+    setData(res.data)
+    setGone((g) => [...g, app.id])
+    offerUndo('Заявка отклонена', res.data.undo, (back) => {
+      bringBack(key, res.dust, () => {
+        setData(back)
+        setGone((g) => g.filter((id) => id !== app.id))
+      })
+      // Список могли перечитать после чужого «Принять», и заявки в нём уже нет.
+      reload()
+    })
+  }
 
   const decide = async (app: EventApplication, approve: boolean): Promise<void> => {
     if (!approve) {
-      const ok = await confirmDialog('Отклонить заявку на ивент?', {
-        confirmLabel: 'Отклонить',
-        cancelLabel: 'Оставить',
-        destructive: true,
-        subject: { user: app.guest, line: event.title },
-      })
-      if (!ok) return
+      await decline(app)
+      return
     }
     setBusy(true)
     try {
       // action обновляет общий стор (счётчики на карточках), затем перечитываем список.
       // Свой спиннер уже держит список, второй на весь экран поверх него лишний.
-      await action(approve ? 'event.app.approve' : 'event.app.decline', { id: app.id }, { quiet: true })
-      if (approve) haptic.notify('success')
+      await action('event.app.approve', { id: app.id }, { quiet: true })
+      haptic.notify('success')
       reload()
     } catch (err) {
       showAlert((err as Error).message)
@@ -126,7 +147,7 @@ export function EventApps() {
   else if (!data) body = null
   else if (data.length === 0) {
     body = (
-      <div className="card">
+      <div className="card" ref={growIn} data-dust-empty="">
         <EmptyState title="Заявок пока нет" text="Как только кто-то оставит заявку, она появится здесь." />
       </div>
     )

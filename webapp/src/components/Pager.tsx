@@ -14,6 +14,7 @@ import { afterHero } from '../hero'
 import {
   arrowStep,
   clamp,
+  EDGE_ZONE,
   holdSelection,
   landing,
   mix,
@@ -28,6 +29,7 @@ import {
   tracker,
 } from '../motion'
 import { UnderContext } from '../screenContext'
+import { canSwipeBack, registerPagerStart, swipingBack } from './useSwipeBack'
 import { getState, useStore } from '../store'
 import { haptic, setHeaderColor } from '../telegram'
 import { applyTheme } from '../theme'
@@ -208,7 +210,7 @@ export function Pager<T>({
     const onTouchStart = (e: TouchEvent): void => {
       const t = e.touches[0]
       touch =
-        e.touches.length === 1 && t && !(e.target as Element).closest(FREE) && t.clientX >= 20
+        e.touches.length === 1 && t && !(e.target as Element).closest(FREE) && t.clientX >= EDGE_ZONE
           ? { x: t.clientX, y: t.clientY, axis: 0 }
           : null
     }
@@ -224,11 +226,13 @@ export function Pager<T>({
       if (touch.axis === 1 && e.cancelable) e.preventDefault()
     }
 
+    // С первой карточки вправо уводит свайп назад (useSwipeBack): левее неё ничего нет.
+    const atStart = (): boolean => S.p <= 0.001
     const vt = tracker()
     let unselect: (() => void) | null = null
     const onDown = (e: PointerEvent): void => {
-      if (e.button > 0 || S.drag || live.current.items.length < 2) return
-      if ((e.target as Element).closest(FREE) || e.clientX < 20) return
+      if (e.button > 0 || S.drag || live.current.items.length < 2 || swipingBack()) return
+      if ((e.target as Element).closest(FREE) || e.clientX < EDGE_ZONE) return
       S.drag = { x0: e.clientX, y0: e.clientY, p0: S.p, id: e.pointerId, dir: 0, mouse: e.pointerType === 'mouse' }
       vt.start(e.clientX, e.timeStamp)
     }
@@ -241,6 +245,10 @@ export function Pager<T>({
       if (d.dir === 0) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
         if (touch ? touch.axis === 2 : Math.abs(dy) >= Math.abs(dx)) {
+          S.drag = null
+          return
+        }
+        if (dx > 0 && atStart() && canSwipeBack()) {
           S.drag = null
           return
         }
@@ -288,6 +296,7 @@ export function Pager<T>({
     const onWheel = (e: WheelEvent): void => {
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || live.current.items.length < 2) return
       if ((e.target as Element).closest(FREE)) return
+      if (swipingBack() || (!wheel && e.deltaX < 0 && atStart() && canSwipeBack())) return
       e.preventDefault()
       if (S.drag) return
       clearTimeout(wheelIdle)
@@ -340,6 +349,7 @@ export function Pager<T>({
     root.addEventListener('click', onClickCapture, true)
     root.addEventListener('wheel', onWheel, { passive: false })
     window.addEventListener('keydown', onKey)
+    const unregister = registerPagerStart(root, atStart)
     ro.observe(root)
     measure()
     render()
@@ -348,6 +358,7 @@ export function Pager<T>({
       if (S.raf) cancelAnimationFrame(S.raf)
       S.raf = 0
       unselect?.()
+      unregister()
       ro.disconnect()
       root.removeEventListener('touchstart', onTouchStart)
       root.removeEventListener('touchmove', onTouchMove)

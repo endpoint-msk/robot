@@ -354,8 +354,9 @@ html[data-vt="replace"]::view-transition-new(root) { animation: vt-rise 0.42s cu
 @keyframes vt-blur-in { from { opacity: 0; filter: blur(4px); transform: scale(0.9); } }
 @keyframes vt-out { to { opacity: 0; } }
 @keyframes vt-in { from { opacity: 0; } }
-/* Прежний экран под верхним на время жеста «вниз» (App.tsx, usePullDismiss). Окно
-   прокручивает верхний, поэтому нижний стоит неподвижно и сдвинут на свою прокрутку. */
+/* Прежний экран под верхним на время жеста «вниз» или свайпа назад (App.tsx, usePullDismiss,
+   useSwipeBack). Окно прокручивает верхний, поэтому нижний стоит неподвижно и сдвинут на свою
+   прокрутку. */
 .screen-under {
     position: fixed;
     top: 0;
@@ -369,6 +370,20 @@ html[data-vt="replace"]::view-transition-new(root) { animation: vt-rise 0.42s cu
 }
 .screen-under-zoom { position: absolute; inset: 0; transform-origin: 50% 40%; }
 .screen-under-dim { position: absolute; inset: 0; background: #000; opacity: 0.32; }
+/* Начальный кадр каждого жеста: прежний экран монтируется кадром позже первого сдвига, и
+   до правки инлайном он должен стоять так, как его поставит жест. */
+.screen-under.pull .screen-under-zoom { transform: scale(0.94); }
+.screen-under.swipe .screen-under-zoom { transform: translate3d(-30%, 0, 0); }
+.screen-under.swipe .screen-under-dim { opacity: 0.2; }
+/* Свайп назад (useSwipeBack): экран едет вправо, левый край отбрасывает тень на прежний. */
+.screen.swiped {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--bg);
+    box-shadow: 0 0 28px rgba(0, 0, 0, 0.16);
+}
 /* Карточку двигает и срезает usePullDismiss: сдвиг от левого верхнего угла, срез и
    скругление через clip-path. Короткий экран добирает высоту до окна, иначе под его
    низом был бы виден прежний. */
@@ -1387,6 +1402,7 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 /* Блок, вырастающий по высоте (components/Collapse.tsx). Отступ заголовка внутри
    него и заголовка сразу после него тот же, что у соседних секций. */
 .collapse { overflow: hidden; }
+span.collapse { display: block; }
 .collapse > .section-title:first-child, .collapse + .section-title { margin-top: 22px; }
 
 /* --- Мои визиты (гость) --- */
@@ -2128,7 +2144,8 @@ button.agenda-banner:active { opacity: 0.6; }
     padding: 0;
     min-height: 120px;
 }
-.note-input::placeholder { color: rgba(var(--sec), 0.4); }
+.note-input::placeholder { color: rgba(var(--sec), 0.4); transition: color 0.3s ease; }
+.note-input.scattering::placeholder { color: transparent; }
 .note-meta { font-size: 13px; color: rgba(var(--sec), 0.55); margin: 8px 6px 0; }
 
 /* --- Дев-анонс: рассылка обновлений/объявлений --- */
@@ -2630,6 +2647,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     background: #2b1745;
     box-shadow: 0 14px 34px -16px rgba(0, 0, 0, 0.35);
 }
+/* Пока снимок грузится, рамка залита тоном афиши (SpaceEvent.tone), а не фиолетовым. */
+.evv-poster.photo { background: var(--ev-tone, #2b1745); }
 .evv-poster:not(.photo)::after {
     content: "";
     position: absolute;
@@ -2653,6 +2672,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 /* Снимок чуть выше рамки: при прокрутке он едет медленнее страницы (Event.tsx), и запас
    не даёт показаться краю. */
 .evv-photo { position: absolute; left: 0; top: -8%; width: 100%; height: 116%; object-fit: cover; cursor: zoom-in; }
+/* Снимок проявляется из лёгкого размытия, как аватарки, когда пришёл целиком. */
+.evv-photo { transition: opacity 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.evv-photo.loading { opacity: 0; filter: blur(10px); }
 .evv-pt {
     position: relative;
     z-index: 2;
@@ -2783,7 +2805,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     object-fit: cover;
     border-radius: 14px;
     margin-top: 14px;
-    background: rgba(191, 90, 242, 0.08);
+    background: var(--ev-tone, rgba(191, 90, 242, 0.08));
     cursor: pointer;
 }
 /* Несколько афиш — горизонтальная лента: жест привычнее стрелок, а снап не даёт
@@ -3148,8 +3170,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .flip { position: relative; display: inline-block; clip-path: inset(0 -1em); }
 .flip-sp { visibility: hidden; }
 .flip-a, .flip-b { position: absolute; left: 0; top: 0; white-space: nowrap; }
-/* Своя строка, только что переехавшая в другой список: подсветка гаснет на месте. */
-.row-flash { animation: row-flash 1.2s ease-out; }
+/* Своя строка, только что переехавшая в другой список: подсветка гаснет на месте. Красится
+   сама строка, а не обёртка: непрозрачный фон слоя свайпа (.swipe-content) закрыл бы её. */
+.row-flash .req-row { animation: row-flash 1.2s ease-out; }
 @keyframes row-flash {
     from { background-color: rgba(52, 199, 89, 0.2); }
     to { background-color: transparent; }
@@ -3676,6 +3699,15 @@ button.heat-cell.picked {
     z-index: 1;
     box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--text);
 }
+/* Клетка этого часа: про неё говорит строка над картой, пока ничего не выбрано. */
+button.heat-cell.now:not(.picked) {
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--blue);
+}
+button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked) {
+    box-shadow: inset 0 0 0 1px var(--sep), 0 0 0 2px var(--card), 0 0 0 3.5px var(--blue);
+}
 .heat-hours { margin-top: 5px; }
 .heat-hour { flex: 1; text-align: center; font-size: 11px; color: var(--axis-ink); font-variant-numeric: tabular-nums; }
 /* wrap: на 390px подпись и шкала в одну строку не помещаются, и подпись ломалась
@@ -4099,6 +4131,8 @@ button.heat-cell.picked {
 }
 .sk-row + .sk-row { border-top: 0.5px solid var(--sep); }
 .sk-row .sk-block { animation-delay: inherit; }
+/* Каркас из index.html до бандла: без блика (см. там же). */
+.boot-still .sk-block { animation: none; }
 .sk-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
 .sk-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .sk-list { overflow: hidden; }
@@ -5177,7 +5211,7 @@ button.heat-cell.picked {
 @media (prefers-reduced-motion: reduce) {
     .ob.ob-in { animation: none; }
     .ob-tip, .ob-menu, .ob-sheet, .ob-sheet-overlay { transition-duration: 0.01s; }
-    .row-flash { animation: none; }
+    .row-flash .req-row { animation: none; }
     .my-dues.md-moving .md-s, .my-dues.md-moving .md-req, .dues-summary.ds-moving .dues-bar > i { transition: none; }
 }
 
@@ -5352,3 +5386,62 @@ button.heat-cell.picked {
     .nr-form, .primary-btn.nr-sent { transition: none; }
     .visit-rise > *, .visit-rise .status-card-icon { animation: none; }
 }
+
+/* --- «Вернуть» и пыль ---------------------------------------------------------------
+   Плашка с отсчётом (components/UndoToast.tsx): тёмная, как у Telegram, над нижней панелью
+   и над шторками. Место по вертикали ставит JS: над панелью экрана, если она есть. */
+.undo-toast {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 16px;
+    width: calc(100% - 24px);
+    max-width: 496px;
+    margin: 0 auto;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 54px;
+    padding: 0 8px 0 12px;
+    box-sizing: border-box;
+    border-radius: 16px;
+    background: rgba(30, 30, 32, 0.94);
+    color: #fff;
+    box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.45);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+:root[data-theme="dark"] .undo-toast { background: rgba(58, 58, 62, 0.96); }
+.undo-ring { position: relative; width: 28px; height: 28px; flex-shrink: 0; }
+.undo-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.undo-ring-n {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.undo-text { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.undo-btn {
+    flex-shrink: 0;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 10px;
+    background: none;
+    color: #5eb5ff;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+:root[data-theme="dark"] .undo-btn { color: #64b5ff; }
+.undo-btn:active { background: rgba(255, 255, 255, 0.1); }
+/* Точки рассыпающейся строки (dust.ts): поверх экрана, но под листами и плашкой. */
+.dust-layer { position: fixed; pointer-events: none; z-index: 95; }
+/* Свайп назад поднимает экран над прежним (z-index: 1), а его нижняя панель едет вместе с ним. */
+.screen.swiped ~ .bar-portal .bottom-bar { z-index: 2; }

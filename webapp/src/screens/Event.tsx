@@ -57,11 +57,22 @@ const fromMinutes = (total: number): string =>
  */
 export function EventPoster({ photoId, className }: { photoId: string; className?: string }) {
   const src = eventPhotoUrl(photoId)
+  // Пока снимок грузится, его не видно: рамка залита тоном афиши, а снимок потом
+  // проявляется целиком (app.css, .evv-photo.loading), а не прорисовывается полосами.
+  // Уже лежащий в кэше встаёт сразу, без проявления.
+  const [loading, setLoading] = useState(true)
+  const ref = useRef<HTMLImageElement>(null)
+  useLayoutEffect(() => {
+    const img = ref.current
+    if (img && img.complete && img.naturalWidth > 0) setLoading(false)
+  }, [src])
   return (
     <img
-      className={className || 'event-poster'}
+      ref={ref}
+      className={(className || 'event-poster') + (loading ? ' loading' : '')}
       src={src}
       alt=""
+      onLoad={() => setLoading(false)}
       onClick={(e) => {
         e.stopPropagation()
         showImage(src, 'Афиша ивента')

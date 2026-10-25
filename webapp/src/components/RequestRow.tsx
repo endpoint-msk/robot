@@ -3,21 +3,22 @@
 // передача визита другому резиденту — тапом по своему пиллу хоста.
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { action } from '../api'
+import { action, mutate, prefetchOnTouch } from '../api'
 import { fmtShortDate, plural } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
 import { choiceDialog, confirmDialog, reschedulePrompt, showAlert, textPrompt, type SheetSubject } from '../modals'
-import { push, useStore } from '../store'
+import { push, setData, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
-import type { DayCapacity, HostingRequest, RescheduleProposal } from '../types'
+import type { Bootstrap, DayCapacity, HostingRequest, RescheduleProposal } from '../types'
 import { Avatar, Profile, userLabel } from './people'
 import { ActionButton, Sep } from './common'
 import { Collapse } from './Collapse'
 import { XText } from './Flip'
 import { markOwnTap } from '../motion'
 import { SwipeRow, type SwipeAction } from './SwipeRow'
+import { dustRow, offerUndo, removeRow, sheetGone, type Undoable } from '../undo'
 
 /** Слот предложения: «Пт, 17 июля · 15:00», если день отличается от текущего дня заявки; иначе только время. */
 function proposalSlot(r: HostingRequest, p: RescheduleProposal): string {
@@ -100,10 +101,15 @@ async function closeRequest(r: HostingRequest, subject: SheetSubject): Promise<v
     subject,
   })
   if (comment === null) return
-  const res = await action('close', { id: r.id, comment }, { quiet: true })
+  // Строка рассыпается, когда лист уехал и экран встал на место.
+  markOwnTap()
+  await sheetGone()
+  const res = await removeRow(dustRow('req-' + r.id), mutate<Bootstrap>('close', { id: r.id, comment }))
+  if (!res) return
+  setData(res.data)
   // Без комментария молчать можно: заявка у гостя и так пропадёт. С ним резидент
   // ждёт, что его прочитают, и должен знать, что письмо не ушло.
-  if (res && comment && res.delivered === false) {
+  if (comment && res.data.delivered === false) {
     showAlert(`Заявку закрыли, но комментарий не дошёл: ${r.guest.name} не открывал чат с ботом.`)
   }
 }
@@ -115,7 +121,10 @@ async function blockGuest(r: HostingRequest, subject: SheetSubject): Promise<voi
     { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true, subject },
   )
   if (!ok) return
-  await action('block', { id: r.id })
+  markOwnTap()
+  await sheetGone()
+  const res = await removeRow(dustRow('req-' + r.id), mutate<Bootstrap>('block', { id: r.id }))
+  if (res) setData(res.data)
 }
 
 /**
@@ -150,17 +159,11 @@ async function hostMenu(r: HostingRequest, subject: SheetSubject): Promise<void>
     return
   }
   if (choice !== 'unapprove') return
-  // Подтверждение встаёт в тот же лист под той же шапкой, и действие в нём красное, как
-  // строка меню, которая к нему привела.
-  const ok = await confirmDialog('Заявка снова будет ждать ответа, гостю придёт сообщение.', {
-    confirmLabel: 'Отменить хостинг',
-    cancelLabel: 'Оставить',
-    destructive: true,
-    subject,
-  })
-  if (!ok) return
+  // Без второго листа: снятие обратимо, внизу пять секунд висит «Вернуть», а гостю сервер
+  // пишет только по концу отсчёта.
   markOwnTap()
-  await action('unapprove', { id: r.id }, { quiet: true })
+  const res = (await action('unapprove', { id: r.id }, { quiet: true })) as Undoable | null
+  if (res) offerUndo('Хостинг снят', res.undo)
 }
 
 /**
@@ -521,7 +524,14 @@ export function RequestRow({
     .filter(Boolean)
     .join(', ')
   const visitStats = me.isResident && !archive ? (
-    <button type="button" className="visit-stats" onClick={openGuest} aria-label={`Профиль гостя: ${statsLabel}`} title={statsLabel}>
+    <button
+      type="button"
+      className="visit-stats"
+      {...prefetchOnTouch('guest.requests', { userId: r.guest.userId })}
+      onClick={openGuest}
+      aria-label={`Профиль гостя: ${statsLabel}`}
+      title={statsLabel}
+    >
       {past === 0 ? (
         <span className="visit-chip first">впервые</span>
       ) : (
@@ -548,7 +558,12 @@ export function RequestRow({
           {/* Имя ведёт в профиль гостя у нас, аватарка - в Telegram: резиденту
               история человека нужнее его страницы, а написать ему - на шаг дальше. */}
           {me.isResident ? (
-            <button type="button" className="req-name req-name-btn" onClick={openGuest}>
+            <button
+              type="button"
+              className="req-name req-name-btn"
+              {...prefetchOnTouch('guest.requests', { userId: r.guest.userId })}
+              onClick={openGuest}
+            >
               {r.guest.name}
             </button>
           ) : (

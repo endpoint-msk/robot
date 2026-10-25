@@ -986,6 +986,13 @@ const countsAsVisit = (o: VisitOutcome): boolean => o.status === 'came' || o.sta
 export type VisitMarkError = 'not_found' | 'bad_day' | 'not_approved' | 'too_early'
 
 /**
+ * Заявка в «Кто пришёл»: подтверждённая или уже отмеченная. Ничью заявку никто не обещал
+ * принять, поэтому в отметках её нет: пришедшего по ней добавляют гостем без заявки.
+ * Отмеченные раньше остаются: это уже история визитов.
+ */
+export const inVisitList = (r: HostingRequest): boolean => r.status === 'approved' || Boolean(r.visit)
+
+/**
  * Отметка «пришёл / не пришёл» по заявке, `came = null` снимает её.
  *
  * «Не пришёл» - только у подтверждённой заявки и не раньше слота: ничью заявку никто
@@ -1003,9 +1010,10 @@ export const markVisit = async (
     const request = own(storage.get().hostingRequests, id)
     if (!request) return { ok: false, error: 'not_found' }
     if (!isVisitDayEditable(request.dateKey, tzOffsetMinutes)) return { ok: false, error: 'bad_day' }
-    if (came === false) {
-        if (request.status !== 'approved') return { ok: false, error: 'not_approved' }
-        if (Date.now() < slotStartUtc(request.dateKey, request.time, tzOffsetMinutes)) return { ok: false, error: 'too_early' }
+    // Снять старую отметку с ничьей заявки можно, поставить новую нельзя (inVisitList).
+    if (came !== null && request.status !== 'approved') return { ok: false, error: 'not_approved' }
+    if (came === false && Date.now() < slotStartUtc(request.dateKey, request.time, tzOffsetMinutes)) {
+        return { ok: false, error: 'too_early' }
     }
     await storage.update((s) => {
         const r = own(s.hostingRequests, id)
@@ -1049,9 +1057,10 @@ export const walkInsForDay = (storage: Storage, dateKey: string): WalkIn[] =>
 export type WalkInError = 'bad_day' | 'bad_name' | 'has_request' | 'duplicate' | 'blocked'
 
 /**
- * Добавляет в день гостя без заявки. Если заявка на этот день у человека есть, его
- * отмечают по ней: иначе один визит считался бы дважды. Людей без аккаунта (`userId`
- * 0) различаем только по имени, поэтому и дубль у них по имени.
+ * Добавляет в день гостя без заявки. Если заявка на этот день у человека есть и стоит в
+ * отметках (inVisitList), его отмечают по ней: иначе один визит считался бы дважды.
+ * Ничья заявка не мешает: её в отметках нет. Людей без аккаунта (`userId` 0) различаем
+ * только по имени, поэтому и дубль у них по имени.
  */
 export const addWalkIn = async (
     storage: Storage,
@@ -1065,7 +1074,9 @@ export const addWalkIn = async (
     if (!name) return { ok: false, error: 'bad_name' }
     if (guest.userId !== 0) {
         if (isBlocked(storage, guest.userId)) return { ok: false, error: 'blocked' }
-        if (requestsForDay(storage, dateKey).some((r) => r.guest.userId === guest.userId)) return { ok: false, error: 'has_request' }
+        if (requestsForDay(storage, dateKey).some((r) => r.guest.userId === guest.userId && inVisitList(r))) {
+            return { ok: false, error: 'has_request' }
+        }
     }
     const lower = name.toLowerCase()
     const duplicate = walkInsForDay(storage, dateKey).some((w) =>
@@ -1566,6 +1577,44 @@ export const deleteHostingRequest = async (storage: Storage, id: string): Promis
     return true
 }
 
+/**
+ * «Вернуть» после отмены визита гостем (src/undo.ts): заявка встаёт обратно той же, с тем
+ * же id, хостом и напоминанием. Нельзя, если за время отсчёта гость завёл другую заявку
+ * на этот день, день успел пройти или гостя заблокировали.
+ */
+export const restoreHostingRequest = async (
+    storage: Storage,
+    request: HostingRequest,
+    tzOffsetMinutes: number,
+): Promise<boolean> => {
+    if (own(storage.get().hostingRequests, request.id)) return false
+    if (request.dateKey < todayKey(tzOffsetMinutes) || isBlocked(storage, request.guest.userId)) return false
+    if (hasOtherRequestOnDay(storage, request.guest.userId, request.dateKey, request.id)) return false
+    await storage.update((s) => {
+        s.hostingRequests[request.id] = request
+    })
+    return true
+}
+
+/** «Вернуть» после снятия своего хостинга: только если за время отсчёта визит никто не взял. */
+export const restoreApproval = async (
+    storage: Storage,
+    id: string,
+    prev: Pick<HostingRequest, 'approvedBy' | 'approvedAt' | 'transfer'>,
+): Promise<boolean> => {
+    const r = own(storage.get().hostingRequests, id)
+    if (!r || r.status !== 'pending' || r.approvedBy) return false
+    await storage.update((s) => {
+        const cur = s.hostingRequests[id]
+        if (!cur) return
+        cur.status = 'approved'
+        cur.approvedBy = prev.approvedBy
+        cur.approvedAt = prev.approvedAt
+        cur.transfer = prev.transfer ?? null
+    })
+    return true
+}
+
 // ---------------------------------------------------------------------------
 // Предложения переноса дня/времени (резидент ↔ гость)
 // ---------------------------------------------------------------------------
@@ -1785,6 +1834,15 @@ export const MAX_NOTE_LENGTH = 1000
 
 export const guestNoteFor = (storage: Storage, userId: number): GuestNote | null =>
     storage.get().guestNotes[String(userId)] ?? null
+
+/** «Вернуть» после удаления: та же заметка с тем же автором, если новую за отсчёт не написали. */
+export const restoreGuestNote = async (storage: Storage, note: GuestNote): Promise<boolean> => {
+    if (guestNoteFor(storage, note.userId)) return false
+    await storage.update((s) => {
+        s.guestNotes[String(note.userId)] = note
+    })
+    return true
+}
 
 /** Все заметки, от свежих к старым. */
 export const listGuestNotes = (storage: Storage): GuestNote[] =>

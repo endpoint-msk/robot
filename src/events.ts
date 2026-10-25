@@ -602,6 +602,23 @@ export const approveApplication = async (storage: Storage, appId: string, review
     return own(storage.get().eventApplications, appId) ?? null
 }
 
+/**
+ * «Вернуть» после отмены гостем или отклонения рецензентом (src/undo.ts): та же заявка,
+ * если ивент на месте и новую за время отсчёта не подали.
+ */
+export const restoreApplication = async (storage: Storage, app: EventApplication): Promise<boolean> => {
+    const state = storage.get()
+    if (!own(state.events, app.eventId) || own(state.eventApplications, app.id)) return false
+    const again = Object.values(state.eventApplications).some(
+        (a) => a.eventId === app.eventId && a.guest.userId === app.guest.userId,
+    )
+    if (again) return false
+    await storage.update((s) => {
+        s.eventApplications[app.id] = app
+    })
+    return true
+}
+
 /** Отклонение рецензентом — удаление заявки (гость может подать заново). Возвращает её для DM. */
 export const declineApplication = async (storage: Storage, appId: string): Promise<EventApplication | null> => {
     const app = own(storage.get().eventApplications, appId)

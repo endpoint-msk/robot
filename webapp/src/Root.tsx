@@ -2,13 +2,13 @@
 // Соответствует boot() из старого миниаппа.
 
 import { useCallback, useEffect, useState } from 'react'
-import { api, loadOnboardingPeople } from './api'
+import { api, bootstrapOnStart, loadOnboardingPeople } from './api'
 import { App } from './App'
 import { Swap } from './components/Swap'
 import { BootSkeleton } from './components/skeleton'
 import { launchTarget, targetEntries } from './deeplink'
 import { icons } from './icons'
-import { closeTopOverlay } from './overlays'
+import { closeTopOverlay, hasOverlay } from './overlays'
 import { bump, getState, openAt, openOnboardingRoot, pop, push, setData, setPerspective } from './store'
 import { applyTheme } from './theme'
 import { tg } from './telegram'
@@ -119,6 +119,21 @@ export function Root() {
     } catch {
       /* старый клиент */
     }
+    // Пункт «Настройки» в меню «⋯» Telegram открывает наши настройки с любого экрана, без
+    // возврата на главную. Открытые поверх листы и шторки сначала закрываются.
+    const openSettings = (): void => {
+      while (hasOverlay()) closeTopOverlay()
+      const { stack } = getState()
+      if (stack[stack.length - 1]?.name !== 'settings') push('settings')
+    }
+    try {
+      if (tg.isVersionAtLeast?.('7.0') && tg.SettingsButton) {
+        tg.SettingsButton.onClick(openSettings)
+        tg.SettingsButton.show()
+      }
+    } catch {
+      /* старый клиент */
+    }
     // На десктопе тот же смысл несёт Escape: до системной «Назад» тянуться мышью.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
@@ -164,7 +179,7 @@ export function Root() {
     void (async () => {
       let data: Bootstrap
       try {
-        data = await api<Bootstrap>('bootstrap')
+        data = attempt === 0 ? await bootstrapOnStart() : await api<Bootstrap>('bootstrap')
       } catch (e) {
         if (cancelled) return
         setErr((e as Error).message)
@@ -199,6 +214,13 @@ export function Root() {
       cancelled = true
     }
   }, [attempt])
+
+  // Экран ошибки на старте повторяет загрузку сам, как только вернулась сеть.
+  useEffect(() => {
+    if (phase !== 'error' || errCode !== 'network') return
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, [phase, errCode, retry])
 
   if (phase === 'notg') return <NoTg />
   if (phase === 'error') return <BootError message={err} code={errCode} onRetry={retry} />

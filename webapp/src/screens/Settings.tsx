@@ -1,16 +1,17 @@
 import { Fragment, useState, type ReactNode } from 'react'
-import { action, openOnboarding, subscribeToEvents } from '../api'
+import { action, mutate, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
-import { confirmDialog } from '../modals'
 import { CHOICE_LABEL, choiceOf, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
-import { push, setThemeFrom, useStore } from '../store'
-import { botCanWrite, openUrl, requestWriteAccess } from '../telegram'
+import { markOwnTap } from '../motion'
+import { push, setData, setThemeFrom, useStore } from '../store'
+import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { MacSheet } from '../components/MacSheet'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Notification } from '../components/OnboardingScenes'
 import { Screen } from '../components/Screen'
+import { bringBack, dustRow, offerUndo, removeRow, type Undoable } from '../undo'
 
 const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: 'system', label: 'Как в Telegram' },
@@ -287,13 +288,23 @@ function BuildSign() {
  */
 function PresenceCard({ s }: { s: SettingsData }) {
   const [sheet, setSheet] = useState(false)
+  // Без вопроса: отвязка обратима. Строка рассыпается, внизу пять секунд «Вернуть».
+  const removeMac = async (mac: string): Promise<void> => {
+    markOwnTap()
+    haptic.impact('soft')
+    const key = 'mac-' + mac
+    const res = await removeRow(dustRow(key), mutate<Undoable>('mac.remove', { mac }))
+    if (!res) return
+    setData(res.data)
+    offerUndo('Устройство отвязано', res.data.undo, (data) => bringBack(key, res.dust, () => setData(data)))
+  }
   return (
     <>
       <SectionTitle>Отметки</SectionTitle>
       <div className="card">
         {s.macs.map((m) => (
           <Fragment key={m.mac}>
-            <div className="row">
+            <div className="row" data-dust={'mac-' + m.mac}>
               <span className="row-label">
                 {m.label || 'Устройство'}
                 <span className="row-sublabel mono">{m.mac}</span>
@@ -303,13 +314,7 @@ function PresenceCard({ s }: { s: SettingsData }) {
                 <button
                   className="remove-btn"
                   aria-label="Убрать устройство"
-                  onClick={async () => {
-                    const ok = await confirmDialog(
-                      `Убрать ${m.label ? '«' + m.label + '» ' : ''}${m.mac}? Авто-отметка по этому устройству перестанет работать.`,
-                      { confirmLabel: 'Убрать устройство', cancelLabel: 'Оставить', destructive: true },
-                    )
-                    if (ok) void action('mac.remove', { mac: m.mac }, { quiet: true })
-                  }}
+                  onClick={() => void removeMac(m.mac)}
                 >
                   {icons.minusCircle()}
                 </button>

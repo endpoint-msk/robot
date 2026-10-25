@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib'
 import { html, InputMedia, type TelegramClient, type User } from '@mtcute/node'
 import {
     acceptReschedule,
@@ -70,8 +71,13 @@ import {
     setDaySubscription,
     offerTransfer,
     proposeReschedule,
+    guestNoteFor,
+    inVisitList,
     removeWalkIn,
     requestsForDay,
+    restoreApproval,
+    restoreGuestNote,
+    restoreHostingRequest,
     requestsOfGuest,
     searchGuests,
     setDayAgenda,
@@ -131,6 +137,7 @@ import {
     isStagedPhotoOf,
     listResponsibleCandidates,
     resolveResponsibles,
+    restoreApplication,
     notifyEventCancelled,
     notifyEventMoved,
     notifyResidentsAboutEvent,
@@ -184,6 +191,7 @@ import {
 import { buildWrapView, refreshWrapCache, wrapBrief } from './wrap.js'
 import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { audit } from './audit.js'
+import { holdUndo, takeUndo, undoLabel } from './undo.js'
 import {
     doorCodeOf,
     isValidDoorCode,
@@ -205,7 +213,7 @@ import {
     type AdminTargetKind,
 } from './resident-admin.js'
 import type { Storage } from './storage.js'
-import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, SpaceEvent, WalkIn } from './types.js'
+import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, ResidentMacs, SpaceEvent, WalkIn } from './types.js'
 import { own } from './types.js'
 
 /** Сколько живёт initData с момента auth_date (защита от реплеев старых подписей). */
@@ -498,6 +506,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'visit.mark': 'write',
     'visit.markAll': 'write',
     'walkin.remove': 'write',
+    undo: 'write',
 
     create: 'dm',
     invite: 'dm',
@@ -827,7 +836,7 @@ const walkInView = (w: WalkIn) => ({
 const visitsDayView = (ctx: ApiContext, dateKey: string) => ({
     dateKey,
     editable: isVisitDayEditable(dateKey, ctx.tzOffsetMinutes),
-    requests: requestsView(requestsForDay(ctx.storage, dateKey), visitDates(ctx), { forResidents: true }),
+    requests: requestsView(requestsForDay(ctx.storage, dateKey).filter(inVisitList), visitDates(ctx), { forResidents: true }),
     walkIns: walkInsForDay(ctx.storage, dateKey).map(walkInView),
 })
 
@@ -841,7 +850,7 @@ const walkInCandidates = async (ctx: ApiContext, dateKey: string) => {
     const { storage } = ctx
     const s = storage.get()
     const busy = new Set<number>([
-        ...requestsForDay(storage, dateKey).map((r) => r.guest.userId),
+        ...requestsForDay(storage, dateKey).filter(inVisitList).map((r) => r.guest.userId),
         ...walkInsForDay(storage, dateKey).map((w) => w.guest.userId),
     ])
     const residentIds = await ctx.residents.listIds()
@@ -1305,7 +1314,7 @@ const AUDITED = new Set([
     'announce.send', 'stats.residentSince',
     'admin.grant', 'admin.revoke', 'admin.tag',
     'dev.seed', 'dev.update', 'dev.delete',
-    'onboarding.done', 'door.set',
+    'onboarding.done', 'door.set', 'undo',
 ])
 
 /** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
@@ -1315,6 +1324,7 @@ type AuditBefore = {
     application: EventApplication | null
     agenda: DayAgenda | null
     walkIn: WalkIn | null
+    undo: string | null
 }
 
 /**
@@ -1343,6 +1353,7 @@ const auditBefore = (ctx: ApiContext, method: string): AuditBefore | null => {
         application: application ? { ...application } : null,
         agenda: agenda ? { ...agenda } : null,
         walkIn: walkIn ? { ...walkIn } : null,
+        undo: method === 'undo' ? undoLabel(strOf(ctx.body.token)) : null,
     }
 }
 
@@ -1525,6 +1536,9 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
         // Сам код в журнал не пишем: ключ от подъезда не должен оседать в файлах на сервере.
         case 'door.set':
             return strOf(body.code).trim() ? 'поменял код домофона' : 'убрал код домофона'
+        // Сам токен ничего не скажет: что вернули, знает только снимок до вызова.
+        case 'undo':
+            return before.undo ? `вернул: ${before.undo}` : 'нажал «Вернуть»'
         default:
             return null
     }
@@ -1552,6 +1566,29 @@ const logApiAudit = (ctx: ApiContext, method: string, before: AuditBefore): void
         text: ok ? text : `${text} — отказ (${error})`,
         ...(id ? { meta: { id } } : {}),
     })
+}
+
+/**
+ * «Вернуть» после отвязки устройства (src/undo.ts): запись встаёт на прежнее место в
+ * списке. Нельзя, если за время отсчёта этот MAC привязал кто-то, в том числе сам человек.
+ */
+const restoreMacBinding = async (storage: Storage, before: ResidentMacs, mac: string): Promise<boolean> => {
+    const index = before.macs.findIndex((e) => e.mac === mac)
+    const entry = before.macs[index]
+    if (!entry) return false
+    if (Object.values(storage.get().macBindings).some((b) => b.macs.some((e) => e.mac === mac))) return false
+    await storage.update((s) => {
+        const key = String(before.userId)
+        const cur = s.macBindings[key]
+        if (!cur) {
+            // Остальные устройства могли уйти своей отвязкой: возвращаем только это.
+            s.macBindings[key] = { ...before, macs: [entry] }
+            return
+        }
+        cur.macs.splice(Math.min(index, cur.macs.length), 0, entry)
+        cur.updatedAt = new Date().toISOString()
+    })
+    return true
 }
 
 const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
@@ -1585,6 +1622,24 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Плашка итогов месяца читает кэш журнала, а сам bootstrap синхронный: кэш
             // освежаем здесь, где подождать чтение файла не страшно.
             if (resident) await refreshWrapCache(storage, tzOffsetMinutes)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // «Вернуть» после обратимого действия (src/undo.ts): объект встаёт тем же, а
+        // отложенная личка не уходит. Отсчёт кончился или за это время что-то изменилось -
+        // действие остаётся в силе.
+        case 'undo': {
+            const token = typeof body.token === 'string' ? body.token : ''
+            const result = await takeUndo(token, user.userId)
+            if (result === 'gone') {
+                sendError(res, 410, 'undo_gone', 'Уже не вернуть: время вышло.')
+                return
+            }
+            if (result === 'stale') {
+                sendError(res, 409, 'undo_stale', 'Уже не вернуть: за это время всё изменилось.')
+                return
+            }
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -1969,6 +2024,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             // Хоста больше нет — висящая просьба подхватить визит теряет смысл вместе с ним.
             const pendingTransfer = request.transfer ?? null
+            const prev = { approvedBy: request.approvedBy, approvedAt: request.approvedAt, transfer: pendingTransfer }
             await storage.update((s) => {
                 const r = s.hostingRequests[request.id]
                 if (r) {
@@ -1978,17 +2034,30 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     r.transfer = null
                 }
             })
-            const updated = own(storage.get().hostingRequests, request.id)
-            if (updated && pendingTransfer) {
-                void notifyTransferCancelled(client, updated, pendingTransfer, true)
-                    .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
-            }
-            if (updated) {
-                void notifyGuestUnapproved(client, config.publicUrl, updated)
-                    .catch((err) => console.error('[hosting] не удалось уведомить гостя об отмене хостинга:', err))
-            }
+            // Гостю и адресату передачи пишем по концу отсчёта «Вернуть» и только если визит за
+            // это время снова никто не взял: иначе «хоста больше нет» пришло бы гостю уже после
+            // «визит подтверждён».
+            const undo = holdUndo(
+                user.userId,
+                `снял хостинг с заявки ${whoOf(request.guest)} на ${slotOf(request.dateKey, request.time)}`,
+                async () => {
+                    const ok = await restoreApproval(storage, request.id, prev)
+                    if (ok) syncBoard()
+                    return ok
+                },
+                async () => {
+                    const now = own(storage.get().hostingRequests, request.id)
+                    if (!now || now.status !== 'pending') return
+                    if (pendingTransfer) {
+                        await notifyTransferCancelled(client, now, pendingTransfer, true)
+                            .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
+                    }
+                    await notifyGuestUnapproved(client, config.publicUrl, now)
+                        .catch((err) => console.error('[hosting] не удалось уведомить гостя об отмене хостинга:', err))
+                },
+            )
             syncBoard()
-            sendJson(res, 200, buildBootstrap(ctx))
+            sendJson(res, 200, { ...buildBootstrap(ctx), undo })
             return
         }
 
@@ -2010,15 +2079,28 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 409, 'visit_marked', 'Резидент уже отметил этот визит, отменить его нельзя.')
                 return
             }
+            const snapshot = structuredClone(request)
             await storage.update((s) => {
                 delete s.hostingRequests[request.id]
             })
-            if (request.status === 'approved') {
-                void notifyApproverCancelled(client, request)
-                    .catch((err) => console.error('[hosting] не удалось уведомить резидента об отмене визита:', err))
-            }
+            // Хосту пишем по концу отсчёта: «Вернуть» отменяет и само сообщение.
+            const undo = holdUndo(
+                user.userId,
+                `отменил свою заявку на ${slotOf(request.dateKey, request.time)}`,
+                async () => {
+                    const ok = await restoreHostingRequest(storage, snapshot, tzOffsetMinutes)
+                    if (ok) syncBoard()
+                    return ok
+                },
+                request.status === 'approved'
+                    ? () =>
+                          notifyApproverCancelled(client, request).catch((err) =>
+                              console.error('[hosting] не удалось уведомить резидента об отмене визита:', err),
+                          )
+                    : undefined,
+            )
             syncBoard()
-            sendJson(res, 200, buildBootstrap(ctx))
+            sendJson(res, 200, { ...buildBootstrap(ctx), undo })
             return
         }
 
@@ -2177,8 +2259,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 404, 'not_found', 'Заявка не найдена — обновите экран.')
                 return
             }
+            const event = own(storage.get().events, app.eventId)
+            const undo = holdUndo(user.userId, `отменил свою заявку на ивент «${event?.title ?? app.eventId}»`, async () => {
+                const ok = await restoreApplication(storage, app)
+                if (ok) syncBoard()
+                return ok
+            })
             syncBoard()
-            sendJson(res, 200, buildBootstrap(ctx))
+            sendJson(res, 200, { ...buildBootstrap(ctx), undo })
             return
         }
 
@@ -2201,6 +2289,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 403, 'not_reviewer', 'Рассматривать заявки этого ивента вам нельзя.')
                 return
             }
+            let undo: string | null = null
             if (method === 'event.app.approve') {
                 const guest = app.guest
                 await approveApplication(storage, id, user)
@@ -2210,9 +2299,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             } else {
                 // Отклонение тихое: гостю ничего не шлём, заявка просто удаляется.
                 await declineApplication(storage, id)
+                undo = holdUndo(user.userId, `отклонил заявку ${whoOf(app.guest)} на ивент «${event.title}»`, async () => {
+                    const ok = await restoreApplication(storage, app)
+                    if (ok) syncBoard()
+                    return ok
+                })
             }
             syncBoard()
-            sendJson(res, 200, buildBootstrap(ctx))
+            sendJson(res, 200, { ...buildBootstrap(ctx), ...(undo ? { undo } : {}) })
             return
         }
 
@@ -2624,8 +2718,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 400, 'too_long', `Заметка не должна быть длиннее ${MAX_NOTE_LENGTH} символов.`)
                 return
             }
+            const prev = guestNoteFor(storage, targetId)
             await setGuestNote(storage, targetId, text, user)
-            sendJson(res, 200, buildBootstrap(ctx))
+            // Удаление обратимо: «Вернуть» кладёт ту же заметку с тем же автором.
+            const undo =
+                prev && !text.trim()
+                    ? holdUndo(user.userId, `удалил заметку о ${idOf(targetId)}`, () => restoreGuestNote(storage, prev))
+                    : null
+            sendJson(res, 200, { ...buildBootstrap(ctx), ...(undo ? { undo } : {}) })
             return
         }
 
@@ -2855,6 +2955,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 sendError(res, 404, 'not_found', 'Такой MAC к вам не привязан.')
                 return
             }
+            const before = structuredClone(cur)
             let leftEmpty = false
             await storage.update((s) => {
                 const b = s.macBindings[String(user.userId)]
@@ -2867,10 +2968,20 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 }
             })
             // Как и в /unbindmac: убрали последний MAC при активной авто-отметке — снимаем её.
-            if (leftEmpty && storage.get().presence[String(user.userId)]?.source === 'mac') {
-                await removePresence(client, storage, residents, user.userId, 'manual')
-            }
-            sendJson(res, 200, buildBootstrap(ctx))
+            // Но по концу отсчёта «Вернуть»: возврат устройства иначе рвал бы визит в журнале на два.
+            const uid = String(user.userId)
+            const undo = holdUndo(
+                user.userId,
+                'отвязал своё устройство',
+                () => restoreMacBinding(storage, before, mac),
+                async () => {
+                    const state = storage.get()
+                    if (leftEmpty && !state.macBindings[uid] && state.presence[uid]?.source === 'mac') {
+                        await removePresence(client, storage, residents, user.userId, 'manual')
+                    }
+                },
+            )
+            sendJson(res, 200, { ...buildBootstrap(ctx), undo })
             return
         }
 
@@ -3268,7 +3379,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 const messages = {
                     not_found: [404, 'Заявка не найдена, возможно, её уже отменили.'],
                     bad_day: [400, VISIT_DAY_CLOSED],
-                    not_approved: [409, 'Неявку отмечают только у подтверждённого визита: эту заявку никто не брал.'],
+                    not_approved: [409, 'Эту заявку никто не брал: если гость пришёл, добавьте его гостем без заявки.'],
                     too_early: [409, 'Визит ещё не начался: неявку можно отметить после его времени.'],
                 } as const
                 const [status, message] = messages[marked.error]
@@ -3587,28 +3698,172 @@ const warmAvatar = async (client: TelegramClient, userId: number): Promise<void>
     }
 }
 
-const serveStatic = async (pathname: string, res: ServerResponse): Promise<void> => {
+// ---------------------------------------------------------------------------
+// Статика миниаппа: кэш и сжатие
+// ---------------------------------------------------------------------------
+
+/**
+ * Имя с хэшем содержимого, которое пишет Vite (`assets/index-BYNWcz-C.js`): под этим
+ * именем файл не изменится никогда, новая сборка даёт новое имя. Проверяем именно имя,
+ * а не папку: файл из `webapp/public/assets` попал бы туда же без хэша.
+ */
+const HASHED_ASSET = /^assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.svg', '.ico'])
+const COMPRESSIBLE_EXTS = new Set(['.html', '.css', '.js', '.svg', '.json'])
+
+type StaticFile = {
+    mtimeMs: number
+    size: number
+    data: Buffer
+    hash: string
+    br: Promise<Buffer> | null
+    gzip: Promise<Buffer> | null
+}
+
+/**
+ * Файлы сборки в памяти вместе со сжатыми копиями: сжимаем один раз на процесс, а
+ * процесс и так перезапускается на каждом деплое. Сверка по mtime и размеру ловит
+ * сборку, подложенную рядом без перезапуска (`npm run build` у работающего бота).
+ */
+const staticFiles = new Map<string, StaticFile>()
+
+const brotliAsync = (data: Buffer): Promise<Buffer> =>
+    new Promise((resolve, reject) =>
+        brotliCompress(
+            data,
+            {
+                params: {
+                    [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
+                    [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT,
+                    [zlibConstants.BROTLI_PARAM_SIZE_HINT]: data.length,
+                },
+            },
+            (err, out) => (err ? reject(err) : resolve(out)),
+        ),
+    )
+const gzipAsync = (data: Buffer): Promise<Buffer> =>
+    new Promise((resolve, reject) => gzip(data, { level: 9 }, (err, out) => (err ? reject(err) : resolve(out))))
+
+const loadStatic = async (target: string): Promise<StaticFile | null> => {
+    let stat
+    try {
+        stat = await fs.stat(target)
+    } catch {
+        return null
+    }
+    if (!stat.isFile()) return null
+    const hit = staticFiles.get(target)
+    if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit
+    const data = await fs.readFile(target)
+    const file: StaticFile = {
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        data,
+        hash: createHash('sha256').update(data).digest('hex').slice(0, 20),
+        br: null,
+        gzip: null,
+    }
+    staticFiles.set(target, file)
+    return file
+}
+
+/** Сжатая копия; не сжалось (или не стоит того) - null, и уходит исходник. */
+const compressedStatic = async (file: StaticFile, encoding: 'br' | 'gzip'): Promise<Buffer | null> => {
+    if (file.data.length < 1024) return null
+    const job = encoding === 'br' ? (file.br ??= brotliAsync(file.data)) : (file.gzip ??= gzipAsync(file.data))
+    try {
+        const out = await job
+        return out.length < file.data.length ? out : null
+    } catch (err) {
+        console.error(`[webapp] не удалось сжать статику (${encoding}):`, err)
+        return null
+    }
+}
+
+/**
+ * Сжимаем сборку сразу на старте, в пуле потоков zlib, а не на первом запросе: brotli
+ * на максимальном уровне жмёт бандл около секунды, и платил бы за неё первый же человек,
+ * открывший миниапп после деплоя.
+ */
+const warmStatic = async (dir = STATIC_DIR): Promise<void> => {
+    let entries
+    try {
+        entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+        return
+    }
+    for (const e of entries) {
+        const full = path.join(dir, e.name)
+        if (e.isDirectory()) {
+            await warmStatic(full)
+            continue
+        }
+        if (!COMPRESSIBLE_EXTS.has(path.extname(e.name).toLowerCase())) continue
+        const file = await loadStatic(full)
+        if (file) await Promise.all([compressedStatic(file, 'br'), compressedStatic(file, 'gzip')])
+    }
+}
+
+/** Какое сжатие примет клиент: brotli лучше, gzip - запасной. `q=0` значит «нельзя». */
+const acceptedEncoding = (header: string | undefined): 'br' | 'gzip' | null => {
+    const allowed = new Set<string>()
+    for (const part of (header ?? '').toLowerCase().split(',')) {
+        const [name, ...params] = part.trim().split(';')
+        if (!name) continue
+        const q = params.map((p) => p.trim()).find((p) => p.startsWith('q='))
+        if (q && Number(q.slice(2)) <= 0) continue
+        allowed.add(name)
+    }
+    if (allowed.has('br')) return 'br'
+    if (allowed.has('gzip')) return 'gzip'
+    return null
+}
+
+/**
+ * Хэшированные файлы сборки кэшируются навсегда (`immutable`): после деплоя index.html
+ * ведёт на новые имена, и смеси старого JS с новым API не будет. Сам index.html и
+ * telegram-web-app.js (имя у него постоянное, а копию обновляет воркфлоу) телефон
+ * сверяет с сервером на каждом открытии по ETag: в ответ приходит пустой 304, если
+ * ничего не менялось. Картинки из `public` без хэша, но меняются редко: сутки.
+ */
+const serveStatic = async (req: IncomingMessage, pathname: string, res: ServerResponse): Promise<void> => {
     const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
     const target = path.normalize(path.join(STATIC_DIR, rel))
     if (!target.startsWith(STATIC_DIR + path.sep) && target !== path.join(STATIC_DIR, 'index.html')) {
         res.writeHead(403).end('forbidden')
         return
     }
-    try {
-        const data = await fs.readFile(target)
-        const ext = path.extname(target).toLowerCase()
-        // Телеграм-webview агрессивно кэширует; разметку и скрипты отдаём без кэша,
-        // чтобы после деплоя не ловить смесь старого JS и нового API. Картинки —
-        // наоборот, кэшируем: они не меняются, а фото двери весит сотню килобайт.
-        const immutable = ext === '.jpg' || ext === '.jpeg' || ext === '.png' || ext === '.webp' || ext === '.svg'
-        res.writeHead(200, {
-            'Content-Type': CONTENT_TYPES[ext] ?? 'application/octet-stream',
-            'Cache-Control': immutable ? 'public, max-age=86400' : 'no-store',
-        })
-        res.end(data)
-    } catch {
+    const file = await loadStatic(target)
+    if (!file) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('not found')
+        return
     }
+    const ext = path.extname(target).toLowerCase()
+    const relPath = path.relative(STATIC_DIR, target).split(path.sep).join('/')
+    const compressible = COMPRESSIBLE_EXTS.has(ext)
+    const encoding = compressible ? acceptedEncoding(req.headers['accept-encoding']) : null
+    const body = encoding ? await compressedStatic(file, encoding) : null
+    // У сжатой копии свой ETag: это другое тело, и сильный валидатор у них общим быть не может.
+    const etag = `"${file.hash}${body ? `-${encoding}` : ''}"`
+    const headers: Record<string, string> = {
+        'Content-Type': CONTENT_TYPES[ext] ?? 'application/octet-stream',
+        'Cache-Control': HASHED_ASSET.test(relPath)
+            ? 'public, max-age=31536000, immutable'
+            : IMAGE_EXTS.has(ext)
+              ? 'public, max-age=86400'
+              : 'no-cache',
+        ETag: etag,
+    }
+    if (compressible) headers.Vary = 'Accept-Encoding'
+    if (etagMatches(req.headers['if-none-match'], etag)) {
+        res.writeHead(304, headers).end()
+        return
+    }
+    if (body && encoding) headers['Content-Encoding'] = encoding
+    const payload = body ?? file.data
+    headers['Content-Length'] = String(payload.length)
+    res.writeHead(200, headers)
+    res.end(req.method === 'HEAD' ? undefined : payload)
 }
 
 // ---------------------------------------------------------------------------
@@ -4116,7 +4371,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 res.writeHead(405).end()
                 return
             }
-            await serveStatic(pathname, res)
+            await serveStatic(req, pathname, res)
         })().catch((err) => {
             console.error('[webapp] ошибка обработки запроса:', err)
             if (!res.headersSent) sendError(res, 500, 'internal', 'Внутренняя ошибка сервера.')
@@ -4126,6 +4381,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
     // Плашка итогов месяца читает кэш журнала: прогреваем его сразу, иначе первая же
     // мутация после рестарта ответила бы bootstrap'ом без неё.
     void refreshWrapCache(deps.storage, deps.tzOffsetMinutes)
+    void warmStatic()
     server.listen(deps.config.port, deps.config.host, () => {
         console.log(`[webapp] miniapp server on http://${deps.config.host}:${deps.config.port} (public: ${deps.config.publicUrl})`)
         console.log(`[webapp] dev-аккаунты (DEV_USER_IDS): ${deps.devUserIds.size > 0 ? [...deps.devUserIds].join(', ') : '— пусто, дев-меню и переключателя перспективы не будет'}`)

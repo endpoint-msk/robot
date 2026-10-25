@@ -4,9 +4,10 @@
 import { useMemo, useState } from 'react'
 import { action } from '../api'
 import { fmtShortDate } from '../dates'
-import { confirmDialog } from '../modals'
+import { markOwnTap } from '../motion'
 import { pop, useParams } from '../store'
 import { haptic } from '../telegram'
+import { offerUndo, type Undoable } from '../undo'
 import type { SpaceEvent } from '../types'
 import { BackRow, Footnote, Header, SectionTitle } from '../components/common'
 import { FormFill, isFormComplete, type AnswerMap } from '../components/FormFill'
@@ -50,16 +51,15 @@ export function EventApply() {
     }
   }
 
+  // Без вопроса: отмена обратима, внизу пять секунд висит «Вернуть».
   const cancel = async (): Promise<void> => {
     if (!app) return
-    const ok = await confirmDialog(readOnly ? 'Отменить участие в ивенте?' : 'Отменить заявку на ивент?', {
-      confirmLabel: readOnly ? 'Отменить участие' : 'Отменить заявку',
-      cancelLabel: 'Оставить',
-      destructive: true,
-    })
-    if (!ok) return
-    const done = await action('event.apply.cancel', { id: app.id })
-    if (done) pop()
+    markOwnTap()
+    haptic.impact('medium')
+    const done = (await action('event.apply.cancel', { id: app.id }, { quiet: true })) as Undoable | null
+    if (!done) return
+    pop()
+    offerUndo(readOnly ? 'Участие отменено' : 'Заявка отменена', done.undo)
   }
 
   const title = app ? (readOnly ? 'Вы участвуете' : 'Ваша заявка') : 'Заявка на ивент'

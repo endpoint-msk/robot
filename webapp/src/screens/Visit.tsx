@@ -1,14 +1,14 @@
 import { useContext, useEffect, useRef, useState } from 'react'
-import { action, api } from '../api'
+import { action, mutate } from '../api'
 import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { confirmDialog, reschedulePrompt, showAlert } from '../modals'
-import { getDataAt, pop, push, setBusy, setData, setTopParams, useParams, useStore } from '../store'
+import { reschedulePrompt } from '../modals'
+import { getDataAt, pop, push, setData, setTopParams, useParams, useStore } from '../store'
+import { bringBack, dustRow, offerUndo, removeRow, screenSettled, topScreen, type Undoable } from '../undo'
 import { sec } from '../theme'
 import { useIcsLink } from '../links'
 import { haptic } from '../telegram'
-import type { Bootstrap } from '../types'
 import { ActionButton, BackRow, Header, Sep, SectionTitle } from '../components/common'
 import { Collapse } from '../components/Collapse'
 import { XText } from '../components/Flip'
@@ -25,6 +25,14 @@ import { ADDRESS, ENTRANCE } from './Route'
 export function minuteOfDay(hhmm: string): number {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm)
   return m ? Number(m[1]) * 60 + Number(m[2]) : -1
+}
+
+/** «1 ч 40 мин», «25 мин»: сколько осталось до визита. */
+const untilText = (min: number): string => {
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  if (h === 0) return `${m}\u00a0мин`
+  return m > 0 ? `${h}\u00a0ч ${m}\u00a0мин` : `${h}\u00a0ч`
 }
 
 /** Антиспам повторного «Я на месте». Столько же держит сервер (ARRIVAL_COOLDOWN_MS). */
@@ -300,6 +308,8 @@ export function Visit() {
   // открывают по дороге (адрес, «Как пройти»), и к двери человек приходит с уже
   // открытым экраном — на замороженном снимке карточка просто не появлялась.
   const slotMin = minuteOfDay(r.time)
+  // В день визита подпись считает, сколько до него осталось.
+  const left = !isPast && r.dateKey === data!.todayKey ? slotMin - nowMin : -1
   const arrivalOpen =
     approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
 
@@ -317,22 +327,20 @@ export function Visit() {
     if (done) haptic.notify('success')
   }
 
+  // Без вопроса: отмена обратима. Экран сразу уходит к визитам, и строка визита рассыпается
+  // уже там, а внизу пять секунд висит «Вернуть». Хосту сервер пишет по концу отсчёта.
   const cancelVisit = async (): Promise<void> => {
-    const ok = await confirmDialog('Отменить заявку на визит?', {
-      confirmLabel: 'Отменить заявку',
-      cancelLabel: 'Оставить',
-      destructive: true,
-    })
-    if (!ok) return
-    setBusy(true)
-    try {
-      setData(await api<Bootstrap>('cancel', { id: r.id }))
-      pop()
-    } catch (err) {
-      showAlert((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
+    markOwnTap()
+    haptic.impact('medium')
+    const request = mutate<Undoable>('cancel', { id: r.id })
+    const from = topScreen()
+    pop()
+    await screenSettled(from)
+    const key = 'visit-' + r.id
+    const res = await removeRow(dustRow(key), request)
+    if (!res) return
+    setData(res.data)
+    offerUndo('Заявка отменена', res.data.undo, (data) => bringBack(key, res.dust, () => setData(data)))
   }
 
   return (
@@ -345,7 +353,11 @@ export function Visit() {
           <XText text={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]!} />
         }
         subtitle={
-          <XText text={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} delay={120} />
+          <>
+            <XText text={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} delay={120} />
+            {/* Минута меняется без движения: это часы, а не ответ на тап. */}
+            {left > 0 ? ` · через ${untilText(left)}` : null}
+          </>
         }
       />
       {arrivalOpen ? <ArrivalCard id={r.id} arrivedAt={r.arrivedAt} /> : null}

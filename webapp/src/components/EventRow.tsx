@@ -22,6 +22,7 @@ export const toneVars = (tone: string | null): CSSProperties | undefined => {
   if (!tone) return undefined
   const c = toneColors(tone)
   return {
+    '--ev-tone': tone,
     '--ev-band': c.band,
     '--ev-accent': c.ink,
     '--ev-soft': c.soft,

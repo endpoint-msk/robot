@@ -2,7 +2,7 @@
 // Таймлайн строится по сырым сессиям, поэтому доступен, пока живут месячные файлы.
 
 import { useRef, useState, type ReactNode } from 'react'
-import { api } from '../api'
+import { api, prefetchOnTouch } from '../api'
 import { fmtWeekdayDate, plural } from '../dates'
 import { clamp } from '../motion'
 import { useRemote } from '../remote'
@@ -214,6 +214,7 @@ function DayTimeline({ data }: { data: StatsDayView }) {
             type="button"
             className={'tl-row' + (inside ? (inside.has(p.userId) ? ' in' : ' out') : '')}
             key={p.userId}
+            {...prefetchOnTouch('stats.person', { userId: p.userId, period: 'quarter' })}
             onClick={() =>
               push('statsPerson', {
                 userId: p.userId,

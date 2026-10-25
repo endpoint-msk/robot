@@ -6,7 +6,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { addDays, dayNum, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
+import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
 import { clamp, holdSelection, landing, PAGE_SPRING, pageTarget, reducedMotion, rubber, springAt, tracker } from '../motion'
 import { pushOverlay } from '../overlays'
@@ -26,7 +26,7 @@ const daysInMonth = (key: string): number => dayNum(addDays(addMonths(key, 1), -
 
 /** «Ср, 15 октября», с годом — только когда он не тот, в котором сейчас живём. */
 const label = (key: string, today: string): string => {
-  const base = `${WEEKDAYS_SHORT[weekdayIdx(key)]}, ${dayNum(key)} ${MONTHS_NOM[monthIdx(key)]!.toLowerCase()}`
+  const base = `${WEEKDAYS_SHORT[weekdayIdx(key)]}, ${fmtDayMonth(key)}`
   return yearOf(key) === yearOf(today) ? base : `${base} ${yearOf(key)}`
 }
 

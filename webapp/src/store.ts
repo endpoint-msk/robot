@@ -118,7 +118,7 @@ function navigate(patch: Partial<State>, hero?: { from: HTMLElement | null; to: 
 const commit = (patch: Partial<State>, anim: Anim): void => {
   const next = { ...patch, anim }
   if (next.stack) pruneRemote(new Set(next.stack.map((e) => e.id)))
-  setUnder(false)
+  setUnder(null)
   set(next)
 }
 
@@ -216,10 +216,13 @@ export function replaceTop(name: ScreenName, params: NavParams = {}, hero?: stri
 }
 
 // --- Прежний экран под верхним ---
-// Флаг живёт отдельно от состояния: его ставит начало жеста «вниз», а смена состояния
+// Флаг живёт отдельно от состояния: его ставит начало жеста, а смена состояния
 // перерисовывает все экраны, подписанные на стор, и рвала бы первые кадры жеста.
 
-let under = false
+/** Чей жест открыл прежний экран: «вниз» (usePullDismiss) или назад вправо (useSwipeBack). */
+export type UnderMode = 'pull' | 'swipe'
+
+let under: UnderMode | null = null
 const underListeners = new Set<() => void>()
 const subscribeUnder = (fn: () => void): (() => void) => {
   underListeners.add(fn)
@@ -228,13 +231,15 @@ const subscribeUnder = (fn: () => void): (() => void) => {
   }
 }
 
-/** Прежний экран нарисован под верхним: идёт жест «вниз» (см. usePullDismiss). */
-export const useUnder = (): boolean => useSyncExternalStore(subscribeUnder, () => under, () => under)
+/** Прежний экран нарисован под верхним: идёт жест, который может увести экран. */
+export const useUnder = (): UnderMode | null => useSyncExternalStore(subscribeUnder, () => under, () => under)
 
-/** Жест «вниз» начался или отменён: прежний экран рисуется под верхним, пока палец тянет. */
-export function setUnder(on: boolean): void {
-  if (under === on) return
-  under = on
+export const underMode = (): UnderMode | null => under
+
+/** Жест начался или отменён: прежний экран рисуется под верхним, пока палец тянет. */
+export function setUnder(mode: UnderMode | null): void {
+  if (under === mode) return
+  under = mode
   underListeners.forEach((l) => l())
 }
 

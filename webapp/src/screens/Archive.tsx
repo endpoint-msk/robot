@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, prefetchOnTouch } from '../api'
 import {
   addDays,
   dayNum,
@@ -59,6 +59,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                   <button
                     type="button"
                     className="row tappable"
+                    {...prefetchOnTouch('archive.week', { weekStart: week.weekStart })}
                     onClick={() => push('archiveWeek', { weekStart: week.weekStart, weeks: order })}
                   >
                     {/* Плитка-календарь: число старта + месяц. Диапазон целиком стоит
@@ -168,6 +169,7 @@ function GuestSearch({
             <button
               type="button"
               className="row tappable"
+              {...prefetchOnTouch('guest.requests', { userId: g.user.userId })}
               onClick={() => push('guestVisits', { userId: g.user.userId, user: g.user })}
             >
               {/* Базовый .avatar размера не задаёт — без класса строка сплющивает его в полоску. */}

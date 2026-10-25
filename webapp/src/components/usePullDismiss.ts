@@ -6,7 +6,7 @@
 // 8 px, как у листалки дня, поэтому вбок по-прежнему листаются дни, а вверх прокрутка.
 
 import { useEffect, type RefObject } from 'react'
-import { clamp, holdSelection, landing, mix, project, spring, tracker, type SpringOpts } from '../motion'
+import { clamp, EDGE_ZONE, holdSelection, landing, mix, project, spring, tracker, type SpringOpts } from '../motion'
 import { hasOverlay } from '../overlays'
 import { popStill, setUnder } from '../store'
 import { haptic } from '../telegram'
@@ -84,7 +84,7 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
       armed = false
       width = screen.getBoundingClientRect().width
       screen.classList.add('pulled')
-      setUnder(true)
+      setUnder('pull')
     }
 
     const finish = (): void => {
@@ -97,7 +97,7 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
       if (m) m.style.opacity = ''
       const b = bar()
       if (b) b.style.opacity = ''
-      setUnder(false)
+      setUnder(null)
     }
 
     // Прежний экран под карточкой уже стоит, и подменять его незачем.
@@ -137,7 +137,7 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
         vt.start(y, t)
         return
       }
-      if (window.scrollY > 0 || hasOverlay() || x < 20 || (target as Element | null)?.closest(FREE)) {
+      if (window.scrollY > 0 || hasOverlay() || x < EDGE_ZONE || (target as Element | null)?.closest(FREE)) {
         g = null
         return
       }

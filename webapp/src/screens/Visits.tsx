@@ -6,15 +6,15 @@
 // никто не отметил, остаётся «без отметки», а не неявкой: забыл резидент, а не гость.
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { action, api } from '../api'
+import { action, api, mutate, prefetchOnTouch } from '../api'
 import { fmtDayMonth, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { icons } from '../icons'
 import { animate, E, markOwnTap, pr, pulse, reducedMotion } from '../motion'
 import { useRemote } from '../remote'
-import { push, useParams, useStore } from '../store'
+import { push, setData, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import { sec } from '../theme'
-import type { HostingRequest, User, VisitOutcome, VisitsDay, WalkIn } from '../types'
+import type { Bootstrap, HostingRequest, User, VisitOutcome, VisitsDay, WalkIn } from '../types'
 import { ActionButton, BackRow, EmptyState, ErrorState, Header, ReadonlyBadge, SectionTitle, Sep } from '../components/common'
 import { Collapse } from '../components/Collapse'
 import { Flip } from '../components/Flip'
@@ -23,6 +23,7 @@ import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 import { minuteOfDay, useNowMin } from './Visit'
+import { dustRow, removeRow } from '../undo'
 
 const NO_OUTCOME: VisitOutcome = { status: null, source: null, by: null, at: null }
 
@@ -190,7 +191,7 @@ function RequestVisitRow({
   }, [outcome.status])
   return (
     <div className="row visit-row" ref={rowRef}>
-      <button type="button" className="visit-who" onClick={() => openGuest(r.guest)}>
+      <button type="button" className="visit-who" {...prefetchOnTouch('guest.requests', { userId: r.guest.userId })} onClick={() => openGuest(r.guest)}>
         <Avatar user={r.guest} className="req-avatar" />
         <div className="req-main">
           <div className="req-name">{r.guest.name}</div>
@@ -236,8 +237,8 @@ function RequestVisitRow({
 function WalkInRow({ w, editable, onRemove }: { w: WalkIn; editable: boolean; onRemove: (w: WalkIn) => Promise<unknown> }) {
   const sub = w.guest.username ? '@' + w.guest.username : w.guest.userId === 0 ? 'без аккаунта' : ''
   return (
-    <div className="row visit-row">
-      <button type="button" className="visit-who" onClick={() => openGuest(w.guest)}>
+    <div className="row visit-row" data-dust={'walkin-' + w.id}>
+      <button type="button" className="visit-who" {...prefetchOnTouch('guest.requests', { userId: w.guest.userId })} onClick={() => openGuest(w.guest)}>
         <Avatar user={w.guest} className="req-avatar" />
         <div className="req-main">
           <div className="req-name">{w.guest.name}</div>
@@ -332,8 +333,10 @@ export function Visits() {
   const removeWalkIn = async (w: WalkIn): Promise<void> => {
     haptic.impact('soft')
     markOwnTap()
-    const res = await action('walkin.remove', { id: w.id }, { quiet: true })
-    if (res?.visitsDay) setLocal(res.visitsDay)
+    const res = await removeRow(dustRow('walkin-' + w.id), mutate<Bootstrap>('walkin.remove', { id: w.id }))
+    if (!res) return
+    setData(res.data)
+    if (res.data.visitsDay) setLocal(res.data.visitsDay)
   }
 
   const title = isToday || isGrace ? 'Кто пришёл' : WEEKDAYS_FULL[weekdayIdx(dateKey)]

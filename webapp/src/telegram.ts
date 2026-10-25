@@ -28,6 +28,8 @@ interface TelegramWebApp {
     selectionChanged?(): void
   }
   BackButton: { show(): void; hide(): void; onClick(callback: () => void): void }
+  /** Bot API 7.0: пункт «Настройки» в меню «⋯» миниаппа. */
+  SettingsButton?: { show(): void; hide(): void; onClick(callback: () => void): void }
 }
 
 declare global {

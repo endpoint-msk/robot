@@ -3,7 +3,7 @@
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { api } from '../api'
+import { api, prefetchOnTouch } from '../api'
 import {
   dayNum,
   fmtDayMonth,
@@ -38,6 +38,7 @@ import { Crossfade } from '../components/Crossfade'
 import { Flip, XText } from '../components/Flip'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
+import { useNowMin } from './Visit'
 import { Swap } from '../components/Swap'
 import { SkBars, SkBlock, SkCard, SkFigure, SkGrid } from '../components/skeleton'
 import type { PersonRef } from './StatsPerson'
@@ -84,6 +85,14 @@ const heatText = (cell: StatsHeatCell): string =>
 
 function HeatCard({ data }: { data: StatsOverview }) {
   const [picked, setPicked] = useState<HeatPick | null>(null)
+  // Клетка, в которую попадает сейчас по часам спейса. Минута живая: экран могли открыть
+  // в конце интервала.
+  const { data: boot } = useStore()
+  const nowMin = useNowMin()
+  const now: HeatPick = {
+    dow: (weekdayIdx(boot!.todayKey) + Math.floor(nowMin / 1440)) % 7,
+    bucket: Math.floor((nowMin % 1440) / 120),
+  }
   // Палец на карте: строка над ней погашена, день недели под пальцем подсвечен.
   const [scrub, setScrub] = useState(false)
   // Лупа живёт дольше пальца: после отпускания она ещё гаснет.
@@ -211,14 +220,23 @@ function HeatCard({ data }: { data: StatsOverview }) {
 
   // Значение ячейки читается строкой над картой: hover в вебвью нет, нативный title
   // на тап не открывается, а строку под картой закрывала бы рука. Пока ничего не
-  // выбрано, строка подписывает саму шкалу.
+  // выбрано, строка говорит про сейчас: ради этого карту и открывают - стоит ли идти.
   const readout = (): ReactNode => {
     const cell = cellOf(picked)
-    if (!picked || !cell) return 'Среднее число людей внутри'
+    if (picked && cell) {
+      return (
+        <>
+          <b>{`${WEEKDAYS_SHORT[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
+          {` · ${heatText(cell)}`}
+        </>
+      )
+    }
+    const cur = cellOf(now)
+    if (!cur) return 'Среднее число людей внутри'
     return (
       <>
-        <b>{`${WEEKDAYS_SHORT[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
-        {` · ${heatText(cell)}`}
+        <b>{`Сейчас, ${WEEKDAYS_SHORT[now.dow]!.toLowerCase()} ${heatSlot(now.bucket)}`}</b>
+        {` · ${heatText(cur)}`}
       </>
     )
   }
@@ -242,12 +260,13 @@ function HeatCard({ data }: { data: StatsOverview }) {
             </div>
             {row.cells.map((cell, i) => {
               const on = picked !== null && picked.dow === row.dow && picked.bucket === i
+              const isNow = now.dow === row.dow && now.bucket === i
               const { className, style } = heatCell(heatLevel(cell.v, data.heat.max), cell.noData)
               return (
                 <button
                   key={i}
                   type="button"
-                  className={className + (on ? ' picked' : '')}
+                  className={className + (on ? ' picked' : '') + (isNow ? ' now' : '')}
                   style={style}
                   data-dow={row.dow}
                   data-bucket={i}
@@ -891,6 +910,7 @@ export function Stats() {
       <button
         type="button"
         className="row tappable"
+        {...prefetchOnTouch('stats.person', { userId: p.userId, period: 'quarter' })}
         onClick={() => push('statsPerson', { userId: p.userId, people, backLabel: 'Статистика' })}
       >
         <Avatar user={statsAvatarUser(p)} className="stat-avatar" />
@@ -1005,6 +1025,7 @@ export function Stats() {
         <button
           type="button"
           className="row tappable"
+          {...prefetchOnTouch('stats.person', { userId: boot!.me.id, period: 'quarter' })}
           onClick={() => {
             // Из «Моих визитов» вы первым, дальше тот же список.
             const me: PersonRef = { userId: boot!.me.id, label: boot!.me.username ? `@${boot!.me.username}` : boot!.me.name, username: boot!.me.username }
