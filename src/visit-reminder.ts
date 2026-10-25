@@ -255,21 +255,30 @@ export const registerVisitReminderHandlers = (
             text: `отменил свой визит ${request.dateKey} ${request.time} (кнопка в напоминании)`,
             meta: { id },
         })
-        if (request.status === 'approved') {
-            void notifyApproverCancelled(client, request)
-                .catch((err) => console.error('[visit-reminder] не удалось уведомить резидента об отмене визита:', err))
+        // Отвечаем окном и до правки сообщения. Правка идёт через messages.editMessage, а
+        // mtcute держит FLOOD_WAIT по имени метода на весь клиент: словила флуд доска,
+        // которая правит свои сообщения во всех чатах, и правка напоминания ждёт до 10 с
+        // или падает. С ответом последним шагом гость видел бы кнопку, которая молчит.
+        try {
+            await ctx.answer({ text: 'Заявка отменена.', alert: true })
+        } catch (err) {
+            console.error('[visit-reminder] не удалось ответить на кнопку отмены:', err)
         }
-        void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes)
-            .catch((err) => console.error('[hosting-board] не удалось обновить доску после отмены визита:', err))
-        // Переписываем напоминание итогом и гасим кнопку: заявки уже нет.
+        // Переписываем напоминание итогом и гасим кнопку: заявки уже нет. Раньше пересборки
+        // доски: её правки идут тем же методом и сами могут поставить этот под флуд.
         try {
             await ctx.editMessage({
                 text: html('Заявка отменена. Приходите в другой раз — заявку можно оставить заново.'),
                 replyMarkup: BotKeyboard.inline([]),
             })
         } catch (err) {
-            console.warn('[visit-reminder] не удалось переписать напоминание:', err)
+            console.error('[visit-reminder] не удалось переписать напоминание:', err)
         }
-        await ctx.answer({ text: 'Отменил' })
+        if (request.status === 'approved') {
+            void notifyApproverCancelled(client, request)
+                .catch((err) => console.error('[visit-reminder] не удалось уведомить резидента об отмене визита:', err))
+        }
+        void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes)
+            .catch((err) => console.error('[hosting-board] не удалось обновить доску после отмены визита:', err))
     })
 }
