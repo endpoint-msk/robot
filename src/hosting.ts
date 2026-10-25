@@ -1713,7 +1713,9 @@ export const offerTransfer = async (
 
 /**
  * Адресат берёт визит: хостом становится он. Висящее предложение переноса остаётся,
- * но его адресат переезжает на нового хоста — иначе отвечать гостю станет некому.
+ * но переговоры переезжают на нового хоста вместе с визитом: он становится адресатом
+ * предложения гостя и автором предложения прежнего хоста. Иначе права на переговоры и
+ * ответ гостя оставались бы у того, кто визит больше не ведёт.
  */
 export const acceptTransfer = async (
     storage: Storage,
@@ -1732,6 +1734,7 @@ export const acceptTransfer = async (
         r.approvedAt = new Date().toISOString()
         r.transfer = null
         if (r.proposal && r.proposal.to && r.proposal.to.userId === transfer.by.userId) r.proposal.to = user
+        if (r.proposal && r.proposal.by === 'resident' && r.proposal.user.userId === transfer.by.userId) r.proposal.user = user
     })
     return { ok: true, request: own(storage.get().hostingRequests, id)!, from: transfer.by }
 }
