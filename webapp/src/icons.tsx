@@ -148,6 +148,13 @@ export const icons = {
       <path d="M13 5.2a2.4 2.4 0 0 1 0 4.6M14.5 15.5c0-2.2-1.2-3.6-3-4" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  /** Человечек цветом текста: сколько человек придёт, на чипе дня. */
+  person: (size: number): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 12 12">
+      <circle cx="6" cy="3.6" r="2.3" fill="currentColor" />
+      <path d="M1.6 11c0-2.5 2-4.1 4.4-4.1s4.4 1.6 4.4 4.1z" fill="currentColor" />
+    </svg>
+  ),
   personPlus: (color = accent()): ReactElement => (
     <svg width="19" height="19" viewBox="0 0 20 20">
       <circle cx="8" cy="6.3" r="2.8" fill="none" stroke={color} strokeWidth="1.7" />
@@ -246,6 +253,13 @@ export const icons = {
   external: (color = accent()): ReactElement => (
     <svg width="17" height="17" viewBox="0 0 18 18">
       <path d="M3 15L15 3M8 3h7v7" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  /** Сложенная карта: открыть адрес в картах. */
+  map: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path d="M7.2 3.4 2.8 5v11.6l4.4-1.6 5.6 1.6 4.4-1.6V3.4l-4.4 1.6z" fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M7.2 3.4V15M12.8 5v11.6" fill="none" stroke={color} strokeWidth="1.6" />
     </svg>
   ),
   /** Заливная булавка поверх карты — крупнее и с белой обводкой, чтобы читалась на тайлах. */

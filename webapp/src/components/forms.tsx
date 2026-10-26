@@ -1,14 +1,15 @@
 // Поля форм новой заявки / правки: чипы дней, выбор дня+времени, цель, анонимность,
 // напоминание о визите.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { clamp, spring } from '../motion'
 import { getState } from '../store'
 import { sec } from '../theme'
-import type { Day, ReminderChoice } from '../types'
-import { Switch } from './common'
+import type { Attendee, Day, ReminderChoice } from '../types'
+import { Sep, Switch } from './common'
+import { AvatarStack, userLabel } from './people'
 
 export function defaultTimeFor(dateKey: string): string {
   const d = getState().data!
@@ -205,14 +206,16 @@ export function DayChips({
             {d.events.length > 0 ? (
               <i className="dc-event" title={ink ? undefined : d.events.map((e) => e.title).join(', ')} />
             ) : null}
+            {/* Сколько человек придёт, а не сколько заявок одобрено: тот же публичный «кто
+                придёт», что в карточке под чипами. Закрытый день говорит о себе замком. */}
             {locked ? (
-              <span className="dc-dash">—</span>
+              <span className="dc-lock">{icons.lockFilled(10, 'currentColor')}</span>
             ) : showCounts ? (
-              d.total > 0 ? (
-                <div className="dc-counts">
-                  {icons.check(10, ink ? '#fff' : '#34c759', 2.2)}
-                  <span className="dc-approved">{String(d.approved)}</span>
-                </div>
+              d.attendees.length > 0 ? (
+                <span className="dc-people">
+                  {icons.person(10)}
+                  {String(d.attendees.length)}
+                </span>
               ) : (
                 <span className="dc-dash">—</span>
               )
@@ -242,53 +245,51 @@ export function DayChips({
   )
 }
 
+/** «@max_k и @ilya3d к 19:00»: кто придёт, коротко, со временем прихода, если оно есть. */
+const whoComes = (list: Attendee[]): string => {
+  const me = getState().data!.me.id
+  // Себя человек ищет в списке первым.
+  const mineFirst = [...list.filter((a) => a.userId === me), ...list.filter((a) => a.userId !== me)]
+  const names = mineFirst.map((a) => (a.userId === me ? 'вы' : userLabel(a)) + (a.time ? ` к ${a.time}` : ''))
+  if (names.length <= 2) return names.join(' и ')
+  return `${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`
+}
+
 /**
- * Что происходит в выбранный день: повестка и ивенты. Название ивента жило только в
- * атрибуте `title` у точки на чипе: на телефоне его нельзя ни навести, ни прочитать —
- * гость видел безымянную метку и не понимал, повод это прийти или помеха.
+ * Выбранный день целиком: повестка, ивенты и кто придёт. Гость выбирает день по людям,
+ * а не по числу одобренных заявок, и прочитать это должен, не уходя в «Активность».
  */
 export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: string }) {
   const day = days.find((d) => d.dateKey === selected)
-  const events = day?.events ?? []
-  const agenda = day?.agenda ?? null
-  if (events.length === 0 && !agenda) return null
+  if (!day) return null
+  const att = day.attendees
+  const lines = (day.agenda ? 1 : 0) + day.events.length
   return (
-    <div className="chips-events">
-      {agenda ? (
-        <div className="ce-row ce-agenda">
-          <span className="ce-ico">{icons.agenda(15, sec(0.5))}</span>
-          <span className="ce-text">{agenda.text}</span>
+    <div className="card day-info">
+      {day.agenda ? (
+        <div className="di-row di-agenda">
+          <span className="di-ico">{icons.agenda(15, sec(0.5))}</span>
+          <span className="di-text">{day.agenda.text}</span>
         </div>
       ) : null}
-      {events.map((e) => (
-        <div className="ce-row" key={e.id}>
-          <span className="ce-ico">{icons.calendar(15, '#bf5af2')}</span>
-          <span className="ce-title">{e.title}</span>
-          <span className="ce-time">{`в ${e.time}`}</span>
-        </div>
+      {day.events.map((e, i) => (
+        <Fragment key={e.id}>
+          {i > 0 || day.agenda ? <Sep left={54} /> : null}
+          <div className="di-row">
+            <span className="di-ico">{icons.calendar(15, '#bf5af2')}</span>
+            <span className="di-title">{e.title}</span>
+            <span className="di-time">{`в ${e.time}`}</span>
+          </div>
+        </Fragment>
       ))}
-    </div>
-  )
-}
-
-/** Строка легенды под чипами: она нужна на всех трёх экранах с выбором дня. */
-export function DayChipsLegend({ days }: { days: Day[] }) {
-  return (
-    <div className="chips-legend">
-      <span className="cl-row">
-        {icons.check(12, '#34c759', 2.2)}
-        число одобренных заявок в этот день
-      </span>
-      {days.some((d) => d.events.length > 0) ? (
-        <span className="cl-row">
-          <i className="legend-dot" />в этот день ивент
+      {lines > 0 ? <Sep left={54} /> : null}
+      <div className="di-row">
+        {att.length > 0 ? <AvatarStack users={att} /> : <span className="di-slot" />}
+        <span className="di-who">
+          <b>{att.length > 0 ? `Придут ${att.length}` : 'Пока никого'}</b>
+          {att.length > 0 ? <span>{whoComes(att)}</span> : null}
         </span>
-      ) : null}
-      {days.some((d) => d.lock) ? (
-        <span className="cl-row">
-          <i className="legend-hatch" />в этот день спейс закрыт для гостей
-        </span>
-      ) : null}
+      </div>
     </div>
   )
 }

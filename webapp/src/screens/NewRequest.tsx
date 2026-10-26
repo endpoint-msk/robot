@@ -1,17 +1,19 @@
-import { useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
-import { showAlert } from '../modals'
+import { sheetsGone, showAlert } from '../modals'
 import { markOwnTap } from '../motion'
-import { heroSupported } from '../hero'
-import { replaceTop, resetRoot, setData, useParams, useStore } from '../store'
+import { afterHero, heroRunning, heroSupported } from '../hero'
+import { UnderContext } from '../screenContext'
+import { getState, pop, replaceTop, resetRoot, setData, useParams, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { Bootstrap, ReminderChoice } from '../types'
 import { ActionButton, BackRow, BottomBar, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { Crossfade } from '../components/Crossfade'
+import { AnimContext, Screen } from '../components/Screen'
+import { askRules } from './Rules'
 import {
   DayChips,
-  DayChipsLegend,
   SelectedDayInfo,
   firstOpenDay,
   isPastForToday,
@@ -24,8 +26,38 @@ import {
   useDayTime,
 } from '../components/forms'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
-import { Screen } from '../components/Screen'
 import { TimeRow } from '../components/TimeField'
+
+/** Сколько въезжает экран (.screen.in-forward в app.css): лист правил поднимается после. */
+const ENTER_MS = 240
+
+/**
+ * До первой заявки над формой поднимается лист правил, когда сама форма уже на месте:
+ * после перехода главной кнопки гостя или после въезда экрана. Смахнули лист - форма ни к
+ * чему, экран уходит туда, откуда его открыли, но уже без листа под переходом.
+ */
+function useRulesGate(): void {
+  const anim = useContext(AnimContext)
+  const under = useContext(UnderContext)
+  useEffect(() => {
+    if (under || getState().data!.me.acceptedRules) return
+    let alive = true
+    let timer = 0
+    const ask = async (): Promise<void> => {
+      if (!alive) return
+      if (await askRules()) return
+      await sheetsGone()
+      if (alive) pop()
+    }
+    if (heroRunning()) afterHero(() => void ask())
+    else timer = window.setTimeout(() => void ask(), anim ? ENTER_MS : 0)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+}
 
 type RemindValue = ReminderChoice | 'off'
 
@@ -110,6 +142,7 @@ export function NewRequest() {
   // Заявка ушла: форма гаснет и уступает место карточке визита (см. visit-rise).
   const [leaving, setLeaving] = useState(false)
   const remindUi = useRemind(day, time, remind, setRemind)
+  useRulesGate()
 
   const submit = async (): Promise<void> => {
     if (locked) {
@@ -170,7 +203,6 @@ export function NewRequest() {
         <Crossfade id={day}>
           <SelectedDayInfo days={days} selected={day} />
         </Crossfade>
-        <DayChipsLegend days={days} />
         <SectionTitle>Детали</SectionTitle>
         {/* Всё про визит одной карточкой: время, напоминание, видимость и цель. */}
         <div className="nt-host" ref={remindUi.hostRef}>

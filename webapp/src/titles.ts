@@ -19,8 +19,6 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return 'Ближайшие дни'
     case 'myVisits':
       return 'Мои визиты'
-    case 'rules':
-      return 'Правила спейса'
     case 'route':
       return 'Как пройти'
     case 'peek':

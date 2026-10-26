@@ -1,91 +1,90 @@
-// Правила спейса перед первой заявкой на визит. Показывается один раз (см.
-// me.acceptedRules и startNewRequest); сервер тоже не даст создать заявку без согласия.
+// Правила спейса перед первой заявкой на визит: листом поверх уже открытой формы, один раз
+// (см. me.acceptedRules). Согласие - сама кнопка, а сервер всё равно не даст создать заявку
+// без него (403 rules_required).
 
-import { useState } from 'react'
+import { Fragment, type ReactElement } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
-import { replaceTop, useParams, useStore } from '../store'
-import { haptic, openUrl } from '../telegram'
-import { BackRow, BottomBar, Header, Sep } from '../components/common'
-import { Screen } from '../components/Screen'
+import { sheetPrompt, type SheetBodyProps } from '../modals'
+import { openUrl } from '../telegram'
+import { ActionButton, Sep } from '../components/common'
 
-const RULES = [
-  'Не приходите без одобренной заявки',
-  'Ведите себя адекватно',
-  'Не трогайте чужие вещи без прямого согласия резидента или владельца',
-  'Не рушьте духовный порядок места: если вы чем-то воспользовались, верните на место',
+const WIKI_URL = 'https://wiki.endpoint.moscow/s/public/doc/pravila-i-principy-soobshestva-oA7WZg3nWS'
+
+const ruleIcon = {
+  request: (
+    <svg width="17" height="17" viewBox="0 0 18 18">
+      <rect x="2.8" y="3.6" width="12.4" height="11.6" rx="2.6" fill="none" stroke="#fff" strokeWidth="1.7" />
+      <path d="M2.8 7.4h12.4M6.2 1.8v3M11.8 1.8v3" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M6.4 11.3l1.7 1.6 3.4-3.4" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  smile: (
+    <svg width="18" height="18" viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="7.6" fill="none" stroke="#fff" strokeWidth="1.7" />
+      <circle cx="7.5" cy="8.1" r="1.2" fill="#fff" />
+      <circle cx="12.5" cy="8.1" r="1.2" fill="#fff" />
+      <path d="M6.6 11.5c.8 1.6 2 2.4 3.4 2.4s2.6-.8 3.4-2.4" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
+  box: (
+    <svg width="18" height="18" viewBox="0 0 20 20">
+      <path d="M10 2.6l6.4 3.4v8L10 17.4 3.6 14V6z" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M3.6 6 10 9.4 16.4 6M10 9.4v8" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  ),
+}
+
+const RULES: { text: string; tone: string; icon: ReactElement }[] = [
+  { text: 'Не приходите без одобренной заявки', tone: 'green', icon: ruleIcon.request },
+  { text: 'Ведите себя адекватно', tone: 'blue', icon: ruleIcon.smile },
+  { text: 'Не трогайте чужие вещи без прямого согласия резидента или владельца', tone: 'orange', icon: ruleIcon.box },
+  {
+    text: 'Не рушьте духовный порядок места: если вы чем-то воспользовались, верните на место',
+    tone: 'purple',
+    icon: icons.undo(18, '#fff'),
+  },
 ]
 
-export function Rules() {
-  const { data } = useStore()
-  const params = useParams()
-  const [agreed, setAgreed] = useState(data!.me.acceptedRules)
-
-  const submit = async (): Promise<void> => {
-    const done = await action('rules.accept')
-    if (!done) return
-    // Экран правил в стеке не остаётся: назад с формы заявки надо возвращаться к визитам.
-    replaceTop('newRequest', { dateKey: params.dateKey, time: params.time }, 'cta', true)
+function RulesSheet({ done }: SheetBodyProps<boolean>) {
+  // Лист уходит только после ответа сервера: отказ ложится алертом в тот же лист, а правила
+  // остаются под ним, и согласиться можно ещё раз.
+  const accept = async (): Promise<void> => {
+    if (await action('rules.accept', {}, { quiet: true })) done(true)
   }
-
   return (
-    <Screen hasBottomBar>
-      <BackRow label="Мои визиты" />
-      <Header title="Правила спейса" subtitle="Прочитайте перед первой заявкой" />
-      <div className="rules-intro">Вы собираетесь подать заявку на хостинг в endpoint. Основные правила сообщества:</div>
-      <div className="card">
-        {RULES.map((text, i) => (
-          <div key={text}>
-            {i > 0 ? <Sep left={52} /> : null}
+    <>
+      <div className="rules-head">
+        <div className="rules-title">Правила спейса</div>
+        <div className="rules-sub">Прочитайте перед первой заявкой</div>
+      </div>
+      <div className="card rules-list">
+        {RULES.map((r, i) => (
+          <Fragment key={r.text}>
+            {i > 0 ? <Sep left={56} /> : null}
             <div className="row rule-row">
-              <div className="rule-num">{String(i + 1)}</div>
-              <span className="rule-text">{text}</span>
+              <div className="row-icon" style={{ background: `var(--${r.tone})` }}>
+                {r.icon}
+              </div>
+              <span className="rule-text">{r.text}</span>
             </div>
-          </div>
+          </Fragment>
         ))}
       </div>
-      <div className="rules-wiki">
-        Полные правила спейса:{' '}
-        <button
-          type="button"
-          className="link-btn"
-          onClick={() => openUrl('https://wiki.endpoint.moscow/s/public/doc/pravila-i-principy-soobshestva-oA7WZg3nWS')}
-        >
-          wiki.endpoint.moscow
+      <div className="card rules-wiki">
+        <button type="button" className="row tappable" onClick={() => openUrl(WIKI_URL)}>
+          <span className="row-label">Все правила на вики</span>
+          <div className="row-right">{icons.external()}</div>
         </button>
       </div>
-      <div style={{ height: 22 }} />
-      <div className="card">
-        <button
-          type="button"
-          className="row tappable"
-          role="checkbox"
-          aria-checked={agreed}
-          onClick={() => {
-            haptic.impact(agreed ? 'soft' : 'light')
-            setAgreed((v) => !v)
-          }}
-        >
-          <span className="row-label rule-agree">Я прочитал и согласен с правилами</span>
-          {/* Галочка в разметке всегда: переход по классу играет только на тапе, а не
-              при входе на экран с уже принятыми правилами. */}
-          <div className={'checkbox' + (agreed ? ' on' : '')}>{icons.check(13, '#fff', 2.6)}</div>
-        </button>
+      <div className="card modal-actions">
+        <ActionButton className="modal-btn primary" onClick={accept}>
+          Принимаю правила
+        </ActionButton>
       </div>
-      <BottomBar>
-        <button
-          className="primary-btn"
-          data-hero="cta"
-          data-hero-screen="cta"
-          data-hero-part="cta"
-          disabled={!agreed}
-          onClick={submit}
-        >
-          <span className="cta-label" data-hero-part="cta-label">
-            Согласиться и продолжить
-          </span>
-        </button>
-      </BottomBar>
-    </Screen>
+    </>
   )
 }
+
+/** true - правила приняты и сервер это записал; false - лист смахнули, заявку не подаём. */
+export const askRules = async (): Promise<boolean> => (await sheetPrompt<boolean>(RulesSheet)) === true

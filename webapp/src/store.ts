@@ -10,7 +10,6 @@ import { applyTheme, loadTheme, saveTheme } from './theme'
 import type { Bootstrap, Perspective, ThemeChoice } from './types'
 
 export type ScreenName =
-  | 'rules'
   | 'overview'
   | 'day'
   | 'invite'
@@ -197,11 +196,13 @@ export function openOnboardingRoot(params: NavParams): void {
   navigate({ stack: [entry('onboarding', params)], navId: state.navId + 1, anim: 'in-fade' })
 }
 
-/** Новая заявка: до первой из них гость проходит через экран правил (сервер это тоже проверяет). */
-/** `params`: день и время, с которыми открыть форму (например, «Хочу прийти» на ивенте). */
-/** Главная кнопка гостя (data-hero="cta") остаётся на месте и меняет подпись на кнопку формы. */
+/**
+ * Новая заявка. `params`: день и время, с которыми открыть форму (например, «Хочу прийти»
+ * на ивенте). Главная кнопка гостя (data-hero="cta") остаётся на месте и меняет подпись на
+ * кнопку формы. До первой заявки форма сама поднимает над собой лист правил.
+ */
 export function startNewRequest(params?: NavParams): void {
-  push(state.data?.me.acceptedRules ? 'newRequest' : 'rules', params, 'cta')
+  push('newRequest', params, 'cta')
 }
 
 /**

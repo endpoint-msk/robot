@@ -503,7 +503,7 @@ const posterWhen = (ev: SpaceEvent): string => {
 }
 
 /** «сегодня», «завтра», «через 41 день». */
-const untilWord = (todayKey: string, dateKey: string): string => {
+export const untilWord = (todayKey: string, dateKey: string): string => {
   const n = Math.round((keyToDate(dateKey).getTime() - keyToDate(todayKey).getTime()) / 86_400_000)
   if (n <= 0) return 'сегодня'
   if (n === 1) return 'завтра'

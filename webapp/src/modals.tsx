@@ -8,7 +8,7 @@
 // Вопрос, заданный сразу после ответа на предыдущий (меню пилла хоста → подтверждение),
 // появляется в том же листе: лист не закрывается и не открывается заново.
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { DayChips, isPastForToday, useDayTime } from './components/forms'
 import { Avatar } from './components/people'
@@ -103,7 +103,14 @@ type ChoiceInput = {
   cancelLabel: string
   subject?: SheetSubject
 }
-type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | TextInput | DateInput | ImageInput | ChoiceInput
+/** Лист со своим содержимым (правила спейса): ответ отдаёт `done`, отмена даёт null. */
+export type SheetBodyProps<T> = { done: (value: T) => void; active: boolean }
+type CustomInput = {
+  kind: 'sheet'
+  Body: ComponentType<SheetBodyProps<any>>
+  subject?: SheetSubject
+}
+type ModalInput = ConfirmInput | TimeInput | RescheduleInput | NumberInput | TextInput | DateInput | ImageInput | ChoiceInput | CustomInput
 /** `settled`: ответ уже отдан, а узел ещё нужен листу (гаснет, уезжает вниз). */
 type Modal = ModalInput & { id: number; resolve: (value: any) => void; settled: boolean }
 type SheetModal = Exclude<Modal, { kind: 'image' }>
@@ -577,6 +584,9 @@ function Layer({ modal, state }: { modal: SheetModal; state: 'on' | 'out' | 'par
     case 'date':
       body = <DateBody modal={modal} />
       break
+    case 'sheet':
+      body = <modal.Body done={(v: unknown) => settle(modal.id, v)} active={active} />
+      break
   }
   return (
     <div
@@ -937,6 +947,25 @@ export const textPrompt = (opts: {
     multiline: opts.multiline ?? false,
     destructive: opts.destructive ?? false,
     subject: opts.subject,
+  })
+
+/** Лист со своим содержимым. null — смахнули, закрыли тапом мимо или «Назад». */
+export const sheetPrompt = <T,>(Body: ComponentType<SheetBodyProps<T>>): Promise<T | null> =>
+  open<T | null>({ kind: 'sheet', Body })
+
+/** Лист доехал вниз и убран: экран под ним снова в полный размер, можно уходить с него. */
+export const sheetsGone = (): Promise<void> =>
+  new Promise((resolve) => {
+    const gone = (): boolean => !modals.some(isSheet)
+    if (gone()) {
+      resolve()
+      return
+    }
+    const off = subscribe(() => {
+      if (!gone()) return
+      off()
+      resolve()
+    })
   })
 
 /** Выбор даты ('YYYY-MM-DD'). null — отмена. */

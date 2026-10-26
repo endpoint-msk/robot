@@ -3,7 +3,7 @@
 // «Я приду» живёт в шапке и отвечает на месте. Прошедший день открывается из архива
 // экраном «Кто пришёл» (screens/Visits.tsx).
 
-import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import { action } from '../api'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
@@ -277,7 +277,7 @@ function DayCard({ day }: { day: DayData }) {
 }
 
 /** «вы, @lena_k и ещё 2»: кто придёт, коротко, вы первыми. */
-const comingNames = (names: string[]): string => {
+export const comingNames = (names: string[]): string => {
   if (names.length === 0) return 'Пока никто не собирается'
   const text = names.length <= 2 ? names.join(' и ') : `${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`
   return text.charAt(0).toUpperCase() + text.slice(1)
@@ -503,17 +503,15 @@ function RequestSection({
   )
 }
 
-function DayPage({
-  day,
-  active,
-  headRef,
-  pageRef,
-}: {
+/** Страница листалки: по `headRef` она меряет полосу под шапкой, по `pageRef` двигает страницу. */
+export type DayPageProps = {
   day: DayData
   active: boolean
   headRef: (el: HTMLDivElement | null) => void
   pageRef: (el: HTMLDivElement | null) => void
-}) {
+}
+
+function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
   const { data } = useStore()
   const me = data!.me
   const meUser: User = { userId: me.id, name: me.name, username: me.username }
@@ -762,9 +760,20 @@ const flashRow = (row: HTMLElement): (() => void) => {
 /**
  * Листалка дней. Всё, что меняется между днями (цвет и высота полосы под шапкой,
  * сдвиг страниц, точки), считается от одной дробной позиции p, как в знакомстве, и
- * рисуется правками style. React отвечает за содержимое страниц.
+ * рисуется правками style. React отвечает за содержимое страниц: у резидента это день с
+ * заявками, у гостя (PeekDay.tsx) только то, что ему положено видеть.
  */
-function DayPager({ days, index }: { days: DayData[]; index: number }) {
+export function DayPager({
+  days,
+  index,
+  Page = DayPage,
+  backLabel = 'Ближайшие дни',
+}: {
+  days: DayData[]
+  index: number
+  Page?: ComponentType<DayPageProps>
+  backLabel?: string
+}) {
   const params = useParams()
   const { data, theme } = useStore()
   const todayKey = data!.todayKey
@@ -1187,7 +1196,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
           <div className="dpg-hatch" ref={hatchRef} />
           <div className="dpg-lockroll" ref={rollRef} style={{ visibility: 'hidden' }} />
         </div>
-        <BackRow label="Ближайшие дни" />
+        <BackRow label={backLabel} />
         <div className="dpg-dots" ref={dotsRef}>
           {days.map((d, k) => (
             <button
@@ -1205,7 +1214,7 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
         <div className="dpg-track" ref={trackRef}>
           <LockRollContext.Provider value={roll}>
             {days.map((d, i) => (
-              <DayPage
+              <Page
                 key={d.dateKey}
                 day={d}
                 active={i === index}
@@ -1225,10 +1234,18 @@ function DayPager({ days, index }: { days: DayData[]; index: number }) {
 }
 
 /** День выпал из окна обзора, пока экран был открыт (прежде всего — через полночь). */
-function DroppedDay({ dateKey }: { dateKey: string }) {
+export function DroppedDay({
+  dateKey,
+  backLabel = 'Ближайшие дни',
+  backText = 'К ближайшим дням',
+}: {
+  dateKey: string
+  backLabel?: string
+  backText?: string
+}) {
   return (
     <Screen>
-      <BackRow label="Ближайшие дни" />
+      <BackRow label={backLabel} />
       <Header title={WEEKDAYS_FULL[weekdayIdx(dateKey)]} subtitle={fmtDayMonth(dateKey)} />
       <div className="card">
         <EmptyState
@@ -1238,7 +1255,7 @@ function DroppedDay({ dateKey }: { dateKey: string }) {
         />
         <div style={{ display: 'flex', justifyContent: 'center', padding: '0 20px 22px' }}>
           <button type="button" className="retry-btn" style={{ marginTop: 0 }} onClick={pop}>
-            К ближайшим дням
+            {backText}
           </button>
         </div>
       </div>

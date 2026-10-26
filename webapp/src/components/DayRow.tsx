@@ -144,8 +144,11 @@ export function DayRow({
  * Сегодняшний день на «Ближайших днях» карточкой над неделей: экран открывают почти всегда
  * ради него. Данные те же, что у строки дня, карточка только даёт им место. День недели и
  * дата словами целиком: неделя под карточкой начинается с завтрашнего дня.
+ *
+ * `guest` - та же карточка в «Активности»: строки заявок нет, гостю их не показывают, и
+ * стрелка встаёт к людям, а без людей к строке «Пока никого».
  */
-export function TodayCard({ day, onOpen }: { day: DayRowData; onOpen: () => void }) {
+export function TodayCard({ day, onOpen, guest = false }: { day: DayRowData; onOpen: () => void; guest?: boolean }) {
   const { data } = useStore()
   const me = data!.me.id
   const att = day.attendees ?? []
@@ -156,7 +159,7 @@ export function TodayCard({ day, onOpen }: { day: DayRowData; onOpen: () => void
   const headline = lock ? lock.reason || 'Закрыт для гостей' : (day.agenda?.text ?? null)
   const agendaLine = lock && day.agenda && day.agenda.text !== lock.reason ? day.agenda.text : null
   const pending = day.total - day.approved
-  const needsAction = pending > 0 && !lock
+  const needsAction = !guest && pending > 0 && !lock
 
   // «вы, @mika и ещё 1»: себя человек ищет в списке первым.
   const names = [...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]
@@ -176,7 +179,7 @@ export function TodayCard({ day, onOpen }: { day: DayRowData; onOpen: () => void
   return (
     <button
       type="button"
-      className={'today-card' + (lock ? ' day-locked' : '')}
+      className={'today-card' + (lock ? ' day-locked' : '') + (guest && att.length > 0 ? ' tc-nofoot' : '')}
       title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined}
       onClick={onOpen}
     >
@@ -205,21 +208,31 @@ export function TodayCard({ day, onOpen }: { day: DayRowData; onOpen: () => void
             <b>{`Придут ${att.length}`}</b>
             <span>{who}</span>
           </span>
+          {guest ? icons.chevron(sec(0.4)) : null}
         </div>
       ) : null}
-      <div className={'tc-foot' + (day.total > 0 ? '' : ' muted')}>
-        <span className="tc-req">
-          {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
-          {foot}
-        </span>
-        {day.approved > 0 ? (
-          <span className="approved-count">
-            {icons.check(14, '#34c759')}
-            {String(day.approved)}
+      {guest ? (
+        att.length > 0 ? null : (
+          <div className="tc-foot muted">
+            <span className="tc-req">{lock ? 'Заявки закрыты' : 'Пока никого'}</span>
+            {icons.chevron(sec(0.4))}
+          </div>
+        )
+      ) : (
+        <div className={'tc-foot' + (day.total > 0 ? '' : ' muted')}>
+          <span className="tc-req">
+            {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
+            {foot}
           </span>
-        ) : null}
-        {icons.chevron(sec(0.4))}
-      </div>
+          {day.approved > 0 ? (
+            <span className="approved-count">
+              {icons.check(14, '#34c759')}
+              {String(day.approved)}
+            </span>
+          ) : null}
+          {icons.chevron(sec(0.4))}
+        </div>
+      )}
     </button>
   )
 }

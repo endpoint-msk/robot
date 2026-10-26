@@ -44,9 +44,9 @@ export function targetEntries(raw: string, data: Bootstrap, perspective: Perspec
         const key = arg || data.todayKey
         return hasDay(key) ? [{ name: 'day', params: { dateKey: key } }] : []
       }
-      // До первой заявки гость проходит правила, и они передают день форме. Прошедший или
-      // закрытый день форма сама меняет на первый открытый.
-      return [{ name: data.me.acceptedRules ? 'newRequest' : 'rules', params: arg ? { dateKey: arg } : {} }]
+      // Правила до первой заявки форма поднимает над собой сама. Прошедший или закрытый
+      // день она меняет на первый открытый.
+      return [{ name: 'newRequest', params: arg ? { dateKey: arg } : {} }]
     }
     case 'req': {
       if (resident) {

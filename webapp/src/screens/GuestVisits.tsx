@@ -76,8 +76,8 @@ function HistoryRow({ item, todayKey }: { item: HistoryItem; todayKey: string })
 
 /** Сводка: визиты и неявки первой строкой, «обычно» и ближайший визит второй. */
 function ProfileStats({ p }: { p: GuestProfile }) {
-  const usual = p.usual ? `по ${WEEKDAYS_PLURAL_DAT[p.usual.weekday]}${p.usual.time ? ` к ${p.usual.time}` : ''}` : null
-  const next = p.next ? `${fmtShortDate(p.next.dateKey)} к ${p.next.time}` : null
+  const usual = p.usual ? `по ${WEEKDAYS_PLURAL_DAT[p.usual.weekday]}${p.usual.time ? ` к ${p.usual.time}` : ''}` : null
+  const next = p.next ? `${fmtShortDate(p.next.dateKey)} к ${p.next.time}` : null
   return (
     <div className="card stats-quad">
       <div className="sq-row">

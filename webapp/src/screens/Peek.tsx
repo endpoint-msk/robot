@@ -5,6 +5,7 @@ import { push, useStore } from '../store'
 import { sec } from '../theme'
 import type { Day } from '../types'
 import { BackRow, Header, Sep } from '../components/common'
+import { TodayCard } from '../components/DayRow'
 import { LaterEvents } from '../components/EventRow'
 import { AvatarStack } from '../components/people'
 import { Screen } from '../components/Screen'
@@ -80,13 +81,17 @@ function PeekDayRow({ day }: { day: Day }) {
 
 export function Peek() {
   const { data } = useStore()
-  const days = data!.days
+  // Сегодня карточкой над неделей, как у резидента: неделя под ней начинается с завтра.
+  const [today, ...rest] = data!.days
+  const card = today && today.dateKey === data!.todayKey ? today : null
+  const week = card ? rest : data!.days
   return (
     <Screen>
       <BackRow label="Мои визиты" />
       <Header title="Активность" subtitle="Ивенты и кто придёт" />
+      {card ? <TodayCard day={card} guest onOpen={() => push('peekDay', { dateKey: card.dateKey })} /> : null}
       <div className="card">
-        {days.map((day, i) => (
+        {week.map((day, i) => (
           <Fragment key={day.dateKey}>
             {i > 0 ? <Sep left={86} /> : null}
             <PeekDayRow day={day} />

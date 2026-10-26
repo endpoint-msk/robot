@@ -1,15 +1,15 @@
-// «Как пройти»: адрес, метро, фото двери подъезда и точка на карте.
+// «Как пройти»: карточка места (карта, адрес, кнопки), метро и фото двери подъезда.
 // Открывается с главной гостя («Мои визиты»).
 //
 // Содержимое — во фронте, как и текст правил (screens/Rules.tsx): это константа
 // конкретного спейса, а не настройка, и в стейте ей делать нечего.
 
-import type { MouseEvent } from 'react'
+import { Fragment, type MouseEvent } from 'react'
 import { icons } from '../icons'
 import { showAlert, showImage } from '../modals'
 import { openUrl } from '../telegram'
 import { accent } from '../theme'
-import { BackRow, Footnote, Header } from '../components/common'
+import { BackRow, Footnote, Header, Sep } from '../components/common'
 import { useCopyFeedback } from '../components/CopyFeedback'
 import { Screen } from '../components/Screen'
 
@@ -157,7 +157,7 @@ function RouteMap() {
 const MAPS_URL = `https://yandex.ru/maps/?text=${encodeURIComponent(`Москва, ${ADDRESS}`)}`
 
 export function Route() {
-  const clip = useCopyFeedback(15)
+  const clip = useCopyFeedback(20)
 
   // Ответ на месте пальца, а не модалкой: «скопировано» на весь экран слишком громкое.
   const copyAddress = async (e: MouseEvent): Promise<void> => {
@@ -171,53 +171,46 @@ export function Route() {
       <BackRow label="Мои визиты" />
       <Header title="Как пройти" />
 
-      <div className="card">
-        <button type="button" className="row tappable route-address" onClick={(e) => void copyAddress(e)}>
-          <div className="row-icon route-pin">{icons.pin(18, accent())}</div>
-          <div className="route-address-main">
-            <div className="route-label">Адрес</div>
-            <div className="route-value">
-              {ADDRESS}
-            </div>
-            <div className="route-sub">{ENTRANCE}</div>
-          </div>
-          <div className="row-right">
-            <div className={'route-copy' + (clip.copied ? ' done' : '')}>{clip.glyph}</div>
-          </div>
-        </button>
-        {clip.toast}
-        <div className="sep" style={{ marginLeft: 58 }} />
-        <div className="route-metro">
-          <div className="route-label">Метро</div>
-          <div className="route-metro-list">
-            {METRO.map((m) => (
-              <div className="route-metro-row" key={m.station}>
-                <img src={m.icon} width={24} height={24} alt={m.line} />
-                <span>{m.station}</span>
-              </div>
-            ))}
-          </div>
+      {/* Карточка места, как место в Telegram: карта, ради которой экран открывают по
+          дороге, сверху, адрес заголовком, действия кнопками, как в шапке профиля. */}
+      <div className="card route-place">
+        <div className="route-map-wrap">
+          <RouteMap />
+          <div className="route-map-credit">© OpenStreetMap</div>
         </div>
+        <div className="route-place-body">
+          <div className="route-place-t">{ADDRESS}</div>
+          <div className="route-place-s">{ENTRANCE}</div>
+        </div>
+        <div className="prof-acts route-acts">
+          <button type="button" className="prof-act" onClick={(e) => void copyAddress(e)}>
+            {clip.glyph}
+            <span>Адрес</span>
+          </button>
+          <button type="button" className="prof-act" onClick={() => openUrl(MAPS_URL)}>
+            {icons.map(20, accent())}
+            <span>В картах</span>
+          </button>
+        </div>
+      </div>
+      {clip.toast}
+
+      <div className="card route-metro">
+        {METRO.map((m, i) => (
+          <Fragment key={m.station}>
+            {i > 0 ? <Sep left={54} /> : null}
+            <div className="row">
+              <img src={m.icon} width={28} height={28} alt={m.line} />
+              <span className="row-label">{m.station}</span>
+              <span className="route-line">{m.line}</span>
+            </div>
+          </Fragment>
+        ))}
       </div>
 
       {/* Дверь ищут в темноте по фотографии — её нужно уметь рассмотреть. */}
       <div className="route-door tappable" onClick={() => showImage('/door.jpg', 'Дверь подъезда')}>
         <img src="/door.jpg" alt="Дверь подъезда" />
-      </div>
-
-      <div className="section-title">На карте</div>
-      <div className="card route-map-card">
-        <div className="route-map-wrap">
-          <RouteMap />
-          <div className="route-map-credit">© OpenStreetMap</div>
-        </div>
-        <button type="button" className="row tappable" onClick={() => openUrl(MAPS_URL)}>
-          <span className="route-map-open">
-            {icons.external()}
-            Открыть в картах
-          </span>
-          <div className="row-right">{icons.chevron()}</div>
-        </button>
       </div>
 
       <Footnote>По прибытии свяжитесь с резидентом, который вас хостит, или нажмите кнопку «Я на месте».</Footnote>

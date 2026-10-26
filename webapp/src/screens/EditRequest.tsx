@@ -9,7 +9,6 @@ import { ActionButton, BackRow, BottomBar, Header, SectionTitle, Sep, Switch } f
 import { Crossfade } from '../components/Crossfade'
 import {
   DayChips,
-  DayChipsLegend,
   SelectedDayInfo,
   firstOpenDay,
   isPastForToday,
@@ -88,7 +87,6 @@ export function EditRequest() {
       <Crossfade id={day}>
         <SelectedDayInfo days={days} selected={day} />
       </Crossfade>
-      <DayChipsLegend days={days} />
       <SectionTitle>Детали</SectionTitle>
       <div className="nt-host" ref={remindUi.hostRef}>
         <div className="card">

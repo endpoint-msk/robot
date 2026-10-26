@@ -183,7 +183,7 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
    Горизонтальный вылет везде не больше зазора до соседа, чтобы слой не воровал
    его тапы. Там, где элементы делят ряд (.seg), так нельзя: растёт сам элемент. */
 .note-flag, .host-btn, .search-clear, .remove-btn, .purpose-toggle,
-.link-btn, .mdr-copy, .route-copy { position: relative; }
+.link-btn, .mdr-copy { position: relative; }
 .note-flag::after,
 .host-btn::after,
 .search-clear::after,
@@ -191,7 +191,6 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
 .purpose-toggle::after,
 .link-btn::after,
 .mdr-copy::after,
-.route-copy::after,
 .lightbox-close::after,
 .ev-thumb-del::before { content: ""; position: absolute; }
 
@@ -202,7 +201,6 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
 .purpose-toggle::after { inset: -13px -3px; }
 .link-btn::after { inset: -12px -4px; }
 .mdr-copy::after { inset: -12px -5px; }
-.route-copy::after { inset: -5px; }
 .lightbox-close::after { inset: -6px; }
 /* Крестик афиши лежит в плитке с overflow: hidden — за её край слой не выйдет,
    поэтому 40px вместо 44. */
@@ -248,7 +246,6 @@ body {
 .req-sub,
 .approved-count,
 .day-chip,
-.ce-time,
 .time-input,
 .tp-wheels,
 .ev-time-value,
@@ -273,8 +270,8 @@ body {
 .es-title, .es-text, .be-title, .be-text, .modal-text, .modal-num-hint, .bar-hint, .build-sign {
     text-wrap: balance;
 }
-.ob-lead, .rules-intro, .rule-text, .rules-wiki, .footnote, .hint-text, .remind-caption,
-.status-card-note, .my-dues-sub, .stats-note, .dues-note, .ab-title, .lb-sub, .ce-text {
+.ob-lead, .rule-text, .rules-wiki, .footnote, .hint-text, .remind-caption,
+.status-card-note, .my-dues-sub, .stats-note, .dues-note, .ab-title, .lb-sub {
     text-wrap: pretty;
 }
 
@@ -752,7 +749,7 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .section-title { transition: opacity 0.22s ease-out; }
 .section-title.sec-dim { opacity: 0; }
 .card + .section-title, .footnote + .section-title, button + .section-title,
-.route-door + .section-title, .nt-host + .section-title { margin-top: 22px; }
+.nt-host + .section-title { margin-top: 22px; }
 /* Тот же отступ, когда между карточкой и заголовком стоит обёртка подмены: первый
    заголовок внутри Swap соседом карточки не является, и правило выше его не ловило —
    «РЕЗИДЕНТЫ» прилипали к полю поиска. */
@@ -884,6 +881,9 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     font-size: 15px;
 }
 .tc-req { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+/* У гостя строки заявок нет: стрелка встаёт к людям, и карточка кончается ими. */
+.today-card.tc-nofoot { padding-bottom: 14px; }
+.tc-people > svg { margin-left: auto; flex-shrink: 0; }
 .tc-foot.muted .tc-req { color: var(--text-3); }
 .tc-req .day-dot { margin: 0; flex-shrink: 0; }
 .row.day-empty .dow { color: var(--text-3); }
@@ -1468,7 +1468,7 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .dpg-myslot.on .dpg-slot { opacity: 0; }
 .dpg-me { position: absolute; inset: 0; border-radius: 50%; }
 .dpg-coming-text { flex: 1; min-width: 0; }
-.dpg-coming-k { font-size: 15px; font-weight: 700; }
+.dpg-coming-k { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dpg-coming-s { margin-top: 1px; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Обе подписи лежат в одной ячейке: ширина кнопки не прыгает, а смена подписи
    перетекает, как подпись кнопки в знакомстве. Нажатие сразу, возврат с перелётом. */
@@ -1711,14 +1711,14 @@ span.collapse { display: block; }
    прижимался к нижней границе чипа. */
 .day-chip .dc-dow { font-size: 12px; line-height: 1; color: var(--text-2); }
 .day-chip .dc-num { font-size: 17px; line-height: 1; font-weight: 700; color: var(--text); }
-.day-chip .dc-counts { display: flex; align-items: center; line-height: 1; gap: 3px; font-size: 11px; font-weight: 600; color: var(--text-2); }
-.day-chip .dc-approved { font-weight: 700; color: var(--green); }
+/* Сколько человек придёт: человечек и число одним цветом, текст чипа, а не зелёный:
+   это не статус заявок, а люди. */
+.day-chip .dc-people { display: flex; align-items: center; line-height: 1; gap: 2px; font-size: 11px; font-weight: 700; color: var(--text-2); }
 .day-chip .dc-dash { font-size: 11px; color: rgba(var(--sec), 0.3); }
+.day-chip .dc-lock { display: flex; color: rgba(var(--sec), 0.42); }
 .day-chip.selected { background: var(--blue); }
 .day-chip.selected .dc-dow { color: rgba(255, 255, 255, 0.75); }
 .day-chip.selected .dc-num { color: #fff; }
-.day-chip.selected .dc-counts { color: rgba(255, 255, 255, 0.85); }
-.day-chip.selected .dc-approved { color: #fff; }
 .day-chip.selected .dc-dash { color: rgba(255, 255, 255, 0.6); }
 /* Точка «в этот день ивент»: фиолетовый — тон подсистемы ивентов. Абсолютная,
    чтобы не двигать содержимое чипа: без ивента высота строк та же. */
@@ -1752,59 +1752,30 @@ span.collapse { display: block; }
 }
 .day-chips.dc-track .dc-ink .dc-dow { color: rgba(255, 255, 255, 0.75); }
 .day-chips.dc-track .dc-ink .dc-num { color: #fff; }
-.day-chips.dc-track .dc-ink .dc-counts { color: rgba(255, 255, 255, 0.85); }
-.day-chips.dc-track .dc-ink .dc-approved { color: #fff; }
-.day-chips.dc-track .dc-ink .dc-dash { color: rgba(255, 255, 255, 0.6); }
+.day-chips.dc-track .dc-ink .dc-people { color: rgba(255, 255, 255, 0.92); }
+.day-chips.dc-track .dc-ink .dc-dash, .day-chips.dc-track .dc-ink .dc-lock { color: rgba(255, 255, 255, 0.6); }
 .day-chips.dc-track .dc-ink .dc-event { background: #fff; }
 
-/* Строка на пояснение: при переносе внутри одной строки маркер отрывался от
-   своего текста и висел в конце предыдущей. */
-.chips-legend {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 10px 6px 22px;
-    font-size: 12px;
-    color: rgba(var(--sec), 0.5);
-}
-/* Колонка фиксированной ширины под маркер: галочка 12px и точка 5px иначе
-   начинают свои подписи с разного отступа. */
-.chips-legend .cl-row { display: grid; grid-template-columns: 14px 1fr; align-items: center; gap: 6px; }
-.chips-legend .cl-row > :first-child { justify-self: center; }
-/* Ивенты выбранного дня — под чипами, до легенды: это про конкретный день, а не
-   про то, как читать чипы. Тонированная плашка, а не строка с точкой: голый
-   маркер сливался с точками легенды прямо под ним, и реальный ивент читался как
-   пояснение. */
-.chips-events { margin: 12px 0 4px; display: flex; flex-direction: column; gap: 6px; }
-.ce-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 12px;
-    border-radius: 12px;
-    background: var(--ev-bg);
-    font-size: 14px;
-    min-width: 0;
-}
-.ce-row .ce-ico { flex-shrink: 0; display: flex; }
-.ce-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ce-time { flex: none; margin-left: auto; color: var(--purple); font-weight: 600; }
-/* Повестка выбранного дня: над ивентами и серым тоном. Текст переносится, а не
-   обрезается: гость читает его, пока выбирает день, и ходить за ним в «Активность»
-   ради этого не должен. */
-.ce-row.ce-agenda { align-items: flex-start; background: rgba(var(--sec), 0.08); }
-.ce-agenda .ce-ico { margin-top: 1px; }
-.ce-text { color: var(--text); line-height: 1.35; overflow-wrap: anywhere; }
-
-.chips-legend .legend-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--purple); }
-.chips-legend .legend-hatch {
-    width: 12px;
-    height: 12px;
-    flex-shrink: 0;
-    border-radius: 3px;
-    background-color: rgba(255, 149, 0, 0.08);
-    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 3px, transparent 3px 6px);
-}
+/* Выбранный день целиком под чипами (SelectedDayInfo): повестка, ивенты и кто придёт
+   одной карточкой. Легенды под чипами больше нет: человечек, точка ивента и замок
+   читаются сами. Нижний отступ внутри слоя подмены: он обрезает всё, что за краем, и
+   тень карточки иначе срезалась бы. */
+.day-info { margin: 12px 0 3px; }
+.xfade + .section-title { margin-top: 19px; }
+.di-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 9px 14px; }
+.di-row .avatar-stack .avatar { width: 30px; height: 30px; font-size: 13px; }
+.di-row .avatar-stack .avatar + .avatar { margin-left: -9px; }
+.di-ico { width: 30px; flex-shrink: 0; display: flex; justify-content: center; }
+/* Повестку гость читает, пока выбирает день: текст переносится, а не обрезается. */
+.di-agenda { align-items: flex-start; }
+.di-agenda .di-ico { margin-top: 2px; }
+.di-text { flex: 1; min-width: 0; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.di-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.di-time { flex: none; font-size: 15px; font-weight: 600; color: var(--purple); }
+.di-slot { width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; border: 1.6px dashed rgba(var(--sec), 0.3); }
+.di-who { display: flex; flex-direction: column; min-width: 0; font-size: 15px; line-height: 1.25; }
+.di-who b { font-weight: 600; }
+.di-who span { font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* --- Закрытый день -------------------------------------------------------
 
@@ -2198,27 +2169,16 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .purpose-input::placeholder { color: rgba(var(--sec), 0.4); }
 
-/* --- Правила спейса (согласие перед первой заявкой) --- */
+/* --- Правила спейса: лист над формой перед первой заявкой (screens/Rules.tsx) --- */
 
-.rules-intro { font-size: 15px; line-height: 1.45; color: var(--text-2); margin: 0 6px 14px; }
-/* Правило — многострочное, поэтому номер прижат к верху, а не по центру строки. */
-.row.rule-row { align-items: flex-start; }
-.rule-num {
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--chip);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-2);
-}
-.rule-text { font-size: 16px; line-height: 1.35; }
-/* Согласие — единственная строка экрана с многоточием ни к чему: даём переноситься. */
-.row-label.rule-agree { white-space: normal; overflow: visible; }
+.rules-head { padding: 2px 4px 14px; }
+.rules-title { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; line-height: 1.2; color: var(--text); }
+.rules-sub { margin-top: 3px; font-size: 15px; color: var(--text-2); }
+.modal-sheet .rules-head + .card { margin-top: 0; }
+/* Правило многострочное, поэтому значок прижат к верху, а не по центру строки. */
+.row.rule-row { align-items: flex-start; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
+.rule-text { flex: 1; min-width: 0; padding-top: 4px; font-size: 16px; line-height: 1.3; text-wrap: pretty; }
+.rules-wiki .row-label { color: var(--blue); }
 .checkbox {
     margin-left: auto;
     flex-shrink: 0;
@@ -2629,15 +2589,6 @@ button.agenda-banner:active { opacity: 0.6; }
     font-size: 15px;
 }
 
-/* Строка про вики под списком правил: не правило, а справка — поэтому вне карточки
-   и тем же кеглем, что сноски. */
-.rules-wiki {
-    margin: 14px 6px 0;
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--text-2);
-}
-
 /* Корневая ошибка загрузки. Карточка, а не голый текст по центру: с этого экрана
    некуда уйти навигацией, и кнопка «Повторить» здесь единственный выход. */
 .boot-error {
@@ -2811,6 +2762,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 }
 .evv-ps { position: relative; z-index: 2; font-size: 13px; font-weight: 600; opacity: 0.82; pointer-events: none; }
 .evv-when { display: flex; align-items: center; gap: 12px; margin: 16px 4px 0; }
+/* Заявка на ивент открывается его шапкой: полоса в тон афиши, плитка даты и название. */
+.eva-top .header { margin-bottom: 0; }
 .evv-when-text { min-width: 0; }
 .evv-wt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 17px; font-weight: 700; }
 .evv-ws { margin-top: 2px; font-size: 14px; color: var(--text-2); }
@@ -3133,38 +3086,16 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 
 /* --- «Как пройти» ---------------------------------------------------------- */
 
-.route-address { align-items: center; }
-.route-pin { background: var(--blue-soft-strong); border-radius: 10px; width: 34px; height: 34px; }
-.route-address-main { min-width: 0; flex: 1; }
-.route-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-3);
-}
-.route-value {
-    font-size: 19px;
-    font-weight: 700;
-    letter-spacing: -0.2px;
-    margin-top: 2px;
-    color: var(--text);
-    overflow-wrap: anywhere;
-}
-.route-sub { font-size: 14px; color: var(--text-2); margin-top: 1px; }
-.route-copy {
-    width: 34px;
-    height: 34px;
-    border-radius: 999px;
-    background: var(--chip);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 160ms ease;
-}
-/* Подтверждение копирования живёт там, где палец: модалка на весь экран ради
-   «скопировано» перекрывает то, что человек и хотел увидеть. */
-.route-copy.done { background: rgba(52, 199, 89, 0.16); }
+/* Карточка места, как место в Telegram: карта сверху, адрес заголовком, действия кнопками,
+   как в шапке профиля. Кнопки лежат в карточке, поэтому они цвета поля, а не карточки. */
+.route-place .route-map-wrap { height: 196px; }
+.route-place-body { padding: 14px 16px 0; }
+.route-place-t { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; line-height: 1.2; overflow-wrap: anywhere; }
+.route-place-s { margin-top: 3px; font-size: 15px; color: var(--text-2); }
+.route-acts { margin-top: 14px; padding: 0 12px 12px; }
+.route-acts .prof-act { background: var(--chip); box-shadow: none; }
+.route-acts .prof-act:active { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.06); }
+.route-acts .prof-act > svg, .route-acts .copy-glyph { height: 20px; }
 
 /* Копирование (components/CopyFeedback.tsx): рамки и галочка в одной ячейке, между
    ними ходит движение; без него состояние держит класс on. */
@@ -3190,13 +3121,13 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     transform-origin: 50% 100%;
     box-shadow: 0 8px 22px -8px rgba(0, 0, 0, 0.35);
 }
-.route-metro { padding: 13px 14px 15px; }
-/* Те же колонки, что у адреса над ним: значок линии под булавкой (34px), подпись и
-   станции под текстом адреса. */
-.route-metro > .route-label { padding-left: 44px; }
-.route-metro-list { display: flex; flex-direction: column; gap: 11px; margin-top: 10px; }
-.route-metro-row { display: grid; grid-template-columns: 34px 1fr; column-gap: 10px; align-items: center; font-size: 16px; font-weight: 600; }
-.route-metro-row img { justify-self: center; display: block; border-radius: 50%; }
+/* Место, метро и дверь - один рассказ о том, куда идти: зазоры между ними меньше,
+   чем между разделами. */
+.route-place + .route-metro, .route-metro + .route-door { margin-top: 12px; }
+.route-metro .row { gap: 12px; }
+.route-metro img { display: block; flex-shrink: 0; border-radius: 50%; }
+.route-metro .row-label { font-weight: 600; }
+.route-line { margin-left: auto; flex-shrink: 0; font-size: 14px; color: var(--text-2); }
 
 .route-door {
     margin-top: 22px;
@@ -3253,22 +3184,6 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     bottom: 5px;
     font-size: 8px;
     color: rgba(var(--sec), 0.4);
-}
-
-.route-map-card { margin-top: 7px; overflow: hidden; }
-/* Тайлы позиционируются абсолютно внутри окна фиксированной высоты — мозаика
-   собрана под конкретную точку, поэтому окно не резиновое по высоте. */
-
-
-
-
-.route-map-open {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--blue);
 }
 
 /* ==========================================================================

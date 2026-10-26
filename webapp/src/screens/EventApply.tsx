@@ -1,20 +1,26 @@
 // Гость подаёт (или правит) заявку на ивент по его форме. Одна заявка на ивент:
 // если она уже есть — режим правки (пока на рассмотрении) либо чтение (если принята).
 
-import { useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import { action } from '../api'
-import { fmtShortDate } from '../dates'
-import { markOwnTap } from '../motion'
-import { pop, useParams } from '../store'
-import { haptic } from '../telegram'
+import { weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { afterHero } from '../hero'
+import { markOwnTap, stageTint, toHex, toneColors } from '../motion'
+import { UnderContext } from '../screenContext'
+import { getState, pop, useParams, useStore } from '../store'
+import { haptic, setHeaderColor } from '../telegram'
+import { applyTheme } from '../theme'
 import { offerUndo, type Undoable } from '../undo'
 import type { SpaceEvent } from '../types'
 import { BackRow, Footnote, Header, SectionTitle } from '../components/common'
+import { eventTone, toneVars } from '../components/EventRow'
 import { FormFill, isFormComplete, type AnswerMap } from '../components/FormFill'
 import { Screen } from '../components/Screen'
+import { DateTile, untilWord } from './Event'
 
 export function EventApply() {
   const params = useParams()
+  const { data } = useStore()
   const event = params.event as SpaceEvent
   const fields = event.form?.fields ?? []
   const app = event.myApplication ?? null
@@ -40,6 +46,21 @@ export function EventApply() {
   const [answers, setAnswers] = useState<AnswerMap>(initial)
   const complete = isFormComplete(fields, answers)
 
+  // Форма открывается шапкой ивента: полоса в тон афиши, как на экране ивента, и шапка
+  // Telegram того же цвета. На выходе её возвращает тема, а ивент под формой красит заново.
+  const tone = eventTone(event)
+  const header = tone ? toneColors(tone).band : toHex(stageTint('purple'))
+  const under = useContext(UnderContext)
+  useEffect(() => {
+    if (!under) afterHero(() => setHeaderColor(header))
+  }, [header, under])
+  useEffect(
+    () => () => {
+      if (!under) afterHero(() => applyTheme(getState().theme))
+    },
+    [under],
+  )
+
   const submit = async (): Promise<void> => {
     if (!complete || readOnly) return
     const done = app
@@ -63,11 +84,22 @@ export function EventApply() {
   }
 
   const title = app ? (readOnly ? 'Вы участвуете' : 'Ваша заявка') : 'Заявка на ивент'
+  const when = `${WEEKDAYS_FULL[weekdayIdx(event.dateKey)]!.toLowerCase()}, в ${event.time}, ${untilWord(data!.todayKey, event.dateKey)}`
 
   return (
     <Screen>
-      <BackRow />
-      <Header title={title} subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в\u00a0${event.time}`} />
+      <div className="evv-top eva-top" style={toneVars(tone)}>
+        <div className="evv-band" aria-hidden="true" />
+        <BackRow />
+        <Header title={title} />
+        <div className="evv-when">
+          <DateTile dateKey={event.dateKey} />
+          <div className="evv-when-text">
+            <div className="evv-wt">{event.title}</div>
+            <div className="evv-ws">{when}</div>
+          </div>
+        </div>
+      </div>
 
       {app ? (
         <Footnote>
