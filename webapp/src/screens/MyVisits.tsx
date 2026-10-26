@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { fmtShortDate, fmtWeekdayDate, plural } from '../dates'
 import { icons } from '../icons'
 import { bump, push, startNewRequest, useStore } from '../store'
-import { sec } from '../theme'
+import { accent, sec } from '../theme'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
 import { BottomBar, DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
@@ -22,7 +22,7 @@ function VisitRow({ r }: { r: HostingRequest }) {
   // Слот предложения с днём, если предложенный день отличается от дня заявки.
   const pSlot = p ? (p.dateKey !== r.dateKey ? `${fmtShortDate(p.dateKey)} · ${p.time}` : p.time) : ''
   const iconSquare = needsAnswer ? (
-    <div className="status-square attn">{icons.clock(18, '#007aff')}</div>
+    <div className="status-square attn">{icons.clock(18, accent())}</div>
   ) : approved ? (
     <div className="status-square ok">{icons.check(20, '#34c759')}</div>
   ) : (

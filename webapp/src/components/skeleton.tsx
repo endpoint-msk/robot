@@ -13,6 +13,17 @@ export function SkBlock({ w, h = 14, style }: { w?: number | string; h?: number;
   return <i className="sk-block" style={{ width: w, height: h, ...style }} />
 }
 
+/** Шапка профиля (ProfileHead), пока человека не знает даже список, откуда открыли. */
+export function SkProfile() {
+  return (
+    <div className="prof" data-pager-head>
+      <SkBlock w={96} h={96} style={{ borderRadius: '50%' }} />
+      <SkBlock w={176} h={24} style={{ marginTop: 14 }} />
+      <SkBlock w={124} h={14} style={{ marginTop: 9 }} />
+    </div>
+  )
+}
+
 /** Крупная цифра с подписью — шапка карточки сводки. */
 export function SkFigure({ big = 40 }: { big?: number }) {
   return (

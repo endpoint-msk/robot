@@ -6,11 +6,11 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { showAlert } from '../modals'
 import { useParams, useStore } from '../store'
-import { haptic } from '../telegram'
+import { haptic, hasProfile, openProfile } from '../telegram'
 import type { AdminStatus } from '../types'
 import { icons } from '../icons'
 import { BackRow, ErrorState, SectionTitle, Sep, SpinnerCenter } from '../components/common'
-import { Avatar } from '../components/people'
+import { ProfileHead } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 
 const RESIDENT_TAG = 'resident'
@@ -65,16 +65,21 @@ export function ResidentProfile() {
     }
   }
 
+  const face = { userId, name: name ?? '', username: username ?? null }
   const frame = (body: ReactNode) => (
     <Screen>
       <BackRow />
-      <div className="person-head">
-        <Avatar user={{ userId, name: name ?? '', username: username ?? null }} className="stat-avatar big" profile />
-        <div className="person-head-text">
-          <div className="title">{name || (username ? '@' + username : 'Резидент')}</div>
-          {username ? <div className="subtitle">@{username}</div> : null}
-        </div>
-      </div>
+      <ProfileHead
+        user={face}
+        name={name || (username ? '@' + username : 'Резидент')}
+        sub={username ? `@${username}` : undefined}
+        barSub={name && username ? `@${username}` : undefined}
+        actions={
+          hasProfile(face)
+            ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
+            : []
+        }
+      />
       {body}
     </Screen>
   )

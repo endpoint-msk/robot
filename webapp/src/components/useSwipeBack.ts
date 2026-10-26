@@ -74,15 +74,15 @@ export function useSwipeBack(screenRef: RefObject<HTMLElement | null>, enabled: 
 
     const zoom = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-zoom')
     const dim = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-dim')
-    const bar = (): HTMLElement | null => document.querySelector<HTMLElement>('.bar-portal .bottom-bar')
+    // Обе панели экрана живут вне .screen (порталом) и едут за ним сами.
+    const bars = (): NodeListOf<HTMLElement> => document.querySelectorAll<HTMLElement>('.bar-portal .bottom-bar, .bar-portal .top-bar')
 
     const paint = (to: number): void => {
       x = to
       const k = clamp(to / width, 0, 1)
       const shift = `translate3d(${to.toFixed(2)}px, 0, 0)`
       screen.style.transform = shift
-      const b = bar()
-      if (b) b.style.transform = shift
+      bars().forEach((b) => (b.style.transform = shift))
       const z = zoom()
       if (z) z.style.transform = `translate3d(${(-PARALLAX * width * (1 - k)).toFixed(2)}px, 0, 0)`
       const m = dim()
@@ -106,8 +106,7 @@ export function useSwipeBack(screenRef: RefObject<HTMLElement | null>, enabled: 
       active = false
       screen.classList.remove('swiped')
       screen.style.transform = ''
-      const b = bar()
-      if (b) b.style.transform = ''
+      bars().forEach((b) => (b.style.transform = ''))
       const z = zoom()
       if (z) z.style.transform = ''
       const m = dim()

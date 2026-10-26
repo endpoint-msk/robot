@@ -6,7 +6,7 @@
 // другой, экран просто показывает новое состояние (см. markOwnTap).
 
 import { hasOverlay } from './overlays'
-import { resolvedTheme } from './theme'
+import { accent, resolvedTheme } from './theme'
 import type { ResolvedTheme } from './types'
 
 // --- кривые -------------------------------------------------------------------
@@ -99,7 +99,17 @@ const DARK: Palette = {
   dotOff: 'rgba(235,235,245,.22)',
 }
 
-export const palette = (): Palette => (resolvedTheme() === 'dark' ? DARK : LIGHT)
+let tinted: { key: string; value: Palette } | null = null
+
+/** Палитра темы. Синий в ней - акцент (theme.ts): «сегодня» и сцены в тон кнопок Telegram человека. */
+export const palette = (): Palette => {
+  const base = resolvedTheme() === 'dark' ? DARK : LIGHT
+  const blue = accent()
+  if (blue === TONES.blue) return base
+  const key = resolvedTheme() + blue
+  if (tinted?.key !== key) tinted = { key, value: { ...base, tones: { ...base.tones, blue } } }
+  return tinted.value
+}
 
 /** Подложка сцены в тон: тон поверх фона, на чёрном гуще. */
 export const stageTint = (tone: Tone, C: Palette = palette()): string => mixc(C.bg, C.tones[tone], C.mixp)

@@ -616,7 +616,8 @@ export type DuesPerson = {
   debt: number
 }
 
-export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number }
+/** `days` - гости по дням с понедельника, как их покажет «Кто пришёл» недели (см. archiveWeeks). */
+export type ArchiveWeekSummary = { weekStart: string; total: number; approved: number; days: number[] }
 export type ArchiveResponse = { weeks: ArchiveWeekSummary[] }
 
 /** Человек в поиске по архиву: сколько записей (заявки и визиты без заявки), сколько визитов засчитано. */

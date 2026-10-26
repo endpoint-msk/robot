@@ -1,7 +1,7 @@
 // Карточка человека в журнале: сколько бывает, когда приходит, последние визиты.
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useRef, type ReactNode } from 'react'
 import { action, api } from '../api'
 import {
   addDays,
@@ -12,6 +12,7 @@ import {
   MONTHS_NOM,
   monthIdx,
   plural,
+  visitsWord,
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
@@ -21,14 +22,15 @@ import { useRemote } from '../remote'
 import { mixc, palette } from '../motion'
 import { push, setTopParams, useParams, useStore } from '../store'
 import { fmtDuration, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
-import { haptic } from '../telegram'
+import { haptic, hasProfile, openProfile } from '../telegram'
 import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote } from '../components/common'
-import { Avatar, avatarTone } from '../components/people'
+import { avatarTone } from '../components/people'
 import { Pager } from '../components/Pager'
+import { ProfileHead, scrollToSection, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
-import { SkBlock, SkCard, SkGrid, SkQuad, SkRows } from '../components/skeleton'
+import { SkCard, SkGrid, SkProfile, SkQuad, SkRows } from '../components/skeleton'
 
 const DOT_WEEKS = 12
 
@@ -39,15 +41,7 @@ const ORIGIN = 'origin'
 function PersonSkeleton({ head }: { head: boolean }) {
   return (
     <div aria-busy="true" aria-label="Загружаем карточку резидента">
-      {head ? (
-        <div className="person-head">
-          <SkBlock w={54} h={54} style={{ borderRadius: '50%' }} />
-          <div className="person-head-text">
-            <SkBlock w={172} h={26} />
-            <SkBlock w={136} h={14} style={{ display: 'block', marginTop: 8 }} />
-          </div>
-        </div>
-      ) : null}
+      {head ? <SkProfile /> : null}
       <SkQuad />
       <SkCard title="Когда приходит">
         <SkGrid rows={7} cols={DOT_WEEKS} />
@@ -123,26 +117,31 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
   )
   const isMe = boot!.me.id === userId
   const who = data?.user ?? known
+  const visitsRef = useRef<HTMLDivElement>(null)
+  const face = who ? statsAvatarUser(who) : null
+  // Свой профиль в Telegram себе открывать незачем.
+  const actions: ProfileAction[] = [
+    ...(face && !isMe && hasProfile(face)
+      ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
+      : []),
+    ...(data && data.lastVisits.length > 0
+      ? [{ key: 'visits', label: 'Визиты', icon: icons.door(22, 'currentColor'), onClick: () => scrollToSection(visitsRef.current) }]
+      : []),
+  ]
 
   // Шапка стоит сразу, если человека знает список, из которого пришли: по ней листалка
   // меряет полосу. Подменяется только тело:
   // каркас гаснет поверх проявляющейся карточки, а не пропадает в том же кадре.
   const frame = (body: ReactNode) => (
     <>
-      {who ? (
-        <div className="person-head" data-pager-head>
-          <Avatar
-            user={statsAvatarUser(who)}
-            className="stat-avatar big"
-            profile
-          />
-          <div className="person-head-text">
-            <div className="title">
-              {isMe ? 'Мои визиты' : who.label}
-            </div>
-            <div className="subtitle">{data ? since(data.manualSince || data.joinedSince || data.firstDateKey) : '\u00a0'}</div>
-          </div>
-        </div>
+      {who && face ? (
+        <ProfileHead
+          user={face}
+          name={isMe ? 'Мои визиты' : who.label}
+          sub={data ? since(data.manualSince || data.joinedSince || data.firstDateKey) : '\u00a0'}
+          barSub={data ? `${visitsWord(data.visits)} за 3\u00a0месяца` : undefined}
+          actions={actions}
+        />
       ) : null}
       <Swap loading={!data && !error} skeleton={pending ? <PersonSkeleton head={!who} /> : null}>
         {body}
@@ -280,7 +279,9 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
 
       {data.lastVisits.length > 0 ? (
         <>
-          <div className="section-title">Последние визиты</div>
+          <div className="section-title" ref={visitsRef}>
+            Последние визиты
+          </div>
           <div className="card stats-list">
             {data.lastVisits.map((v, i) => (
               <Fragment key={`${v.dateKey}-${v.from}`}>

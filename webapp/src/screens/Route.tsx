@@ -8,6 +8,7 @@ import type { MouseEvent } from 'react'
 import { icons } from '../icons'
 import { showAlert, showImage } from '../modals'
 import { openUrl } from '../telegram'
+import { accent } from '../theme'
 import { BackRow, Footnote, Header } from '../components/common'
 import { useCopyFeedback } from '../components/CopyFeedback'
 import { Screen } from '../components/Screen'
@@ -172,7 +173,7 @@ export function Route() {
 
       <div className="card">
         <button type="button" className="row tappable route-address" onClick={(e) => void copyAddress(e)}>
-          <div className="row-icon route-pin">{icons.pin(18, '#007aff')}</div>
+          <div className="row-icon route-pin">{icons.pin(18, accent())}</div>
           <div className="route-address-main">
             <div className="route-label">Адрес</div>
             <div className="route-value">

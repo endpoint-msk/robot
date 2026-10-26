@@ -52,7 +52,7 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
 
     const zoom = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-zoom')
     const dim = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-dim')
-    const bar = (): HTMLElement | null => document.querySelector<HTMLElement>('.bar-portal .bottom-bar')
+    const bars = (): NodeListOf<HTMLElement> => document.querySelectorAll<HTMLElement>('.bar-portal .bottom-bar, .bar-portal .top-bar')
 
     // Скругление — в координатах самой карточки, поэтому делится на масштаб.
     const put = (f: Frame): void => {
@@ -74,8 +74,8 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
     const paintDrag = (dist: number): void => {
       d = dist
       put(dragFrame(Math.max(0, dist)))
-      const b = bar()
-      if (b) b.style.opacity = (1 - clamp(dist / 80, 0, 1)).toFixed(3)
+      const o = (1 - clamp(dist / 80, 0, 1)).toFixed(3)
+      bars().forEach((b) => (b.style.opacity = o))
     }
 
     const begin = (): void => {
@@ -95,8 +95,7 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
       if (z) z.style.transform = ''
       const m = dim()
       if (m) m.style.opacity = ''
-      const b = bar()
-      if (b) b.style.opacity = ''
+      bars().forEach((b) => (b.style.opacity = ''))
       setUnder(null)
     }
 

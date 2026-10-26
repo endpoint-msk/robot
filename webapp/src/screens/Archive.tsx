@@ -10,7 +10,10 @@ import {
   MONTHS_ABBR,
   MONTHS_NOM,
   plural,
+  requestsWord,
+  visitsWord,
   weekdayIdx,
+  WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
 import { icons } from '../icons'
@@ -33,10 +36,30 @@ function weeksAgoLabel(weekStart: string, todayKey: string): string {
   return `${diffWeeks} ${plural(diffWeeks, 'неделю', 'недели', 'недель')} назад`
 }
 
+/** Высота столбика самого людного дня в строке недели, px. */
+const BAR_MAX = 26
+
+/**
+ * Неделя семью столбиками с понедельника: сколько гостей было в каждый день, по заявкам и
+ * без. Шкала общая на весь архив, иначе тихая неделя выглядела бы такой же полной, как
+ * людная. Столбики стоят без движения, как графики в статистике.
+ */
+function WeekBars({ days, max }: { days: number[]; max: number }) {
+  const label = days.map((n, i) => `${WEEKDAYS_SHORT[i]} ${n}`).join(', ')
+  return (
+    <span className="week-bars" role="img" aria-label={`Гости по дням: ${label}`}>
+      {days.map((n, i) => (
+        <i key={i} className={n > 0 ? undefined : 'zero'} style={n > 0 ? { height: Math.max(5, Math.round((n / max) * BAR_MAX)) } : undefined} />
+      ))}
+    </span>
+  )
+}
+
 function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
   // Неделя листается к соседним по времени: старые слева, новые справа, как дни.
   const order = weeks.map((w) => w.weekStart).sort()
   const { data } = useStore()
+  const max = Math.max(1, ...weeks.flatMap((w) => w.days))
   // Группируем недели по месяцу понедельника: «Июль 2026».
   const groups: { label: string; weeks: ArchiveWeekSummary[] }[] = []
   for (const week of weeks) {
@@ -53,6 +76,10 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
           <div className="card" style={{ marginBottom: 22 }}>
             {g.weeks.map((week, i) => {
               const weekEnd = addDays(week.weekStart, 6)
+              const visits = week.days.reduce((n, d) => n + d, 0)
+              // Сумма столбиков - визиты недели. Неделя с одними заявками без хоста
+              // пришедших не знает, тогда хотя бы сколько было заявок.
+              const count = visits > 0 ? visitsWord(visits) : week.total > 0 ? requestsWord(week.total) : ''
               return (
                 <Fragment key={week.weekStart}>
                   {i > 0 ? <Sep left={66} /> : null}
@@ -70,16 +97,12 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div className="week-title">{fmtRange(week.weekStart, weekEnd)}</div>
-                      <div className="week-sub">{weeksAgoLabel(week.weekStart, data!.todayKey)}</div>
+                      <div className="week-sub">
+                        {weeksAgoLabel(week.weekStart, data!.todayKey) + (count ? ` · ${count}` : '')}
+                      </div>
                     </div>
                     <div className="row-right">
-                      <div className="frac">
-                        <span className="approved-count">
-                          {icons.check(14, '#34c759')}
-                          {String(week.approved)}
-                        </span>
-                        <span className="count-muted">{`/ ${week.total}`}</span>
-                      </div>
+                      <WeekBars days={week.days} max={max} />
                       {icons.chevron()}
                     </div>
                   </button>

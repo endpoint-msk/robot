@@ -5,6 +5,8 @@ interface TelegramWebApp {
   initData: string
   initDataUnsafe?: { user?: { id?: number; allows_write_to_pm?: boolean }; start_param?: string }
   colorScheme?: 'light' | 'dark'
+  /** Цвета темы клиента, #RRGGBB. Telegram кладёт их и в CSS как --tg-theme-*. */
+  themeParams?: { button_color?: string; button_text_color?: string; link_color?: string; bg_color?: string }
   /** 'ios' | 'android' | 'macos' | 'tdesktop' | 'weba' | 'webk' | ... */
   platform?: string
   ready(): void

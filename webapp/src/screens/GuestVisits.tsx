@@ -6,19 +6,21 @@
 // Строки истории свои, а не RequestsCard: там главное — гость и время внутри одного
 // дня, а здесь гость один на весь экран и главное — дата.
 
-import { Fragment } from 'react'
+import { Fragment, useRef } from 'react'
 import { api } from '../api'
-import { dayNum, fmtDayMonth, fmtShortDate, MONTHS_ABBR, monthIdx, plural, yearOf } from '../dates'
+import { fmtDayMonth, fmtShortDate, plural, visitsWord, yearOf } from '../dates'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
+import { hasProfile, openProfile } from '../telegram'
 import { sec } from '../theme'
 import type { GuestProfile, GuestRequestsResponse, HostingRequest, User, VisitOutcome, WalkIn } from '../types'
 import { EmptyState, ErrorState, BackRow, Sep, SectionTitle } from '../components/common'
 import { Avatar, userLabel } from '../components/people'
+import { ProfileHead, scrollToSection, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
-import { SkRows } from '../components/skeleton'
+import { SkProfile, SkRows } from '../components/skeleton'
 
 /** «по четвергам»: день недели в дательном множественном, 0 - понедельник. */
 const WEEKDAYS_PLURAL_DAT = ['понедельникам', 'вторникам', 'средам', 'четвергам', 'пятницам', 'субботам', 'воскресеньям']
@@ -47,17 +49,19 @@ function requestLine(r: HostingRequest, todayKey: string): { text: string; tone:
 
 type HistoryItem = { key: string; dateKey: string; request: HostingRequest | null; walkIn: WalkIn | null }
 
+/**
+ * Строка ленты истории: узел на линии цвета исхода (приход зелёный, неявка оранжевая,
+ * будущий визит в цвет акцента, без исхода пустой). Плитки даты нет: дата и так в
+ * заголовке строки.
+ */
 function HistoryRow({ item, todayKey }: { item: HistoryItem; todayKey: string }) {
   const r = item.request
   const line = r
     ? requestLine(r, todayKey)
     : { text: `без заявки · отметка ${userLabel(item.walkIn!.by)}`, tone: 'came' as const }
+  const node = line.tone !== 'muted' ? line.tone : r && r.dateKey >= todayKey ? 'next' : 'muted'
   return (
-    <div className="row">
-      <div className="week-square">
-        <span className="ws-day">{String(dayNum(item.dateKey))}</span>
-        <span className="ws-month">{MONTHS_ABBR[monthIdx(item.dateKey)]}</span>
-      </div>
+    <div className={'row hist-row ' + node}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="week-title">{r ? `${fmtShortDate(r.dateKey)} · к ${r.time}` : fmtShortDate(item.dateKey)}</div>
         <div className={'week-sub visit-status ' + line.tone}>
@@ -66,11 +70,6 @@ function HistoryRow({ item, todayKey }: { item: HistoryItem; todayKey: string })
         </div>
         {r?.purpose ? <div className="week-sub guest-purpose">{r.purpose}</div> : null}
       </div>
-      {line.tone === 'came' ? (
-        <div className="row-right">{icons.check(15, '#34c759')}</div>
-      ) : line.tone === 'missed' ? (
-        <div className="row-right">{icons.xmark(12, '#ff9500')}</div>
-      ) : null}
     </div>
   )
 }
@@ -127,6 +126,7 @@ export function GuestVisits() {
   const user = guest.data ? guest.data.user : preset
   const note = (data!.notes || []).find((n) => n.userId === userId) || null
   const profile = guest.data?.profile ?? null
+  const historyRef = useRef<HTMLDivElement>(null)
   const sub = [
     user?.username ? '@' + user.username : '',
     profile ? (profile.firstDateKey ? `первый визит ${fmtWhen(profile.firstDateKey, todayKey)}` : 'визитов пока нет') : '',
@@ -185,18 +185,17 @@ export function GuestVisits() {
             </div>
           </>
         ) : null}
-        <SectionTitle>История</SectionTitle>
+        <div ref={historyRef}>
+          <SectionTitle>История</SectionTitle>
+        </div>
         {items.length === 0 ? (
           <div className="card">
             <EmptyState title="Записей нет" text="Все заявки этого человека уже удалены." />
           </div>
         ) : (
-          <div className="card">
-            {items.map((item, i) => (
-              <Fragment key={item.key}>
-                {i > 0 ? <Sep left={66} /> : null}
-                <HistoryRow item={item} todayKey={todayKey} />
-              </Fragment>
+          <div className="card hist-card">
+            {items.map((item) => (
+              <HistoryRow key={item.key} item={item} todayKey={todayKey} />
             ))}
           </div>
         )}
@@ -204,16 +203,36 @@ export function GuestVisits() {
     )
   }
 
+  // Заметка открывается и кнопкой в шапке, а её текст остаётся строкой ниже, как «О себе» в Telegram.
+  const actions: ProfileAction[] = user
+    ? [
+        {
+          key: 'note',
+          label: 'Заметка',
+          icon: icons.note(22, 'currentColor'),
+          onClick: () => push('guestNote', { guest: user, backLabel: 'Гость' }),
+        },
+        ...(hasProfile(user)
+          ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(user) }]
+          : []),
+        { key: 'visits', label: 'Визиты', icon: icons.door(22, 'currentColor'), onClick: () => scrollToSection(historyRef.current) },
+      ]
+    : []
+
   return (
     <Screen>
       <BackRow />
-      <div className="person-head">
-        {user ? <Avatar user={user} className="stat-avatar big" profile /> : null}
-        <div className="person-head-text">
-          <div className="title">{user ? user.name : 'Гость'}</div>
-          {sub ? <div className="subtitle">{sub}</div> : null}
-        </div>
-      </div>
+      {user ? (
+        <ProfileHead
+          user={user}
+          name={user.name}
+          sub={sub}
+          barSub={profile ? visitsWord(profile.visits) : user.username ? '@' + user.username : undefined}
+          actions={actions}
+        />
+      ) : (
+        <SkProfile />
+      )}
       {/* Заметка — общая память резидентов о человеке; она известна сразу, из bootstrap. */}
       {user ? (
         <>

@@ -574,29 +574,41 @@ export const setDayCap = async (
  * заявок. Включая текущую — обзор показывает скользящие 7 дней и «понедельник этой
  * недели» из него уже выпал, так что без неё начало текущей недели было бы не
  * посмотреть нигде. Сортировка — от свежих к старым.
+ *
+ * `days`: гости по дням с понедельника, ровно те, кого неделя покажет в «Кто пришёл»:
+ * заявки из отметок (`inVisitList`) и гости без заявки. Столбики в строке недели
+ * показывают загруженный день до того, как неделю открыли.
  */
 export const archiveWeeks = (
     storage: Storage,
     tzOffsetMinutes: number,
-): { weekStart: string; total: number; approved: number }[] => {
+): { weekStart: string; total: number; approved: number; days: number[] }[] => {
     const currentWeek = weekStartOf(todayKey(tzOffsetMinutes))
-    const byWeek = new Map<string, { total: number; approved: number }>()
+    const byWeek = new Map<string, { total: number; approved: number; days: number[] }>()
+    const weekOf = (week: string) => {
+        let agg = byWeek.get(week)
+        if (!agg) {
+            agg = { total: 0, approved: 0, days: [0, 0, 0, 0, 0, 0, 0] }
+            byWeek.set(week, agg)
+        }
+        return agg
+    }
     for (const r of Object.values(storage.get().hostingRequests)) {
         const week = weekStartOf(r.dateKey)
         if (week > currentWeek) continue
-        const agg = byWeek.get(week) ?? { total: 0, approved: 0 }
+        const agg = weekOf(week)
         agg.total += 1
         if (r.status === 'approved') agg.approved += 1
-        byWeek.set(week, agg)
+        if (inVisitList(r)) agg.days[weekdayOfKey(r.dateKey)]! += 1
     }
     for (const w of Object.values(storage.get().hostingWalkIns)) {
         const week = weekStartOf(w.dateKey)
-        if (week <= currentWeek && !byWeek.has(week)) byWeek.set(week, { total: 0, approved: 0 })
+        if (week <= currentWeek) weekOf(week).days[weekdayOfKey(w.dateKey)]! += 1
     }
     // Вчерашний вечер до утра отмечают из архива, в том числе гостей без заявки в день,
     // на который заявок не было: его неделя нужна в списке и пустой.
     const grace = visitGraceDay(tzOffsetMinutes)
-    if (grace && !byWeek.has(weekStartOf(grace))) byWeek.set(weekStartOf(grace), { total: 0, approved: 0 })
+    if (grace) weekOf(weekStartOf(grace))
     return [...byWeek.entries()]
         .map(([weekStart, agg]) => ({ weekStart, ...agg }))
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart))

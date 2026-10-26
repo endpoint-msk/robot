@@ -11,6 +11,7 @@ import { icons } from '../icons'
 import { clamp, holdSelection, landing, PAGE_SPRING, pageTarget, reducedMotion, rubber, springAt, tracker } from '../motion'
 import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
+import { accent } from '../theme'
 import { useSheetDrag } from './useSheetDrag'
 
 const monthStart = (key: string): string => key.slice(0, 8) + '01'
@@ -396,13 +397,13 @@ function DateSheet({
         </div>
         <div className="dp-head">
           <button className="dp-nav" aria-label="Предыдущий месяц" disabled={!has(-1)} onClick={() => shift.current(-1)}>
-            <span className="dp-nav-back">{icons.chevron('#007aff')}</span>
+            <span className="dp-nav-back">{icons.chevron(accent())}</span>
           </button>
           <span className="dp-month" ref={titleRef}>
             {monthTitle(month)}
           </span>
           <button className="dp-nav" aria-label="Следующий месяц" disabled={!has(1)} onClick={() => shift.current(1)}>
-            {icons.chevron('#007aff')}
+            {icons.chevron(accent())}
           </button>
         </div>
         <div className="dp-dows">

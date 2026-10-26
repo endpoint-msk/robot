@@ -10,13 +10,17 @@
     /* Тот же цвет, что --bg, но с нулевой альфой: для градиента нижней панели.
        `transparent` тут нельзя — часть браузеров интерполирует через чёрный. */
     --bg-0: rgba(242, 242, 247, 0);
+    /* Матовое стекло строки с именем в профиле (TopBar): фон с той же альфой, что у стекла
+       iOS. Готовым цветом, а не color-mix: без его поддержки (iOS до 16.2) переменная с
+       color-mix обнуляет фон целиком, и строка становится прозрачной. */
+    --bg-glass: rgba(242, 242, 247, 0.82);
     --card: #ffffff;
     --text: #1c1c1e;
     /* rgb-тройка вторичного цвета: из неё собираются все полупрозрачные оттенки. */
     --sec: 60, 60, 67;
     --chip: #f2f2f7;
     --seg-thumb: #ffffff;
-    --today: rgba(0, 122, 255, 0.05);
+    --today: rgba(var(--blue-rgb), 0.05);
     --overlay: rgba(0, 0, 0, 0.35);
     --busy: rgba(242, 242, 247, 0.45);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -31,7 +35,11 @@
     --ok-sec: 13, 90, 40;
     --ok-shadow: 0 1px 2px rgba(0, 60, 20, 0.06);
 
+    /* Акцент: кнопки, ссылки, «сегодня», выбранное. Внутри Telegram его заменяет цвет
+       кнопки из темы клиента (theme.ts, applyAccent), инлайном на <html>, вместе с
+       rgb-тройкой: из неё собраны все подложки в тон акцента ниже. */
     --blue: #007aff;
+    --blue-rgb: 0, 122, 255;
     --green: #34c759;
     --red: #ff3b30;
     /* Закрытие заявки: обратимое по смыслу действие (гость может подать заново),
@@ -47,15 +55,15 @@
     --indigo: #5856d6;
     /* Строка ждёт действия. Отдельный токен по той же причине, что и --today:
        фиксированная альфа, читаемая на белой карточке, на #1c1c1e пропадает. */
-    --attn: rgba(0, 122, 255, 0.11);
-    --attn-strong: rgba(0, 122, 255, 0.18);
+    --attn: rgba(var(--blue-rgb), 0.11);
+    --attn-strong: rgba(var(--blue-rgb), 0.18);
     /* Тонированная синим подложка не-строки: чипы, бейджи, круглые иконки, кнопка
        «Повторить». Отдельно от --attn: тот значит «здесь ждут действия», а это
        просто акцентная плашка. Пара обязательна — литерал не получает добавки в
        тёмной теме и оказывается там вдвое слабее соседей на токене. */
-    --blue-soft: rgba(0, 122, 255, 0.11);
+    --blue-soft: rgba(var(--blue-rgb), 0.11);
     --green-soft: rgba(52, 199, 89, 0.13);
-    --blue-soft-strong: rgba(0, 122, 255, 0.16);
+    --blue-soft-strong: rgba(var(--blue-rgb), 0.16);
     --warn-bg: rgba(255, 149, 0, 0.1);
     /* Штрих закрытого дня. Оранжевый, как и всё обратимое: день закрывают и открывают
        обратно одним тумблером. Альфа низкая — поверх штриховки должен читаться текст. */
@@ -87,12 +95,13 @@
 :root[data-theme="dark"] {
     --bg: #000000;
     --bg-0: rgba(0, 0, 0, 0);
+    --bg-glass: rgba(0, 0, 0, 0.82);
     --card: #1c1c1e;
     --text: #ffffff;
     --sec: 235, 235, 245;
     --chip: #2c2c2e;
     --seg-thumb: #48484a;
-    --today: rgba(0, 122, 255, 0.10);
+    --today: rgba(var(--blue-rgb), 0.10);
     --overlay: rgba(0, 0, 0, 0.5);
     --busy: rgba(0, 0, 0, 0.45);
     /* На чёрном фоне тень не читается — карточки разделяет сам цвет. */
@@ -107,11 +116,11 @@
     --ok-shadow: none;
 
     --gray: #636366;
-    --attn: rgba(0, 122, 255, 0.24);
-    --attn-strong: rgba(0, 122, 255, 0.34);
-    --blue-soft: rgba(0, 122, 255, 0.24);
+    --attn: rgba(var(--blue-rgb), 0.24);
+    --attn-strong: rgba(var(--blue-rgb), 0.34);
+    --blue-soft: rgba(var(--blue-rgb), 0.24);
     --green-soft: rgba(52, 199, 89, 0.22);
-    --blue-soft-strong: rgba(0, 122, 255, 0.32);
+    --blue-soft-strong: rgba(var(--blue-rgb), 0.32);
     --warn-bg: #4a3416;
     /* На чёрной карточке тот же штрих почти не виден — берём чуть заметнее. */
     --hatch: rgba(255, 159, 20, 0.16);
@@ -461,6 +470,62 @@ html[data-vt="replace"]::view-transition-new(root) { animation: vt-rise 0.42s cu
 .header { min-width: 0; }
 .subtitle { font-size: 15px; color: var(--text-2); margin-top: 4px; }
 
+/* Строка на стекле (components/TopBar.tsx): имя в шапке профиля ушло под край, и оно
+   с маленькой аватаркой проступает сверху, как в профиле Telegram. Встаёт сразу под шапкой
+   Telegram и вместе с ней читается одной шапкой, поэтому тени сверху нет. Порталом вне
+   .screen, как нижняя панель, и едет с экраном в свайпе назад так же (useSwipeBack). */
+:root { --topbar-h: 48px; }
+.top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-width: 520px;
+    margin: 0 auto;
+    pointer-events: none;
+}
+.top-bar.in-forward, .top-bar.in-back { animation: screen-fade-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+.top-bar.in-fade { animation: screen-in 0.18s ease; }
+/* Под листом #app уменьшается transform'ом и становится containing block для fixed:
+   строка встаёт к верху видимой области (modals.tsx, stage), а не документа. */
+html.sheet-recede .top-bar { top: var(--sheet-vt, 0px); }
+.tb-glass {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: calc(var(--topbar-h) + var(--tg-content-safe-area-inset-top, 0px));
+    padding: var(--tg-content-safe-area-inset-top, 0px) 16px 0;
+    background: var(--bg-glass);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+    backdrop-filter: blur(18px) saturate(1.6);
+    box-shadow: 0 0.5px 0 var(--sep);
+    opacity: 0;
+    transition: opacity 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tb-glass.shown { opacity: 1; pointer-events: auto; }
+.tb-glass.instant { transition: none; }
+.tb-layer { display: flex; align-items: center; justify-content: center; gap: 9px; min-width: 0; max-width: 100%; }
+/* Сменилась карточка листалки: прежнее имя тает размытием, новое проявляется на том же
+   месте, как подпись «Захостить» в пилле хоста. */
+.tb-layer.out {
+    position: absolute;
+    inset: var(--tg-content-safe-area-inset-top, 0px) 16px 0;
+    animation: vt-blur-out 0.18s ease-out both;
+}
+.tb-layer.in { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both; }
+.tb-ava { width: 30px; height: 30px; font-size: 13px; }
+.tb-text { display: flex; flex-direction: column; align-items: center; min-width: 0; line-height: 1.2; }
+.tb-title, .tb-sub { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-title { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+.tb-sub { font-size: 12px; color: var(--text-2); }
+/* Размытие на слабом Android рвёт прокрутку: строка плотная и встаёт без перехода. */
+.low-motion .tb-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
+@media (prefers-reduced-motion: reduce) {
+    .tb-glass { transition: none; }
+}
+
 /* Дев-переключатель перспективы (только для DEV_USER_IDS) */
 .dev-chips { display: flex; gap: 6px; }
 .dev-chip {
@@ -776,6 +841,51 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .row.today { background: var(--today); }
 .row.today .dow, .row.today .date { color: var(--blue); }
 .row.today .date { font-weight: 600; }
+
+/* «Сегодня» карточкой над неделей (TodayCard в DayRow.tsx). Подложка белая, как у
+   остальных карточек: выделяют её размер и слово «Сегодня» в цвет действия, а заливка
+   в тон читалась бы статусом дня. */
+.today-card {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 13px 16px 0;
+    border: 0;
+    border-radius: var(--radius-card);
+    background-color: var(--card);
+    box-shadow: var(--shadow-card);
+    font: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+.today-card:active { box-shadow: var(--shadow-card), inset 0 0 0 100vmax rgba(var(--sec), 0.06); }
+/* Карточка и неделя под ней - один список дней, поэтому зазор меньше, чем между разделами. */
+.today-card + .card { margin-top: 12px; }
+.tc-k { font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--text-2); }
+.tc-today { font-weight: 700; color: var(--blue); }
+.tc-ag { margin-top: 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.2; overflow-wrap: anywhere; }
+.tc-ag.reason { color: var(--text-2); }
+.tc-line { margin-top: 8px; }
+.tc-people { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.tc-people .avatar-stack .avatar { width: 34px; height: 34px; font-size: 14px; }
+.tc-people .avatar-stack .avatar + .avatar { margin-left: -10px; }
+.tc-who { display: flex; flex-direction: column; min-width: 0; font-size: 15px; line-height: 1.25; }
+.tc-who b { font-weight: 600; }
+.tc-who span { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 46px;
+    margin: 12px -16px 0;
+    padding: 0 16px;
+    box-shadow: inset 0 0.5px 0 var(--sep);
+    font-size: 15px;
+}
+.tc-req { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+.tc-foot.muted .tc-req { color: var(--text-3); }
+.tc-req .day-dot { margin: 0; flex-shrink: 0; }
 .row.day-empty .dow { color: var(--text-3); }
 .row.day-empty .date { color: var(--text-4); }
 /* Точка «здесь нужен хост». Своего токена не заводим: это тот же акцент действия,
@@ -1704,9 +1814,11 @@ span.collapse { display: block; }
    (background-color) под ним сохраняется. */
 
 .row.day-locked,
+.today-card.day-locked,
 .day-chip.locked {
     background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
 }
+.today-card.day-locked .tc-today { color: var(--text-2); }
 .day-chip.locked { cursor: default; }
 .day-chip.locked .dc-dow, .day-chip.locked .dc-num { color: var(--text-3); }
 /* Дата приглушается, как у пустого дня: слова «закрыт» в строке нет, роль берут
@@ -2276,6 +2388,11 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .week-title { font-size: 16px; font-weight: 600; line-height: 1.25; }
 .week-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
+/* Неделя архива столбиками (Archive.tsx, WeekBars): цвет графиков, а не действия. Пустой
+   день короткой серой чертой: «никого» видно, и ряд не рвётся. */
+.week-bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+.week-bars i { width: 6px; border-radius: 2px; background: var(--chart-blue); }
+.week-bars i.zero { height: 3px; background: rgba(var(--sec), 0.18); }
 /* «Одобрено / всего» в архиве читается одной дробью, а не двумя соседними числами.
    Цифры табличные, обе части в рамке своей ширины: косая черта стоит одним столбцом
    во всех строках, пока числа не длиннее двух знаков. */
@@ -3417,6 +3534,38 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .visit-status.came { color: var(--green); }
 .visit-status.missed { color: var(--orange); }
 .visit-status.muted { color: var(--text-3); }
+
+/* История гостя лентой (GuestVisits.tsx): визиты на одной линии, узел цвета исхода.
+   Линия идёт от узла первой строки до узла последней, поэтому у крайних строк она короче,
+   а узел лежит поверх неё с кольцом цвета карточки. */
+.hist-card { padding: 4px 0; }
+.hist-row { padding-left: 44px; }
+.hist-row::before {
+    content: '';
+    position: absolute;
+    left: 20px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(var(--sec), 0.16);
+}
+.hist-row:first-child::before { top: 21px; }
+.hist-row:last-child::before { bottom: auto; height: 21px; }
+.hist-row:only-child::before { display: none; }
+.hist-row::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 16px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--card);
+    box-shadow: inset 0 0 0 2px rgba(var(--sec), 0.3);
+}
+.hist-row.came::after { background: var(--green); box-shadow: 0 0 0 3px var(--card); }
+.hist-row.missed::after { background: var(--orange); box-shadow: 0 0 0 3px var(--card); }
+.hist-row.next::after { background: var(--blue); box-shadow: 0 0 0 3px var(--card); }
 .visit-mark { display: flex; gap: 8px; flex-shrink: 0; }
 .vm-btn {
     position: relative;
@@ -3885,7 +4034,6 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
    только подложка, поверх неё приезжает настоящее фото из /avatar.jpg. */
 .stat-avatar { width: 34px; height: 34px; font-size: 14px; }
 .stat-avatar.small { width: 22px; height: 22px; font-size: 10px; }
-.stat-avatar.big { width: 54px; height: 54px; font-size: 22px; }
 
 .person-cell { flex: 1; min-width: 0; }
 .person-top { display: flex; align-items: baseline; gap: 10px; }
@@ -3895,9 +4043,42 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .share-bar { height: 4px; border-radius: 999px; background: rgba(var(--sec), 0.1); margin-top: 7px; overflow: hidden; }
 .share-bar i { display: block; height: 100%; border-radius: 999px; background: var(--chart-blue); }
 
-.person-head { display: flex; align-items: center; gap: 13px; margin: 8px 4px 18px; }
-.person-head-text { min-width: 0; }
-.person-head-text .title { font-size: 30px; }
+/* Шапка профиля, как в Telegram (components/ProfileHead.tsx): аватарка по центру, имя,
+   строка под ним и ряд кнопок действий. Общая у профиля гостя, человека в статистике и
+   резидента в правах. */
+.prof { display: flex; flex-direction: column; align-items: center; margin: 4px 0 22px; text-align: center; }
+.prof-ava { width: 96px; height: 96px; font-size: 40px; }
+.prof-name {
+    max-width: 100%;
+    margin-top: 12px;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+}
+.prof-sub { margin-top: 3px; font-size: 15px; color: var(--text-2); }
+.prof-acts { display: flex; gap: 8px; width: 100%; margin-top: 18px; }
+.prof-act {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 9px 4px 8px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--blue);
+    cursor: pointer;
+}
+.prof-act:active { box-shadow: var(--shadow-card), inset 0 0 0 100vmax rgba(var(--sec), 0.06); }
 
 /* Таймлайн дня: строка на человека, полоска — интервал присутствия. */
 .tl-ticks { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 4px; }
@@ -5441,7 +5622,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
         box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07);
     }
     .secondary-btn:hover, .evv-cal:hover, .attend-btn:hover, .dpg-pill:hover, .destructive-btn:hover,
-    .day-chip:not(.selected):not(:disabled):hover {
+    .day-chip:not(.selected):not(:disabled):hover, .today-card:hover, .prof-act:hover {
         box-shadow: var(--shadow-card), inset 0 0 0 100vmax rgba(var(--sec), 0.05);
     }
     .primary-btn:not(:disabled):hover { box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.1); }

@@ -3,7 +3,7 @@
 // пересчитывается. Возвращают JSX.Element — встраиваются как {icons.chevron()}.
 
 import type { ReactElement } from 'react'
-import { sec } from './theme'
+import { accent, sec } from './theme'
 
 export const icons = {
   chevron: (color?: string): ReactElement => (
@@ -13,7 +13,7 @@ export const icons = {
   ),
   back: (): ReactElement => (
     <svg width="11" height="18" viewBox="0 0 11 18">
-      <path d="M9.5 1.5L2 9l7.5 7.5" fill="none" stroke="#007aff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.5 1.5L2 9l7.5 7.5" fill="none" stroke={accent()} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   check: (size: number, color: string, width?: number): ReactElement => (
@@ -122,7 +122,7 @@ export const icons = {
       <path d="M6.8 11h8.4" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
-  calendarPlus: (size = 19, color = '#007aff'): ReactElement => (
+  calendarPlus: (size = 19, color = accent()): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 26 26">
       <rect x="3.5" y="5" width="19" height="17.5" rx="5" fill="none" stroke={color} strokeWidth="1.9" />
       <path d="M8.5 2.8v4M17.5 2.8v4M3.5 10h19" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
@@ -130,7 +130,7 @@ export const icons = {
     </svg>
   ),
   /** «Переслать»: стрелка, как у пересылки сообщения в Telegram. */
-  forward: (size = 19, color = '#007aff'): ReactElement => (
+  forward: (size = 19, color = accent()): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 24 24">
       <path
         d="M13.6 5.2l6.2 5.6-6.2 5.6v-3.2c-4.4 0-7.4 1.3-9.6 4.6.6-4.7 3.1-8.6 9.6-9.4z"
@@ -148,7 +148,7 @@ export const icons = {
       <path d="M13 5.2a2.4 2.4 0 0 1 0 4.6M14.5 15.5c0-2.2-1.2-3.6-3-4" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
-  personPlus: (color = '#007aff'): ReactElement => (
+  personPlus: (color = accent()): ReactElement => (
     <svg width="19" height="19" viewBox="0 0 20 20">
       <circle cx="8" cy="6.3" r="2.8" fill="none" stroke={color} strokeWidth="1.7" />
       <path d="M2.8 16c0-2.6 2.2-4.3 5.2-4.3 0.9 0 1.8.2 2.5.5" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
@@ -243,7 +243,7 @@ export const icons = {
     </svg>
   ),
   /** Стрелка наружу — «открыть во внешнем приложении». */
-  external: (color = '#007aff'): ReactElement => (
+  external: (color = accent()): ReactElement => (
     <svg width="17" height="17" viewBox="0 0 18 18">
       <path d="M3 15L15 3M8 3h7v7" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -251,7 +251,7 @@ export const icons = {
   /** Заливная булавка поверх карты — крупнее и с белой обводкой, чтобы читалась на тайлах. */
   mapPin: (): ReactElement => (
     <svg width="30" height="38" viewBox="0 0 30 38">
-      <path d="M15 37c0-9 11-13.5 11-22A11 11 0 004 15c0 8.5 11 13 11 22z" fill="#007aff" stroke="#fff" strokeWidth="2" />
+      <path d="M15 37c0-9 11-13.5 11-22A11 11 0 004 15c0 8.5 11 13 11 22z" fill={accent()} stroke="#fff" strokeWidth="2" />
       <circle cx="15" cy="14.5" r="4" fill="#fff" />
     </svg>
   ),
@@ -344,6 +344,15 @@ export const icons = {
       <circle cx="10" cy="6.2" r="1.05" fill="currentColor" />
     </svg>
   ),
+  /** Самолётик Telegram крупно: кнопка «Telegram» в шапке профиля открывает человека там. */
+  telegram: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 24 24">
+      <path
+        d="M3.4 11.2 19.6 4.6c.8-.3 1.5.2 1.3 1.3l-2.8 13c-.2.9-.8 1.1-1.5.7l-4.2-3.1-2 2c-.2.2-.4.4-.9.4l.3-4.3 7.8-7c.3-.3-.1-.5-.5-.2l-9.6 6-4.1-1.3c-.9-.3-.9-.9.2-1.3z"
+        fill={color}
+      />
+    </svg>
+  ),
   /** Бумажный самолётик Telegram на значке уведомления. */
   plane: (): ReactElement => (
     <svg width="9" height="9" viewBox="0 0 12 12">
@@ -358,7 +367,7 @@ export const icons = {
   ),
   pencil: (): ReactElement => (
     <svg width="17" height="17" viewBox="0 0 20 20">
-      <path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" fill="none" stroke="#007aff" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" fill="none" stroke={accent()} strokeWidth="1.7" strokeLinejoin="round" />
     </svg>
   ),
   github: (size = 13, color?: string): ReactElement => (

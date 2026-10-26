@@ -7,7 +7,7 @@ import { push, useStore } from '../store'
 import { haptic } from '../telegram'
 import { resolvedTheme } from '../theme'
 import { DevChips, Header, Sep } from '../components/common'
-import { DayRow } from '../components/DayRow'
+import { DayRow, TodayCard } from '../components/DayRow'
 import { LaterEvents } from '../components/EventRow'
 import { MacSheet } from '../components/MacSheet'
 import { Screen } from '../components/Screen'
@@ -362,14 +362,17 @@ export function Overview() {
   const total = days.reduce((sum, d) => sum + d.total, 0)
   const first = days[0]!.dateKey
   const last = days[days.length - 1]!.dateKey
+  const today = days.find((d) => d.dateKey === data!.todayKey) ?? null
+  const week = days.filter((d) => d !== today)
 
   return (
     <Screen>
       <Header title="Ближайшие дни" subtitle={`${fmtRange(first, last)} · ${requestsWord(total)}`} chip={<DevChips />} />
       <DuesBanner />
       <PhoneBanner />
+      {today ? <TodayCard day={today} onOpen={() => push('day', { dateKey: today.dateKey })} /> : null}
       <div className="card">
-        {days.map((day, i) => (
+        {week.map((day, i) => (
           <Fragment key={day.dateKey}>
             {i > 0 ? <Sep left={96} /> : null}
             <DayRow

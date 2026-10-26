@@ -186,7 +186,8 @@ const DEPTH = 0.06
  * поэтому сверху нет зазора и шапка Telegram не отрывается от экрана. transform делает
  * #app containing block для position: fixed внутри него, и нижняя панель считала бы
  * координаты от низа документа: низ видимой области уходит в CSS (--sheet-vb), и
- * панель стоит там же, где стояла, уменьшаясь вместе с экраном.
+ * панель стоит там же, где стояла, уменьшаясь вместе с экраном. Верх видимой области
+ * (--sheet-vt) нужен по той же причине строке на стекле сверху (TopBar).
  */
 const stage = (() => {
   let app: HTMLElement | null = null
@@ -194,6 +195,7 @@ const stage = (() => {
     if (!app) return
     const y = window.scrollY
     app.style.transformOrigin = `50% ${y}px`
+    document.documentElement.style.setProperty('--sheet-vt', `${y}px`)
     document.documentElement.style.setProperty('--sheet-vb', `${y + window.innerHeight}px`)
   }
   return {
@@ -220,6 +222,7 @@ const stage = (() => {
       app.style.transform = ''
       app.style.transformOrigin = ''
       document.documentElement.classList.remove('sheet-recede')
+      document.documentElement.style.removeProperty('--sheet-vt')
       document.documentElement.style.removeProperty('--sheet-vb')
       app = null
     },

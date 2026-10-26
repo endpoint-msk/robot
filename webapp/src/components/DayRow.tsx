@@ -1,11 +1,11 @@
-// Строка дня в обзоре недели (резидент) и в неделе архива.
+// Строка дня в обзоре недели (резидент) и в неделе архива, сегодняшний день карточкой.
 
-import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
 import { icons } from '../icons'
 import { useStore } from '../store'
 import { sec } from '../theme'
 import type { Attendee, DayAgenda, DayLock, HostingRequest, SpaceEvent } from '../types'
-import { AvatarStack } from './people'
+import { AvatarStack, userLabel } from './people'
 
 type DayRowData = {
   dateKey: string
@@ -137,5 +137,89 @@ export function DayRow({
       )}
       {tappable ? <div className="row-right">{icons.chevron(isToday ? sec(0.4) : undefined)}</div> : null}
     </Tag>
+  )
+}
+
+/**
+ * Сегодняшний день на «Ближайших днях» карточкой над неделей: экран открывают почти всегда
+ * ради него. Данные те же, что у строки дня, карточка только даёт им место. День недели и
+ * дата словами целиком: неделя под карточкой начинается с завтрашнего дня.
+ */
+export function TodayCard({ day, onOpen }: { day: DayRowData; onOpen: () => void }) {
+  const { data } = useStore()
+  const me = data!.me.id
+  const att = day.attendees ?? []
+  const event = (day.events ?? [])[0]
+  const lock = day.lock ?? null
+  // Причина закрытия встаёт на место повестки, как в строке: слова «закрыт» нет нигде,
+  // и без неё штриховку не прочесть. Повестка тогда строкой ниже, если она о другом.
+  const headline = lock ? lock.reason || 'Закрыт для гостей' : (day.agenda?.text ?? null)
+  const agendaLine = lock && day.agenda && day.agenda.text !== lock.reason ? day.agenda.text : null
+  const pending = day.total - day.approved
+  const needsAction = pending > 0 && !lock
+
+  // «вы, @mika и ещё 1»: себя человек ищет в списке первым.
+  const names = [...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]
+  const rest = names.length - 2
+  const who =
+    rest > 0 ? `${names.slice(0, 2).join(', ')} и ещё ${rest}` : names.length === 2 ? `${names[0]} и ${names[1]}` : (names[0] ?? '')
+
+  const foot =
+    day.total > 0
+      ? `${requestsWord(day.total)}${needsAction ? `, ${pending}\u00a0без хоста` : ''}`
+      : lock
+        ? 'Заявки закрыты'
+        : att.length > 0
+          ? 'Заявок нет'
+          : 'Пока никого'
+
+  return (
+    <button
+      type="button"
+      className={'today-card' + (lock ? ' day-locked' : '')}
+      title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined}
+      onClick={onOpen}
+    >
+      <div className="tc-k">
+        <span className="tc-today">Сегодня</span>
+        {` · ${WEEKDAYS_FULL[weekdayIdx(day.dateKey)]!.toLowerCase()}, ${fmtDayMonth(day.dateKey)}`}
+      </div>
+      {headline ? <div className={'tc-ag' + (lock ? ' reason' : '')}>{headline}</div> : null}
+      {agendaLine ? (
+        <div className="agenda-day-label tc-line">
+          {icons.agenda(13, sec(0.45))}
+          <span>{agendaLine}</span>
+        </div>
+      ) : null}
+      {event ? (
+        <div className="ev-day-label tc-line">
+          {icons.calendar(13, '#bf5af2')}
+          <span>{event.title}</span>
+          <span className="ev-day-time">{`· ${event.time}`}</span>
+        </div>
+      ) : null}
+      {att.length > 0 ? (
+        <div className="tc-people">
+          <AvatarStack users={att} />
+          <span className="tc-who">
+            <b>{`Придут ${att.length}`}</b>
+            <span>{who}</span>
+          </span>
+        </div>
+      ) : null}
+      <div className={'tc-foot' + (day.total > 0 ? '' : ' muted')}>
+        <span className="tc-req">
+          {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
+          {foot}
+        </span>
+        {day.approved > 0 ? (
+          <span className="approved-count">
+            {icons.check(14, '#34c759')}
+            {String(day.approved)}
+          </span>
+        ) : null}
+        {icons.chevron(sec(0.4))}
+      </div>
+    </button>
   )
 }

@@ -5,6 +5,7 @@ import { CHOICE_LABEL, choiceOf, notifyBanners, prefsFor, type NotifyChoice } fr
 import { markOwnTap } from '../motion'
 import { push, setData, setThemeFrom, useStore } from '../store'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
+import { accent } from '../theme'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { MacSheet } from '../components/MacSheet'
@@ -117,7 +118,7 @@ function NotifyCard<M extends string>({
         {o.label}
         <span className="row-sublabel">{o.sublabel}</span>
       </span>
-      <div className="radio-check">{prefs.mode === o.mode ? icons.check(16, '#007aff', 2.2) : null}</div>
+      <div className="radio-check">{prefs.mode === o.mode ? icons.check(16, accent(), 2.2) : null}</div>
     </button>
   )
   return (

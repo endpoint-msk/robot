@@ -10,7 +10,7 @@ import { launchTarget, targetEntries } from './deeplink'
 import { icons } from './icons'
 import { closeTopOverlay, hasOverlay } from './overlays'
 import { bump, getState, openAt, openOnboardingRoot, pop, push, setData, setPerspective } from './store'
-import { applyTheme } from './theme'
+import { applyTheme, refreshAccent } from './theme'
 import { tg } from './telegram'
 import { ApiError, type Bootstrap } from './types'
 
@@ -156,9 +156,14 @@ export function Root() {
     }
     window.addEventListener('keydown', onKey)
 
-    // Тема клиента сменилась — при выборе «Системная» едем следом.
+    // Тема клиента сменилась: при выборе «Системная» едем следом, а при своей теме
+    // миниаппа перечитываем только акцент, он из темы Telegram всегда.
     const onSystemThemeChange = (): void => {
-      if (getState().theme !== 'system') return
+      if (getState().theme !== 'system') {
+        refreshAccent()
+        bump()
+        return
+      }
       applyTheme('system')
       bump()
     }

@@ -38,7 +38,7 @@ import {
 } from '../motion'
 import { getState, pop, push, setTopParams, useParams, useStore, type NavParams } from '../store'
 import { haptic, setHeaderColor } from '../telegram'
-import { applyTheme, sec } from '../theme'
+import { accentTriple, applyTheme, sec } from '../theme'
 import type { Attendee, Day as DayData, DayAgenda, DayLock, HostingRequest, User } from '../types'
 import { BackRow, EmptyState, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { AgendaBanner } from '../components/AgendaBanner'
@@ -749,7 +749,7 @@ const flashRow = (row: HTMLElement): (() => void) => {
   const stop = animate(
     1100,
     (t) => {
-      row.style.backgroundColor = `rgba(0, 122, 255, ${(0.16 * pulse(t, 120, 900)).toFixed(3)})`
+      row.style.backgroundColor = `rgba(${accentTriple()}, ${(0.16 * pulse(t, 120, 900)).toFixed(3)})`
     },
     clear,
   )

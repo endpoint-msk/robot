@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { icons } from '../icons'
 import { animate, clamp, E, pr, reducedMotion } from '../motion'
 import { haptic } from '../telegram'
+import { accent } from '../theme'
 
 /** Сколько значок держит галочку после копирования. */
 const COPIED_MS = 1600
@@ -165,7 +166,7 @@ export function useCopyFeedback(size: number): {
     copy,
     glyph: (
       <span className={'copy-glyph' + (copied ? ' on' : '')} ref={glyphRef} aria-hidden="true">
-        <span className="cg-frames">{icons.copy(size, '#007aff')}</span>
+        <span className="cg-frames">{icons.copy(size, accent())}</span>
         <svg className="cg-check" width={size} height={size} viewBox="0 0 14 14">
           <path
             d="M2.5 7.5l3 3L11.5 4"
