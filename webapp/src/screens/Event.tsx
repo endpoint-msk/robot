@@ -11,7 +11,7 @@ import { compressImage, imageToneAt } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { eventPhotoUrl, useIcsLink } from '../links'
-import { reducedMotion, stageTint, toHex, toneColors } from '../motion'
+import { markOwnTap, ownTapRecent, reducedMotion, stageTint, toHex, toneColors } from '../motion'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
 import { usePullDismiss } from '../components/usePullDismiss'
@@ -29,7 +29,7 @@ import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
 import { useReorder } from '../components/useReorder'
-import { usePasteImages } from '../usePasteImages'
+import { useDropImages, usePasteImages } from '../usePasteImages'
 import { ComingRow, useAttend } from './Day'
 
 const MAX_TITLE = 120
@@ -123,6 +123,9 @@ export function Event() {
   // Афиши — список id файлов: у заготовки это её картинка, у нового ивента список
   // копится заливкой (файл лежит на сервере ничей, пока ивент не сохранён).
   const [photos, setPhotos] = useState<string[]>(existing?.photos ?? (draft?.hasPhoto ? [`draft-${data!.me.id}`] : []))
+  // Афиши, добавленные здесь (выбором, вставкой или брошенным файлом): они проявляются, а
+  // не встают рывком. Сохранённые раньше стоят на месте с первого кадра.
+  const fresh = useRef(new Set<string>())
   const canSave = title.trim().length > 0
 
   // Тон каждой афиши, которую редактор уже знает: null - насыщенного оттенка нет, нет
@@ -162,6 +165,8 @@ export function Event() {
         found[id] = tone
       }
       setTones((prev) => ({ ...prev, ...found }))
+      for (const id of added) fresh.current.add(id)
+      markOwnTap()
       setPhotos((prev) => [...prev, ...added])
       haptic.notify('success')
       if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
@@ -175,10 +180,15 @@ export function Event() {
   // Правку и удаление сервер отдаёт автору либо деву (canEditEvent) — чужой ивент
   // открывается на чтение, иначе резидент правил бы его до отказа сервера.
   const readOnly = Boolean(existing) && (asGuest || (existing!.host.userId !== data!.me.id && !data!.me.isDev))
-  // Вставка картинок из буфера (Ctrl/Cmd+V) на десктопе; в режиме чтения не нужна.
+  // Вставка картинок из буфера (Ctrl/Cmd+V) и брошенный файл на десктопе; в режиме чтения
+  // не нужны.
   usePasteImages(addFiles, !readOnly)
+  const dropping = useDropImages(addFiles, !readOnly)
   const stripRef = useRef<HTMLDivElement>(null)
-  useReorder(stripRef, photos, setPhotos)
+  useReorder(stripRef, photos, (next) => {
+    markOwnTap()
+    setPhotos(next)
+  })
 
   // Недописанный новый ивент переживает закрытие миниаппа, как черновик в Telegram. У правки
   // опубликованного черновика нет: несохранённое выглядело бы сохранённым. У заготовки из
@@ -331,9 +341,19 @@ export function Event() {
         <div className="sep" style={{ marginLeft: 14 }} />
         {/* Афиши: лента миниатюр, последняя плитка — «добавить». Порядок в ленте
             и есть порядок показа в карточке, плитки переставляются перетаскиванием. */}
-        <div className="ev-photos" ref={stripRef}>
+        <div className={'ev-photos' + (dropping ? ' drop-on' : '')} ref={stripRef}>
           {photos.map((id) => (
-            <div className="ev-thumb" key={id} data-photo={id}>
+            <div
+              className={'ev-thumb' + (fresh.current.has(id) ? ' fresh' : '')}
+              key={id}
+              data-photo={id}
+              onAnimationEnd={(e) => {
+                // Проявилась: перестановка двигает узел, и анимация запустилась бы заново.
+                if (e.target !== e.currentTarget) return
+                fresh.current.delete(id)
+                e.currentTarget.classList.remove('fresh')
+              }}
+            >
               <EventPoster photoId={id} className="ev-thumb-img" />
               <button
                 className="ev-thumb-del"
@@ -341,6 +361,7 @@ export function Event() {
                 onClick={(e) => {
                   // Клик по крестику не должен ещё и открывать просмотр под ним.
                   e.stopPropagation()
+                  markOwnTap()
                   setPhotos((prev) => prev.filter((p) => p !== id))
                 }}
               >
@@ -475,6 +496,7 @@ export function Event() {
           createdAt: '',
         }}
         dimTitle={title.trim().length === 0}
+        toneShift={ownTapRecent()}
       />
 
       {existing ? (
@@ -778,17 +800,20 @@ export function EventCard({
   dimTitle = false,
   calendar = false,
   actions = false,
+  toneShift = false,
 }: {
   event: SpaceEvent
   dimTitle?: boolean
   calendar?: boolean
   /** Показывать блок заявок (подача/разбор/«кто придёт»). В превью редактора не нужен. */
   actions?: boolean
+  /** Афиши переставили своим касанием: тон перетекает, а не перекрашивается в следующем кадре. */
+  toneShift?: boolean
 }) {
   const photos = event.photos ?? []
   const openIcs = useIcsLink('event', event.id, calendar)
   return (
-    <div className="event-card" style={toneVars(eventTone(event))}>
+    <div className={'event-card' + (toneShift ? ' tone-shift' : '')} style={toneVars(eventTone(event))}>
       <div className="ev-head">
         {icons.calendar(14, 'currentColor')}
         <span className="ev-kicker">Ивент · в {event.time}</span>

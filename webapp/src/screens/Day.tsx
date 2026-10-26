@@ -43,6 +43,7 @@ import type { Attendee, Day as DayData, DayAgenda, DayLock, HostingRequest, User
 import { BackRow, EmptyState, Header, SectionTitle, Sep, Switch } from '../components/common'
 import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeeRow } from '../components/attendees'
+import { CapBar } from '../components/CapBar'
 import { Collapse } from '../components/Collapse'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
@@ -182,7 +183,10 @@ function DayCard({ day }: { day: DayData }) {
       hint: `Рекомендуем ${capacity.defaultCap}: это комфортное количество человек в подвале. Захостить сверх лимита можно, бот предупредит об этом.`,
       min: 1,
       max: 200,
-      wheel: { unit: (n) => plural(n, 'человек', 'человека', 'человек') },
+      wheel: {
+        unit: (n) => plural(n, 'человек', 'человека', 'человек'),
+        bar: { occupied: capacity.occupied, pending: capacity.pending },
+      },
       confirmLabel: 'Сохранить',
     })
     if (value === null || value === capacity.cap) return
@@ -241,7 +245,7 @@ function DayCard({ day }: { day: DayData }) {
         {capacity ? (
           <>
             <Sep left={14} />
-            <button type="button" className="row tappable" onClick={editCap}>
+            <button type="button" className="row tappable cap-row" onClick={editCap}>
               <span className="row-label">
                 Вместимость
                 {/* Последнюю заявку без хоста убрали своим тапом: строка сворачивается, а не
@@ -253,10 +257,11 @@ function DayCard({ day }: { day: DayData }) {
               <div className="row-right">
                 <span className={'cap-value' + (over ? ' over' : full ? ' full' : '')}>
                   <Flip value={capacity.occupied} />
-                  {` / ${capacity.cap}`}
+                  {`\u00a0из\u00a0${capacity.cap}`}
                 </span>
                 {icons.chevron()}
               </div>
+              <CapBar occupied={capacity.occupied} pending={capacity.pending} cap={capacity.cap} />
             </button>
             {capacity.custom ? (
               <>

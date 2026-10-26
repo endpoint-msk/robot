@@ -22,6 +22,7 @@ import { push, useStore } from '../store'
 import type { ArchiveResponse, ArchiveWeekSummary, GuestSearchResponse, GuestSummary } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar } from '../components/people'
+import { FloatingMonth } from '../components/FloatingMonth'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
@@ -70,9 +71,10 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
   }
   return (
     <>
+      <FloatingMonth />
       {groups.map((g) => (
         <Fragment key={g.label}>
-          <SectionTitle>{g.label}</SectionTitle>
+          <SectionTitle month={g.label}>{g.label}</SectionTitle>
           <div className="card" style={{ marginBottom: 22 }}>
             {g.weeks.map((week, i) => {
               const weekEnd = addDays(week.weekStart, 6)

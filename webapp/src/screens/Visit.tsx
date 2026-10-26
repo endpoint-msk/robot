@@ -186,7 +186,7 @@ export function Visit() {
     proposalCard = (
       <div className="status-card proposal">
         <div className="status-card-head">
-          <div className="status-card-icon">{icons.clock(15, sec(0.55))}</div>
+          <div className="status-card-icon">{icons.clock(15, sec(0.55), p.time)}</div>
           <span className="status-card-title">
             {p.dateKey !== r.dateKey ? 'Резидент предлагает другой день' : 'Резидент предлагает другое время'}
           </span>
@@ -240,7 +240,7 @@ export function Visit() {
     proposalCard = (
       <div className="status-card proposal">
         <div className="status-card-head">
-          <div className="status-card-icon">{icons.clock(15, sec(0.55))}</div>
+          <div className="status-card-icon">{icons.clock(15, sec(0.55), p.time)}</div>
           <span className="status-card-title">Ждём ответа резидента</span>
         </div>
         <div className="propose-time-big">
@@ -286,7 +286,7 @@ export function Visit() {
         {/* Содержимое проявляется, когда кнопка отправки уже выросла в карточку. */}
         <div data-hero-part="cta-body">
           <div className="status-card-head">
-            <div className="status-card-icon">{icons.clock(15, sec(0.55))}</div>
+            <div className="status-card-icon">{icons.clock(15, sec(0.55), r.time)}</div>
             <span className="status-card-title">Заявка ждёт ответа</span>
           </div>
           <div className="status-card-note">

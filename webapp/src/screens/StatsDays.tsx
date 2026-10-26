@@ -10,6 +10,7 @@ import { push } from '../store'
 import { dayEnd, fmtDuration, hoursNum } from '../stats'
 import type { StatsDaySummary, StatsDaysView } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep } from '../components/common'
+import { FloatingMonth } from '../components/FloatingMonth'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
@@ -96,10 +97,11 @@ export function StatsDays() {
   return frame(
     `${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`,
     <>
+      <FloatingMonth />
       {groups.map((group) => {
         const isOpen = toggled[group.key] ?? group.key === freshMonth
         return (
-          <div className="card month-group stats-list" key={group.key}>
+          <div className="card month-group stats-list" key={group.key} data-month={group.title}>
             <button
               type="button"
               className="row tappable month-head"

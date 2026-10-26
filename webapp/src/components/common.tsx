@@ -16,8 +16,11 @@ export function Sep({ left }: { left?: number }) {
   return <div className="sep" style={left !== undefined ? { marginLeft: left } : undefined} />
 }
 
-export const SectionTitle = ({ children }: { children: ReactNode }) => (
-  <div className="section-title">{children}</div>
+/** `month` - начало месяца для плавающей плашки (FloatingMonth): с заголовка, а не с карточки под ним. */
+export const SectionTitle = ({ children, month }: { children: ReactNode; month?: string }) => (
+  <div className="section-title" data-month={month}>
+    {children}
+  </div>
 )
 
 export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?: ReactNode; chip?: ReactNode }) {

@@ -13,6 +13,7 @@ import { sec } from '../theme'
 import { haptic } from '../telegram'
 import type { Bootstrap, DayCapacity, HostingRequest, RescheduleProposal } from '../types'
 import { Avatar, Profile, userLabel } from './people'
+import { CapBar } from './CapBar'
 import { ActionButton, Sep } from './common'
 import { Collapse } from './Collapse'
 import { XText } from './Flip'
@@ -604,7 +605,7 @@ export function RequestRow({
   const note =
     !archive && p ? (
       <div className={'proposal-note' + (p.by === 'resident' ? ' mine' : '')}>
-        {icons.clock(14, sec(0.5))}
+        {icons.clock(14, sec(0.5), p.time)}
         {p.by === 'guest' ? (
           <span>
             гость предлагает <span className="pn-time">{proposalSlot(r, p)}</span>
@@ -635,15 +636,17 @@ export function RequestRow({
     ) : null
 
   // Сверх вместимости второй тап должен быть осознанным: пока кнопка взведена, под
-  // строкой стоит, сколько уже занято.
+  // строкой полоса дня, как в карточке «День», и за занятыми оранжевый кусок в цвет
+  // «Всё равно»: видно, кого добавляют сверх вместимости.
   const capNote: ReactNode =
     armed && over && dayCapacity ? (
-      <div className="proposal-note cap-note">
-        {icons.warnTriangle(14, '#ff9500')}
-        <span>
-          в этот день уже <span className="pn-time">{`${dayCapacity.occupied} из ${dayCapacity.cap}`}</span>, визит сверх
-          вместимости
-        </span>
+      <div
+        className="proposal-note cap-note"
+        role="note"
+        aria-label={`В этот день уже ${dayCapacity.occupied} из ${dayCapacity.cap}, визит сверх вместимости`}
+      >
+        <CapBar occupied={dayCapacity.occupied} pending={0} cap={dayCapacity.cap} add={1} />
+        <span className="pn-time" aria-hidden="true">{`${dayCapacity.occupied + 1}\u00a0из\u00a0${dayCapacity.cap}`}</span>
       </div>
     ) : null
 

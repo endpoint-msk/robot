@@ -21,12 +21,13 @@ function VisitRow({ r }: { r: HostingRequest }) {
   const needsAnswer = Boolean(p && p.by === 'resident')
   // Слот предложения с днём, если предложенный день отличается от дня заявки.
   const pSlot = p ? (p.dateKey !== r.dateKey ? `${fmtShortDate(p.dateKey)} · ${p.time}` : p.time) : ''
+  // Часы показывают время, о котором речь: предложенное, если оно висит, иначе заявки.
   const iconSquare = needsAnswer ? (
-    <div className="status-square attn">{icons.clock(18, accent())}</div>
+    <div className="status-square attn">{icons.clock(18, accent(), p!.time)}</div>
   ) : approved ? (
     <div className="status-square ok">{icons.check(20, '#34c759')}</div>
   ) : (
-    <div className="status-square">{icons.clock(18, sec(0.5))}</div>
+    <div className="status-square">{icons.clock(18, sec(0.5), p ? p.time : r.time)}</div>
   )
 
   // Хост - словом в подписи, как у прошедших визитов: пилл справа забирает ширину у

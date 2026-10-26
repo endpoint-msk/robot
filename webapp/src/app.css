@@ -519,6 +519,39 @@ html.sheet-recede .top-bar { top: var(--sheet-vt, 0px); }
 .tb-sub { font-size: 12px; color: var(--text-2); }
 /* Размытие на слабом Android рвёт прокрутку: строка плотная и встаёт без перехода. */
 .low-motion .tb-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
+
+/* Месяц над длинным списком, пока его листают (components/FloatingMonth.tsx), как дата в
+   чате Telegram. Порталом вне .screen, как строка на стекле. */
+.float-month {
+    position: fixed;
+    z-index: 20;
+    left: 50%;
+    top: calc(var(--tg-content-safe-area-inset-top, 0px) + 10px);
+    transform: translateX(-50%);
+    display: grid;
+    height: 28px;
+    box-sizing: border-box;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--bg-glass);
+    -webkit-backdrop-filter: blur(12px) saturate(1.6);
+    backdrop-filter: blur(12px) saturate(1.6);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 28px;
+    color: var(--text);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+}
+.float-month.shown { opacity: 1; transition-duration: 0.18s; }
+html.sheet-recede .float-month { top: calc(var(--sheet-vt, 0px) + 10px); }
+.fm-label { grid-area: 1 / 1; justify-self: center; }
+.fm-label.out { animation: vt-blur-out 0.18s ease-out both; }
+.fm-label.in { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
+.low-motion .float-month { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--card); }
 @media (prefers-reduced-motion: reduce) {
     .tb-glass { transition: none; }
 }
@@ -1196,8 +1229,9 @@ button.invite-btn {
 .invite-btn.invited { padding-left: 0; padding-right: 0; background-color: transparent; font-size: 13px; color: rgba(var(--sec), 0.5); cursor: default; }
 .invite-btn.invited .ib-check { width: 13px; margin-right: 4px; opacity: 1; filter: none; transform: none; }
 .invite-btn.invited:active { opacity: 1; }
-/* Сколько занято, пока «Захостить» взведена сверх вместимости: число тем же оранжевым. */
-.cap-note .pn-time { color: var(--orange); }
+/* Сколько станет, пока «Захостить» взведена сверх вместимости: число тем же оранжевым,
+   что кнопка. Вес выше, чем у .proposal-note .pn-time ниже: иначе оно чернело. */
+.proposal-note.cap-note .pn-time { color: var(--orange); font-variant-numeric: tabular-nums; }
 .waiting-label { margin-left: auto; font-size: 13px; font-weight: 600; color: rgba(var(--sec), 0.5); flex-shrink: 0; }
 
 /* --- Перенос времени (резидент ↔ гость) --- */
@@ -1876,6 +1910,26 @@ button.agenda-banner:active { opacity: 0.6; }
 .cap-value { font-size: 15px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .cap-value.full { color: var(--orange); }
 .cap-value.over { color: var(--red); }
+/* Заполненность дня (components/CapBar.tsx), как память в настройках iOS: одна капсула,
+   куски по видам с зазором в цвет подложки. Занятые синие, заявки без хоста тем же тоном
+   светлее, свободное серое, сверх вместимости красное, как число рядом. Оранжевый кусок -
+   гость, которого хостят «Всё равно». */
+.cap-bar { display: flex; gap: 2px; height: 6px; border-radius: 999px; overflow: hidden; }
+.cap-bar > i { display: block; flex: 0 1 0; min-width: 0; }
+.cap-bar .on { background: var(--blue); }
+.cap-bar .over { background: var(--red); }
+.cap-bar .wait { background: rgba(var(--blue-rgb), 0.32); }
+.cap-bar .wover { background: rgba(255, 59, 48, 0.32); }
+.cap-bar .free { background: rgba(var(--sec), 0.13); }
+.cap-bar .add { background: var(--orange); }
+.cap-row { flex-wrap: wrap; row-gap: 10px; }
+.cap-row > .cap-bar { flex-basis: 100%; }
+/* В листе вместимости полоса шириной с подсветку колеса (.tp-number .tp-band). */
+.cap-bar-sheet { width: 220px; height: 8px; margin: 4px auto 0; }
+.cap-sheet-note { margin: 9px 22px 0; text-align: center; font-size: 13px; line-height: 1.35; color: var(--text-2); }
+.cap-sheet-note b { font-weight: 600; color: var(--red); }
+.req-extra .cap-note { align-self: stretch; align-items: center; gap: 10px; }
+.cap-note .cap-bar { flex: 1; }
 
 /* --- Поля формы --- */
 
@@ -2178,6 +2232,21 @@ button.agenda-banner:active { opacity: 0.6; }
 /* Правило многострочное, поэтому значок прижат к верху, а не по центру строки. */
 .row.rule-row { align-items: flex-start; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
 .rule-text { flex: 1; min-width: 0; padding-top: 4px; font-size: 16px; line-height: 1.3; text-wrap: pretty; }
+/* «Принимаю правила»: значки по очереди сверху вниз зеленеют и тают в галочку, по эталону
+   «Захостить» (screens/Rules.tsx, шаг TICK_STEP_MS). */
+.rule-icon { position: relative; transition: background-color 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--i) * 110ms); }
+.rules-list.ticked { --rule-ok: var(--green); }
+.ri-mark, .ri-ok {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease-out, filter 0.24s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition-delay: calc(var(--i) * 110ms);
+}
+.ri-ok, .rules-list.ticked .ri-mark { opacity: 0; filter: blur(3px); transform: scale(0.88); }
+.rules-list.ticked .ri-ok { opacity: 1; filter: none; transform: none; transition-delay: calc(var(--i) * 110ms + 60ms); }
 .rules-wiki .row-label { color: var(--blue); }
 .checkbox {
     margin-left: auto;
@@ -2948,6 +3017,17 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .ev-thumb.lifted { z-index: 2; overflow: visible; }
 .ev-thumb.lifted .ev-thumb-img { border-radius: 12px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28); }
 .ev-thumb.dropping { transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+/* Файл тащат над окном (Telegram Desktop): лента подсвечена как цель, брошенная картинка
+   встаёт афишей. Добавленная здесь афиша проявляется по эталону «Захостить»; заливка
+   только backwards: после проявления transform плитки снова у перестановки. */
+.ev-photos { transition: background-color 0.2s ease-out, box-shadow 0.2s ease-out; }
+.ev-photos.drop-on { background: var(--blue-soft); box-shadow: inset 0 0 0 2px var(--blue); }
+.ev-thumb.fresh { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+/* Первой встала другая афиша своим касанием: превью перетекает в её тон, а не
+   перекрашивается в следующем кадре. */
+.event-card.tone-shift { transition: background-color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.event-card.tone-shift :is(.ev-head, .ev-kicker, .ev-source) { transition: color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.event-card.tone-shift .ev-poster { transition: background-color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @media (prefers-reduced-motion: reduce) {
     .ev-photos.reordering .ev-thumb:not(.lifted), .ev-thumb.dropping { transition: none; }
 }
@@ -3177,6 +3257,25 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 :root[data-theme="dark"] .rs-water { fill: #16293c; }
 :root[data-theme="dark"] .rs-build { fill: rgba(235, 235, 245, 0.09); }
 :root[data-theme="dark"] .rs-road { stroke: #363b43; }
+
+/* Дальний кадр (screens/routeMap.ts): тап по станции отводит камеру к ней. Толщина улиц и
+   путей в пикселях экрана (vectorEffect на путях в Route.tsx): на отъезде кадр мельчает
+   вчетверо, и улицы пропали бы. Дорога от метро рисуется пунктиром по pathLength, её
+   толщину скрипт ведёт вместе с кадром. */
+.route-map { --rs-park: #d5e8cf; --rs-case: #ffffff; }
+:root[data-theme="dark"] .route-map { --rs-park: #18261b; --rs-case: #14181d; }
+.rs-wide .rs-w1 { stroke-width: 1; }
+.rs-wide .rs-w2 { stroke-width: 1.6; }
+.rs-wide .rs-w3 { stroke-width: 2.2; }
+.rs-wide .rs-w4 { stroke-width: 2.8; }
+.rs-park { fill: var(--rs-park); }
+.rs-rail { fill: none; stroke: rgba(var(--sec), 0.3); stroke-width: 1.2; stroke-dasharray: 3 2; }
+.rs-walk-case, .rs-walk { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 1; stroke-dashoffset: 1; opacity: 0; }
+.rs-walk-case { stroke: var(--rs-case); }
+.rs-walk { stroke: var(--blue); }
+.rs-station { opacity: 0; }
+.route-metro .route-walk { font-weight: 400; transition: color 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.route-metro .row.on .route-walk { color: var(--blue); }
 
 .route-map-credit {
     position: absolute;

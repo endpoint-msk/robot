@@ -21,12 +21,25 @@ export const icons = {
       <path d="M2.5 7.5l3 3L11.5 4" fill="none" stroke={color} strokeWidth={width || 2} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
-  clock: (size: number, color: string): ReactElement => (
-    <svg width={size} height={size} viewBox="0 0 18 18">
-      <circle cx="9" cy="9" r="7" fill="none" stroke={color} strokeWidth="1.6" />
-      <path d="M9 5v4.2l2.6 1.6" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
+  /** С `time` («19:00») стрелки стоят на этом времени: у заявки и у предложенного переноса. */
+  clock: (size: number, color: string, time?: string): ReactElement => {
+    const m = time ? /^(\d{1,2}):(\d{2})$/.exec(time) : null
+    const hour = m ? ((Number(m[1]) % 12) + Number(m[2]) / 60) * 30 : 0
+    const minute = m ? Number(m[2]) * 6 : 0
+    return (
+      <svg width={size} height={size} viewBox="0 0 18 18">
+        <circle cx="9" cy="9" r="7" fill="none" stroke={color} strokeWidth="1.6" />
+        {m ? (
+          <>
+            <path d="M9 9V5.6" transform={`rotate(${hour.toFixed(1)} 9 9)`} fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+            <path d="M9 9V4" transform={`rotate(${minute} 9 9)`} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+          </>
+        ) : (
+          <path d="M9 5v4.2l2.6 1.6" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+      </svg>
+    )
+  },
   chart: (size = 17, color = '#fff'): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 18 18">
       <path d="M3 15V9.4M7.6 15V4.2M12.2 15v-7M16 15H2" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" />

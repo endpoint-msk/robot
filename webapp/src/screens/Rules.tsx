@@ -2,10 +2,11 @@
 // (см. me.acceptedRules). Согласие - сама кнопка, а сервер всё равно не даст создать заявку
 // без него (403 rules_required).
 
-import { Fragment, type ReactElement } from 'react'
+import { Fragment, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
 import { sheetPrompt, type SheetBodyProps } from '../modals'
+import { reducedMotion } from '../motion'
 import { openUrl } from '../telegram'
 import { ActionButton, Sep } from '../components/common'
 
@@ -46,11 +47,32 @@ const RULES: { text: string; tone: string; icon: ReactElement }[] = [
   },
 ]
 
+/** Галочки встают сверху вниз через столько мс одна за другой; последняя доходит за TICK_MS. */
+const TICK_STEP_MS = 110
+const TICK_MS = 300
+
 function RulesSheet({ done }: SheetBodyProps<boolean>) {
-  // Лист уходит только после ответа сервера: отказ ложится алертом в тот же лист, а правила
-  // остаются под ним, и согласиться можно ещё раз.
+  const [ticked, setTicked] = useState(false)
+  // Согласие записано, лист вот-вот уйдёт: повторный тап по кнопке ничего не шлёт.
+  const accepted = useRef(false)
+  // Значки по очереди становятся зелёными галочками, пока идёт ответ сервера: видно, с чем
+  // согласились. Лист уходит, когда пришёл ответ и встала последняя галочка; кнопка ждёт
+  // только сервера, иначе крутилка изображала бы сеть, пока доигрывают галочки. Отказ
+  // возвращает значки и ложится алертом в тот же лист, согласиться можно ещё раз.
   const accept = async (): Promise<void> => {
-    if (await action('rules.accept', {}, { quiet: true })) done(true)
+    if (accepted.current) return
+    const still = reducedMotion()
+    if (!still) setTicked(true)
+    const shown = new Promise((r) => setTimeout(r, still ? 0 : (RULES.length - 1) * TICK_STEP_MS + TICK_MS))
+    if (!(await action('rules.accept', {}, { quiet: true }))) {
+      setTicked(false)
+      return
+    }
+    accepted.current = true
+    void (async () => {
+      await shown
+      done(true)
+    })()
   }
   return (
     <>
@@ -58,13 +80,16 @@ function RulesSheet({ done }: SheetBodyProps<boolean>) {
         <div className="rules-title">Правила спейса</div>
         <div className="rules-sub">Прочитайте перед первой заявкой</div>
       </div>
-      <div className="card rules-list">
+      <div className={'card rules-list' + (ticked ? ' ticked' : '')}>
         {RULES.map((r, i) => (
           <Fragment key={r.text}>
             {i > 0 ? <Sep left={56} /> : null}
             <div className="row rule-row">
-              <div className="row-icon" style={{ background: `var(--${r.tone})` }}>
-                {r.icon}
+              <div className="row-icon rule-icon" style={{ background: `var(--rule-ok, var(--${r.tone}))`, '--i': i } as CSSProperties}>
+                <span className="ri-mark">{r.icon}</span>
+                <span className="ri-ok" aria-hidden="true">
+                  {icons.check(16, '#fff', 2.4)}
+                </span>
               </div>
               <span className="rule-text">{r.text}</span>
             </div>

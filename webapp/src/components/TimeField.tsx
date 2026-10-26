@@ -57,6 +57,7 @@ function Wheel({
   label,
   onLive,
   onSettle,
+  onScrub,
 }: {
   values: string[]
   /** Строка, на которой колесо стоит по данным; правка снаружи доезжает плавно. */
@@ -68,6 +69,8 @@ function Wheel({
   onLive: (index: number) => void
   /** Жест кончился: колесо встало, недоступное уже откатывается. */
   onSettle: (index: number) => void
+  /** Дробная позиция колеса на каждом кадре прокрутки: за ней идёт то, что меняется без шагов. */
+  onScrub?: (pos: number) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const drumRef = useRef<HTMLDivElement>(null)
@@ -82,8 +85,8 @@ function Wheel({
   const auto = useRef(false)
   // Строки барабана, показанные прошлым кадром: из них прячутся ушедшие за край.
   const lit = useRef<[number, number]>([0, -1])
-  const cb = useRef({ onLive, onSettle, minIndex })
-  cb.current = { onLive, onSettle, minIndex }
+  const cb = useRef({ onLive, onSettle, onScrub, minIndex })
+  cb.current = { onLive, onSettle, onScrub, minIndex }
   const [active, setActive] = useState(index)
   // Мышью колесо тянут, как пальцем: колёсико мыши крутит его само, а с зажатой кнопкой
   // список не прокручивается вовсе.
@@ -118,6 +121,7 @@ function Wheel({
       row.style.opacity = Math.pow(Math.cos((a * Math.PI) / 180), 1.4).toFixed(3)
     }
     lit.current = [lo, hi]
+    cb.current.onScrub?.(clamp(s, 0, values.length - 1))
   }
 
   // Позиция колеса — это scrollTop, а не разметка: держим её в согласии с index
@@ -306,12 +310,15 @@ export function NumberWheel({
   max,
   unit,
   onChange,
+  onScrub,
 }: {
   value: number
   min: number
   max: number
   unit: (n: number) => string
   onChange: (n: number) => void
+  /** Дробное число под полосой на каждом кадре прокрутки. */
+  onScrub?: (value: number) => void
 }) {
   const values = useMemo(() => Array.from({ length: max - min + 1 }, (_, i) => String(min + i)), [min, max])
   const [n, setN] = useState(() => clamp(Math.round(value), min, max))
@@ -322,7 +329,15 @@ export function NumberWheel({
   return (
     <div className="tp-wheels tp-number">
       <div className="tp-band" />
-      <Wheel values={values} index={n - min} minIndex={0} label="Число" onLive={pick} onSettle={pick} />
+      <Wheel
+        values={values}
+        index={n - min}
+        minIndex={0}
+        label="Число"
+        onLive={pick}
+        onSettle={pick}
+        onScrub={onScrub ? (pos) => onScrub(min + pos) : undefined}
+      />
       <span className="tp-unit">{unit(n)}</span>
     </div>
   )

@@ -10,10 +10,12 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { CapBar, paintCapBar } from './components/CapBar'
 import { DayChips, isPastForToday, useDayTime } from './components/forms'
 import { Avatar } from './components/people'
 import { NumberWheel, TimeField } from './components/TimeField'
 import { useSheetDrag } from './components/useSheetDrag'
+import { requestsWord } from './dates'
 import { icons } from './icons'
 import { animate, clamp, E, mix, pr, reducedMotion } from './motion'
 import { pushOverlay } from './overlays'
@@ -62,10 +64,15 @@ type NumberInput = {
   min: number
   max: number
   /** Колесо вместо клавиатуры; `unit` подписывает число справа («15 человек»). */
-  wheel?: { unit: (n: number) => string }
+  wheel?: NumberWheelOpts
   confirmLabel: string
   subject?: SheetSubject
 }
+/**
+ * `bar` - занятость дня под колесом вместимости: полоса идёт за колесом, строка под ней
+ * говорит, сколько занято из выбранного.
+ */
+type NumberWheelOpts = { unit: (n: number) => string; bar?: { occupied: number; pending: number } }
 type TextInput = {
   kind: 'text'
   text: string
@@ -464,10 +471,39 @@ function NumberBody({ modal, active }: { modal: Of<'number'>; active: boolean })
  */
 function NumberWheelBody({ modal }: { modal: Of<'number'> }) {
   const [value, setValue] = useState(() => clamp(Math.round(modal.initial), modal.min, modal.max))
+  const [first] = useState(value)
+  const { unit, bar } = modal.wheel!
+  const barRef = useRef<HTMLDivElement>(null)
+  const over = bar ? bar.occupied - value : 0
   return (
     <>
       <Question text={modal.text} />
-      <NumberWheel value={value} min={modal.min} max={modal.max} unit={modal.wheel!.unit} onChange={setValue} />
+      <NumberWheel
+        value={value}
+        min={modal.min}
+        max={modal.max}
+        unit={unit}
+        onChange={setValue}
+        onScrub={bar ? (v) => barRef.current && paintCapBar(barRef.current, bar.occupied, bar.pending, v) : undefined}
+      />
+      {bar ? (
+        <>
+          {/* Полосой владеет колесо: React рисует её один раз, дальше правки идут на каждом
+              кадре прокрутки, и целое число из состояния отбрасывало бы её на полшага. */}
+          <CapBar ref={barRef} className="cap-bar-sheet" occupied={bar.occupied} pending={bar.pending} cap={first} />
+          <div className="cap-sheet-note">
+            {`Занято ${bar.occupied}\u00a0из\u00a0${value}`}
+            {over > 0 ? (
+              <>
+                {', '}
+                <b>{`${over}\u00a0сверх`}</b>
+              </>
+            ) : bar.pending > 0 ? (
+              `, ещё ${requestsWord(bar.pending)} без хоста`
+            ) : null}
+          </div>
+        </>
+      ) : null}
       {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
       <Actions label={modal.confirmLabel} onConfirm={() => settle(modal.id, value)} cancel="Отмена" onCancel={() => settle(modal.id, null)} />
     </>
@@ -906,7 +942,7 @@ export const numberPrompt = (opts: {
   hint?: string
   min?: number
   max?: number
-  wheel?: { unit: (n: number) => string }
+  wheel?: NumberWheelOpts
   confirmLabel?: string
   subject?: SheetSubject
 }): Promise<number | null> =>
