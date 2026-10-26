@@ -113,9 +113,8 @@ export const renderProgressBar = (current: number, goal: number): string => {
 }
 
 /**
- * Голое число без разделителей. Это формат протокола табло (`renderBoardExport`) и
- * столбца CSV — прошивка и Excel парсят его как есть, поэтому пробелы и знак валюты
- * сюда добавлять нельзя. Всё, что читает человек, идёт через `formatMoney`.
+ * Голое число без разделителей. Это формат столбца CSV — Excel парсит его как есть,
+ * поэтому пробелы и знак валюты сюда добавлять нельзя. Всё, что читает человек, идёт через `formatMoney`.
  */
 const formatAmount = (n: number): string => {
     if (Number.isInteger(n)) return n.toString()
@@ -212,126 +211,6 @@ export const clampPage = (page: number, pages: number): number => {
     if (!Number.isFinite(page) || page < 1) return 1
     if (page > pages) return pages
     return Math.floor(page)
-}
-
-// ---------------------------------------------------------------------------
-// Экспорт для табло (e-paper на микроконтроллере), см. GET /board в webapp.ts
-// ---------------------------------------------------------------------------
-
-/** Сколько строк донатеров уходит на табло, когда сегодня нет непринятых заявок. */
-export const BOARD_LIMIT = 10
-
-/**
- * Сколько строк донатеров остаётся, когда снизу встал блок заявок.
- * Вёрстка табло адаптивная: заявки важнее хвоста лидерборда, но и совсем его
- * прятать нельзя — экран должен оставаться узнаваемым.
- */
-export const BOARD_LIMIT_WITH_REQUESTS = 3
-
-/** Сколько заявок помещается в блок; остальные схлопываются в счётчик. */
-export const BOARD_REQUEST_LIMIT = 3
-
-/** Непринятая заявка в том виде, в каком она уходит на табло. */
-export type BoardRequest = {
-    /** 'HH:MM' по поясу спейса. */
-    time: string
-    /** Отображаемое имя гостя. */
-    name: string
-}
-
-/** Блок «ждут ответа»: ближайший день с заявками плюс счётчик по всему горизонту. */
-export type BoardRequests = {
-    /** Подпись дня для показа: «сегодня», «завтра» или сокращение вроде «вс». */
-    dayLabel: string
-    /**
-     * Сколько всего заявок ждёт ответа на горизонте хостинга — не только в этот день.
-     * Показываем именно общее число: смысл блока в том, чтобы резидент видел объём
-     * необработанного, а не только ближайшую заявку.
-     */
-    total: number
-    items: BoardRequest[]
-}
-
-/**
- * Потолок длины ника в БАЙТАХ (не символах): прошивка читает ответ в статический
- * буфер, поэтому у ответа должен быть предсказуемый максимум. Кириллица в UTF-8 —
- * два байта на букву, так что 24 байта это 12 русских букв или 24 латинских.
- */
-export const BOARD_NICK_BYTES = 24
-
-/** Подпись периода, которому принадлежит дата (для табло, когда сбора ещё нет). */
-export const currentPeriodLabel = (now: Date, resetDay: number): string => {
-    const { year, month } = periodAnchorOf(now, resetDay)
-    const disp = displayPeriodOf(year, month, resetDay)
-    return `${monthNameRu(disp.month)} ${disp.year}`
-}
-
-/**
- * Обрезает ник до BOARD_NICK_BYTES по границе символа. Режем посимвольно, а не
- * `slice` по байтам: разрубленная пополам кириллическая буква даёт битый UTF-8,
- * и табло рисует крокозябру вместо последней буквы.
- */
-const clampNickBytes = (nick: string): string => {
-    if (Buffer.byteLength(nick, 'utf8') <= BOARD_NICK_BYTES) return nick
-    let out = ''
-    for (const ch of nick) {
-        if (Buffer.byteLength(out + ch, 'utf8') > BOARD_NICK_BYTES) break
-        out += ch
-    }
-    return out
-}
-
-/** Ник для табло: без ведущей собаки, без разделителей формата и в пределах лимита. */
-const boardNick = (nick: string): string =>
-    clampNickBytes(escapeNick(nick).replace(/[|\r\n]/g, ' '))
-
-/**
- * Строит тело ответа для табло: построчный `key=value`, а не JSON.
- * На микроконтроллере это `strtok` по `\n` и `=` вместо парсера, а вся арифметика
- * (суммы по нику, сортировка, склейка анонимов) уже сделана здесь.
- *
- * `f = undefined` — сбора за текущий период ещё нет (бот создаёт его лениво, первым
- * `/goals` или `/donate`). Это штатное состояние первых дней периода, а не ошибка:
- * отдаём `state=none` с подписью периода, чтобы табло написало «сбор не начат», а не
- * показывало прошлый месяц как текущий.
- */
-export const renderBoardExport = (
-    f: Fundraiser | undefined,
-    periodLabel: string,
-    requests: BoardRequests = { dayLabel: '', total: 0, items: [] },
-): string => {
-    const total = f ? totalAmount(f) : 0
-    const goal = f?.goal ?? 0
-    const state = !f ? 'none' : (goal > 0 && total >= goal ? 'reached' : 'open')
-    const board = f ? buildLeaderboard(f) : []
-    // Строк лидерборда тем меньше, чем больше места забрал блок заявок. Решение
-    // принимается здесь, а не в прошивке: так вёрстку можно менять деплоем бота.
-    const donorLines = requests.items.length > 0 ? BOARD_LIMIT_WITH_REQUESTS : BOARD_LIMIT
-    const lines = [
-        'v=1',
-        `period=${f ? fundraiserPeriodLabel(f) : periodLabel}`,
-        `title=${f?.title ?? ''}`,
-        `currency=${f?.currency ?? ''}`,
-        `goal=${formatAmount(goal)}`,
-        `total=${formatAmount(total)}`,
-        `state=${state}`,
-        `donors=${board.length}`,
-        `waiting=${requests.total}`,
-    ]
-    for (const entry of board.slice(0, donorLines)) {
-        const who = isAnonNick(entry.nick) ? ANON_LABEL : boardNick(entry.nick)
-        lines.push(`d=${who}|${formatAmount(entry.total)}`)
-    }
-    if (requests.items.length > 0) {
-        lines.push(`rday=${requests.dayLabel}`)
-        // Сортируем здесь, а не полагаемся на вызывающего: порядок строк на табло —
-        // часть формата, и он не должен зависеть от того, кто собирал список.
-        const byTime = [...requests.items].sort((a, b) => a.time.localeCompare(b.time))
-        for (const r of byTime.slice(0, BOARD_REQUEST_LIMIT)) {
-            lines.push(`r=${r.time}|${boardNick(r.name)}`)
-        }
-    }
-    return lines.join('\n') + '\n'
 }
 
 export type RenderResult = {

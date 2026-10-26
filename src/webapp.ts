@@ -192,7 +192,6 @@ import {
     type StatsPeriod,
 } from './stats.js'
 import { buildWrapView, refreshWrapCache, wrapBrief } from './wrap.js'
-import { currentPeriodLabel, periodKeyOf, renderBoardExport, type BoardRequest, type BoardRequests } from './fundraiser.js'
 import { audit } from './audit.js'
 import { holdUndo, takeUndo, undoLabel } from './undo.js'
 import {
@@ -400,7 +399,7 @@ const CLOSE_DM_WAIT_MS = 5000
 const VISIT_DAY_CLOSED = `Отмечать, кто пришёл, можно только в день визита и ночью после него, до ${VISIT_MARK_GRACE_UNTIL}.`
 
 /**
- * Полки лимитов вне `/api/*`. Ключ у всех, кроме `ip`/`board`/`authFail`, — userId из
+ * Полки лимитов вне `/api/*`. Ключ у всех, кроме `ip`/`authFail`, — userId из
  * подписанного initData: подпись живёт сутки, и это единственная устойчивая личность
  * запроса (адрес за туннелем у всех общий, см. `clientIp`).
  */
@@ -409,13 +408,11 @@ const LIMITS = {
         загрузка миниаппа — это десятки запросов (бандл, картинки, аватарки), а без
         `CF-Connecting-IP` весь спейс приходит с одного адреса прокси — отсюда высокая полка. */
     ip: { limit: 1200, windowMs: MINUTE },
-    /** Неудачные проверки подписи и токена табло. Дорого не само сравнение, а то, что за
+    /** Неудачные проверки подписи и токенов. Дорого не само сравнение, а то, что за
         ним: без этой полки перебор initData/токена ничем не ограничен. */
     authFail: { limit: 60, windowMs: MINUTE },
     /** Общий потолок на человека по всем `/api/*` поверх классовых полок ниже. */
     user: { limit: 240, windowMs: MINUTE },
-    /** Опрос табло: прошивка ходит раз в несколько минут, запас — на ретраи и отладку. */
-    board: { limit: 60, windowMs: MINUTE },
     /** Файлы календаря: их открывает системный браузер, по одному на тап. */
     ics: { limit: 30, windowMs: MINUTE },
     /** Подписка календаря: клиент ходит раз в час сам, запас — на ручные обновления. */
@@ -715,8 +712,6 @@ export type WebappDeps = {
     tzOffsetMinutes: number
     /** GitHub-репо 'owner/name' для чтения релизов в дев-анонсах. */
     githubRepo: string
-    /** Токен табло донатов (BOARD_TOKEN). null — ручка GET /board выключена. */
-    boardToken: string | null
     /** Цели выдачи прав резиденту (dev): «чат», канал анонсов, лайв-канал. Пусто — раздел скрыт. */
     adminTargets: AdminTarget[]
     /** Подключён ли принтер (PRINTER_URL): без него знакомство не зовёт в /printer. */
@@ -3921,10 +3916,6 @@ const serveStatic = async (req: IncomingMessage, pathname: string, res: ServerRe
     res.end(req.method === 'HEAD' ? undefined : payload)
 }
 
-// ---------------------------------------------------------------------------
-// GET /board — табло донатов (e-paper на микроконтроллере)
-// ---------------------------------------------------------------------------
-
 /**
  * Сравнение секретов за постоянное время. Сравниваем не сами строки, а их SHA-256:
  * `timingSafeEqual` бросает исключение на буферах разной длины, и такая проверка
@@ -3948,110 +3939,9 @@ const feedUserId = (storage: Storage, token: string): number | null => {
     return null
 }
 
-/** Токен из `Authorization: Bearer <token>` либо из `?token=` — прошивке проще query. */
-const boardTokenOf = (req: IncomingMessage, url: URL): string => {
-    const header = req.headers.authorization ?? ''
-    const bearer = /^Bearer\s+(.+)$/i.exec(header.trim())
-    return bearer?.[1]?.trim() ?? url.searchParams.get('token')?.trim() ?? ''
-}
-
 /** Совпал ли ETag с любым из If-None-Match (список через запятую, возможен префикс W/). */
 const etagMatches = (header: string | undefined, etag: string): boolean =>
     (header ?? '').split(',').some((raw) => raw.trim().replace(/^W\//, '') === etag)
-
-const WEEKDAYS_RU = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'] as const
-
-/**
- * Подпись дня для табло: «сегодня», «завтра» или сокращённый день недели.
- * День недели берём из самого ключа 'YYYY-MM-DD' через UTC — ключ уже посчитан в
- * поясе спейса, и повторный сдвиг сместил бы его на сутки.
- */
-const dayLabelFor = (dateKey: string, offset: number): string => {
-    if (offset === 0) return 'сегодня'
-    if (offset === 1) return 'завтра'
-    const [y, m, d] = dateKey.split('-').map(Number)
-    const weekday = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay()
-    return WEEKDAYS_RU[weekday] ?? '?'
-}
-
-/**
- * Блок «ждут ответа» для табло: ближайший день, где есть непринятые заявки, и общий
- * счётчик по всему горизонту хостинга.
- *
- * Ближайший день, а не строго сегодняшний: отвечать на заявку надо заранее, и до дня
- * визита блок бы просто не показывался. Счётчик при этом общий — резиденту важен
- * объём необработанного, а не только ближайшая заявка.
- *
- * Только `pending`: у согласованного визита действия не требуется. Анонимные заявки и
- * фейки дев-сида не выходят на публичные поверхности (тот же инвариант, что у
- * `attendeesForDay`), табло — как раз такая. Цель визита не отдаём: она бывает личной,
- * а на стене висит всё время.
- */
-const boardRequests = (deps: WebappDeps): BoardRequests => {
-    const today = todayKey(deps.tzOffsetMinutes)
-    let nearest: { dayLabel: string; items: BoardRequest[] } | null = null
-    let total = 0
-    for (let offset = 0; offset < HOSTING_DAYS_AHEAD; offset++) {
-        const dateKey = addDaysToKey(today, offset)
-        const items = requestsForDay(deps.storage, dateKey)
-            .filter((r) => r.status === 'pending' && !r.anon && !isFakeUserId(r.guest.userId))
-            .map((r) => ({ time: r.time, name: displayName(r.guest.name) }))
-        total += items.length
-        if (items.length > 0 && nearest === null) {
-            nearest = { dayLabel: dayLabelFor(dateKey, offset), items }
-        }
-    }
-    return { dayLabel: nearest?.dayLabel ?? '', total, items: nearest?.items ?? [] }
-}
-
-/**
- * Отвечает табло текущим сбором.
- *
- * Сбор берётся строго по ключу текущего периода и НЕ создаётся, если его ещё нет
- * (в отличие от `ensureCurrentFundraiser` в handlers.ts): GET не должен писать стейт,
- * иначе опрос табло каждые несколько минут плодил бы пустые сборы и дисковые записи.
- *
- * ETag здесь не про трафик, а про ресурс панели: полное обновление e-paper — пара
- * секунд мигания, поэтому на неизменившиеся данные отвечаем 304, и прошивка не
- * перерисовывает экран.
- */
-const serveBoard = (deps: WebappDeps, req: IncomingMessage, url: URL, res: ServerResponse, ip: string): void => {
-    if (deps.boardToken === null) {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('not found\n')
-        return
-    }
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-        res.writeHead(405).end()
-        return
-    }
-    const token = boardTokenOf(req, url)
-    if (token === '' || !secretEquals(token, deps.boardToken)) {
-        // Перебор токена считаем там же, где и перебор подписи initData: полка `board`
-        // выше пропускает штатный опрос прошивки, а гадать токен даёт всего десяток
-        // попыток в минуту с адреса.
-        if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
-        res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' }).end('unauthorized\n')
-        return
-    }
-    const state = deps.storage.get()
-    const now = new Date()
-    const fundraiser = state.fundraisers[periodKeyOf(now, state.resetDay)]
-    const body = renderBoardExport(fundraiser, currentPeriodLabel(now, state.resetDay), boardRequests(deps))
-    const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
-    if (etagMatches(req.headers['if-none-match'], etag)) {
-        res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' }).end()
-        return
-    }
-    res.writeHead(200, {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Length': Buffer.byteLength(body, 'utf8'),
-        'Cache-Control': 'no-cache',
-        ETag: etag,
-    })
-    // На HEAD тело не пишем, но Content-Length выше уже объявлен — прошивка может
-    // спросить размер заранее, если решит читать в буфер фиксированной длины.
-    res.end(req.method === 'HEAD' ? undefined : body)
-}
 
 /** Поднимает HTTP-сервер миниаппа. Останавливать через .stop(). */
 export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () => void } => {
@@ -4076,14 +3966,6 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     'Content-Type': 'text/plain; charset=utf-8',
                     'Cache-Control': 'no-store',
                 }).end(ok ? 'ok\n' : 'degraded\n')
-                return
-            }
-
-            // Табло донатов. Гейт — статический BOARD_TOKEN, а не initData: у железки
-            // нет Telegram-сессии, подписать initData ей нечем.
-            if (pathname === '/board') {
-                if (!allow(res, 'board', ip, LIMITS.board, false)) return
-                serveBoard(deps, req, url, res, ip)
                 return
             }
 
@@ -4196,8 +4078,8 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 return
             }
 
-            // Подписка календаря на ивенты и свои визиты. Вторая после /board ручка без
-            // initData: фид дёргает календарь месяцами и в фоне, а подпись живёт сутки.
+            // Подписка календаря на ивенты и свои визиты. Ручка без initData: фид дёргает
+            // календарь месяцами и в фоне, а подпись живёт сутки.
             // Гейт — личный токен из ссылки; за ним ивенты, которые видит в миниаппе любой
             // гость (резидентские в фид не попадают, см. feedEvents), и свои одобренные
             // визиты владельца токена без цели визита (см. visitFeedVevent).
