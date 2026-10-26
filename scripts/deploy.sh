@@ -18,8 +18,11 @@ export GIT_COMMIT="$(git rev-parse HEAD)"
 
 docker compose up -d --build --remove-orphans
 
-# Слои от предыдущих сборок иначе копятся до заполнения диска.
-docker image prune -f >/dev/null
+# Слои от предыдущих сборок иначе копятся до заполнения диска. Прод и дев выкатываются на
+# этот хост одновременно, а второй prune Docker отклоняет («a prune operation is already
+# running»). Контейнер к этому моменту уже запущен, слои доберёт следующий деплой, поэтому
+# отказ чистки деплой не валит.
+docker image prune -f >/dev/null || echo "[deploy] чистка образов пропущена, доберёт следующий деплой" >&2
 
 echo "[deploy] статус:"
 docker compose ps
