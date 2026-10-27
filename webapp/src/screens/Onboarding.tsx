@@ -9,7 +9,7 @@
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { action, api, subscribeToEvents } from '../api'
 import { fmtShortDate, MONTHS_GEN, MONTHS_NOM } from '../dates'
-import { money } from '../format'
+import { money, nb } from '../format'
 import { icons } from '../icons'
 import {
   attachHiveDrag,
@@ -37,7 +37,7 @@ import { applyTheme, sec } from '../theme'
 import { eventPhotoUrl } from '../links'
 import { haptic, openBotSection, setBottomBarColor, setHeaderColor, switchInline, tg } from '../telegram'
 import type { Bootstrap, NotifyPrefs, OnboardingPerson, User } from '../types'
-import { Sep, Switch } from '../components/common'
+import { Sep, SwitchRow } from '../components/common'
 import { AnimContext } from '../components/Screen'
 import { MacSheet } from '../components/MacSheet'
 import {
@@ -789,7 +789,7 @@ export function Onboarding() {
       <div className="card">
         {settings.macs.map((m, i) => (
           <Fragment key={m.mac}>
-            {i > 0 ? <Sep left={14} /> : null}
+            {i > 0 ? <Sep inset="text" /> : null}
             <div className="row">
               <span className="row-label">
                 {m.label || 'Устройство'}
@@ -799,24 +799,19 @@ export function Onboarding() {
             </div>
           </Fragment>
         ))}
-        <Sep left={14} />
+        <Sep inset="text" />
         <button type="button" className="row tappable" onClick={() => setSheet(true)}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
           <span className="add-row-label">Добавить устройство</span>
         </button>
       </div>
       <div className="card ob-card-gap">
-        <div className="row">
-          <span className="row-label">
-            Отмечаться без ника
-            <span className="row-sublabel">В списке будет «Без ника»</span>
-          </span>
-          <Switch
-            label="Отмечаться без ника"
-            on={settings.macAnon}
-            onToggle={() => action('mac.anon', { anon: !settings.macAnon }, { quiet: true })}
-          />
-        </div>
+        <SwitchRow
+          label="Отмечаться без ника"
+          sub="В списке будет «Без ника»"
+          on={settings.macAnon}
+          onToggle={() => action('mac.anon', { anon: !settings.macAnon }, { quiet: true })}
+        />
       </div>
     </div>
   ) : null
@@ -852,13 +847,13 @@ export function Onboarding() {
       case 'mac':
         return (
           <>
-            {text('Отметка без кнопок', 'Привяжите телефон: пока он в спейсе, бот сам держит отметку и снимает её через 10 минут после ухода.')}
+            {text('Отметка без кнопок', nb('Привяжите телефон: пока он в спейсе, бот сам держит отметку и снимает её через 10 минут после ухода.'))}
             <div className="ob-extra">
               <div className="card">
                 <div className="row">
                   <InfoRow icon={icons.wifi()} color="var(--gray)" label="Только в спейсе" sub="Вне спейса бот телефон не видит" />
                 </div>
-                <Sep left={54} />
+                <Sep inset="icon" />
                 <div className="row">
                   <InfoRow
                     icon={icons.eyeOff(18, '#fff', 'var(--gray)')}
@@ -891,7 +886,7 @@ export function Onboarding() {
                       }
                     />
                   </div>
-                  <Sep left={54} />
+                  <Sep inset="icon" />
                   <div className="row">
                     <InfoRow
                       icon={icons.bell()}
@@ -907,21 +902,17 @@ export function Onboarding() {
                   </div>
                   {duesStep && dues ? (
                     <>
-                      <Sep left={54} />
-                      <div className="row">
-                        <InfoRow
-                          icon={icons.rub(17, '#fff')}
-                          color="var(--green)"
-                          label="Взносы"
-                          right={
-                            <Switch
-                              label="Взносы"
-                              on={dues.notify}
-                              onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
-                            />
-                          }
-                        />
-                      </div>
+                      <Sep inset="icon" />
+                      <SwitchRow
+                        icon={
+                          <div className="row-icon" style={{ background: 'var(--green)' }}>
+                            {icons.rub(17, '#fff')}
+                          </div>
+                        }
+                        label="Взносы"
+                        on={dues.notify}
+                        onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
+                      />
                     </>
                   ) : null}
                 </div>
@@ -963,7 +954,7 @@ export function Onboarding() {
                     const stats = d.guestStats?.[String(r.guest.userId)]
                     return (
                       <Fragment key={r.id}>
-                        {i > 0 ? <Sep left={64} /> : null}
+                        {i > 0 ? <Sep inset="avatar" /> : null}
                         <div className="row">
                           <Avatar user={r.guest} className="ob-guest-av" />
                           <span className="row-label">
@@ -973,7 +964,7 @@ export function Onboarding() {
                               {stats && stats.past > 0 ? <span className="visit-chip">{stats.past + 1}-й</span> : null}
                             </span>
                             <span className="row-sublabel">
-                              {`${r.dateKey === d.todayKey ? 'Сегодня' : fmtShortDate(r.dateKey)} к ${r.time}`}
+                              {nb(`${r.dateKey === d.todayKey ? 'Сегодня' : fmtShortDate(r.dateKey)} к ${r.time}`)}
                             </span>
                           </span>
                         </div>
@@ -1029,7 +1020,7 @@ export function Onboarding() {
                 </div>
                 {dues.periodKey && dues.me.inRoster ? (
                   <>
-                    <Sep left={14} />
+                    <Sep inset="text" />
                     <div className="row">
                       <span className="row-label">{`За ${dues.periodLabel.split(' ')[0]!.toLowerCase()}`}</span>
                       <span className="row-right ob-row-value" style={{ color: status.color }}>
@@ -1051,15 +1042,15 @@ export function Onboarding() {
               <div className="ob-extra">
                 <div className="card">
                   <CmdRow cmd="/menu" what="Отметки и телефон" onClick={() => openBotSection(bot, 'menu')} />
-                  <Sep left={14} />
+                  <Sep inset="text" />
                   <CmdRow cmd="/inside" what="Кто сейчас в спейсе" onClick={() => openBotSection(bot, 'inside')} />
                   {info?.printer ? (
                     <>
-                      <Sep left={14} />
+                      <Sep inset="text" />
                       <CmdRow cmd="/printer" what="Принтер и камера" onClick={() => openBotSection(bot, 'printer')} />
                     </>
                   ) : null}
-                  <Sep left={14} />
+                  <Sep inset="text" />
                   <CmdRow
                     cmd={`@${bot}`}
                     what="Доска в любом чате"
@@ -1102,7 +1093,7 @@ export function Onboarding() {
                     />
                   )}
                 </div>
-                <Sep left={54} />
+                <Sep inset="icon" />
                 <div className="row">
                   {summary ? (
                     <InfoRow icon={icons.check(14, '#fff', 2.2)} color="var(--green)" label="Уведомления" sub={summary} />

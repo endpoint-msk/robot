@@ -16,6 +16,7 @@ import {
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { datePrompt } from '../modals'
 import { useRemote } from '../remote'
@@ -24,7 +25,7 @@ import { push, setTopParams, useParams, useStore } from '../store'
 import { fmtDuration, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
 import { haptic, hasProfile, openProfile } from '../telegram'
 import type { StatsPersonView } from '../types'
-import { BackRow, ErrorState, Footnote } from '../components/common'
+import { BackRow, ErrorState, Footnote, Sep } from '../components/common'
 import { avatarTone } from '../components/people'
 import { Pager } from '../components/Pager'
 import { ProfileHead, scrollToSection, type ProfileAction } from '../components/ProfileHead'
@@ -64,7 +65,7 @@ const since = (sinceKey: string): string => {
   if (!sinceKey) return 'Визитов в журнале пока нет'
   const year = yearOf(sinceKey)
   const now = new Date().getUTCFullYear()
-  return `Резидент с ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`
+  return nb(`Резидент с ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`)
 }
 
 /** Человек из списка, откуда открыли карточку: шапка рисуется сразу, до ответа сервера. */
@@ -205,7 +206,7 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
         <div className="sq-row">
           <div className="sq-cell">
             <div className="sq-num">{data.visits}</div>
-            <div className="sq-label">{`${plural(data.visits, 'визит', 'визита', 'визитов')} за 3 месяца`}</div>
+            <div className="sq-label">{nb(`${plural(data.visits, 'визит', 'визита', 'визитов')} за 3 месяца`)}</div>
           </div>
           <div className="sq-vsep" />
           <div className="sq-cell">
@@ -266,7 +267,7 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
           </div>
         </div>
         <div className="heat-legend">
-          <span>Последние 12 недель</span>
+          <span>{nb('Последние 12 недель')}</span>
           <div className="heat-scale">
             <span>меньше</span>
             {[1, 2, 3, 4, 5].map((level) => (
@@ -285,7 +286,7 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
           <div className="card stats-list">
             {data.lastVisits.map((v, i) => (
               <Fragment key={`${v.dateKey}-${v.from}`}>
-                {i > 0 ? <div className="sep" style={{ marginLeft: 68 }} /> : null}
+                {i > 0 ? <Sep inset={42} /> : null}
                 <button
                   type="button"
                   className="row tappable"
@@ -335,7 +336,7 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
             </button>
             {data.manualSince === ORIGIN ? null : (
               <>
-                <div className="sep" style={{ marginLeft: 14 }} />
+                <Sep inset="text" />
                 <button type="button" className="row tappable" onClick={() => void setSince(ORIGIN)}>
                   <span className="row-label" style={{ color: 'var(--blue)' }}>
                     С самого начала
@@ -345,7 +346,7 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
             )}
             {data.manualSince ? (
               <>
-                <div className="sep" style={{ marginLeft: 14 }} />
+                <Sep inset="text" />
                 <button type="button" className="row tappable" onClick={() => void setSince(null)}>
                   <span className="row-label" style={{ color: 'var(--blue)' }}>
                     Считать автоматически

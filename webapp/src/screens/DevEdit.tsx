@@ -26,7 +26,7 @@ export function DevEdit() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажите время прихода.')
+      showAlert('Укажите время.')
       return
     }
     const res = await action('dev.update', { id: r.id, dateKey: selected, time, purpose })
@@ -44,11 +44,11 @@ export function DevEdit() {
       <DayChips days={days} selected={selected} onSelect={setSelected} showCounts={false} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">
-        <div className="row" style={{ padding: '6px 14px' }}>
+        <div className="row time-row">
           <span style={{ fontSize: 16 }}>Придёт к</span>
           <TimeField value={time} onChange={setTime} />
         </div>
-        <Sep left={14} />
+        <Sep inset="text" />
         <div className="kv-block">
           <textarea
             className="purpose-input"

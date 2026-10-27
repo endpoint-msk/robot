@@ -16,6 +16,7 @@ import { Avatar } from './components/people'
 import { NumberWheel, TimeField } from './components/TimeField'
 import { useSheetDrag } from './components/useSheetDrag'
 import { requestsWord } from './dates'
+import { nb } from './format'
 import { icons } from './icons'
 import { animate, clamp, E, mix, pr, reducedMotion } from './motion'
 import { pushOverlay } from './overlays'
@@ -499,7 +500,7 @@ function NumberWheelBody({ modal }: { modal: Of<'number'> }) {
                 <b>{`${over}\u00a0сверх`}</b>
               </>
             ) : bar.pending > 0 ? (
-              `, ещё ${requestsWord(bar.pending)} без хоста`
+              nb(`, ещё ${requestsWord(bar.pending)} без хоста`)
             ) : null}
           </div>
         </>

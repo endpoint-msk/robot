@@ -9,6 +9,7 @@
 import { Fragment, useRef } from 'react'
 import { api } from '../api'
 import { fmtDayMonth, fmtShortDate, plural, visitsWord, yearOf } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
@@ -20,7 +21,7 @@ import { Avatar, userLabel } from '../components/people'
 import { ProfileHead, scrollToSection, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
-import { SkProfile, SkRows } from '../components/skeleton'
+import { SkProfile, SkQuad, SkRows } from '../components/skeleton'
 
 /** «по четвергам»: день недели в дательном множественном, 0 - понедельник. */
 const WEEKDAYS_PLURAL_DAT = ['понедельникам', 'вторникам', 'средам', 'четвергам', 'пятницам', 'субботам', 'воскресеньям']
@@ -39,7 +40,7 @@ function requestLine(r: HostingRequest, todayKey: string): { text: string; tone:
   const join = (...parts: string[]): string => parts.filter(Boolean).join(' · ')
   if (o.status === 'came') {
     const how = o.source === 'door' ? 'по кнопке «Я на месте»' : o.source === 'mark' && o.by ? `отметка ${userLabel(o.by)}` : ''
-    return { text: join('приход', how, host), tone: 'came' }
+    return { text: join('визит', how, host), tone: 'came' }
   }
   if (o.status === 'missed') return { text: join('неявка', o.by ? `отметка ${userLabel(o.by)}` : '', host), tone: 'missed' }
   if (o.status === 'unknown') return { text: join('без отметки', host), tone: 'muted' }
@@ -85,7 +86,7 @@ function ProfileStats({ p }: { p: GuestProfile }) {
           <div className="sq-num">{p.visits}</div>
           <div className="sq-label">
             {plural(p.visits, 'визит', 'визита', 'визитов')}
-            {p.unmarked > 0 ? `, ${p.unmarked} без отметки` : ''}
+            {p.unmarked > 0 ? nb(`, ${p.unmarked} без отметки`) : ''}
           </div>
         </div>
         <div className="sq-vsep" />
@@ -153,7 +154,7 @@ export function GuestVisits() {
             <div className="card">
               {profile.hosts.map((h, i) => (
                 <Fragment key={h.user.userId}>
-                  {i > 0 ? <Sep left={58} /> : null}
+                  {i > 0 ? <Sep inset={34} /> : null}
                   <div className="row">
                     <Avatar user={h.user} className="stat-avatar" profile />
                     <span className="row-label">{userLabel(h.user)}</span>
@@ -170,7 +171,7 @@ export function GuestVisits() {
             <div className="card">
               {profile.events.map((e, i) => (
                 <Fragment key={e.id}>
-                  {i > 0 ? <Sep left={54} /> : null}
+                  {i > 0 ? <Sep inset="icon" /> : null}
                   <div className="row">
                     <div className="row-icon" style={{ background: 'var(--purple)' }}>
                       {icons.calendar(17, '#fff')}
@@ -256,8 +257,16 @@ export function GuestVisits() {
         loading={!guest.data && !guest.error}
         skeleton={
           guest.pending ? (
+            // Каркас по секциям экрана, иначе «История» уезжала вниз на всю сводку и хостов.
+            // Хосты есть у того, кто уже приходил: это знает значок визитов из bootstrap.
             <div aria-busy="true" aria-label="Загружаем профиль гостя">
-              <SkRows count={2} />
+              <SkQuad />
+              {(data!.guestStats?.[String(userId)]?.past ?? 0) > 0 ? (
+                <>
+                  <SectionTitle>Хосты</SectionTitle>
+                  <SkRows count={1} avatar />
+                </>
+              ) : null}
               <SectionTitle>История</SectionTitle>
               <SkRows count={4} avatar />
             </div>

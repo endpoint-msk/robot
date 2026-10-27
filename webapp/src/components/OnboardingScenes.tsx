@@ -3,6 +3,7 @@
 // иллюстрации, смысл шага несёт текст под ними, поэтому для скринридера они скрыты.
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { clamp, mix, reducedMotion } from '../motion'
 import { tg } from '../telegram'
@@ -340,7 +341,7 @@ export function GuestsScene({ botName }: { botName: string }) {
     <>
       <div className="ob-door" aria-hidden="true" />
       <div className="ob-scene" aria-hidden="true">
-        <Notification botName={botName} time="сейчас" text="🚪 Настя у двери - визит к 20:00." className="ob-nb ob-door-nb" />
+        <Notification botName={botName} time="сейчас" text={nb('🚪 Настя у двери - визит к 20:00.')} className="ob-nb ob-door-nb" />
       </div>
     </>
   )

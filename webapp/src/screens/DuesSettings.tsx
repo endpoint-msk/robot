@@ -7,7 +7,7 @@ import { money } from '../format'
 import { icons } from '../icons'
 import { numberPrompt } from '../modals'
 import { useStore } from '../store'
-import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, Footnote, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { Screen } from '../components/Screen'
 
 const MIN_DAY = 1
@@ -59,18 +59,19 @@ export function DuesSettings() {
       <BackRow label="Взносы" />
       <Header title="Настройки взносов" />
 
-      <div className="card">
-        <div className="row">
-          <div className="row-icon" style={{ background: 'var(--green)' }}>
-            {icons.rub(17, '#fff')}
-          </div>
-          <span className="row-label">
-            Сбор взносов
-            <span className="row-sublabel">Периоды открываются сами</span>
-          </span>
-          <Switch label="Сбор взносов" on={dues.enabled} onToggle={() => void save({ enabled: !dues.enabled })} />
-        </div>
-        <Sep left={54} />
+      <div className="card ctl-card">
+        <SwitchRow
+          icon={
+            <div className="row-icon" style={{ background: 'var(--green)' }}>
+              {icons.rub(17, '#fff')}
+            </div>
+          }
+          label="Сбор взносов"
+          sub="Периоды открываются сами"
+          on={dues.enabled}
+          onToggle={() => void save({ enabled: !dues.enabled })}
+        />
+        <Sep inset="icon" />
         <button type="button" className="row tappable" onClick={() => void askDay()}>
           <span className="row-label">День сбора</span>
           <div className="row-right">
@@ -89,7 +90,7 @@ export function DuesSettings() {
             {icons.chevron()}
           </div>
         </button>
-        <Sep left={14} />
+        <Sep inset="text" />
         <button
           type="button"
           className="row tappable"
@@ -149,20 +150,17 @@ export function DuesSettings() {
 
       <SectionTitle>Уведомления</SectionTitle>
       <div className="card">
-        <div className="row">
-          <div className="row-icon" style={{ background: 'var(--blue)' }}>
-            {icons.bell()}
-          </div>
-          <span className="row-label">
-            Напоминать о сборе
-            <span className="row-sublabel">В личку, с кнопкой «Я внёс»</span>
-          </span>
-          <Switch
-            label="Напоминать о сборе"
-            on={dues.notify}
-            onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
-          />
-        </div>
+        <SwitchRow
+          icon={
+            <div className="row-icon" style={{ background: 'var(--blue)' }}>
+              {icons.bell()}
+            </div>
+          }
+          label="Напоминать о сборе"
+          sub="В личку, с кнопкой «Я внёс»"
+          on={dues.notify}
+          onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
+        />
       </div>
       <Footnote>Тумблер личный: у каждого резидента свой, по умолчанию включён.</Footnote>
     </Screen>

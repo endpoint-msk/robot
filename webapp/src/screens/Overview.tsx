@@ -316,7 +316,7 @@ function DoorRow() {
           <DoorSpoiler code={door.code} shown={shown} tap={tap} />
         </div>
       </button>
-      <Sep left={54} />
+      <Sep inset="icon" />
     </>
   )
 }
@@ -351,7 +351,7 @@ function DuesRow() {
           {icons.chevron()}
         </div>
       </button>
-      <Sep left={54} />
+      <Sep inset="icon" />
     </>
   )
 }
@@ -374,7 +374,7 @@ export function Overview() {
       <div className="card">
         {week.map((day, i) => (
           <Fragment key={day.dateKey}>
-            {i > 0 ? <Sep left={96} /> : null}
+            {i > 0 ? <Sep inset={72} /> : null}
             <DayRow
               day={day}
               tappable
@@ -394,7 +394,7 @@ export function Overview() {
           <span className="row-label">Архив</span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
-        <Sep left={54} />
+        <Sep inset="icon" />
         <button type="button" className="row tappable" onClick={() => push('stats')}>
           <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.chart()}
@@ -402,7 +402,7 @@ export function Overview() {
           <span className="row-label">Статистика</span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
-        <Sep left={54} />
+        <Sep inset="icon" />
         <DuesRow />
         <button type="button" className="row tappable" onClick={() => push('settings')}>
           <div className="row-icon" style={{ background: 'var(--gray)' }}>

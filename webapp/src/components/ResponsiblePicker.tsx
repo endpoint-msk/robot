@@ -11,7 +11,7 @@ import { pushOverlay } from '../overlays'
 import { useSheetDrag } from './useSheetDrag'
 import { useRemote } from '../remote'
 import type { EventPeopleResponse, ResponsibleCandidate, User } from '../types'
-import { Found, Sep } from './common'
+import { Found, SearchField, searchNeedle, Sep } from './common'
 import { Avatar } from './people'
 
 function PersonRow({ user, query, on, onToggle }: { user: User; query: string; on: boolean; onToggle: () => void }) {
@@ -53,7 +53,7 @@ function Group({
       <div className="card">
         {people.map((u, i) => (
           <div key={u.userId}>
-            {i > 0 ? <Sep left={66} /> : null}
+            {i > 0 ? <Sep inset="avatar" /> : null}
             <PersonRow user={u} query={query} on={selected.includes(u.userId)} onToggle={() => onToggle(u)} />
           </div>
         ))}
@@ -95,7 +95,7 @@ export function ResponsibleSheet({
     onChange(ids.includes(u.userId) ? selected.filter((x) => x.userId !== u.userId) : [...selected, u])
   }
 
-  const q = query.trim().toLowerCase()
+  const q = searchNeedle(query)
   const match = (u: ResponsibleCandidate): boolean =>
     !q || u.name.toLowerCase().includes(q) || (u.username ?? '').toLowerCase().includes(q)
   const residents = (data ?? []).filter((u) => u.resident && match(u))
@@ -120,18 +120,7 @@ export function ResponsibleSheet({
           </button>
         </div>
         <div className="resp-search">
-          <div className="card">
-            <div className="row">
-              <input
-                className="text-input"
-                type="text"
-                value={query}
-                placeholder="Поиск по имени или нику"
-                autoComplete="off"
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-          </div>
+          <SearchField value={query} onChange={setQuery} placeholder="Поиск по имени или нику" />
         </div>
         <div className="resp-body">
           {loading ? (

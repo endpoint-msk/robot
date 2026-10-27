@@ -83,7 +83,7 @@ function RulesSheet({ done }: SheetBodyProps<boolean>) {
       <div className={'card rules-list' + (ticked ? ' ticked' : '')}>
         {RULES.map((r, i) => (
           <Fragment key={r.text}>
-            {i > 0 ? <Sep left={56} /> : null}
+            {i > 0 ? <Sep inset="icon" /> : null}
             <div className="row rule-row">
               <div className="row-icon rule-icon" style={{ background: `var(--rule-ok, var(--${r.tone}))`, '--i': i } as CSSProperties}>
                 <span className="ri-mark">{r.icon}</span>

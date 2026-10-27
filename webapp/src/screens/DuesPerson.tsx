@@ -44,7 +44,7 @@ function PersonSkeleton() {
           <SkBlock w={62} h={15} />
           <SkBlock w={86} h={15} style={{ marginLeft: 'auto' }} />
         </div>
-        <Sep left={14} />
+        <Sep inset="text" />
         <div className="row kv-block">
           <SkBlock w={70} h={15} />
           <SkBlock w={74} h={15} style={{ marginLeft: 'auto' }} />
@@ -183,7 +183,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
               <span className="kv-key">Ставка</span>
               <span className="kv-val">{money(current.amount, data.currency)}</span>
             </div>
-            <Sep left={14} />
+            <Sep inset="text" />
             <div className="row kv-block">
               <span className="kv-key">Статус</span>
               <span
@@ -195,7 +195,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
             </div>
             {data.debt > 0 ? (
               <>
-                <Sep left={14} />
+                <Sep inset="text" />
                 <div className="row kv-block">
                   <span className="kv-key">Долг с учётом прошлых</span>
                   <span className="kv-val">{money(data.debt, data.currency)}</span>
@@ -212,7 +212,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
           <div className="card">
             {RATE_ROWS.map((r, i) => (
               <Fragment key={r.kind}>
-                {i > 0 ? <Sep left={14} /> : null}
+                {i > 0 ? <Sep inset="text" /> : null}
                 <button type="button" className="row tappable" onClick={() => void setRate(r.kind)}>
                   <span className="row-label">
                     {r.label}
@@ -264,7 +264,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
           )
           return (
             <Fragment key={m.periodKey}>
-              {i > 0 ? <Sep left={14} /> : null}
+              {i > 0 ? <Sep inset="text" /> : null}
               {/* Строка кликабельна только у dev — остальным это справка, и кнопка
                   обещала бы действие, которого нет. */}
               {data.canEdit ? (

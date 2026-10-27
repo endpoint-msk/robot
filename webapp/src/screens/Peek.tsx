@@ -93,7 +93,7 @@ export function Peek() {
       <div className="card">
         {week.map((day, i) => (
           <Fragment key={day.dateKey}>
-            {i > 0 ? <Sep left={86} /> : null}
+            {i > 0 ? <Sep inset={72} /> : null}
             <PeekDayRow day={day} />
           </Fragment>
         ))}

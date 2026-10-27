@@ -682,7 +682,7 @@ export function WrapRow() {
   if (!info) return null
   return (
     <>
-      <Sep left={54} />
+      <Sep inset="icon" />
       <button
         type="button"
         className="row tappable"

@@ -3,12 +3,14 @@
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
-import { clamp, spring } from '../motion'
+import { clamp, E, spring } from '../motion'
 import { getState } from '../store'
 import { sec } from '../theme'
 import type { Attendee, Day, ReminderChoice } from '../types'
-import { Sep, Switch } from './common'
+import { Collapse } from './Collapse'
+import { Sep, SwitchRow } from './common'
 import { AvatarStack, userLabel } from './people'
 
 export function defaultTimeFor(dateKey: string): string {
@@ -252,7 +254,7 @@ const whoComes = (list: Attendee[]): string => {
   const mineFirst = [...list.filter((a) => a.userId === me), ...list.filter((a) => a.userId !== me)]
   const names = mineFirst.map((a) => (a.userId === me ? 'вы' : userLabel(a)) + (a.time ? ` к ${a.time}` : ''))
   if (names.length <= 2) return names.join(' и ')
-  return `${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`
+  return nb(`${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`)
 }
 
 /**
@@ -274,7 +276,7 @@ export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: str
       ) : null}
       {day.events.map((e, i) => (
         <Fragment key={e.id}>
-          {i > 0 || day.agenda ? <Sep left={54} /> : null}
+          {i > 0 || day.agenda ? <Sep inset="icon" /> : null}
           <div className="di-row">
             <span className="di-ico">{icons.calendar(15, '#bf5af2')}</span>
             <span className="di-title">{e.title}</span>
@@ -282,7 +284,7 @@ export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: str
           </div>
         </Fragment>
       ))}
-      {lines > 0 ? <Sep left={54} /> : null}
+      {lines > 0 ? <Sep inset="icon" /> : null}
       <div className="di-row">
         {att.length > 0 ? <AvatarStack users={att} /> : <span className="di-slot" />}
         <span className="di-who">
@@ -336,9 +338,9 @@ export function PurposeInput({
 // пояса фронту знать не нужно, а локальные часы устройства тут вообще ни при чём.
 
 export const REMINDER_LABELS: Record<ReminderChoice, string> = {
-  m30: 'за 30 мин',
+  m30: nb('за 30 мин'),
   h1: 'за час',
-  h2: 'за 2 часа',
+  h2: nb('за 2 часа'),
   morning: 'утром',
   evening: 'накануне вечером',
 }
@@ -450,37 +452,45 @@ export function RemindCard({
   return (
     <div>
       <div className={'card' + (locked ? ' remind-locked' : '')}>
-        <div className="row">
-          <span className="row-label">
-            Напомнить о визите
-            {/* Когда напоминание включено, срок виден на чипах, а момент — в подписи
-                под карточкой: третий раз повторять его в подзаголовке незачем. */}
-            {active || sent ? null : <span className="row-sublabel">Бот напишет в личку перед визитом</span>}
-          </span>
-          <Switch on={active} onToggle={toggle} label="Напомнить о визите" />
-        </div>
-        {active ? (
-          <>
-            <div className="sep" style={{ marginLeft: 14 }} />
-            <div className="remind-chips">
-              {REMINDER_ORDER.map((c) => {
-                const off = !available.includes(c)
-                return (
-                  <button
-                    key={c}
-                    className={'remind-chip' + (c === choice ? ' selected' : '') + (off ? ' off' : '')}
-                    disabled={off}
-                    onClick={() => onChange(c)}
-                  >
-                    {REMINDER_LABELS[c]}
-                  </button>
-                )
-              })}
-            </div>
-          </>
-        ) : null}
+        {/* Когда напоминание включено, срок виден на чипах, а момент — в подписи
+            под карточкой: третий раз повторять его в подзаголовке незачем. */}
+        <SwitchRow
+          on={active}
+          onToggle={toggle}
+          disabled={locked}
+          label={
+            <>
+              Напомнить о визите
+              <Collapse open={!active && !sent} as="span" ms={280} ease={E.crisp}>
+                <span className="row-sublabel">Бот напишет в личку перед визитом</span>
+              </Collapse>
+            </>
+          }
+        />
+        {/* Чипы и подпись раскрываются вместе с тумблером, а не встают за кадр: строки
+            визита ниже уезжали на всю их высоту одним рывком. */}
+        <Collapse open={active} ms={280} ease={E.crisp}>
+          <Sep inset="text" />
+          <div className="remind-chips">
+            {REMINDER_ORDER.map((c) => {
+              const off = !available.includes(c)
+              return (
+                <button
+                  key={c}
+                  className={'remind-chip' + (c === choice ? ' selected' : '') + (off ? ' off' : '')}
+                  disabled={off}
+                  onClick={() => onChange(c)}
+                >
+                  {REMINDER_LABELS[c]}
+                </button>
+              )
+            })}
+          </div>
+        </Collapse>
       </div>
-      {caption ? <div className="remind-caption">{caption}</div> : null}
+      <Collapse open={Boolean(caption)} ms={280} ease={E.crisp}>
+        <div className="remind-caption">{caption}</div>
+      </Collapse>
     </div>
   )
 }
@@ -489,13 +499,7 @@ export function RemindCard({
 export function AnonRow({ anon, onChange }: { anon: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="card">
-      <div className="row">
-        <span className="row-label">
-          Прийти анонимно
-          <span className="row-sublabel">Другие гости не увидят вас в списке</span>
-        </span>
-        <Switch on={anon} onToggle={() => onChange(!anon)} label="Прийти анонимно" />
-      </div>
+      <SwitchRow on={anon} onToggle={() => onChange(!anon)} label="Прийти анонимно" sub="Другие гости не увидят вас в списке" />
     </div>
   )
 }

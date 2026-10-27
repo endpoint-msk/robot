@@ -9,7 +9,7 @@ import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push } from '../store'
 import type { ResidentsListResponse } from '../types'
-import { BackRow, ErrorState, Footnote, Header, Sep } from '../components/common'
+import { BackRow, ErrorState, Footnote, Header, SearchField, searchNeedle, Sep } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
@@ -21,7 +21,7 @@ export function Residents() {
 
   const people = useMemo(() => {
     const list = data?.people ?? []
-    const needle = q.trim().toLowerCase()
+    const needle = searchNeedle(q)
     if (!needle) return list
     return list.filter(
       (u) => u.name.toLowerCase().includes(needle) || (u.username ?? '').toLowerCase().includes(needle),
@@ -32,20 +32,7 @@ export function Residents() {
     <Screen>
       <BackRow />
       <Header title="Резиденты" subtitle="Права в чатах и тег" />
-      <div className="search-field">
-        {icons.search()}
-        <input
-          type="search"
-          value={q}
-          placeholder="Поиск по имени или нику"
-          onChange={(e) => setQ(e.target.value)}
-        />
-        {q ? (
-          <button type="button" className="search-clear" aria-label="Очистить" onClick={() => setQ('')}>
-            {icons.xmark(11, '#fff')}
-          </button>
-        ) : null}
-      </div>
+      <SearchField value={q} onChange={setQ} placeholder="Поиск по имени или нику" />
       <Swap loading={!data && !error} skeleton={pending ? <SkRows count={8} avatar /> : null}>
         {body}
       </Swap>
@@ -63,7 +50,7 @@ export function Residents() {
     <div className="card">
       {people.map((u, i) => (
         <Fragment key={u.userId}>
-          {i > 0 ? <Sep left={66} /> : null}
+          {i > 0 ? <Sep inset="avatar" /> : null}
           <div
             className="row tappable"
             onClick={() => push('residentProfile', { userId: u.userId, name: u.name, username: u.username })}

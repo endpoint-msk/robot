@@ -5,7 +5,7 @@
 import { createContext, useContext, useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay, monthsWord } from '../dates'
-import { money } from '../format'
+import { money, nb } from '../format'
 import { icons } from '../icons'
 import { markOwnTap, ownTapRecent } from '../motion'
 import { showAlert } from '../modals'
@@ -37,7 +37,7 @@ export function DebtBadge({ missed }: { missed: number }) {
   )
 }
 
-const RATE_LABEL: Record<string, string> = { student: 'СТУДЕНТ', custom: 'СВОЯ' }
+const RATE_LABEL: Record<string, string> = { student: 'студент', custom: 'своя' }
 
 /** Ставка 0 — человек освобождён от взноса: ни суммы, ни просрочки, ни строки в счётчике. */
 const isExempt = (row: DuesRow): boolean => row.amount <= 0
@@ -78,7 +78,7 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
   const body = (
     <button
       type="button"
-      className={'row' + (flash || (row.userId === meId && row.status === 'claimed' && ownTapRecent()) ? ' row-flash' : '')}
+      className={'row tappable' + (flash || (row.userId === meId && row.status === 'claimed' && ownTapRecent()) ? ' row-flash' : '')}
       onClick={open}
     >
       {left}
@@ -87,7 +87,7 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
           <span className="dues-name">{userLabel(row)}</span>
           {isExempt(row) ? null : <DebtBadge missed={row.missed} />}
           {isExempt(row) ? (
-            <span className="rate-chip">НЕ ПЛАТИТ</span>
+            <span className="rate-chip">не платит</span>
           ) : row.rate !== 'common' ? (
             <span className="rate-chip">{RATE_LABEL[row.rate]}</span>
           ) : null}
@@ -138,7 +138,7 @@ function Verdict({ row, mark, done }: { row: DuesRow; mark: Mark; done: boolean 
   )
 }
 
-/** Строка, которую дев только что отметил: где стояла, где стоит сейчас и как выглядит. */
+/** Строка, которую только что отметили (дев или сам человек «Я внёс»): где стояла, где стоит сейчас и как выглядит. */
 type Hold = { row: DuesRow; from: DuesStatus; to: DuesStatus; index: number; phase: 'stand' | 'leave' }
 type Item = { row: DuesRow; leaving: boolean; entering: boolean; held: boolean }
 
@@ -172,7 +172,7 @@ function DuesSection({
       <div className="card dues-list">
         {items.map((x, i) => (
           <Collapse key={x.row.userId} open={!x.leaving} appear={x.entering}>
-            {i > 0 ? <Sep left={verdicts || x.row.status !== 'none' ? 46 : 64} /> : null}
+            {i > 0 ? <Sep inset={verdicts || x.row.status !== 'none' ? 22 : 'avatar'} /> : null}
             <DuesPersonRow row={x.row} snap={snap} mark={mark} meId={meId} flash={x.entering} />
             {verdicts && snap.canEdit ? <Verdict row={x.row} mark={mark} done={x.held} /> : null}
           </Collapse>
@@ -186,9 +186,10 @@ function DuesSection({
  * Свой взнос: одна карточка на все три состояния, как сцена взносов в знакомстве.
  * «Я внёс» переводит её в «Ждёт сверки» сразу, не дожидаясь ответа: запрос идёт без
  * оверлея, отказ возвращает карточку как было. Сверку делает dev, а резидент в этот
- * момент на экран не смотрит, поэтому «Внесён» встаёт без движения.
+ * момент на экран не смотрит, поэтому «Внесён» встаёт без движения. Запрос шлёт
+ * `onClaim`: своя строка в составе ниже переезжает вместе с карточкой.
  */
-function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void }) {
+function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: () => void; onClaim: () => Promise<boolean> }) {
   const clip = useCopyFeedback(17)
   const [claiming, setClaiming] = useState(false)
   const [moving, setMoving] = useState(false)
@@ -206,7 +207,7 @@ function MyDues({ snap, onChanged }: { snap: DuesSnapshot; onChanged: () => void
     markOwnTap()
     setMoving(true)
     setClaiming(true)
-    const done = await action('dues.claim', undefined, { quiet: true })
+    const done = await onClaim()
     if (done) onChanged()
     else setClaiming(false)
   }
@@ -304,7 +305,7 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
         <span className="df-main">
           <Flip value={paid} />
         </span>
-        <span className="df-of">{`из ${total} подтверждено`}</span>
+        <span className="df-of">{nb(`из ${total} подтверждено`)}</span>
         <span className="df-sum">{money(collected, snap.currency)}</span>
       </div>
       <div className="dues-bar">
@@ -426,6 +427,26 @@ export function DuesScreen() {
     })()
   }
 
+  // Свой «Я внёс»: строка уходит из «Не внесли» и вырастает в «Ждут подтверждения» тем же
+  // путём, что отметка дева, а не переставляется в одном кадре. Держим, пока сервер не
+  // ответил, и ещё столько, сколько идёт свёртка.
+  const claimMine = async (): Promise<boolean> => {
+    const row = snap?.rows.find((r) => r.userId === data!.me.id && r.status === 'none')
+    if (snap && row && !holds[row.userId]) {
+      const index = snap.rows.filter((r) => r.status === 'none').findIndex((r) => r.userId === row.userId)
+      const shown: DuesRow = { ...row, status: 'claimed', at: new Date().toISOString() }
+      setHolds((h) => ({ ...h, [row.userId]: { row: shown, from: 'none', to: 'claimed', index, phase: 'leave' } }))
+    }
+    const t0 = performance.now()
+    const done = await action('dues.claim', undefined, { quiet: true })
+    if (done) {
+      const wait = 520 - (performance.now() - t0)
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+    }
+    if (row) dropHold(row.userId)
+    return Boolean(done)
+  }
+
   // Шапка одна на все состояния, меняется только тело — его и подменяет Swap: каркас
   // гаснет поверх проявившегося списка, а не пропадает в том же кадре.
   // Скелет только на первой загрузке: перезапрос после отметки должен обновлять
@@ -488,7 +509,8 @@ export function DuesScreen() {
       .filter((r) => statusOf(r) === st && keep(r))
       .map((r) => {
         const h = holds[r.userId]
-        return { row: h ? h.row : r, leaving: false, entering: Boolean(h && h.phase === 'leave'), held: Boolean(h) }
+        // Свой «Я внёс» - не решение дева: его строка в очереди сверки ждёт ответа как обычно.
+        return { row: h ? h.row : r, leaving: false, entering: Boolean(h && h.phase === 'leave'), held: Boolean(h && h.to !== 'claimed') }
       })
     for (const h of Object.values(holds)) {
       if (h.phase === 'leave' && h.from === st && keep(h.row)) {
@@ -517,7 +539,7 @@ export function DuesScreen() {
   return frame(
     `${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`,
     <>
-      <MyDues snap={snap} onChanged={onChanged} />
+      <MyDues snap={snap} onChanged={onChanged} onClaim={claimMine} />
       <Summary snap={snap} />
       <DuesOrderContext.Provider value={order}>{sections}</DuesOrderContext.Provider>
       {!periodKey ? (
@@ -531,7 +553,7 @@ export function DuesScreen() {
           </button>
           {snap.canEdit ? (
             <>
-              <Sep left={54} />
+              <Sep inset="icon" />
               <button type="button" className="row tappable" onClick={() => push('duesSettings')}>
                 <div className="row-icon" style={{ background: 'var(--orange)' }}>
                   {icons.gear()}

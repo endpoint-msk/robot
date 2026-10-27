@@ -5,15 +5,28 @@ import { useContext, useEffect, useRef, useState, useSyncExternalStore, type Rea
 import { createPortal } from 'react-dom'
 import { BarContext } from '../barContext'
 import { cooldownSnapshot, subscribeCooldown } from '../cooldown'
+import { nb } from '../format'
 import { icons } from '../icons'
+import { markOwnTap } from '../motion'
 import { netLabel, useNetState } from '../net'
 import { pop, push, setPerspective, useStore } from '../store'
 import { haptic, nativeBack } from '../telegram'
 import { screenTitle } from '../titles'
 import { AnimContext } from './Screen'
 
-export function Sep({ left }: { left?: number }) {
-  return <div className="sep" style={left !== undefined ? { marginLeft: left } : undefined} />
+/** Ширина ведущего элемента строки: иконки .row-icon и аватарки .req-avatar. */
+const LEAD = { text: 0, icon: 30, avatar: 40 }
+
+/**
+ * Разделитель начинается там же, где текст строки: отступ строки (--row-x), ведущий
+ * элемент и зазор .row после него. `inset` - имя ведущего элемента или его ширина, если
+ * он свой (плитка дня, отметка взноса). Готовым числом отступ не задаётся: при смене
+ * отступа строк сотня литералов разъехалась бы с текстом. Без `inset` - во всю ширину.
+ */
+export function Sep({ inset }: { inset?: keyof typeof LEAD | number }) {
+  if (inset === undefined) return <div className="sep" />
+  const lead = typeof inset === 'number' ? inset : LEAD[inset]
+  return <div className="sep" style={{ marginLeft: lead ? `calc(var(--row-x) + ${lead + 10}px)` : 'var(--row-x)' }} />
 }
 
 /** `month` - начало месяца для плавающей плашки (FloatingMonth): с заголовка, а не с карточки под ним. */
@@ -39,6 +52,27 @@ export function Found({ text, query }: { text: string; query: string }) {
       <mark className="found">{text.slice(at, at + q.length)}</mark>
       {text.slice(at + q.length)}
     </>
+  )
+}
+
+/** Строка, по которой ищут: без регистра и без «@» в начале - ник вводят и так, и так. */
+export const searchNeedle = (query: string): string => query.trim().replace(/^@+/, '').toLowerCase()
+
+/**
+ * Поле поиска, как в списках iOS: серая плашка, лупа, крестик. Одно на все поиски, чтобы
+ * архив, «Позвать», «Без заявки», резиденты и ответственные выглядели и вели себя одинаково.
+ */
+export function SearchField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="search-field">
+      {icons.search()}
+      <input type="search" value={value} placeholder={placeholder} autoComplete="off" onChange={(e) => onChange(e.target.value)} />
+      {value ? (
+        <button type="button" className="search-clear" aria-label="Очистить" onClick={() => onChange('')}>
+          {icons.xmark(11, '#fff')}
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -121,16 +155,28 @@ export const ReadonlyBadge = () => (
   </div>
 )
 
-/** `label` обязателен: у тумблера нет ни текста, ни иконки, и без имени он
-    озвучивается как «переключатель, включён» и ничего больше. */
-export function Switch({
+/**
+ * Строка с тумблером целиком - один переключатель, как в Telegram для Android и Desktop:
+ * касание по подписи переключает его же, а мышь в паре пикселей от тумблера больше не
+ * проходит мимо. Сам тумблер нарисован внутри и кнопкой не является: кнопка в кнопке
+ * недопустима. `className` заменяет `row` (компактная строка конструктора формы).
+ */
+export function SwitchRow({
   on,
   onToggle,
   label,
+  sub,
+  icon,
+  disabled,
+  className = 'row',
 }: {
   on: boolean
   onToggle: () => void | Promise<unknown>
-  label: string
+  label: ReactNode
+  sub?: ReactNode
+  icon?: ReactNode
+  disabled?: boolean
+  className?: string
 }) {
   // Ползунок переключается сразу и держится до ответа сервера: раньше он ждал
   // целый bootstrap под блокирующим оверлеем, то есть тап «не срабатывал»
@@ -139,27 +185,31 @@ export function Switch({
   const shown = pending ?? on
   useEffect(() => setPending(null), [on])
 
-  // Обёртка — только зона тапа: сам тумблер остаётся нативных 51×31, а промах
-  // чуть выше или ниже раньше не давал ничего (см. .switch-hit).
   return (
-    <span className="switch-hit">
-      <button
-        type="button"
-        className={'switch' + (shown ? ' on' : '')}
-        role="switch"
-        aria-checked={shown}
-        aria-label={label}
-        onClick={async () => {
-          haptic.impact(shown ? 'soft' : 'light')
-          setPending(!shown)
-          try {
-            await onToggle()
-          } finally {
-            setPending(null)
-          }
-        }}
-      />
-    </span>
+    <button
+      type="button"
+      className={className + ' tappable switch-row'}
+      role="switch"
+      aria-checked={shown}
+      disabled={disabled}
+      onClick={async () => {
+        haptic.impact(shown ? 'soft' : 'light')
+        markOwnTap()
+        setPending(!shown)
+        try {
+          await onToggle()
+        } finally {
+          setPending(null)
+        }
+      }}
+    >
+      {icon}
+      <span className="row-label">
+        {label}
+        {sub ? <span className="row-sublabel">{sub}</span> : null}
+      </span>
+      <span className={'switch' + (shown ? ' on' : '')} aria-hidden="true" />
+    </button>
   )
 }
 
@@ -187,7 +237,7 @@ export function PrimaryButton({
       disabled={disabled || wait > 0}
       onClick={onClick}
     >
-      {wait > 0 ? `Подождите ${wait} с` : children}
+      {wait > 0 ? nb(`Подождите ${wait} с`) : children}
     </button>
   )
 }

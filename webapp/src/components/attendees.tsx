@@ -39,7 +39,7 @@ export function AttendeesCard({ list }: { list: Attendee[] }) {
     <div className="card">
       {list.map((a, i) => (
         <Fragment key={a.userId}>
-          {i > 0 ? <Sep left={66} /> : null}
+          {i > 0 ? <Sep inset="avatar" /> : null}
           <AttendeeRow a={a} />
         </Fragment>
       ))}

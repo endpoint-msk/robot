@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 import { fmtShortDate, fmtWeekdayDate, plural } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { bump, push, startNewRequest, useStore } from '../store'
 import { accent, sec } from '../theme'
@@ -35,8 +36,8 @@ function VisitRow({ r }: { r: HostingRequest }) {
   let subText: string
   if (needsAnswer) subText = `Резидент предлагает ${pSlot} — нужен ответ`
   else if (p && p.by === 'guest') subText = `вы предложили ${pSlot} · ждём${approved ? ' хоста' : ''}`
-  else if (approved) subText = `к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'подтверждён'}`
-  else subText = `к ${r.time} · ждём резидента`
+  else if (approved) subText = nb(`к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'подтверждён'}`)
+  else subText = nb(`к ${r.time} · ждём резидента`)
 
   return (
     <button
@@ -99,7 +100,7 @@ function PastVisitRow({ r }: { r: HostingRequest }) {
         <div className="req-name past">
           {fmtWeekdayDate(r.dateKey)}
         </div>
-        <div className="req-sub">{`к ${r.time}` + (missed ? ' · неявка' : host ? ` · хостил ${userLabel(host)}` : '')}
+        <div className="req-sub">{nb(`к ${r.time}`) + (missed ? ' · неявка' : host ? ` · хостил ${userLabel(host)}` : '')}
         </div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
@@ -112,7 +113,7 @@ function VisitList({ list, past = false }: { list: HostingRequest[]; past?: bool
     <div className="card">
       {list.map((r, i) => (
         <Fragment key={r.id}>
-          {i > 0 ? <Sep left={66} /> : null}
+          {i > 0 ? <Sep inset="avatar" /> : null}
           {past ? <PastVisitRow r={r} /> : <VisitRow r={r} />}
         </Fragment>
       ))}
@@ -159,7 +160,7 @@ export function MyVisits() {
           {/* В списке только последние визиты, а счёт - за всё время, вместе с визитами
               без заявки, которые отметили резиденты. */}
           {tally.visits > 0 ? (
-            <div className="visits-tally">{`Вы были в спейсе ${tally.visits} ${plural(tally.visits, 'раз', 'раза', 'раз')}`}</div>
+            <div className="visits-tally">{nb(`Вы были в спейсе ${tally.visits} ${plural(tally.visits, 'раз', 'раза', 'раз')}`)}</div>
           ) : null}
         </>
       ) : null}

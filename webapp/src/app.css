@@ -30,6 +30,9 @@
        в тёмной — инвертировано: тёмная плашка со светло-зелёным. */
     --ok-bg: #e5ffe6;
     --ok-fg: #0d7a2f;
+    /* Оранжевый для текста. Сам --orange на белом даёт 2,2:1 и годится только заливкам и
+       иконкам; словом «Не внесён» и «неявка» пишут этим, как зелёным пишут --ok-fg. */
+    --warn-fg: #b25000;
     --ok-check: #ffffff;
     --ok-name: #123a1f;
     --ok-sec: 13, 90, 40;
@@ -75,6 +78,10 @@
     /* Радиус кнопки. Раньше у полноширинных кнопок одного экрана было три разных
        значения (15, 16 и 22), и разница читалась как сбой вёрстки, а не иерархия. */
     --radius-btn: 16px;
+    /* Отступ содержимого карточки от её края. Строки, заголовки секций над карточками и
+       разделители (Sep) начинаются с одной линии: при 14 у строк и 18 у заголовка глаз
+       видел лесенку. */
+    --row-x: 16px;
 
     /* Марки графиков — свой синий, а не --blue: акцент интерфейса одинаков в обеих
        темах, а заливка на чёрной карточке должна быть светлее, чем на белой. */
@@ -109,6 +116,7 @@
 
     --ok-bg: #102c19;
     --ok-fg: #34c759;
+    --warn-fg: #ffb340;
     /* Кружок в тёмной теме яркий, поэтому галочка на нём — тёмная. */
     --ok-check: #06240f;
     --ok-name: #e8f8ec;
@@ -154,7 +162,7 @@
    правилу самого класса. Без этого он оказывался специфичнее (0-1-1 против 0-1-0)
    и молча перебивал их: баннер терял свой фон и становился прозрачным, кнопка
    «назад» растягивалась во всю ширину, у сегмента текст уезжал влево. */
-button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row, .seg, .bar-slot) {
+button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row, .seg, .bar-slot, .fb-toggle-row) {
     width: 100%;
     padding: 0;
     border: none;
@@ -174,6 +182,12 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
 /* Клавиатурный фокус. В вебвью Telegram клавиатуры нет, поэтому :focus-visible
    там не срабатывает вовсе, а в браузере обводка обязана быть. */
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* Карточка режет всё, что выходит за её край, и от обводки строки снаружи оставались
+   линии сверху и снизу, похожие на разделители. Внутри карточки обводка идёт внутрь,
+   у крайних строк по её скруглению. */
+.card :focus-visible { outline-offset: -2px; }
+.card > :first-child:focus-visible { border-top-left-radius: var(--radius-card); border-top-right-radius: var(--radius-card); }
+.card > :last-child:focus-visible { border-bottom-left-radius: var(--radius-card); border-bottom-right-radius: var(--radius-card); }
 
 /* --- Зона тапа ---------------------------------------------------------------
    HIG требует 44px, но иконки и пилюли нарисованы под свою строку: сделать
@@ -183,7 +197,7 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
    Горизонтальный вылет везде не больше зазора до соседа, чтобы слой не воровал
    его тапы. Там, где элементы делят ряд (.seg), так нельзя: растёт сам элемент. */
 .note-flag, .host-btn, .search-clear, .remove-btn, .purpose-toggle,
-.link-btn, .mdr-copy { position: relative; }
+.link-btn, .mdr-copy, .ev-step, .dpg-dot, .build-link { position: relative; }
 .note-flag::after,
 .host-btn::after,
 .search-clear::after,
@@ -191,6 +205,9 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
 .purpose-toggle::after,
 .link-btn::after,
 .mdr-copy::after,
+.ev-step::after,
+.dpg-dot::after,
+.build-link::after,
 .lightbox-close::after,
 .ev-thumb-del::before { content: ""; position: absolute; }
 
@@ -201,6 +218,11 @@ button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row,
 .purpose-toggle::after { inset: -13px -3px; }
 .link-btn::after { inset: -12px -4px; }
 .mdr-copy::after { inset: -12px -5px; }
+/* «−» и «+» времени ивента стоят через 12 px от числа: вбок слой растёт на половину. */
+.ev-step::after { inset: -6px; }
+/* Точки листалки стоят вплотную друг к другу: растут только по высоте. */
+.dpg-dot::after { inset: -11px 0; }
+.build-link::after { inset: -13px -4px; }
 .lightbox-close::after { inset: -6px; }
 /* Крестик афиши лежит в плитке с overflow: hidden — за её край слой не выйдет,
    поэтому 40px вместо 44. */
@@ -233,6 +255,13 @@ body {
        и нижняя панель прыгает на её высоту. clip, а не hidden: прокрутку он не заводит
        и fixed-потомков не трогает. */
     overflow-x: clip;
+}
+/* В окне шире колонки полоса дня и тон ивента идут до краёв окна, а не обрываются
+   колонкой: обрезка переезжает на body (у окна она работает как hidden). На телефоне
+   колонка и есть окно, там остаётся как было. */
+@media (min-width: 521px) {
+    body { overflow-x: clip; }
+    #app { overflow-x: visible; }
 }
 
 /* --- Цифры ---------------------------------------------------------------------
@@ -776,7 +805,7 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--text-2);
-    margin: 0 18px 7px;
+    margin: 0 var(--row-x) 7px;
 }
 /* Заголовок «Ждут ответа», под которым остались только что одобренные (экран дня). */
 .section-title { transition: opacity 0.22s ease-out; }
@@ -805,6 +834,9 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     background: rgba(118, 118, 128, 0.12);
 }
 :root[data-theme="dark"] .search-field { background: var(--chip); }
+/* В «Позвать» поле стоит под карточкой «Из контактов Telegram». */
+.card + .search-field { margin-top: 22px; }
+.resp-search .search-field { margin-bottom: 0; }
 .search-field input {
     flex: 1;
     min-width: 0;
@@ -853,7 +885,7 @@ mark.found { background: none; color: var(--blue); }
     align-items: center;
     gap: 10px;
     min-height: 44px;
-    padding: 11px 14px;
+    padding: 11px var(--row-x);
     position: relative;
 }
 .row.tappable { cursor: pointer; }
@@ -982,7 +1014,7 @@ mark.found { background: none; color: var(--blue); }
 .avatar-stack .avatar + .avatar { margin-left: -8px; }
 
 .row-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.approved-count { display: flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; color: var(--green); }
+.approved-count { display: flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; color: var(--ok-fg); }
 .count-muted { font-size: 14px; color: var(--text-2); font-weight: 400; }
 
 /* --- Строки заявок (детали дня) --- */
@@ -999,6 +1031,15 @@ mark.found { background: none; color: var(--blue); }
 
 .req-avatar { width: 40px; height: 40px; font-size: 16px; }
 .req-main { min-width: 0; flex: 1; }
+/* Имя гостя важнее ника хоста: при нехватке места первым режется ник в пилле, до аватарки
+   с парой букв, и только потом имя. Доля сжатия имени ничтожная, а не просто малая: даже
+   0,001 отнимала у него сотые пикселя, и многоточие вставало посреди имени, которое
+   помещалось. Когда пилл упёрся в свой минимум, остаток всё равно достаётся имени. Цель
+   визита ширину строки не задаёт, она режется многоточием в той, что осталась. */
+.req-top > .req-main { flex: 1 0.00001 auto; }
+.req-main > .req-purpose-wrap { contain: inline-size; }
+.req-top > .approver { flex-shrink: 1; min-width: 52px; }
+.approver .pill { max-width: 100%; }
 /* Имя и подпись — в одну строку с многоточием: длинное имя иначе переносится и
    налезает на пилл «одобрил» / кнопку справа (они не сжимаются). */
 .req-name, .req-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1381,7 +1422,7 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .chip-btn:active { opacity: 0.6; }
 
 /* Время и дата в листе вопроса: строкой с таблеткой справа, как в форме заявки. */
-.row.modal-row { padding: 6px 14px; }
+.row.modal-row { padding: 6px var(--row-x); }
 
 /* --- Кто придёт: пометка резидента + кнопка «Я приду» --- */
 
@@ -1428,8 +1469,9 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .dpg-band {
     position: absolute;
     z-index: 0;
-    left: -16px;
-    right: -16px;
+    /* До краёв окна: на телефоне это те же -16px отступа экрана, в Desktop края окна. */
+    left: calc(50% - 50vw);
+    right: calc(50% - 50vw);
     top: calc(-12px - var(--tg-content-safe-area-inset-top, 0px));
     background: var(--bg);
     pointer-events: none;
@@ -1604,7 +1646,7 @@ span.collapse { display: block; }
 
 .status-card {
     border-radius: var(--radius-card);
-    padding: 18px 18px 16px;
+    padding: 18px var(--row-x) 16px;
     margin-bottom: 18px;
 }
 .status-card.approved {
@@ -1680,7 +1722,7 @@ span.collapse { display: block; }
 .kv-key { font-size: 16px; color: var(--text-2); }
 .kv-val { margin-left: auto; font-size: 16px; font-weight: 600; text-align: right; }
 .kv-sub { display: block; margin-top: 1px; font-size: 14px; font-weight: 400; color: var(--text-2); }
-.kv-block { padding: 11px 14px; }
+.kv-block { padding: 11px var(--row-x); }
 .kv-block .kv-cap { font-size: 13px; color: rgba(var(--sec), 0.5); margin-bottom: 3px; }
 .kv-block .kv-text { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
 
@@ -1798,7 +1840,7 @@ span.collapse { display: block; }
    тень карточки иначе срезалась бы. */
 .day-info { margin: 12px 0 3px; }
 .xfade + .section-title { margin-top: 19px; }
-.di-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 9px 14px; }
+.di-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 9px var(--row-x); }
 .di-row .avatar-stack .avatar { width: 30px; height: 30px; font-size: 13px; }
 .di-row .avatar-stack .avatar + .avatar { margin-left: -9px; }
 .di-ico { width: 30px; flex-shrink: 0; display: flex; justify-content: center; }
@@ -1959,6 +2001,8 @@ button.agenda-banner:active { opacity: 0.6; }
     padding: 11px 14px;
 }
 .time-field:active { opacity: 0.6; }
+/* Строка с таблеткой времени справа 52 px, как остальные строки с элементом управления. */
+.row.time-row { padding-top: 4px; padding-bottom: 4px; }
 /* Необязательное время пустым читается как вопрос, а не как значение. */
 .time-field.empty { color: var(--blue); }
 /* В форме заявки время раскрывает колесо прямо в карточке (TimeRow): пока оно открыто,
@@ -2232,7 +2276,7 @@ button.agenda-banner:active { opacity: 0.6; }
 .rules-sub { margin-top: 3px; font-size: 15px; color: var(--text-2); }
 .modal-sheet .rules-head + .card { margin-top: 0; }
 /* Правило многострочное, поэтому значок прижат к верху, а не по центру строки. */
-.row.rule-row { align-items: flex-start; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
+.row.rule-row { align-items: flex-start; padding-top: 12px; padding-bottom: 12px; }
 .rule-text { flex: 1; min-width: 0; padding-top: 4px; font-size: 16px; line-height: 1.3; text-wrap: pretty; }
 /* «Принимаю правила»: значки по очереди сверху вниз зеленеют и тают в галочку, по эталону
    «Захостить» (screens/Rules.tsx, шаг TICK_STEP_MS). */
@@ -2293,7 +2337,7 @@ button.agenda-banner:active { opacity: 0.6; }
 
 /* --- Дев-анонс: рассылка обновлений/объявлений --- */
 .announce-status { font-size: 14px; color: var(--text-2); margin: 2px 4px 14px; }
-.announce-card { padding: 12px 14px; }
+.announce-card { padding: 12px var(--row-x); }
 .announce-text {
     width: 100%;
     border: none;
@@ -2443,22 +2487,23 @@ button.agenda-banner:active { opacity: 0.6; }
     justify-content: center;
     color: #fff;
 }
-.row-label { font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-label .row-sublabel { display: block; font-size: 13px; color: var(--text-2); margin-top: 1px; }
+/* Межстрочный задан, а не normal: у SF, Segoe UI и Roboto он разный, и одна и та же
+   двухстрочная строка была 58 px на iPhone и 62 в Desktop. */
+.row-label { font-size: 16px; line-height: 21px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-label .row-sublabel { display: block; font-size: 13px; line-height: 17px; color: var(--text-2); margin-top: 1px; }
 .row-label .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 14px; }
 /* Недописанный ивент: красное «Черновик:», как недописанное сообщение в списке чатов Telegram. */
 .draft-mark { color: var(--red); }
 
-/* Зона тапа тумблера. Размер самого тумблера нативный и менять его нельзя —
-   расширяем только область попадания: псевдоэлемент у .switch занят бегунком. */
-.switch-hit {
-    margin-left: auto;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    padding: 7px 0;
-}
-.switch-hit .switch { margin-left: 0; }
+/* Строка с тумблером (SwitchRow) жмётся вся и стоит в 52 px, как строки с иконкой: в 44
+   тумблеру тесно. Отступы строки общие, тумблер 31 выступает за свой бокс на полпикселя
+   сверху и снизу: 11 + 30 + 11. */
+.switch-row { cursor: pointer; }
+.switch-row .switch { margin-top: -0.5px; margin-bottom: -0.5px; }
+.switch-row:disabled { cursor: default; }
+/* Карточка, где строки с элементами управления соседствуют с текстовыми, идёт одним
+   шагом: текстовые в ней тоже 52. */
+.card.ctl-card .row { min-height: 52px; }
 
 .switch {
     margin-left: auto;
@@ -2497,8 +2542,8 @@ button.agenda-banner:active { opacity: 0.6; }
 .write-banner {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: 10px;
+    padding: 12px var(--row-x);
     margin-bottom: 16px;
     border-radius: var(--radius-card);
     background: var(--warn-bg);
@@ -2507,8 +2552,8 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .write-banner:active { opacity: 0.6; }
 .wb-icon {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     flex-shrink: 0;
     border-radius: 8px;
     background: var(--orange);
@@ -2585,7 +2630,7 @@ button.agenda-banner:active { opacity: 0.6; }
     align-items: center;
     justify-content: center;
 }
-.inline-form-actions { display: flex; gap: 8px; padding: 4px 14px 12px; }
+.inline-form-actions { display: flex; gap: 8px; padding: 4px var(--row-x) 12px; }
 .small-btn {
     border: none;
     font-family: inherit;
@@ -2765,8 +2810,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .evv-band {
     position: absolute;
     z-index: 0;
-    left: -16px;
-    right: -16px;
+    left: calc(50% - 50vw);
+    right: calc(50% - 50vw);
     top: calc(-12px - var(--tg-content-safe-area-inset-top, 0px));
     bottom: 0;
     background: var(--bg);
@@ -2780,7 +2825,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     margin-top: 6px;
     border-radius: 20px;
     overflow: hidden;
-    padding: 16px 18px 15px;
+    padding: 16px var(--row-x) 15px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -2860,7 +2905,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .ev-tile.small { width: 40px; height: 44px; border-radius: 10px; background: var(--ev-soft, var(--ev-bg)); box-shadow: none; }
 .ev-tile.small span { font-size: 10.5px; color: var(--ev-soft-accent, var(--purple)); }
 .ev-tile.small b { margin-top: 2px; font-size: 18px; }
-.evv-desc { padding: 12px 14px 14px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.evv-desc { padding: 12px var(--row-x) 14px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .evv-gallery { margin-top: 12px; }
 .evv-mine { margin-top: 14px; }
 .evv-acts { display: flex; gap: 10px; margin-top: 14px; }
@@ -2902,7 +2947,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .event-card {
     background: var(--ev-soft, var(--ev-bg));
     border-radius: var(--radius-card);
-    padding: 18px 18px 16px;
+    padding: 18px var(--row-x) 16px;
     margin-bottom: 18px;
 }
 .ev-head { display: flex; align-items: center; gap: 7px; color: var(--ev-soft-accent, var(--purple)); }
@@ -2986,7 +3031,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 }
 
 /* Редактор */
-.ev-field { padding: 11px 14px; }
+.ev-field { padding: 11px var(--row-x); }
 .ev-title-input, .ev-desc-input {
     width: 100%;
     box-sizing: border-box;
@@ -3005,7 +3050,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .ev-photos {
     display: flex;
     gap: 8px;
-    padding: 11px 14px;
+    padding: 11px var(--row-x);
     overflow-x: auto;
     scrollbar-width: none;
 }
@@ -3072,6 +3117,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .ev-thumb-add:active { opacity: 0.6; }
 .ev-thumb-add input { display: none; }
 .ev-time { gap: 12px; }
+/* Строка с «−» и «+» 52 px, как остальные строки с элементом управления: кнопки 32. */
+.row.step-row { padding-top: 10px; padding-bottom: 10px; }
 .ev-step {
     width: 32px;
     height: 32px;
@@ -3094,6 +3141,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     border-radius: 10px;
     background: var(--chip);
     font-size: 16px;
+    /* Высотой с кнопки «−» и «+» (32), иначе строка выходила 53 на одном шрифте и 51 на другом. */
+    line-height: 20px;
     font-weight: 700;
     color: var(--text);
 }
@@ -3292,7 +3341,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
    ========================================================================== */
 
 /* Сводка периода: крупная цифра «внесли N из M» и полоса прогресса. */
-.dues-summary { padding: 18px 18px 16px; }
+.dues-summary { padding: 18px var(--row-x) 16px; }
 .dues-figure { display: flex; align-items: baseline; gap: 9px; font-variant-numeric: tabular-nums; }
 .dues-figure .df-main { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
 .dues-figure .df-of { font-size: 15px; color: var(--text-2); }
@@ -3344,7 +3393,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 
 .dues-amount { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .dues-amount.muted { color: var(--text-3); font-weight: 500; }
-.dues-amount.paid { color: var(--green); }
+.dues-amount.paid { color: var(--ok-fg); }
 
 /* Метка просрочки. Два тона: месяц пропуска оранжевый, два и больше красный, как у
    свайп-действий (обратимое против крайнего). */
@@ -3359,7 +3408,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     line-height: 16px;
     flex-shrink: 0;
 }
-.debt-badge.warn { background: rgba(255, 149, 0, 0.14); color: var(--orange); }
+.debt-badge.warn { background: rgba(255, 149, 0, 0.14); color: var(--warn-fg); }
 .debt-badge.crit { background: rgba(255, 59, 48, 0.14); color: var(--red); }
 /* Ставка это не статус, а свойство человека: нейтральный чип, не спорит с меткой просрочки.
    Высота та же, что у метки просрочки: в одной строке разные пилюли читались сбоем. */
@@ -3372,7 +3421,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 
 /* Ответ на чужую заявку: инлайн, а не свайпом — прятать за жест решение по чужому
    действию нельзя (так же оставлена инлайновой кнопка «Принять слот» в заявках). */
-.dues-verdict { display: flex; gap: 8px; padding: 0 14px 12px 46px; }
+.dues-verdict { display: flex; gap: 8px; padding: 0 var(--row-x) 12px calc(var(--row-x) + 32px); }
 /* Кнопки делят ряд поровну: дев сверяет подряд, и цель под пальцем одна и та же. */
 .dues-verdict .small-btn { flex: 1; line-height: 18px; transition: opacity 0.3s ease-out; }
 .dues-verdict .small-btn:active { opacity: 0.6; transition-duration: 0s; }
@@ -3397,7 +3446,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .dues-kv .kv-val { font-variant-numeric: tabular-nums; }
 
 /* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
-.my-dues { position: relative; border-radius: var(--radius-card); padding: 18px; margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
+.my-dues { position: relative; border-radius: var(--radius-card); padding: 18px var(--row-x); margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
 /* Три состояния живут в одной карточке слоями, как в сцене взносов знакомства: «Я внёс»
    перекрашивает подложку и меняет метку на месте, а не подменяет карточку другой. */
 .my-dues.md-card { overflow: hidden; background: none; box-shadow: none; }
@@ -3447,7 +3496,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .period-sum { min-width: 4.4em; text-align: right; }
 
 /* Поле ввода в листе вопроса (ставка взноса, день сбора, причина, комментарий): карточка. */
-.modal-field { padding: 0 14px; }
+.modal-field { padding: 0 var(--row-x); }
 /* width: 100% обязателен: .text-input рассчитан на flex-строку (`flex: 1`), а здесь
    он лежит в обычном блоке — без ширины инпут берёт природную (те самые ~20 символов),
    вылезает за карточку и обрезается её `overflow: hidden`. */
@@ -3547,8 +3596,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .visit-who:active { opacity: 0.6; }
 /* Исход визита: кто и как отметил. Цвет - тот же, что у значка в профиле. */
 .visit-status { font-size: 13px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.visit-status.came { color: var(--green); }
-.visit-status.missed { color: var(--orange); }
+.visit-status.came { color: var(--ok-fg); }
+.visit-status.missed { color: var(--warn-fg); }
 .visit-status.muted { color: var(--text-3); }
 
 /* История гостя лентой (GuestVisits.tsx): визиты на одной линии, узел цвета исхода.
@@ -3685,7 +3734,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     align-items: flex-start;
     gap: 10px;
     margin-top: 12px;
-    padding: 12px 14px;
+    padding: 12px var(--row-x);
     border-radius: 16px;
     background: var(--ok-soft-bg);
 }
@@ -3696,9 +3745,8 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 
 /* Настройка недоступна: срок уже не успевает либо напоминание отправлено. */
 .card.remind-locked { opacity: 0.5; }
-.card.remind-locked .switch { pointer-events: none; }
 
-.remind-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px 14px 13px; }
+.remind-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px var(--row-x) 13px; }
 .remind-chip {
     min-height: 38px;
     padding: 0 14px;
@@ -3715,7 +3763,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
    при каждом сдвиге времени, и непонятно, куда делся вариант. */
 .remind-chip.off { color: var(--text-3); text-decoration: line-through; cursor: default; }
 
-.remind-caption { font-size: 13px; line-height: 1.45; color: var(--text-2); margin: 8px 18px 0; }
+.remind-caption { font-size: 13px; line-height: 1.45; color: var(--text-2); margin: 8px var(--row-x) 0; }
 
 /* --- Журнал присутствия: статистика --- */
 
@@ -4344,7 +4392,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     align-items: center;
     gap: 10px;
     min-height: 44px;
-    padding: 11px 14px;
+    padding: 11px var(--row-x);
 }
 .sk-row + .sk-row { border-top: 0.5px solid var(--sep); }
 .sk-row .sk-block { animation-delay: inherit; }
@@ -4440,7 +4488,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     background: var(--card);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
-    padding: 12px 14px;
+    padding: 12px var(--row-x);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -4543,6 +4591,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     padding: 7px 0;
 }
 .fb-toggle-row + .fb-toggle-row { border-top: 0.5px solid rgba(var(--sec), 0.08); }
+.fb-toggle-row .row-label { font-size: inherit; }
 .fb-add-row { display: flex; gap: 10px; margin-top: 10px; }
 .fb-add-btn {
     flex: 1;
@@ -4570,7 +4619,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 
 /* --- Заполнение формы (FormFill) --- */
 .ff-form { display: flex; flex-direction: column; }
-.ff-field { padding: 12px 14px; }
+.ff-field { padding: 12px var(--row-x); }
 .ff-field + .ff-field { border-top: 0.5px solid var(--sep, rgba(var(--sec), 0.12)); }
 .ff-label { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 9px; }
 .ff-req { color: var(--red); }
@@ -4616,7 +4665,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .ff-option-label { flex: 1; }
 
 /* --- Разбор заявок (EventApps) --- */
-.ea-card { padding: 14px; margin-bottom: 12px; }
+.ea-card { padding: 14px var(--row-x); margin-bottom: 12px; }
 .ea-head { display: flex; align-items: center; gap: 12px; }
 .ea-answers {
     display: flex;
@@ -4874,8 +4923,23 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     white-space: nowrap;
 }
 .ob-tag.green { background: var(--green-soft); color: var(--ok-fg); }
-.ob-tag.warn { background: var(--warn-bg); color: var(--ob-warn-ink); }
+.ob-tag.warn { background: var(--warn-bg); color: var(--warn-fg); }
 .ob-tag.gray { background: rgba(120, 120, 128, 0.14); color: var(--text-2); }
+/* Капсула одна на всё приложение: 20 px, 12/600, строчными. Смысл несёт цвет, а не кегль
+   и капс: пять разных капсул на соседних экранах читались сбоем вёрстки. */
+.visit-chip, .rate-chip, .debt-badge, .resident-badge, .ob-tag, .ev-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
 
 /* Материалы: баннер iOS и пузырь Telegram. */
 .ob-lift { box-shadow: var(--ob-lift); }
@@ -5061,11 +5125,13 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     gap: 5px;
     margin-left: auto;
     flex-shrink: 0;
-    padding: 6px 0;
+    /* Строка с меню 52 px, как с тумблером: 11 + 30 + 11. */
+    padding: 4.5px 0;
     border: none;
     background: none;
     font-family: inherit;
     font-size: 16px;
+    line-height: 21px;
     color: var(--text-2);
     cursor: pointer;
 }
@@ -5655,20 +5721,24 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
    штриховкой закрытого дня, у кнопок и чипов он свой, а у карточек к тени слоя добавляется
    их собственная. Сенсорные экраны сюда не попадают, иначе подсветка залипала бы после тапа. */
 @media (hover: hover) and (pointer: fine) {
-    .row.tappable:hover, .write-banner:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.05); }
+    .row.tappable:not(:disabled):hover, .write-banner:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.05); }
     .host-btn:not(:disabled):hover, .pill.mine:hover, .accept-btn:hover, .chip-btn:hover, .time-field:hover,
     .ev-step:not(:disabled):hover, .tp-bar-btn:hover, .dp-nav:hover, .retry-btn:hover, .ev-thumb-add:hover {
         box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07);
     }
     .secondary-btn:hover, .evv-cal:hover, .attend-btn:hover, .dpg-pill:hover, .destructive-btn:hover,
-    .day-chip:not(.selected):not(:disabled):hover, .today-card:hover, .prof-act:hover {
+    .day-chip:not(.selected):not(:disabled):hover, .today-card:hover, .prof-act:hover, .home-tile:hover,
+    button.agenda-banner:hover {
         box-shadow: var(--shadow-card), inset 0 0 0 100vmax rgba(var(--sec), 0.05);
     }
+    .vm-btn:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07); }
+    .seg:not(.on):hover { background-color: rgba(var(--sec), 0.06); }
+    .dpg-dot:hover { border-radius: 50%; background: rgba(var(--sec), 0.08); }
     .primary-btn:not(:disabled):hover { box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.1); }
     .modal-btn:hover, .ob-menu button:not(:disabled):hover, .ctx-item:hover { background: rgba(var(--sec), 0.05); }
     .swipe-action:hover { filter: brightness(1.08); }
     .link-btn:hover, .linkified:hover, .purpose-toggle:hover, .build-link:hover, .ev-source:hover,
-    .ob-popup:not(:disabled):hover { opacity: 0.75; }
+    .ob-popup:not(:disabled):hover, .visit-who:hover, .mdr-copy:hover { opacity: 0.75; }
 }
 
 /* Ожидание в кнопке не мигает подсветкой поверх своей крутилки. */

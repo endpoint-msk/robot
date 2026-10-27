@@ -7,6 +7,7 @@ import { action } from '../api'
 import { icons } from '../icons'
 import { pushOverlay } from '../overlays'
 import { haptic, tg } from '../telegram'
+import { Sep } from './common'
 import { useSheetDrag } from './useSheetDrag'
 
 type Os = 'ios' | 'android' | 'mac' | 'win'
@@ -256,7 +257,7 @@ export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: 
                 </button>
               ) : null}
             </label>
-            <div className="sep" style={{ marginLeft: 14 }} />
+            <Sep inset="text" />
             <label className="ob-field">
               <span className="vh">Название</span>
               <input

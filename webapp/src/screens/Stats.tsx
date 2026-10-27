@@ -15,6 +15,7 @@ import {
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { animate, clamp, markOwnTap, ownTapRecent, pr, reducedMotion, spring } from '../motion'
 import { useRemote } from '../remote'
@@ -46,7 +47,7 @@ import { WrapRow } from './Wrap'
 
 const PERIODS: { key: StatsPeriod; label: string }[] = [
   { key: 'month', label: 'Месяц' },
-  { key: 'quarter', label: '3 месяца' },
+  { key: 'quarter', label: nb('3 месяца') },
   { key: 'all', label: 'Всё время' },
 ]
 
@@ -906,7 +907,7 @@ export function Stats() {
   const people: PersonRef[] = shown.top.map((t) => ({ userId: t.userId, label: t.label, username: t.username }))
   const personRow = (p: StatsOverview['top'][number], i: number, max: number) => (
     <Fragment key={p.userId}>
-      {i > 0 ? <Sep left={60} /> : null}
+      {i > 0 ? <Sep inset={34} /> : null}
       <button
         type="button"
         className="row tappable"
@@ -954,7 +955,7 @@ export function Stats() {
               text={
                 Math.abs(deltaMinutes) < 30
                   ? 'Столько же, сколько периодом раньше'
-                  : `На ${hoursWord(Math.abs(deltaMinutes))} ${deltaMinutes > 0 ? 'больше' : 'меньше'}, чем периодом раньше`
+                  : nb(`На ${hoursWord(Math.abs(deltaMinutes))} ${deltaMinutes > 0 ? 'больше' : 'меньше'}, чем периодом раньше`)
               }
             />
           </div>
@@ -995,7 +996,7 @@ export function Stats() {
           </div>
           {!allPeople && rest.length > 0 ? (
             <>
-              <Sep left={14} />
+              <Sep inset="text" />
               <button type="button" className="row tappable" onClick={() => setAllPeople(true)}>
                 <span className="row-label" style={{ color: 'var(--blue)' }}>
                   {`Показать всех (${shown.top.length})`}
@@ -1021,7 +1022,7 @@ export function Stats() {
             {icons.chevron()}
           </div>
         </button>
-        <Sep left={54} />
+        <Sep inset="icon" />
         <button
           type="button"
           className="row tappable"

@@ -675,7 +675,7 @@ export function RequestsCard({ list, archive = false }: { list: HostingRequest[]
     <div className="card">
       {list.map((r, i) => (
         <Fragment key={r.id}>
-          {i > 0 ? <Sep left={66} /> : null}
+          {i > 0 ? <Sep inset="avatar" /> : null}
           <RequestRow r={r} archive={archive} />
         </Fragment>
       ))}

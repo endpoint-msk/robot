@@ -3,6 +3,7 @@
 
 import { addDays, fmtShortDate, weekdayIdx } from './dates'
 import type { Banner } from './components/OnboardingScenes'
+import { nb } from './format'
 import type { NotifyPrefs, Settings } from './types'
 
 export type NotifyChoice = 'today' | 'all' | 'off'
@@ -31,7 +32,7 @@ export const notifyBanners = (s: Pick<Settings, 'notify' | 'eventNotify'>, today
   },
   {
     key: 'ev',
-    time: '1 ч назад',
+    time: nb('1 ч назад'),
     text:
       s.eventNotify.mode === 'today'
         ? '📅 Новый ивент: Кино в спейсе. Сегодня к 20:00.'

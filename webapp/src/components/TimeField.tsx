@@ -636,7 +636,7 @@ export function TimeRow({
 
   return (
     <>
-      <div className="row" style={{ padding: '6px 14px' }}>
+      <div className="row time-row">
         <span style={{ fontSize: 16 }}>{label}</span>
         <button
           type="button"

@@ -8,6 +8,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { action, api, mutate, prefetchOnTouch } from '../api'
 import { fmtDayMonth, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { animate, E, markOwnTap, pr, pulse, reducedMotion } from '../motion'
 import { useRemote } from '../remote'
@@ -44,9 +45,9 @@ function effective(r: HostingRequest, pending: Record<string, boolean | null>, m
 /** Подпись исхода: существительными, а не «пришёл/пришла» - пол гостя мы не знаем. */
 function outcomeLine(o: VisitOutcome): { text: string; tone: string } | null {
   if (o.status === 'came') {
-    if (o.source === 'door') return { text: 'приход · по кнопке «Я на месте»', tone: 'came' }
-    if (o.source === 'legacy') return { text: 'приход · визит до отметок', tone: 'came' }
-    return { text: o.by ? `приход · отметка ${userLabel(o.by)}` : 'приход', tone: 'came' }
+    if (o.source === 'door') return { text: 'визит · по кнопке «Я на месте»', tone: 'came' }
+    if (o.source === 'legacy') return { text: 'визит · до отметок', tone: 'came' }
+    return { text: o.by ? `визит · отметка ${userLabel(o.by)}` : 'визит', tone: 'came' }
   }
   if (o.status === 'missed') return { text: o.by ? `неявка · отметка ${userLabel(o.by)}` : 'неявка', tone: 'missed' }
   if (o.status === 'unknown') return { text: 'без отметки', tone: 'muted' }
@@ -196,7 +197,7 @@ function RequestVisitRow({
         <div className="req-main">
           <div className="req-name">{r.guest.name}</div>
           <div className="req-sub">
-            {`к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'без хоста'}`}
+            {nb(`к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'без хоста'}`)}
             {r.anon ? ' · анонимно' : ''}
           </div>
           <Collapse open={line !== null}>
@@ -209,7 +210,7 @@ function RequestVisitRow({
           <button
             type="button"
             className={'vm-btn came' + (came ? ' on' : '')}
-            aria-label={ownCame ? 'Снять отметку прихода' : 'Отметить приход'}
+            aria-label={ownCame ? 'Снять отметку визита' : 'Отметить визит'}
             aria-pressed={came}
             onClick={() => onMark(r, ownCame ? null : true)}
           >
@@ -243,7 +244,7 @@ function WalkInRow({ w, editable, onRemove }: { w: WalkIn; editable: boolean; on
         <div className="req-main">
           <div className="req-name">{w.guest.name}</div>
           {sub ? <div className="req-sub">{sub}</div> : null}
-          <div className="visit-status came">{`приход · отметка ${userLabel(w.by)}`}</div>
+          <div className="visit-status came">{`визит · отметка ${userLabel(w.by)}`}</div>
         </div>
       </button>
       {editable ? (
@@ -399,7 +400,7 @@ export function Visits() {
             <div className="card">
               {requests.map((r, i) => (
                 <Fragment key={r.id}>
-                  {i > 0 ? <Sep left={66} /> : null}
+                  {i > 0 ? <Sep inset="avatar" /> : null}
                   <RequestVisitRow
                     r={r}
                     outcome={outcomes.get(r.id) ?? NO_OUTCOME}
@@ -419,13 +420,13 @@ export function Visits() {
             <div className="card">
               {day.walkIns.map((w, i) => (
                 <Fragment key={w.id}>
-                  {i > 0 ? <Sep left={66} /> : null}
+                  {i > 0 ? <Sep inset="avatar" /> : null}
                   <WalkInRow w={w} editable={editable} onRemove={removeWalkIn} />
                 </Fragment>
               ))}
               {editable ? (
                 <>
-                  {day.walkIns.length > 0 ? <Sep left={54} /> : null}
+                  {day.walkIns.length > 0 ? <Sep inset="icon" /> : null}
                   <button type="button" className="row tappable" onClick={() => push('walkIn', { dateKey })}>
                     <div className="row-icon" style={{ background: 'var(--blue)' }}>
                       {icons.personPlus('#fff')}

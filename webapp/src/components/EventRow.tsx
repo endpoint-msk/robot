@@ -86,7 +86,7 @@ export function LaterEvents({ backLabel }: { backLabel: string }) {
       <div className="card">
         {events.map((event, i) => (
           <Fragment key={event.id}>
-            {i > 0 ? <Sep left={64} /> : null}
+            {i > 0 ? <Sep inset="avatar" /> : null}
             <EventRow event={event} backLabel={backLabel} tile dateLabel={label(event)} />
           </Fragment>
         ))}

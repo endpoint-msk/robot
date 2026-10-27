@@ -5,6 +5,7 @@
 // конкретного спейса, а не настройка, и в стейте ей делать нечего.
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { showAlert, showImage } from '../modals'
 import { animate, clamp, E, mix, pr } from '../motion'
@@ -17,7 +18,7 @@ import { DOOR, ROADS, WIDE, type StationKey } from './routeMap'
 
 /** Адрес нужен и на карточке визита — там он и есть ответ на «куда идти». */
 export const ADDRESS = 'ул. Литвина-Седого, 7'
-export const ENTRANCE = '3 подъезд'
+export const ENTRANCE = nb('3 подъезд')
 
 // Минуты и километры по той же дороге OSRM, что рисуется на карте, от ближнего выхода:
 // у Шелепихи это выход 3 МЦК, у «Улицы 1905 года» выход 1.
@@ -372,7 +373,7 @@ export function Route() {
       <div className="card route-metro">
         {METRO.map((m, i) => (
           <Fragment key={m.station}>
-            {i > 0 ? <Sep left={54} /> : null}
+            {i > 0 ? <Sep inset="icon" /> : null}
             <button
               type="button"
               className={'row tappable' + (focus === m.key ? ' on' : '')}

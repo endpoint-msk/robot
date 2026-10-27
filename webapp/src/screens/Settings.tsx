@@ -7,7 +7,7 @@ import { push, setData, setThemeFrom, useStore } from '../store'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import { accent } from '../theme'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
-import { BackRow, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { MacSheet } from '../components/MacSheet'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Notification } from '../components/OnboardingScenes'
@@ -123,25 +123,24 @@ function NotifyCard<M extends string>({
   )
   return (
     <div className="card">
-      <div className="row">
-        <div className="row-icon" style={{ background: color }}>
-          {icons.bell()}
-        </div>
-        <span className="row-label">{title}</span>
-        <Switch
-          label={title}
-          on={prefs.enabled}
-          onToggle={async () => {
-            if (!prefs.enabled && beforeEnable) await beforeEnable()
-            return action(method, { enabled: !prefs.enabled, mode: prefs.mode }, { quiet: true })
-          }}
-        />
-      </div>
-      <Sep left={54} />
+      <SwitchRow
+        icon={
+          <div className="row-icon" style={{ background: color }}>
+            {icons.bell()}
+          </div>
+        }
+        label={title}
+        on={prefs.enabled}
+        onToggle={async () => {
+          if (!prefs.enabled && beforeEnable) await beforeEnable()
+          return action(method, { enabled: !prefs.enabled, mode: prefs.mode }, { quiet: true })
+        }}
+      />
+      <Sep inset="icon" />
       <div className={prefs.enabled ? undefined : 'rows-disabled'}>
         {options.map((o, i) => (
           <Fragment key={o.mode}>
-            {i > 0 ? <Sep left={14} /> : null}
+            {i > 0 ? <Sep inset="text" /> : null}
             {radioRow(o)}
           </Fragment>
         ))}
@@ -200,9 +199,9 @@ function NotifySection({ s }: { s: SettingsData }) {
         </div>
         <div className="card">
           {row('req', 'Новые заявки', 'var(--orange)', s.notify)}
-          <Sep left={54} />
+          <Sep inset="icon" />
           {row('ev', 'Новые ивенты', 'var(--purple)', s.eventNotify)}
-          <Sep left={54} />
+          <Sep inset="icon" />
           <CalendarRow />
         </div>
         <MenuItems
@@ -302,7 +301,7 @@ function PresenceCard({ s }: { s: SettingsData }) {
   return (
     <>
       <SectionTitle>Отметки</SectionTitle>
-      <div className="card">
+      <div className="card ctl-card">
         {s.macs.map((m) => (
           <Fragment key={m.mac}>
             <div className="row" data-dust={'mac-' + m.mac}>
@@ -321,33 +320,29 @@ function PresenceCard({ s }: { s: SettingsData }) {
                 </button>
               </div>
             </div>
-            <Sep left={14} />
+            <Sep inset="text" />
           </Fragment>
         ))}
         <button type="button" className="row tappable" onClick={() => setSheet(true)}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
           <span className="add-row-label">Добавить устройство</span>
         </button>
-        <Sep left={14} />
-        <div className={'row' + (s.macs.length === 0 ? ' rows-disabled' : '')}>
-          <span className="row-label">
-            Отмечаться без ника
-            <span className="row-sublabel">В списке будет «Без ника»</span>
-          </span>
-          <Switch label="Отмечаться без ника" on={s.macAnon} onToggle={() => action('mac.anon', { anon: !s.macAnon }, { quiet: true })} />
-        </div>
-        <Sep left={14} />
-        <div className="row">
-          <span className="row-label">
-            Вести историю визитов
-            <span className="row-sublabel">Для статистики спейса</span>
-          </span>
-          <Switch
-            label="Вести историю визитов"
-            on={s.logVisits}
-            onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
-          />
-        </div>
+        <Sep inset="text" />
+        <SwitchRow
+          className={'row' + (s.macs.length === 0 ? ' rows-disabled' : '')}
+          disabled={s.macs.length === 0}
+          label="Отмечаться без ника"
+          sub="В списке будет «Без ника»"
+          on={s.macAnon}
+          onToggle={() => action('mac.anon', { anon: !s.macAnon }, { quiet: true })}
+        />
+        <Sep inset="text" />
+        <SwitchRow
+          label="Вести историю визитов"
+          sub="Для статистики спейса"
+          on={s.logVisits}
+          onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
+        />
       </div>
       {sheet ? <MacSheet onClose={() => setSheet(false)} /> : null}
     </>
@@ -391,7 +386,7 @@ export function Settings() {
           </span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
-        <Sep left={14} />
+        <Sep inset="text" />
         <button type="button" className="row tappable" onClick={() => void openOnboarding()}>
           <span className="row-label">
             Знакомство с ботом

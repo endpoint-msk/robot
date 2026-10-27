@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { action, mutate } from '../api'
 import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
 import { reschedulePrompt } from '../modals'
@@ -88,7 +89,7 @@ function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null 
         <div className={'arrival-icon' + (pop ? ' pop' : '')}>{sent ? icons.check(19, '#34c759', 2.2) : icons.pin(19, '#34c759')}</div>
         <div style={{ minWidth: 0 }}>
           <div className="arrival-title">
-            <XText text={!sent ? 'Уже у двери?' : mins === 0 ? 'Сообщили только что' : `Сообщили ${mins} мин назад`} />
+            <XText text={!sent ? 'Уже у двери?' : mins === 0 ? 'Сообщили только что' : nb(`Сообщили ${mins} мин назад`)} />
           </div>
           <div className="arrival-sub">
             <XText text={sent ? 'Открывают. Если никто не вышел, сообщите ещё раз' : 'Скажу тем, кто сейчас в спейсе'} delay={60} />
@@ -354,9 +355,9 @@ export function Visit() {
         }
         subtitle={
           <>
-            <XText text={`${fmtDayMonth(r.dateKey)} · к ${r.time}`} delay={120} />
+            <XText text={nb(`${fmtDayMonth(r.dateKey)} · к ${r.time}`)} delay={120} />
             {/* Минута меняется без движения: это часы, а не ответ на тап. */}
-            {left > 0 ? ` · через ${untilText(left)}` : null}
+            {left > 0 ? nb(` · через ${untilText(left)}`) : null}
           </>
         }
       />
@@ -371,7 +372,7 @@ export function Visit() {
             <XText text={`${fmtShortDate(r.dateKey)} · ${r.time}`} delay={120} />
           </span>
         </div>
-        <Sep left={14} />
+        <Sep inset="text" />
         <div className="row">
           <span className="kv-key">Видимость</span>
           <span className="kv-val">{r.anon ? 'Анонимно' : 'Обычная'}</span>
@@ -380,7 +381,7 @@ export function Visit() {
             первое, что открывают, а адрес до сих пор жил только в «Моих визитах». */}
         {!isPast ? (
           <>
-            <Sep left={14} />
+            <Sep inset="text" />
             <button type="button" className="row tappable" onClick={() => push('route')}>
               <span className="kv-key">Где</span>
               <div className="row-right">
@@ -393,7 +394,7 @@ export function Visit() {
             </button>
           </>
         ) : null}
-        {r.purpose ? <Sep left={14} /> : null}
+        {r.purpose ? <Sep inset="text" /> : null}
         {r.purpose ? (
           <div className="kv-block">
             <div className="kv-cap">Цель визита</div>
@@ -435,7 +436,7 @@ export function Visit() {
               <span className="add-row-label">Попросить перенести</span>
             </button>
           ) : null}
-          {!approved || !p ? <Sep left={46} /> : null}
+          {!approved || !p ? <Sep inset={22} /> : null}
           {/* .ics отдаёт сервер (см. /visit.ics): разовая ссылка, которую открывает
               системный браузер, а оттуда файл уходит в календарь. */}
           <button type="button" className="row tappable" onClick={() => void openIcs()}>
@@ -445,7 +446,7 @@ export function Visit() {
           {/* Отмеченный резидентом визит - уже история: сервер отмену не примет. */}
           {r.visit?.source === 'mark' ? null : (
             <>
-              <Sep left={46} />
+              <Sep inset={22} />
               <button type="button" className="row tappable" onClick={() => void cancelVisit()}>
                 <span className="act-ico danger">{icons.xmark(19, 'currentColor')}</span>
                 <span className="add-row-label danger">Отменить заявку</span>

@@ -4,6 +4,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { api, prefetchOnTouch } from '../api'
 import { fmtWeekdayDate, plural } from '../dates'
+import { nb } from '../format'
 import { clamp } from '../motion'
 import { useRemote } from '../remote'
 import { push, useParams } from '../store'
@@ -372,7 +373,7 @@ export function StatsDay() {
     )
   }
 
-  const gapSpans = gapRanges(data.gaps).map((g) => `с ${clock(g.from)} до ${clock(g.to)}`)
+  const gapSpans = gapRanges(data.gaps).map((g) => nb(`с ${clock(g.from)} до ${clock(g.to)}`))
 
   return frame(
     <>
@@ -380,7 +381,7 @@ export function StatsDay() {
         <div className="stats-figure">
           <span className="sf-main sf-mid">{fmtDuration(data.openMinutes)}</span>
         </div>
-        <div className="stats-note">{`Открыт с ${data.from} до ${dayEnd(data.to)}`}</div>
+        <div className="stats-note">{nb(`Открыт с ${data.from} до ${dayEnd(data.to)}`)}</div>
         <div className="sep" style={{ margin: '14px 0 12px' }} />
         <div className="stats-pair">
           <div>

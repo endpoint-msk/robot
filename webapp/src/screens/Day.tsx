@@ -5,6 +5,7 @@
 
 import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import { action } from '../api'
+import { nb } from '../format'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
 import { fmtDayMonth, plural, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
@@ -40,7 +41,7 @@ import { getState, pop, push, setTopParams, useParams, useStore, type NavParams 
 import { haptic, setHeaderColor } from '../telegram'
 import { accentTriple, applyTheme, sec } from '../theme'
 import type { Attendee, Day as DayData, DayAgenda, DayLock, HostingRequest, User } from '../types'
-import { BackRow, EmptyState, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, EmptyState, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeeRow } from '../components/attendees'
 import { CapBar } from '../components/CapBar'
@@ -74,7 +75,7 @@ const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<vo
     text: 'Что в этот день в спейсе?',
     initial: current,
     placeholder: 'Например: убираемся и сортируем вещи',
-    hint: 'Повестку увидят и гости.',
+    hint: 'Тему дня увидят и гости.',
     maxLength: 200,
     confirmLabel: 'Сохранить',
   })
@@ -208,9 +209,9 @@ function DayCard({ day }: { day: DayData }) {
   return (
     <>
       <SectionTitle>День</SectionTitle>
-      <div className="card">
+      <div className="card ctl-card">
         <button type="button" className="row tappable" onClick={() => editAgenda(dateKey, day.agenda)}>
-          <span className="row-label">Повестка</span>
+          <span className="row-label">Тема дня</span>
           <div className="row-right">
             <span className="lock-reason">{day.agenda ? day.agenda.text : 'Добавить'}</span>
             {icons.chevron()}
@@ -218,21 +219,15 @@ function DayCard({ day }: { day: DayData }) {
         </button>
         {data!.me.isResident ? (
           <>
-            <Sep left={14} />
-            <div className="row">
-              <span className="row-label">Уведомления о дне</span>
-              <Switch on={Boolean(day.subscribed)} onToggle={toggleSub} label="Уведомления о дне" />
-            </div>
+            <Sep inset="text" />
+            <SwitchRow on={Boolean(day.subscribed)} onToggle={toggleSub} label="Уведомления о дне" />
           </>
         ) : null}
-        <Sep left={14} />
-        <div className="row">
-          <span className="row-label">Закрыт для гостей</span>
-          <Switch on={Boolean(lock)} onToggle={toggleLock} label="Закрыт для гостей" />
-        </div>
+        <Sep inset="text" />
+        <SwitchRow on={Boolean(lock)} onToggle={toggleLock} label="Закрыт для гостей" />
         {lock ? (
           <>
-            <Sep left={14} />
+            <Sep inset="text" />
             <button type="button" className="row tappable" onClick={editReason}>
               <span className="row-label">Причина</span>
               <div className="row-right">
@@ -244,14 +239,14 @@ function DayCard({ day }: { day: DayData }) {
         ) : null}
         {capacity ? (
           <>
-            <Sep left={14} />
+            <Sep inset="text" />
             <button type="button" className="row tappable cap-row" onClick={editCap}>
               <span className="row-label">
                 Вместимость
                 {/* Последнюю заявку без хоста убрали своим тапом: строка сворачивается, а не
                     пропадает рывком, который у низа страницы дёргал прокрутку. */}
                 <Collapse open={capacity.pending > 0} as="span">
-                  <span className="row-sublabel">{`ещё ${requestsWord(capacity.pending)} без хоста`}</span>
+                  <span className="row-sublabel">{nb(`ещё ${requestsWord(capacity.pending)} без хоста`)}</span>
                 </Collapse>
               </span>
               <div className="row-right">
@@ -265,7 +260,7 @@ function DayCard({ day }: { day: DayData }) {
             </button>
             {capacity.custom ? (
               <>
-                <Sep left={14} />
+                <Sep inset="text" />
                 <button type="button" className="row tappable" onClick={resetCap}>
                   <span className="row-label">Вернуть общую</span>
                   <div className="row-right">
@@ -281,11 +276,63 @@ function DayCard({ day }: { day: DayData }) {
   )
 }
 
-/** «вы, @lena_k и ещё 2»: кто придёт, коротко, вы первыми. */
-export const comingNames = (names: string[]): string => {
-  if (names.length === 0) return 'Пока никто не собирается'
-  const text = names.length <= 2 ? names.join(' и ') : `${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`
-  return text.charAt(0).toUpperCase() + text.slice(1)
+/** «Вы, @lena_k и ещё 2»: кто придёт, вы первыми. Варианты от длинного к короткому. */
+const comingVariants = (names: string[]): string[] => {
+  const [a, b] = names
+  const more = (n: number): string => `и\u00a0ещё\u00a0${n}`
+  const list =
+    names.length === 0
+      ? ['Пока никого']
+      : names.length === 1
+        ? [a!]
+        : names.length === 2
+          ? [`${a} и ${b}`, `${a} ${more(1)}`]
+          : [`${a}, ${b} ${more(names.length - 2)}`, `${a} ${more(names.length - 1)}`]
+  return list.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+}
+
+let measureCtx: CanvasRenderingContext2D | null = null
+const textWidth = (text: string, font: string): number => {
+  measureCtx ??= document.createElement('canvas').getContext('2d')
+  if (!measureCtx) return 0
+  measureCtx.font = font
+  return measureCtx.measureText(text).width
+}
+
+/**
+ * Подпись под «Придут»: самый длинный вариант, который влезает в строку целиком.
+ * Многоточие посреди ника читается хуже, чем «Вы и ещё 2». Ширина считается шрифтом
+ * самой подписи и пересчитывается на смене ширины и после загрузки шрифтов.
+ */
+export function ComingNames({ names, flow = false }: { names: string[]; flow?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState({ room: 0, font: '' })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const read = (): void => {
+      const cs = getComputedStyle(el)
+      setBox({ room: el.getBoundingClientRect().width, font: `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}` })
+    }
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    let alive = true
+    void document.fonts?.ready.then(() => {
+      if (alive) read()
+    })
+    return () => {
+      alive = false
+      ro.disconnect()
+    }
+  }, [])
+  const variants = comingVariants(names)
+  const text = box.room > 0 ? (variants.find((v) => textWidth(v, box.font) <= box.room) ?? variants[variants.length - 1]!) : variants[0]!
+  return (
+    <div className="dpg-coming-s" ref={ref}>
+      {flow ? <XText text={text} delay={80} /> : text}
+    </div>
+  )
 }
 
 /**
@@ -417,6 +464,30 @@ export function ComingRow({
 
   const names = [...(coming ? ['вы'] : []), ...others.map((a) => userLabel(a))]
   const faces = others.slice(0, 3)
+
+  // Новое лицо в ряду сдвигает подпись на свою ширину. После своего тапа она доезжает
+  // за ним кривой эталона, а не прыгает в том же кадре, пока лицо ещё не проявилось.
+  // Переходом CSS: в WebView iOS он идёт на 120 Гц, JS-кадры на 60.
+  const textRef = useRef<HTMLDivElement>(null)
+  const textX = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    const x = el.offsetLeft
+    const prev = textX.current
+    textX.current = x
+    if (prev === null || prev === x || !ownTapRecent() || reducedMotion()) return
+    el.style.transition = 'none'
+    el.style.transform = `translateX(${prev - x}px)`
+    void el.offsetWidth
+    el.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1)'
+    el.style.transform = ''
+    const done = (): void => {
+      el.style.transition = ''
+    }
+    el.addEventListener('transitionend', done, { once: true })
+    return () => el.removeEventListener('transitionend', done)
+  }, [faces.length])
   return (
     <div className={'dpg-coming' + (className ? ' ' + className : '')}>
       <div className="dpg-faces" aria-hidden="true">
@@ -436,14 +507,12 @@ export function ComingRow({
           <FaceIn key={a.userId} a={a} fly={seen.fresh.includes(a.userId)} z={faces.length - i} />
         ))}
       </div>
-      <div className="dpg-coming-text">
+      <div className="dpg-coming-text" ref={textRef}>
         <div className="dpg-coming-k">
           {'Придут · '}
           <Flip value={count} delay={140} />
         </div>
-        <div className="dpg-coming-s">
-          <XText text={comingNames(names)} delay={80} />
-        </div>
+        <ComingNames names={names} flow />
       </div>
       <button
         type="button"
@@ -497,7 +566,7 @@ function RequestSection({
       <div className="card">
         {list.map((r, i) => (
           <Fragment key={r.id}>
-            {i > 0 ? <Sep left={66} /> : null}
+            {i > 0 ? <Sep inset="avatar" /> : null}
             <div className={flash.includes(r.id) ? 'row-flash' : undefined} data-req={r.id} data-dust={'req-' + r.id}>
               <RequestRow r={r} onHost={onHost} capacity={capacity} />
             </div>
@@ -629,7 +698,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
           <div className="card dpg-events">
             {events.map((ev, i) => (
               <Fragment key={ev.id}>
-                {i > 0 ? <Sep left={62} /> : null}
+                {i > 0 ? <Sep inset="icon" /> : null}
                 <EventRow event={ev} />
               </Fragment>
             ))}
@@ -643,7 +712,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
             <span className="row-label">Позвать в спейс</span>
             <div className="row-right">{icons.chevron()}</div>
           </button>
-          <Sep left={54} />
+          <Sep inset="icon" />
           <button type="button" className="row tappable" onClick={() => push('event', { dateKey: day.dateKey })}>
             <div className="row-icon" style={{ background: 'var(--purple)' }}>
               {icons.calendar(17, '#fff')}
@@ -655,7 +724,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
               прошедший день - уже история. Вчерашний вечер до утра отмечают из архива. */}
           {isToday ? (
             <>
-              <Sep left={54} />
+              <Sep inset="icon" />
               <button type="button" className="row tappable" onClick={() => push('visits', { dateKey: day.dateKey })}>
                 <div className="row-icon" style={{ background: 'var(--green)' }}>
                   {icons.check(17, '#fff', 2.4)}
@@ -704,14 +773,14 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
             {others.length > 0 ? (
               <Collapse open={coming} delay={200}>
                 <AttendeeRow a={meRow} right={timeChip} />
-                <Sep left={66} />
+                <Sep inset="avatar" />
               </Collapse>
             ) : coming ? (
               <AttendeeRow a={meRow} right={timeChip} />
             ) : null}
             {others.map((a, i) => (
               <Fragment key={a.userId}>
-                {i > 0 ? <Sep left={66} /> : null}
+                {i > 0 ? <Sep inset="avatar" /> : null}
                 <AttendeeRow a={a} />
               </Fragment>
             ))}

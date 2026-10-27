@@ -7,7 +7,7 @@
 // выбор человека на день — ровно та же задача, и «уже придёт» здесь даже полезнее,
 // чем в зове (подхватить визит проще тому, кто и так будет в спейсе).
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { action, api } from '../api'
 import { fmtShortDate } from '../dates'
 import { icons } from '../icons'
@@ -17,7 +17,7 @@ import { useRemote } from '../remote'
 import { pop, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { InviteCandidate, InviteListResponse } from '../types'
-import { BackRow, EmptyState, ErrorState, Found, Header, Sep, SectionTitle } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Found, Header, SearchField, searchNeedle, Sep, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
 import { MorphWord } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
@@ -117,7 +117,7 @@ function Group({
       <div className="card">
         {people.map((p, i) => (
           <Fragment key={p.userId}>
-            {i > 0 ? <Sep left={66} /> : null}
+            {i > 0 ? <Sep inset="avatar" /> : null}
             <PersonRow
               person={p}
               query={query}
@@ -133,17 +133,20 @@ function Group({
   )
 }
 
+/** Сколько людей пришло в прошлый раз: каркас той же длины не сдвигает «Гостей», когда приходит ответ. */
+const lastCount = { residents: 7, guests: 3 }
+
 /** Скелет: те же две группы со строками людей и кнопкой «Позвать» справа.
     Заголовки без счётчика — число кандидатов и есть то, чего ещё ждём. */
 function InviteSkeleton({ transfer }: { transfer: boolean }) {
   return (
     <div aria-busy="true" aria-label="Загружаем кандидатов">
       <SectionTitle>Резиденты</SectionTitle>
-      <SkRows count={5} avatar tail />
+      <SkRows count={Math.max(1, lastCount.residents)} avatar tail />
       {transfer ? null : (
         <>
           <SectionTitle>Гости</SectionTitle>
-          <SkRows count={3} avatar tail />
+          <SkRows count={Math.min(Math.max(1, lastCount.guests), 4)} avatar tail />
         </>
       )}
     </div>
@@ -163,6 +166,12 @@ export function Invite() {
     async () => (await api<InviteListResponse>('invite.list', { dateKey })).people,
     [dateKey],
   )
+
+  useEffect(() => {
+    if (!data) return
+    lastCount.residents = data.filter((p) => p.resident).length
+    lastCount.guests = data.filter((p) => !p.resident).length
+  }, [data])
 
   const invite = async (p: InviteCandidate): Promise<void> => {
     if (transfer) {
@@ -201,7 +210,7 @@ export function Invite() {
   if (error) body = <ErrorState onRetry={reload} />
   else if (!data) body = null
   else {
-    const q = query.trim().toLowerCase()
+    const q = searchNeedle(query)
     const match = (p: InviteCandidate): boolean =>
       !q || p.name.toLowerCase().includes(q) || (p.username ?? '').toLowerCase().includes(q)
     const residents = data.filter((p) => p.resident && match(p))
@@ -248,18 +257,7 @@ export function Invite() {
           <ShareRow target={{ kind: 'day', dateKey }} label="Из контактов Telegram" />
         </div>
       ) : null}
-      <div className="card">
-        <div className="row">
-          <input
-            className="text-input"
-            type="text"
-            value={query}
-            placeholder="Поиск по имени или нику"
-            autoComplete="off"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      </div>
+      <SearchField value={query} onChange={setQuery} placeholder="Поиск по имени или нику" />
       <Swap loading={loading && !data} skeleton={pending ? <InviteSkeleton transfer={transfer} /> : null}>
         {body}
       </Swap>

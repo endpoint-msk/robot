@@ -1675,7 +1675,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!created.ok) {
                 const messages = {
                     bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время прихода в формате ЧЧ:ММ.',
+                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У вас уже есть заявка на этот день.',
                     day_locked: 'В этот день спейс закрыт для гостей — выберите другой.',
@@ -1725,7 +1725,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     not_found: 'Заявка не найдена — возможно, её уже отменили.',
                     not_pending: 'Заявку уже одобрили — измени её через отмену и новую заявку.',
                     bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время прихода в формате ЧЧ:ММ.',
+                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
                     past_time: 'Это время уже прошло — выбери время позже текущего.',
                     duplicate: 'У вас уже есть заявка на этот день.',
                     day_locked: 'В этот день спейс закрыт для гостей — выберите другой.',
@@ -1829,12 +1829,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const text = typeof body.text === 'string' ? body.text : ''
             if (text.length > MAX_AGENDA_LENGTH) {
-                sendError(res, 400, 'too_long', `Повестка не длиннее ${MAX_AGENDA_LENGTH} символов.`)
+                sendError(res, 400, 'too_long', `Тема дня не длиннее ${MAX_AGENDA_LENGTH} символов.`)
                 return
             }
             const result = await setDayAgenda(storage, tzOffsetMinutes, dateKey, text, user)
             if (!result.ok) {
-                sendError(res, 400, result.error, 'Повестку можно поставить только на день из ближайшей недели.')
+                sendError(res, 400, result.error, 'Тему дня можно поставить только на день из ближайшей недели.')
                 return
             }
             syncBoard()
@@ -2397,7 +2397,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 const messages: Record<string, [number, string]> = {
                     not_yours: [404, 'Заявка не найдена - обновите экран.'],
                     not_approved: [409, 'Визит ещё не подтверждён - сообщать некому.'],
-                    closed: [409, 'Сообщить о приходе можно за полчаса до визита и час после.'],
+                    closed: [409, 'Сообщить, что вы на месте, можно за полчаса до визита и час после.'],
                     cooldown: [429, `Резиденты уже знают. Сообщить ещё раз можно через ${ARRIVAL_COOLDOWN_LABEL} после первого сигнала.`],
                 }
                 const [status, message] = messages[marked.error] ?? [400, 'Не получилось.']

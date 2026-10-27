@@ -5,6 +5,7 @@
 import { Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
 import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_ABBR, plural, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { NEW_EVENT_DRAFT, useDraft, type EventDraft } from '../drafts'
 import { compressImage, imageToneAt } from '../image'
@@ -19,7 +20,7 @@ import { haptic, openUrl, setHeaderColor } from '../telegram'
 import { getState, pop, push, setBusy, startNewRequest, useParams, useStore } from '../store'
 import { applyTheme } from '../theme'
 import type { Attendee, ReviewerScope, SpaceEvent, User } from '../types'
-import { BackRow, Footnote, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { BackRow, Footnote, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { DateField } from '../components/DateField'
 import { eventTone, toneVars } from '../components/EventRow'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
@@ -30,7 +31,7 @@ import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
 import { useReorder } from '../components/useReorder'
 import { useDropImages, usePasteImages } from '../usePasteImages'
-import { ComingRow, useAttend } from './Day'
+import { ComingNames, ComingRow, useAttend } from './Day'
 
 const MAX_TITLE = 120
 /** Столько же держит сервер (MAX_EVENT_DESCRIPTION): длина сообщения в Telegram. */
@@ -326,7 +327,7 @@ export function Event() {
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>
-        <div className="sep" style={{ marginLeft: 14 }} />
+        <Sep inset="text" />
         <div className="ev-field">
           <textarea
             ref={descRef}
@@ -338,7 +339,7 @@ export function Event() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
-        <div className="sep" style={{ marginLeft: 14 }} />
+        <Sep inset="text" />
         {/* Афиши: лента миниатюр, последняя плитка — «добавить». Порядок в ленте
             и есть порядок показа в карточке, плитки переставляются перетаскиванием. */}
         <div className={'ev-photos' + (dropping ? ' drop-on' : '')} ref={stripRef}>
@@ -394,7 +395,7 @@ export function Event() {
         ))}
       </div>
       <div className="card" style={{ marginTop: 10 }}>
-        <div className="row">
+        <div className="row time-row">
           <span className="row-label">Дата</span>
           <div className="row-right">
             <DateField
@@ -405,8 +406,8 @@ export function Event() {
             />
           </div>
         </div>
-        <div className="sep" style={{ marginLeft: 14 }} />
-        <div className="row">
+        <Sep inset="text" />
+        <div className="row step-row">
           <span className="row-label">Начало в</span>
           <div className="row-right ev-time">
             <button className="ev-step" aria-label="Раньше" disabled={!canStep(-1)} onClick={() => step(-1)}>
@@ -418,14 +419,13 @@ export function Event() {
             </button>
           </div>
         </div>
-        <div className="sep" style={{ marginLeft: 14 }} />
-        <div className="row">
-          <span className="row-label">
-            Только резидентам
-            <span className="row-sublabel">Гости не увидят ивент в «Активности»</span>
-          </span>
-          <Switch on={residentsOnly} onToggle={() => setResidentsOnly(!residentsOnly)} label="Только резидентам" />
-        </div>
+        <Sep inset="text" />
+        <SwitchRow
+          on={residentsOnly}
+          onToggle={() => setResidentsOnly(!residentsOnly)}
+          label="Только резидентам"
+          sub="Гости не увидят ивент в «Активности»"
+        />
       </div>
       {guardPast && dateKey === data!.todayKey ? (
         <Footnote>{`Сегодня ивент можно поставить не раньше ${data!.nowTime}: анонсировать то, что уже началось, некому.`}</Footnote>
@@ -470,13 +470,12 @@ export function Event() {
         </button>
       ) : null}
       <div className="card">
-        <div className="row">
-          <span className="row-label">
-            Принимать заявки по форме
-            <span className="row-sublabel">Гость попадёт на ивент только через заявку</span>
-          </span>
-          <Switch on={formOn} onToggle={() => setFormOn(!formOn)} label="Принимать заявки по форме" />
-        </div>
+        <SwitchRow
+          on={formOn}
+          onToggle={() => setFormOn(!formOn)}
+          label="Принимать заявки по форме"
+          sub="Гость попадёт на ивент только через заявку"
+        />
       </div>
       {formOn ? <FormBuilder value={form} onChange={setForm} /> : null}
 
@@ -529,7 +528,7 @@ export const untilWord = (todayKey: string, dateKey: string): string => {
   const n = Math.round((keyToDate(dateKey).getTime() - keyToDate(todayKey).getTime()) / 86_400_000)
   if (n <= 0) return 'сегодня'
   if (n === 1) return 'завтра'
-  return `через ${n}\u00a0${plural(n, 'день', 'дня', 'дней')}`
+  return `через\u00a0${n}\u00a0${plural(n, 'день', 'дня', 'дней')}`
 }
 
 /** Дата плиткой: месяц и число крупно, как листок календаря. */
@@ -599,12 +598,6 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
     if (!people.some((a) => a.userId === u.userId)) people.push({ ...u, resident: false, time: null })
   }
   const names = people.map((a) => (a.userId === data!.me.id ? 'вы' : userLabel(a)))
-  const namesText =
-    names.length === 0
-      ? 'Пока никто не собирается'
-      : names.length <= 2
-        ? names.join(' и ')
-        : `${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`
 
   // «Хочу прийти» у гостя и есть заявка на день ивента: форма открывается уже с днём и
   // временем. Заявка на этот день уже есть: вместо кнопки она сама.
@@ -658,7 +651,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
             </div>
             <div className="dpg-coming-text">
               <div className="dpg-coming-k">{`Придут · ${people.length}`}</div>
-              <div className="dpg-coming-s">{namesText.charAt(0).toUpperCase() + namesText.slice(1)}</div>
+              <ComingNames names={names} />
             </div>
           </div>
         ) : null}
@@ -674,7 +667,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
         {/* Ответственные приходят только резидентам: у гостя этих строк нет. */}
         {(event.responsibles ?? []).map((u) => (
           <Fragment key={u.userId}>
-            <Sep left={66} />
+            <Sep inset="avatar" />
             <Profile user={u} className="row">
               <Avatar user={u} className="req-avatar" />
               <span className="row-label">
@@ -686,13 +679,13 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
         ))}
         {event.description ? (
           <>
-            <Sep left={14} />
+            <Sep inset="text" />
             <div className="evv-desc">{linkedText(event.description)}</div>
           </>
         ) : null}
         {event.sourceUrl ? (
           <>
-            <Sep left={14} />
+            <Sep inset="text" />
             <button type="button" className="row tappable" onClick={() => openUrl(event.sourceUrl!)}>
               <span className="row-label">Пост в канале</span>
               <div className="row-right">{icons.external('#bf5af2')}</div>
@@ -713,7 +706,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
           <button type="button" className="row tappable" onClick={() => push('visit', { id: mine.id })}>
             <span className="row-label">
               Ваша заявка
-              <span className="row-sublabel">{`к ${mine.time} · ${mine.status === 'approved' ? 'подтверждена' : 'ждёт ответа'}`}</span>
+              <span className="row-sublabel">{nb(`к ${mine.time} · ${mine.status === 'approved' ? 'подтверждена' : 'ждёт ответа'}`)}</span>
             </span>
             <div className="row-right">{icons.chevron()}</div>
           </button>

@@ -8,7 +8,7 @@ import { UnderContext } from '../screenContext'
 import { getState, pop, replaceTop, resetRoot, setData, useParams, useStore } from '../store'
 import { botCanWrite, haptic, requestWriteAccess } from '../telegram'
 import type { Bootstrap, ReminderChoice } from '../types'
-import { ActionButton, BackRow, BottomBar, Header, SectionTitle, Sep, Switch } from '../components/common'
+import { ActionButton, BackRow, BottomBar, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { Crossfade } from '../components/Crossfade'
 import { AnimContext, Screen } from '../components/Screen'
 import { askRules } from './Rules'
@@ -150,7 +150,7 @@ export function NewRequest() {
       return
     }
     if (!time) {
-      showAlert('Укажите время прихода.')
+      showAlert('Укажите, к скольки придёте.')
       return
     }
     if (isPastForToday(day, time)) {
@@ -208,14 +208,11 @@ export function NewRequest() {
         <div className="nt-host" ref={remindUi.hostRef}>
           <div className="card">
             <TimeRow label="Приду к" value={time} min={min} onChange={onTimeChange} />
-            <Sep left={14} />
+            <Sep inset="text" />
             {remindUi.row}
-            <Sep left={14} />
-            <div className="row">
-              <span className="row-label">Не показывать другим гостям</span>
-              <Switch on={anon} onToggle={() => setAnon(!anon)} label="Не показывать другим гостям" />
-            </div>
-            <Sep left={14} />
+            <Sep inset="text" />
+            <SwitchRow on={anon} onToggle={() => setAnon(!anon)} label="Не показывать другим гостям" />
+            <Sep inset="text" />
             <div className="kv-block">
               <PurposeInput value={purpose} onChange={setPurpose} />
             </div>

@@ -11,7 +11,7 @@ import { useRemote } from '../remote'
 import { pop, useParams } from '../store'
 import { haptic } from '../telegram'
 import type { WalkInCandidate, WalkInCandidatesResponse } from '../types'
-import { ActionButton, BackRow, EmptyState, ErrorState, Found, Header, SectionTitle, Sep } from '../components/common'
+import { ActionButton, BackRow, EmptyState, ErrorState, Found, Header, SearchField, searchNeedle, SectionTitle, Sep } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
@@ -60,7 +60,7 @@ export function WalkIn() {
   }
 
   const q = query.trim()
-  const lower = q.toLowerCase().replace(/^@/, '')
+  const lower = searchNeedle(query)
   let body
   if (error) body = <ErrorState onRetry={reload} />
   else if (!data) body = null
@@ -81,7 +81,7 @@ export function WalkIn() {
           <div className="card">
             {list.map((p, i) => (
               <Fragment key={p.userId}>
-                {i > 0 ? <Sep left={66} /> : null}
+                {i > 0 ? <Sep inset="avatar" /> : null}
                 <CandidateRow p={p} query={lower} onAdd={() => add({ userId: p.userId })} />
               </Fragment>
             ))}
@@ -100,7 +100,7 @@ export function WalkIn() {
                 <span className="row-label">{`Найти @${byUsername} в Telegram`}</span>
               </ActionButton>
             ) : null}
-            {byUsername && byName ? <Sep left={54} /> : null}
+            {byUsername && byName ? <Sep inset="icon" /> : null}
             {byName ? (
               <ActionButton className="row tappable" onClick={() => add({ name: byName })}>
                 <div className="row-icon" style={{ background: 'var(--gray)' }}>
@@ -129,18 +129,7 @@ export function WalkIn() {
     <Screen>
       <BackRow />
       <Header title="Без заявки" subtitle={fmtShortDate(dateKey)} />
-      <div className="card">
-        <div className="row">
-          <input
-            className="text-input"
-            type="text"
-            value={query}
-            placeholder="Имя, @ник или новый гость"
-            autoComplete="off"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      </div>
+      <SearchField value={query} onChange={setQuery} placeholder="Имя, @ник или новый гость" />
       <Swap
         loading={loading && !data}
         skeleton={

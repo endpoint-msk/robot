@@ -1,6 +1,7 @@
 // Строка дня в обзоре недели (резидент) и в неделе архива, сегодняшний день карточкой.
 
 import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { useStore } from '../store'
 import { sec } from '../theme'
@@ -165,7 +166,7 @@ export function TodayCard({ day, onOpen, guest = false }: { day: DayRowData; onO
   const names = [...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]
   const rest = names.length - 2
   const who =
-    rest > 0 ? `${names.slice(0, 2).join(', ')} и ещё ${rest}` : names.length === 2 ? `${names[0]} и ${names[1]}` : (names[0] ?? '')
+    rest > 0 ? nb(`${names.slice(0, 2).join(', ')} и ещё ${rest}`) : names.length === 2 ? `${names[0]} и ${names[1]}` : (names[0] ?? '')
 
   const foot =
     day.total > 0

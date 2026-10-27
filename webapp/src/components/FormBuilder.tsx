@@ -7,7 +7,7 @@ import { api } from '../api'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import type { EventFormField, EventFormOption, ReviewerScope, ReviewersResponse, User } from '../types'
-import { SectionTitle, Sep, Switch } from './common'
+import { SectionTitle, Sep, SwitchRow } from './common'
 import { Avatar } from './people'
 import { useListReorder } from './useListReorder'
 
@@ -125,15 +125,19 @@ function FieldCard({
       ) : null}
       <div className="fb-field-foot">
         {field.type === 'choice' ? (
-          <div className="fb-toggle-row">
-            <span>Несколько ответов</span>
-            <Switch on={field.multi === true} onToggle={() => onChange({ ...field, multi: !field.multi })} label="Несколько ответов" />
-          </div>
+          <SwitchRow
+            className="fb-toggle-row"
+            on={field.multi === true}
+            onToggle={() => onChange({ ...field, multi: !field.multi })}
+            label="Несколько ответов"
+          />
         ) : null}
-        <div className="fb-toggle-row">
-          <span>Обязательный</span>
-          <Switch on={field.required} onToggle={() => onChange({ ...field, required: !field.required })} label="Обязательный" />
-        </div>
+        <SwitchRow
+          className="fb-toggle-row"
+          on={field.required}
+          onToggle={() => onChange({ ...field, required: !field.required })}
+          label="Обязательный"
+        />
       </div>
     </div>
   )
@@ -150,7 +154,7 @@ function CirclePicker({ selected, onToggle }: { selected: number[]; onToggle: (i
         const on = selected.includes(u.userId)
         return (
           <div key={u.userId}>
-            {i > 0 ? <Sep left={66} /> : null}
+            {i > 0 ? <Sep inset="avatar" /> : null}
             <button type="button" className="row tappable" onClick={() => onToggle(u.userId)}>
               <Avatar user={u} className="req-avatar" />
               <div className="req-main">
@@ -239,7 +243,7 @@ export function FormBuilder({ value, onChange }: { value: BuilderForm; onChange:
       <div className="card">
         {REVIEWER_OPTS.map((o, i) => (
           <div key={o.kind}>
-            {i > 0 ? <Sep left={14} /> : null}
+            {i > 0 ? <Sep inset="text" /> : null}
             <button type="button" className="row tappable" onClick={() => pickReviewers(o.kind)}>
               <div className="req-main">
                 <div className="req-name">{o.label}</div>

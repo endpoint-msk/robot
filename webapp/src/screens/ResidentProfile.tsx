@@ -97,7 +97,7 @@ export function ResidentProfile() {
       <div className="card">
         {status.targets.map((t, i) => (
           <Fragment key={t.key}>
-            {i > 0 ? <Sep left={14} /> : null}
+            {i > 0 ? <Sep inset="text" /> : null}
             <div className="row">
               <span className="row-label">{t.label}</span>
               {t.error ? (

@@ -45,7 +45,7 @@ function DoorSection() {
             onChange={(e) => setCode(e.target.value)}
           />
         </div>
-        <Sep left={14} />
+        <Sep inset="text" />
         <div className="row">
           <input
             className="text-input"
@@ -92,7 +92,7 @@ export function Dev() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажите время прихода.')
+      showAlert('Укажите время.')
       return
     }
     const res = await action('dev.seed', { dateKey: selected, time, purpose })
@@ -135,11 +135,11 @@ export function Dev() {
       <DayChips days={days} selected={selected} onSelect={setSelected} />
       <SectionTitle>Детали</SectionTitle>
       <div className="card">
-        <div className="row" style={{ padding: '6px 14px' }}>
+        <div className="row time-row">
           <span style={{ fontSize: 16 }}>Придёт к</span>
           <TimeField value={time} onChange={setTime} />
         </div>
-        <Sep left={14} />
+        <Sep inset="text" />
         <div className="kv-block">
           <textarea
             className="purpose-input"
@@ -158,7 +158,7 @@ export function Dev() {
         ) : (
           all.map((r, i) => (
             <Fragment key={r.id}>
-              {i > 0 ? <Sep left={14} /> : null}
+              {i > 0 ? <Sep inset="text" /> : null}
               <div className="row tappable" onClick={() => push('devEdit', { id: r.id })}>
                 <span className="row-label">
                   {r.guest.name}
@@ -199,7 +199,7 @@ export function Dev() {
         ) : (
           blocked.map((b, i) => (
             <Fragment key={b.userId}>
-              {i > 0 ? <Sep left={14} /> : null}
+              {i > 0 ? <Sep inset="text" /> : null}
               <div className="row">
                 <span className="row-label">
                   {b.name}

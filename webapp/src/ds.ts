@@ -15,7 +15,7 @@ export {
   SpinnerCenter,
   Footnote,
   ReadonlyBadge,
-  Switch,
+  SwitchRow,
   BottomBar,
   DevChips,
 } from './components/common'

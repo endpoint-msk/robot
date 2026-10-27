@@ -16,11 +16,12 @@ import {
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push, useStore } from '../store'
 import type { ArchiveResponse, ArchiveWeekSummary, GuestSearchResponse, GuestSummary } from '../types'
-import { BackRow, EmptyState, ErrorState, Found, Header, Sep, SectionTitle } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Found, Header, SearchField, Sep, SectionTitle } from '../components/common'
 import { Avatar } from '../components/people'
 import { FloatingMonth } from '../components/FloatingMonth'
 import { Screen } from '../components/Screen'
@@ -34,7 +35,7 @@ function weeksAgoLabel(weekStart: string, todayKey: string): string {
   )
   if (diffWeeks <= 0) return 'Текущая неделя'
   if (diffWeeks === 1) return 'Прошлая неделя'
-  return `${diffWeeks} ${plural(diffWeeks, 'неделю', 'недели', 'недель')} назад`
+  return nb(`${diffWeeks} ${plural(diffWeeks, 'неделю', 'недели', 'недель')} назад`)
 }
 
 /** Высота столбика самого людного дня в строке недели, px. */
@@ -84,7 +85,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
               const count = visits > 0 ? visitsWord(visits) : week.total > 0 ? requestsWord(week.total) : ''
               return (
                 <Fragment key={week.weekStart}>
-                  {i > 0 ? <Sep left={66} /> : null}
+                  {i > 0 ? <Sep inset={42} /> : null}
                   <button
                     type="button"
                     className="row tappable"
@@ -196,7 +197,7 @@ function GuestSearch({
       <div className="card">
         {guests.map((g, i) => (
           <Fragment key={g.user.userId}>
-            {i > 0 ? <Sep left={64} /> : null}
+            {i > 0 ? <Sep inset="avatar" /> : null}
             <button
               type="button"
               className="row tappable"
@@ -277,20 +278,7 @@ export function Archive() {
     <Screen>
       <BackRow label="Ближайшие дни" />
       <Header title="Архив" />
-      <div className="search-field">
-        {icons.search()}
-        <input
-          type="search"
-          value={query}
-          placeholder="Поиск по гостям: имя или @ник"
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        {query ? (
-          <button type="button" className="search-clear" aria-label="Очистить" onClick={() => setQuery('')}>
-            {icons.xmark(11, '#fff')}
-          </button>
-        ) : null}
-      </div>
+      <SearchField value={query} onChange={setQuery} placeholder="Поиск по гостям: имя или @ник" />
       {searching ? (
         search
       ) : (

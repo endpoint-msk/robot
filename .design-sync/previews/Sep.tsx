@@ -22,7 +22,7 @@ export const Inset = () => (
         <div className="req-sub">@{misha.username}</div>
       </div>
     </div>
-    <Sep left={66} />
+    <Sep inset="avatar" />
     <div className="row">
       <Avatar user={anya} className="req-avatar" />
       <div className="req-main">

@@ -12,7 +12,7 @@ import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeesCard } from '../components/attendees'
 import { EventRow } from '../components/EventRow'
 import { Avatar, userLabel } from '../components/people'
-import { comingNames, DayPager, DroppedDay, type DayPageProps } from './Day'
+import { ComingNames, DayPager, DroppedDay, type DayPageProps } from './Day'
 
 /** Плашка закрытого дня у гостя: причина без того, кто закрыл. */
 function LockBanner({ lock }: { lock: DayLock }) {
@@ -60,9 +60,7 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
           </div>
           <div className="dpg-coming-text">
             <div className="dpg-coming-k">{`Придут · ${att.length}`}</div>
-            <div className="dpg-coming-s">
-              {comingNames([...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)])}
-            </div>
+            <ComingNames names={[...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]} />
           </div>
           {mine ? (
             <button
@@ -92,7 +90,7 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
           <div className="card dpg-events">
             {day.events.map((ev, i) => (
               <Fragment key={ev.id}>
-                {i > 0 ? <Sep left={62} /> : null}
+                {i > 0 ? <Sep inset="icon" /> : null}
                 <EventRow event={ev} backLabel={weekday} />
               </Fragment>
             ))}

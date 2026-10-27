@@ -4,6 +4,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { dayNum, MONTHS_NOM, monthIdx, peopleWord, plural, WEEKDAYS_SHORT, weekdayIdx, yearOf } from '../dates'
+import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push } from '../store'
@@ -95,7 +96,7 @@ export function StatsDays() {
   const toggle = (key: string, isOpen: boolean): void => setToggled((cur) => ({ ...cur, [key]: !isOpen }))
 
   return frame(
-    `${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`,
+    nb(`${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`),
     <>
       <FloatingMonth />
       {groups.map((group) => {
@@ -111,7 +112,7 @@ export function StatsDays() {
               <span className="row-label">
                 {group.title}
                 <span className="row-sublabel">
-                  {`${group.days.length} ${plural(group.days.length, 'день', 'дня', 'дней')} · ${hoursNum(group.minutes)} ч`}
+                  {nb(`${group.days.length} ${plural(group.days.length, 'день', 'дня', 'дней')} · ${hoursNum(group.minutes)} ч`)}
                 </span>
               </span>
               <div className="row-right">
@@ -120,9 +121,10 @@ export function StatsDays() {
             </button>
             <div className={'collapsible' + (isOpen ? ' open' : '')}>
               <div className="collapsible-inner">
-                {group.days.map((day) => (
+                {group.days.map((day, i) => (
                   <Fragment key={day.dateKey}>
-                    <Sep left={14} />
+                    {/* Под строкой месяца разделитель от края текста, между днями - после плитки даты. */}
+                    <Sep inset={i > 0 ? 42 : 'text'} />
                     <button
                       type="button"
                       className="row tappable"
@@ -135,7 +137,7 @@ export function StatsDays() {
                       <span className="row-label">
                         {fmtDuration(day.openMinutes)}
                         <span className="row-sublabel">
-                          {`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`}
+                          {nb(`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`)}
                         </span>
                       </span>
                       <div className="row-right">{icons.chevron()}</div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { plural } from '../dates'
+import { nb } from '../format'
 import { confirmDialog, showAlert } from '../modals'
 import { pop, setBusy } from '../store'
 import { haptic } from '../telegram'
@@ -46,7 +47,7 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
         version: (info.release && info.release.version) || '',
       })
       haptic.notify('success')
-      const tail = res.failed ? `, не дошло в ${res.failed}` : ''
+      const tail = res.failed ? nb(`, не дошло в ${res.failed}`) : ''
       showAlert(`Отправлено в ${res.sent} ${plural(res.sent, 'чат', 'чата', 'чатов')}${tail}.`)
       pop()
     } catch (err) {
@@ -78,7 +79,7 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
       </div>
       <div style={{ padding: '18px 0 8px' }}>
         <button className="primary-btn" onClick={submit}>
-          {targets === 0 ? 'Нет чатов для рассылки' : `Разослать в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}`}
+          {targets === 0 ? 'Нет чатов для рассылки' : nb(`Разослать в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}`)}
         </button>
       </div>
     </>

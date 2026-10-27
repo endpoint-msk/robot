@@ -4,7 +4,7 @@
 import { Fragment, type ReactNode } from 'react'
 import { api } from '../api'
 import { duesWord, periodsWord } from '../dates'
-import { money } from '../format'
+import { money, nb } from '../format'
 import { icons } from '../icons'
 import { showAlert } from '../modals'
 import { useRemote } from '../remote'
@@ -89,7 +89,7 @@ export function DuesHistory() {
         </div>
         <div className="dues-note">
           {closed > 0
-            ? `За всё время не внесено ${duesWord(closed)} на ${money(data.expected - data.collected, data.currency)}`
+            ? nb(`За всё время не внесено ${duesWord(closed)} на ${money(data.expected - data.collected, data.currency)}`)
             : 'Все взносы за всё время закрыты'}
         </div>
       </div>
@@ -100,11 +100,11 @@ export function DuesHistory() {
           const pct = p.total > 0 ? Math.round((p.paid / p.total) * 100) : 0
           return (
             <Fragment key={p.periodKey}>
-              {i > 0 ? <Sep left={14} /> : null}
+              {i > 0 ? <Sep inset="text" /> : null}
               <button type="button" className="row tappable" onClick={() => push('dues', { periodKey: p.periodKey })}>
                 <span className="row-label">
                   {p.label}
-                  <span className="row-sublabel">{`${i === 0 ? 'текущий · ' : ''}${p.paid} из ${p.total}`}</span>
+                  <span className="row-sublabel">{nb(`${i === 0 ? 'текущий · ' : ''}${p.paid} из ${p.total}`)}</span>
                 </span>
                 <div className="row-right">
                   <div className="period-bar">

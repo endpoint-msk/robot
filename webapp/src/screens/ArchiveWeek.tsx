@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { api } from '../api'
 import { addDays, fmtRange, requestsWord } from '../dates'
+import { nb } from '../format'
 import { useRemote } from '../remote'
 import { stageTint } from '../motion'
 import { push, setTopParams, useParams, useStore } from '../store'
@@ -97,7 +98,7 @@ function WeekPage({ weekStart }: { weekStart: string }) {
     const all = data.flatMap((d) => d.requests)
     const approvedCount = all.filter((r) => r.status === 'approved').length
     const came = all.filter((r) => r.visit?.status === 'came').length + data.reduce((n, d) => n + d.walkIns.length, 0)
-    sub = `${requestsWord(all.length)} · ${approvedCount} одобрено · пришли ${came}`
+    sub = nb(`${requestsWord(all.length)} · ${approvedCount} одобрено · пришли ${came}`)
     // День с одними гостями без заявки - тоже день архива: в спейсе кто-то был.
     const nonEmpty = data.filter((d) => d.requests.length > 0 || d.walkIns.length > 0 || d.dateKey === grace)
     if (nonEmpty.length === 0) {
@@ -111,7 +112,7 @@ function WeekPage({ weekStart }: { weekStart: string }) {
         <div className="card">
           {nonEmpty.map((d, i) => (
             <Fragment key={d.dateKey}>
-              {i > 0 ? <Sep left={96} /> : null}
+              {i > 0 ? <Sep inset={72} /> : null}
               <DayRow
                 day={{
                   dateKey: d.dateKey,
