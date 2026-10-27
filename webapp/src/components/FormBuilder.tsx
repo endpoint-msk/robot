@@ -2,13 +2,14 @@
 // вопрос со свободным ответом и блок выбора (одиночный/множественный, с вариантом «Другое»).
 // Плюс выбор круга рецензентов: все резиденты / только автор / выбранные люди.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import type { EventFormField, EventFormOption, ReviewerScope, ReviewersResponse, User } from '../types'
 import { SectionTitle, Sep, Switch } from './common'
 import { Avatar } from './people'
+import { useListReorder } from './useListReorder'
 
 const uid = (): string => Math.random().toString(36).slice(2, 10)
 
@@ -55,14 +56,12 @@ function OptionRow({
 
 function FieldCard({
   field,
-  index,
   count,
   onChange,
   onRemove,
   onMove,
 }: {
   field: EventFormField
-  index: number
   count: number
   onChange: (f: EventFormField) => void
   onRemove: () => void
@@ -70,19 +69,32 @@ function FieldCard({
 }) {
   const setOptions = (options: EventFormOption[]): void => onChange({ ...field, options })
   return (
-    <div className="fb-field">
+    <div className="fb-field" data-reorder-id={field.id}>
       <div className="fb-field-head">
         <span className="fb-kind">{field.type === 'text' ? 'Свободный ответ' : field.multi ? 'Выбор (несколько)' : 'Выбор (один)'}</span>
         <div className="fb-field-tools">
-          <button type="button" className="fb-icon-btn" aria-label="Выше" disabled={index === 0} onClick={() => onMove(-1)}>
-            ↑
-          </button>
-          <button type="button" className="fb-icon-btn" aria-label="Ниже" disabled={index === count - 1} onClick={() => onMove(1)}>
-            ↓
-          </button>
           <button type="button" className="fb-icon-btn danger" aria-label="Удалить блок" onClick={onRemove}>
             {icons.xmark(12, 'currentColor')}
           </button>
+          {/* Тянут за ручку (useListReorder), с клавиатуры стрелками: фокус на ручке. */}
+          {count > 1 ? (
+            <button
+              type="button"
+              className="fb-grip"
+              aria-label="Переставить вопрос"
+              data-reorder-handle=""
+              data-noback=""
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                e.preventDefault()
+                // Пока вопрос тянут, порядок держит перетаскивание: стрелка сбила бы ему индексы.
+                if (e.currentTarget.closest('.reordering')) return
+                onMove(e.key === 'ArrowUp' ? -1 : 1)
+              }}
+            >
+              {icons.grip()}
+            </button>
+          ) : null}
         </div>
       </div>
       <input
@@ -158,6 +170,12 @@ export function FormBuilder({ value, onChange }: { value: BuilderForm; onChange:
   const [showCircle, setShowCircle] = useState(value.reviewers.kind === 'circle')
   const setFields = (fields: EventFormField[]): void => onChange({ ...value, fields })
   const setReviewers = (reviewers: ReviewerScope): void => onChange({ ...value, reviewers })
+  const listRef = useRef<HTMLDivElement>(null)
+  useListReorder(
+    listRef,
+    value.fields.map((f) => f.id),
+    (next) => setFields(next.map((id) => value.fields.find((f) => f.id === id)!)),
+  )
 
   const move = (index: number, dir: -1 | 1): void => {
     const next = [...value.fields]
@@ -196,12 +214,11 @@ export function FormBuilder({ value, onChange }: { value: BuilderForm; onChange:
   return (
     <>
       <SectionTitle>Блоки формы</SectionTitle>
-      <div className="fb-fields">
+      <div className="fb-fields" ref={listRef}>
         {value.fields.map((f, i) => (
           <FieldCard
             key={f.id}
             field={f}
-            index={i}
             count={value.fields.length}
             onChange={(next) => setFields(value.fields.map((x) => (x.id === f.id ? next : x)))}
             onRemove={() => setFields(value.fields.filter((x) => x.id !== f.id))}

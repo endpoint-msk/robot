@@ -17,7 +17,7 @@ import { useRemote } from '../remote'
 import { pop, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { InviteCandidate, InviteListResponse } from '../types'
-import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Found, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar, Profile } from '../components/people'
 import { MorphWord } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
@@ -27,12 +27,14 @@ import { SkRows } from '../components/skeleton'
 
 function PersonRow({
   person,
+  query,
   invited,
   busy,
   transfer,
   onInvite,
 }: {
   person: InviteCandidate
+  query: string
   invited: boolean
   busy: boolean
   transfer: boolean
@@ -74,12 +76,16 @@ function PersonRow({
       <Avatar user={person} className="req-avatar" profile />
       <div className="req-main">
         <Profile user={person} className="req-name">
-          {person.name}
+          <Found text={person.name} query={query} />
         </Profile>
         <div className="req-sub">
-          {[person.username ? '@' + person.username : '', transfer && person.attending ? 'уже придёт' : '']
-            .filter(Boolean)
-            .join(' · ')}
+          {person.username ? (
+            <>
+              @<Found text={person.username} query={query} />
+            </>
+          ) : null}
+          {person.username && transfer && person.attending ? ' · ' : null}
+          {transfer && person.attending ? 'уже придёт' : null}
         </div>
       </div>
       <div className="row-right">{right}</div>
@@ -90,6 +96,7 @@ function PersonRow({
 function Group({
   title,
   people,
+  query,
   invited,
   busyId,
   transfer = false,
@@ -97,6 +104,7 @@ function Group({
 }: {
   title: string
   people: InviteCandidate[]
+  query: string
   invited: Set<number>
   busyId: number | null
   transfer?: boolean
@@ -112,6 +120,7 @@ function Group({
             {i > 0 ? <Sep left={66} /> : null}
             <PersonRow
               person={p}
+              query={query}
               invited={invited.has(p.userId)}
               busy={busyId !== null}
               transfer={transfer}
@@ -213,8 +222,8 @@ export function Invite() {
         </div>
       ) : (
         <>
-          <Group title="Резиденты" people={residents} invited={invited} busyId={busyId} transfer={transfer} onInvite={invite} />
-          <Group title="Гости" people={guests} invited={invited} busyId={busyId} onInvite={invite} />
+          <Group title="Резиденты" people={residents} query={q} invited={invited} busyId={busyId} transfer={transfer} onInvite={invite} />
+          <Group title="Гости" people={guests} query={q} invited={invited} busyId={busyId} onInvite={invite} />
         </>
       )
   }

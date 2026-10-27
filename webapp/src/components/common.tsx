@@ -23,6 +23,25 @@ export const SectionTitle = ({ children, month }: { children: ReactNode; month?:
   </div>
 )
 
+/**
+ * Совпадение запроса в тексте цветом акцента, как найденное в поиске Telegram. Ищет так же,
+ * как фильтры поисков: первое вхождение без учёта регистра.
+ */
+export function Found({ text, query }: { text: string; query: string }) {
+  const q = query.trim().toLowerCase()
+  const low = text.toLowerCase()
+  const at = q ? low.indexOf(q) : -1
+  // У пары букв строчная форма другой длины («İ»): индексы разошлись бы с самим текстом.
+  if (at < 0 || low.length !== text.length) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="found">{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </>
+  )
+}
+
 export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?: ReactNode; chip?: ReactNode }) {
   // Пока своё действие ждёт сети, подзаголовок говорит об этом, как шапка Telegram.
   const net = netLabel(useNetState())

@@ -335,6 +335,12 @@ export const icons = {
       <path d="M2 6l3-3 3 3M2 10l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  /** Ручка перестановки, как у папок в настройках Telegram. */
+  grip: (): ReactElement => (
+    <svg width="18" height="12" viewBox="0 0 18 12">
+      <path d="M2 1.5h14M2 6h14M2 10.5h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
   /** Индикатор подключения из настроек iOS. */
   spinner: (size: number): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 20 20">

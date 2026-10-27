@@ -20,7 +20,7 @@ import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push, useStore } from '../store'
 import type { ArchiveResponse, ArchiveWeekSummary, GuestSearchResponse, GuestSummary } from '../types'
-import { BackRow, EmptyState, ErrorState, Header, Sep, SectionTitle } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Found, Header, Sep, SectionTitle } from '../components/common'
 import { Avatar } from '../components/people'
 import { FloatingMonth } from '../components/FloatingMonth'
 import { Screen } from '../components/Screen'
@@ -158,13 +158,19 @@ function ArchiveSkeleton() {
  */
 function GuestSearch({
   query,
+  match,
   guests,
   pending,
 }: {
   query: string
+  /** Запрос, по которому пришли строки (с задержкой набора), а не то, что в поле сейчас. */
+  match: string
   guests: GuestSummary[] | null
   pending: boolean
 }) {
+  // Сервер отбрасывает «@» в начале и ищет по имени, нику и номеру аккаунта. Номер в строке
+  // не показан, нашли по нему - строка без подсветки.
+  const q = match.trim().replace(/^@/, '')
   // Скелет тут короткий: это блок результатов внутри экрана, а не сам экран, и
   // на весь его рост он читался бы как загрузка всего архива заново.
   if (guests === null) {
@@ -200,9 +206,16 @@ function GuestSearch({
               {/* Базовый .avatar размера не задаёт — без класса строка сплющивает его в полоску. */}
               <Avatar user={g.user} className="req-avatar" />
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="week-title">{g.user.name}</div>
+                <div className="week-title">
+                  <Found text={g.user.name} query={q} />
+                </div>
                 <div className="week-sub">
-                  {g.user.username ? `@${g.user.username} · ` : ''}
+                  {g.user.username ? (
+                    <>
+                      @<Found text={g.user.username} query={q} />
+                      {' · '}
+                    </>
+                  ) : null}
                   {/* Дата не рвётся: иначе число оставалось в конце строки, а месяц уезжал на следующую. */}
                   {`последняя ${fmtShortDate(g.lastDateKey).replace(/ /g, '\u00a0')}`}
                 </div>
@@ -258,7 +271,7 @@ export function Archive() {
     )
   else body = <ArchiveList weeks={weeks.data} />
 
-  const search = found.error ? <ErrorState onRetry={found.reload} /> : <GuestSearch query={query} guests={found.data} pending={found.pending} />
+  const search = found.error ? <ErrorState onRetry={found.reload} /> : <GuestSearch query={query} match={debounced} guests={found.data} pending={found.pending} />
 
   return (
     <Screen>

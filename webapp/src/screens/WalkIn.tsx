@@ -11,7 +11,7 @@ import { useRemote } from '../remote'
 import { pop, useParams } from '../store'
 import { haptic } from '../telegram'
 import type { WalkInCandidate, WalkInCandidatesResponse } from '../types'
-import { ActionButton, BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
+import { ActionButton, BackRow, EmptyState, ErrorState, Found, Header, SectionTitle, Sep } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
@@ -20,13 +20,19 @@ import { SkRows } from '../components/skeleton'
 /** Тот же формат, что проверяет сервер: в Telegram ник от 4 до 32 символов. */
 const USERNAME_RE = /^@?[A-Za-z][A-Za-z0-9_]{3,31}$/
 
-function CandidateRow({ p, onAdd }: { p: WalkInCandidate; onAdd: () => Promise<unknown> }) {
+function CandidateRow({ p, query, onAdd }: { p: WalkInCandidate; query: string; onAdd: () => Promise<unknown> }) {
   return (
     <div className="row">
       <Avatar user={p} className="req-avatar" />
       <div className="req-main">
-        <div className="req-name">{p.name}</div>
-        {p.username ? <div className="req-sub">@{p.username}</div> : null}
+        <div className="req-name">
+          <Found text={p.name} query={query} />
+        </div>
+        {p.username ? (
+          <div className="req-sub">
+            @<Found text={p.username} query={query} />
+          </div>
+        ) : null}
       </div>
       <ActionButton className="host-btn" onClick={onAdd}>
         Отметить
@@ -76,7 +82,7 @@ export function WalkIn() {
             {list.map((p, i) => (
               <Fragment key={p.userId}>
                 {i > 0 ? <Sep left={66} /> : null}
-                <CandidateRow p={p} onAdd={() => add({ userId: p.userId })} />
+                <CandidateRow p={p} query={lower} onAdd={() => add({ userId: p.userId })} />
               </Fragment>
             ))}
           </div>

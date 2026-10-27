@@ -834,6 +834,8 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     cursor: pointer;
 }
 .search-clear:active { opacity: 0.6; }
+/* Найденное в поиске: буквы совпадения цветом акцента, как в поиске Telegram. */
+mark.found { background: none; color: var(--blue); }
 
 .card {
     background: var(--card);
@@ -4461,6 +4463,29 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 }
 .fb-icon-btn[disabled] { opacity: 0.35; }
 .fb-icon-btn.danger { color: var(--red); }
+/* Ручка перестановки вопроса: тянут сразу, без удержания, поэтому палец не прокручивает
+   страницу (touch-action). Поле касания шире самих полосок. */
+.fb-grip {
+    width: 36px;
+    height: 28px;
+    margin-right: -8px;
+    padding: 0;
+    border: none;
+    background: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(var(--sec), 0.45);
+    cursor: grab;
+    touch-action: none;
+}
+.fb-fields.reordering .fb-grip { cursor: grabbing; }
+/* Соседи расступаются по эталону «Захостить», поднятый вопрос идёт за пальцем без
+   перехода, а отпущенный доезжает в слот, и тень гаснет вместе с ходом. */
+.fb-fields.reordering .fb-field:not(.lifted) { transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fb-field.lifted, .fb-field.dropping { position: relative; z-index: 2; }
+.fb-field.lifted { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18); }
+.fb-field.dropping { transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .fb-input {
     width: 100%;
     border: 1px solid rgba(var(--sec), 0.14);

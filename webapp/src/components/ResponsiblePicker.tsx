@@ -11,16 +11,22 @@ import { pushOverlay } from '../overlays'
 import { useSheetDrag } from './useSheetDrag'
 import { useRemote } from '../remote'
 import type { EventPeopleResponse, ResponsibleCandidate, User } from '../types'
-import { Sep } from './common'
+import { Found, Sep } from './common'
 import { Avatar } from './people'
 
-function PersonRow({ user, on, onToggle }: { user: User; on: boolean; onToggle: () => void }) {
+function PersonRow({ user, query, on, onToggle }: { user: User; query: string; on: boolean; onToggle: () => void }) {
   return (
     <button type="button" className="row tappable" role="checkbox" aria-checked={on} onClick={onToggle}>
       <Avatar user={user} className="req-avatar" />
       <div className="req-main">
-        <div className="req-name">{user.name}</div>
-        {user.username ? <div className="req-sub">{'@' + user.username}</div> : null}
+        <div className="req-name">
+          <Found text={user.name} query={query} />
+        </div>
+        {user.username ? (
+          <div className="req-sub">
+            @<Found text={user.username} query={query} />
+          </div>
+        ) : null}
       </div>
       <div className={'checkbox' + (on ? ' on' : '')}>{on ? icons.check(13, '#fff', 2.6) : null}</div>
     </button>
@@ -30,11 +36,13 @@ function PersonRow({ user, on, onToggle }: { user: User; on: boolean; onToggle: 
 function Group({
   title,
   people,
+  query,
   selected,
   onToggle,
 }: {
   title: string
   people: ResponsibleCandidate[]
+  query: string
   selected: number[]
   onToggle: (u: User) => void
 }) {
@@ -46,7 +54,7 @@ function Group({
         {people.map((u, i) => (
           <div key={u.userId}>
             {i > 0 ? <Sep left={66} /> : null}
-            <PersonRow user={u} on={selected.includes(u.userId)} onToggle={() => onToggle(u)} />
+            <PersonRow user={u} query={query} on={selected.includes(u.userId)} onToggle={() => onToggle(u)} />
           </div>
         ))}
       </div>
@@ -134,8 +142,8 @@ export function ResponsibleSheet({
             <div className="fb-hint">Никого не нашлось.</div>
           ) : (
             <>
-              <Group title="Резиденты" people={residents} selected={ids} onToggle={toggle} />
-              <Group title="Гости" people={guests} selected={ids} onToggle={toggle} />
+              <Group title="Резиденты" people={residents} query={q} selected={ids} onToggle={toggle} />
+              <Group title="Гости" people={guests} query={q} selected={ids} onToggle={toggle} />
             </>
           )}
         </div>
