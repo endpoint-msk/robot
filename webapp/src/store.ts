@@ -4,7 +4,7 @@
 // перерисовку подписчиков.
 
 import { useSyncExternalStore } from 'react'
-import { heroRow, heroScreen, heroScreenOf, heroSwap, settleHero, themeSwap, type HeroKind } from './hero'
+import { heroRow, heroScreen, heroScreenOf, heroSwap, pageSwap, settleHero, themeSwap, type HeroKind } from './hero'
 import { pruneRemote } from './remote'
 import { applyTheme, loadTheme, saveTheme } from './theme'
 import type { Bootstrap, Perspective, ThemeChoice } from './types'
@@ -106,11 +106,16 @@ export const useParams = (): NavParams => {
 // --- Навигация ---
 
 /**
- * Смена стека. С общей главной кнопкой гостя (hero.ts) экран въезжает переходом, а класс
- * въезда снимается, чтобы не наложиться на него.
+ * Смена стека. С общей главной кнопкой гостя (hero.ts) и по касанию (`page`) экран въезжает
+ * переходом, а класс въезда снимается, чтобы не наложиться на него.
  */
-function navigate(patch: Partial<State>, hero?: { from: HTMLElement | null; to: () => HTMLElement | null; kind: HeroKind }): void {
+function navigate(
+  patch: Partial<State>,
+  hero?: { from: HTMLElement | null; to: () => HTMLElement | null; kind: HeroKind },
+  page?: 'push' | 'pop',
+): void {
   if (hero && heroSwap(() => commit(patch, null), hero.from, hero.to, hero.kind)) return
+  if (page && pageSwap(() => commit(patch, null), page)) return
   commit(patch, patch.anim ?? null)
 }
 
@@ -134,7 +139,7 @@ const leaving = (): NavEntry[] => {
 export function push(name: ScreenName, params: NavParams = {}, hero?: string): void {
   settleHero()
   const patch = { stack: [...leaving(), entry(name, params)], navId: state.navId + 1, anim: 'in-forward' as const }
-  navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: 'slide' } : undefined)
+  navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: 'slide' } : undefined, 'push')
 }
 
 /** Экран с общей главной кнопкой гостя (data-hero-screen) уходит, оставляя её на месте. */
@@ -144,7 +149,7 @@ export function pop(): void {
   const patch = { stack: state.stack.slice(0, -1), navId: state.navId + 1, anim: 'in-back' as const }
   const from = heroScreen()
   const key = from?.dataset.heroScreen
-  navigate(patch, key ? { from, to: () => heroRow(key), kind: 'slide-back' } : undefined)
+  navigate(patch, key ? { from, to: () => heroRow(key), kind: 'slide-back' } : undefined, 'pop')
 }
 
 /**
@@ -213,7 +218,7 @@ export function startNewRequest(params?: NavParams): void {
 export function replaceTop(name: ScreenName, params: NavParams = {}, hero?: string, slide = false): void {
   settleHero()
   const patch = { stack: [...state.stack.slice(0, -1), entry(name, params)], navId: state.navId + 1, anim: slide ? ('in-forward' as const) : null }
-  navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: slide ? 'slide' : 'replace' } : undefined)
+  navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: slide ? 'slide' : 'replace' } : undefined, slide ? 'push' : undefined)
 }
 
 // --- Прежний экран под верхним ---

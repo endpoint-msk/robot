@@ -18,7 +18,7 @@ import { useSheetDrag } from './components/useSheetDrag'
 import { requestsWord } from './dates'
 import { nb } from './format'
 import { icons } from './icons'
-import { animate, clamp, E, growField, mix, pr, reducedMotion } from './motion'
+import { animate, clamp, E, growField, mix, pr, reducedMotion, type Track } from './motion'
 import { pushOverlay } from './overlays'
 import { getState } from './store'
 import { haptic } from './telegram'
@@ -229,6 +229,10 @@ const stage = (() => {
     },
     set(p: number): void {
       if (app) app.style.transform = `scale(${(1 - DEPTH * clamp(p, 0, 1)).toFixed(4)})`
+    },
+    /** То же, что set, треком для пружины листа (useSheetDrag): её кадры ведёт система. */
+    under(): Track | null {
+      return app ? [app, (p) => ({ transform: `scale(${(1 - DEPTH * clamp(p, 0, 1)).toFixed(4)})` })] : null
     },
     end(): void {
       if (!app) return
@@ -659,6 +663,8 @@ function Layer({ modal, state }: { modal: SheetModal; state: 'on' | 'out' | 'par
 const SWAP_MS = 380
 /** Запас под тенью листа: за нижним краем она не должна выглядывать полоской. */
 const HIDE_PAD = 40
+/** Парящий лист стоит над краем на свой нижний отступ: спрятать его дальше на этот отступ. */
+const hiddenAt = (sheet: HTMLElement): number => sheet.offsetHeight + (parseFloat(getComputedStyle(sheet).marginBottom) || 0) + HIDE_PAD
 
 function ModalSheet({ list }: { list: Modal[] }) {
   const [shownId, setShownId] = useState(() => (topOf(list) ?? list.filter(isSheet).pop()!).id)
@@ -670,7 +676,7 @@ function ModalSheet({ list }: { list: Modal[] }) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const swapRef = useRef<HTMLDivElement>(null)
   const closing = useRef(false)
-  const control = useSheetDrag(sheetRef, dimRef, dismissTop, undefined, { onProgress: stage.set })
+  const control = useSheetDrag(sheetRef, dimRef, dismissTop, undefined, { onProgress: stage.set, under: stage.under })
 
   const finish = (): void => {
     stage.end()
@@ -717,7 +723,7 @@ function ModalSheet({ list }: { list: Modal[] }) {
     const sheet = sheetRef.current
     const dim = dimRef.current
     if (sheet && dim) {
-      sheet.style.transform = `translateY(${sheet.offsetHeight + HIDE_PAD}px)`
+      sheet.style.transform = `translateY(${hiddenAt(sheet)}px)`
       dim.style.opacity = '0'
     }
     stage.begin()
@@ -728,7 +734,8 @@ function ModalSheet({ list }: { list: Modal[] }) {
       finish()
       return
     }
-    control.current?.open((sheetRef.current?.offsetHeight ?? 0) + HIDE_PAD)
+    const sheet = sheetRef.current
+    control.current?.open(sheet ? hiddenAt(sheet) : HIDE_PAD)
   }, [])
 
   useLayoutEffect(() => {

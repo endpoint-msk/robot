@@ -1,7 +1,7 @@
-// Переходы на View Transitions API: главная кнопка гостя, общая у соседних экранов (ключ
-// `cta`), и тема, расходящаяся кругом. У кнопки на обоих экранах одинаковое
-// view-transition-name, и браузер ведёт её со старого места на новое, а экраны вокруг
-// въезжают как обычно.
+// Переходы на View Transitions API: экран по касанию въезжает целиком, главная кнопка
+// гостя, общая у соседних экранов (ключ `cta`), и тема, расходящаяся кругом. У кнопки на
+// обоих экранах одинаковое view-transition-name, и браузер ведёт её со старого места на
+// новое, а экраны вокруг въезжают как обычно.
 //
 // Разметка: источник помечается data-hero="<ключ>", экран data-hero-screen="<ключ>", части
 // data-hero-part. Имена ставятся только на время перехода: два элемента с одним именем в
@@ -86,8 +86,21 @@ export type HeroKind = 'replace' | 'slide' | 'slide-back'
  */
 export function heroSwap(update: () => void, from: HTMLElement | null, to: () => HTMLElement | null, kind: HeroKind): boolean {
   if (!from || !heroSupported()) return false
+  return swap(update, partsOf(from), to, kind)
+}
+
+/**
+ * Экран по касанию въезжает целиком, а «назад» уходит обратным ходом (app.css, push и pop):
+ * та же геометрия, что у свайпа назад. В окне шире колонки экран во всё окно ехал бы мимо
+ * неё, поэтому в Desktop, как и без View Transitions, остаётся прежнее проявление.
+ */
+export function pageSwap(update: () => void, kind: 'push' | 'pop'): boolean {
+  if (!heroSupported() || window.innerWidth > 520) return false
+  return swap(update, [], () => null, kind)
+}
+
+function swap(update: () => void, src: HTMLElement[], to: () => HTMLElement | null, kind: HeroKind | 'push' | 'pop'): boolean {
   const html = document.documentElement
-  const src = partsOf(from)
   let dst: HTMLElement[] = []
   html.dataset.vt = kind
   setNames(src, true)
@@ -120,11 +133,15 @@ export function heroSwap(update: () => void, from: HTMLElement | null, to: () =>
 }
 
 async function settle(vt: ViewTransition, mine: number, clean: () => void): Promise<void> {
+  // Переход, который начался и не закончился (сбой вебвью), держал бы экран без касаний:
+  // на время перехода html под pointer-events: none. Через 1,5 с он доводится сразу.
+  const stuck = window.setTimeout(() => vt.skipTransition(), 1500)
   try {
     await vt.finished
   } catch {
     // Переход сорвался (например, его перебил следующий): дерево уже новое, чистим имена.
   }
+  window.clearTimeout(stuck)
   clean()
   if (mine !== generation) return
   delete document.documentElement.dataset.vt

@@ -372,6 +372,152 @@ export const spring = (
   }
 }
 
+// --- кадры системе -----------------------------------------------------------------
+// На iPhone с 120 Гц вебвью Telegram рисует то, что двигает requestAnimationFrame, на 60
+// кадрах, а Web Animations по transform и opacity отдаёт Core Animation, и они идут на 120.
+// Поэтому доводки без пальца уходят системе готовыми кадрами. Чтобы не дёрнулось:
+// - в кадрах только transform и opacity: с любым другим свойством WebKit ведёт анимацию сам,
+//   на 60, а то, что меняется в том же кадре другим путём, разъедется с ней (поэтому
+//   листалки с полосой, высотой и точками и жест «вниз» с clip-path остаются на кадрах JS);
+// - конечный вид ставится инлайном до старта, анимация без fill: в конце ничего не
+//   откатывается и не залипает поверх следующих правок;
+// - остановка сначала ставит инлайном вид текущего момента и только потом снимает анимацию:
+//   пока она идёт, она перекрывает инлайн, и жест поверх неё был бы не виден.
+
+/** Вид элемента: только то, что система ведёт сама. */
+export type Look = { transform?: string; opacity?: string }
+/** Элемент и его вид при значении v (время в мс или положение пружины). */
+export type Track = readonly [HTMLElement | null | undefined, (v: number) => Look]
+
+const waapi = typeof Element !== 'undefined' && typeof Element.prototype.animate === 'function'
+/** Шаг кадров, 120 в секунду: между ними анимация линейна. */
+const STEP_MS = 1000 / 120
+
+const putLook = (el: HTMLElement, look: Look): void => {
+  if (look.transform !== undefined) el.style.transform = look.transform
+  if (look.opacity !== undefined) el.style.opacity = look.opacity
+}
+const keyframe = (look: Look, offset: number): Keyframe => {
+  const k: Keyframe = { offset }
+  if (look.transform !== undefined) k.transform = look.transform
+  if (look.opacity !== undefined) k.opacity = look.opacity
+  return k
+}
+
+/**
+ * Проигрывает вид `tracks` от 0 до `dur` мс кадрами системы. Возвращает остановку: элементы
+ * замирают там, где их застала остановка, а она отдаёт этот момент в мс. Без Web Animations
+ * кадры рисует requestAnimationFrame, при уменьшенном движении сразу встаёт конечный вид.
+ */
+export function play(dur: number, tracks: readonly Track[], done?: () => void): { stop: () => number } {
+  const live = tracks.filter((t): t is readonly [HTMLElement, (v: number) => Look] => Boolean(t[0]))
+  const at = (t: number): void => live.forEach(([el, look]) => putLook(el, look(t)))
+  const t0 = performance.now()
+  let over = false
+  if (!waapi || reducedMotion() || live.length === 0) {
+    const cancel = animate(dur, at, () => {
+      over = true
+      done?.()
+    })
+    return {
+      stop: () => {
+        if (over) return dur
+        over = true
+        cancel()
+        const t = Math.min(dur, performance.now() - t0)
+        at(t)
+        return t
+      },
+    }
+  }
+  const n = Math.max(1, Math.ceil(dur / STEP_MS))
+  const anims = live.map(([el, look]) => {
+    const frames: Keyframe[] = []
+    for (let i = 0; i <= n; i++) frames.push(keyframe(look((dur * i) / n), i / n))
+    putLook(el, look(dur))
+    const a = el.animate(frames, { duration: dur, easing: 'linear' })
+    // Снятая анимация отклоняет finished: без обработчика это ошибка в консоли.
+    a.finished.catch(() => {})
+    return a
+  })
+  anims[0]!.finished.then(
+    () => {
+      if (over) return
+      over = true
+      done?.()
+    },
+    () => {},
+  )
+  return {
+    stop: () => {
+      if (over) return dur
+      over = true
+      // До первого кадра время анимации ещё не идёт (null): тогда считаем от старта.
+      const ct = anims[0]!.currentTime
+      const t = clamp(typeof ct === 'number' ? ct : performance.now() - t0, 0, dur)
+      at(t)
+      anims.forEach((a) => a.cancel())
+      return t
+    },
+  }
+}
+
+/**
+ * `spring` с кадрами системе: `tracks` дают вид при положении x. `frame(x)` ставит положение
+ * и его вид, как у `spring`: конечное до старта, текущее при остановке и конечное в конце.
+ * Остановка, скорость и `value` отдают то, что сейчас на экране, и новое касание
+ * подхватывает движение оттуда.
+ */
+export const springPlay = (
+  from: number,
+  to: number,
+  velocity: number,
+  s: SpringOpts,
+  tracks: readonly Track[],
+  frame: (x: number) => void,
+  done?: () => void,
+  eps = 0.5,
+): { stop: () => void; velocity: () => number; value: () => number } => {
+  if (!waapi || reducedMotion()) {
+    let cur = from
+    const sp = spring(from, to, velocity, s, (x) => {
+      cur = x
+      frame(x)
+    }, done, eps)
+    return { stop: sp.stop, velocity: sp.velocity, value: () => cur }
+  }
+  // Длина та же, что у spring: пока смещение и скорость не меньше точности.
+  let len = 0
+  for (let t = 0; t < 3; t += STEP_MS / 1000) {
+    len = t
+    const p = springAt(from - to, velocity, s, t)
+    if (Math.abs(p.x) < eps && Math.abs(p.v) < eps * 10) break
+  }
+  const dur = Math.max(STEP_MS, len * 1000)
+  const xAt = (ms: number): number => (ms >= dur ? to : to + springAt(from - to, velocity, s, ms / 1000).x)
+  const t0 = performance.now()
+  let stoppedAt: number | null = null
+  frame(to)
+  const run = play(
+    dur,
+    tracks.map(([el, look]): Track => [el, (ms) => look(xAt(ms))]),
+    () => {
+      frame(to)
+      done?.()
+    },
+  )
+  const elapsed = (): number => stoppedAt ?? Math.min(dur, performance.now() - t0)
+  return {
+    stop: () => {
+      if (stoppedAt !== null) return
+      stoppedAt = run.stop()
+      frame(xAt(stoppedAt))
+    },
+    velocity: () => (elapsed() >= dur ? 0 : springAt(from - to, velocity, s, elapsed() / 1000).v),
+    value: () => xAt(elapsed()),
+  }
+}
+
 /**
  * Пружина без перелёта при любом броске: у критического затухания тело, брошенное к
  * цели быстрее w0·|x0|, проскакивает её и возвращается, и доводка читается желе. Такую

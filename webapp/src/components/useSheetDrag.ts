@@ -3,7 +3,7 @@
 // жесту ничего не мешает.
 
 import { useEffect, useRef, type RefObject } from 'react'
-import { clamp, project, rubber, spring, tracker, type SpringOpts } from '../motion'
+import { clamp, project, rubber, springPlay, tracker, type SpringOpts, type Track } from '../motion'
 
 const BACK = { response: 0.3, damping: 1 }
 /** Подъём без перелёта: подпрыгнувший лист читался желе, а не ответом. */
@@ -28,14 +28,15 @@ export type SheetControl = {
  * у остальных за всю шторку, но лишь пока её содержимое прокручено к началу: иначе
  * жест вниз это прокрутка списка. `dismiss` закрывает шторку так же, как кнопка.
  * `onProgress` получает долю открытия (1 открыта, 0 за краем) на каждом кадре жеста и
- * пружин: за ней едет то, что лежит под шторкой.
+ * пружин: за ней едет то, что лежит под шторкой. `under` даёт то же самое пружинам
+ * треком (элемент и его вид при доле открытия): их кадры ведёт система.
  */
 export function useSheetDrag(
   sheetRef: RefObject<HTMLElement | null>,
   overlayRef: RefObject<HTMLElement | null>,
   dismiss: () => void,
   handle?: string,
-  opts?: { onProgress?: (p: number) => void },
+  opts?: { onProgress?: (p: number) => void; under?: () => Track | null },
 ): RefObject<SheetControl | null> {
   const control = useRef<SheetControl | null>(null)
   useEffect(() => {
@@ -48,7 +49,11 @@ export function useSheetDrag(
     // Высота снимается на касании: замер после записи transform заставил бы браузер
     // пересчитывать стили на каждом кадре жеста и пружины.
     let h = 1
-    let settle: { stop: () => void; velocity: () => number } | null = null
+    let settle: { stop: () => void; velocity: () => number; value: () => number } | null = null
+    // Парящий лист стоит над краем на свой нижний отступ (app.css, --sheet-gap): уехать за
+    // край ему дальше на этот отступ. Отступ, а не расстояние до низа окна: на iOS обёртку
+    // с листом поднимает клавиатура.
+    const reach = (): number => sheet.offsetHeight + (parseFloat(getComputedStyle(sheet).marginBottom) || 0)
     // Пружина, которую остановило касание. Смахивания не вышло (тап по кнопке на подъёме,
     // жест вбок) - она доезжает туда же, куда ехала: иначе шторка так и стояла бы
     // сдвинутой, а её кнопки не нажимались.
@@ -79,9 +84,19 @@ export function useSheetDrag(
       }
       onProgress?.(1)
     }
+    // Пружину ведёт система (springPlay): то же, что красит set, треками.
+    const tracks = (): Track[] => {
+      const under = opts?.under?.()
+      const open = (v: number): number => clamp(1 - v / h, 0, 1)
+      return [
+        [sheet, (v) => ({ transform: `translateY(${v.toFixed(1)}px)` })],
+        [overlayRef.current, (v) => ({ opacity: String(Math.max(0, Math.min(1, 1 - Math.max(v, 0) / h))) })],
+        ...(under ? [[under[0], (v: number) => under[1](open(v))] as Track] : []),
+      ]
+    }
     const run = (to: number, v: number, s: SpringOpts, done: () => void, eps: number): void => {
       resume = () => run(to, 0, s, done, eps)
-      settle = spring(y, to, v, s, set, () => {
+      settle = springPlay(y, to, v, s, tracks(), set, () => {
         settle = null
         resume = null
         done()
@@ -99,7 +114,7 @@ export function useSheetDrag(
         settle?.stop()
         drag = null
         dragged = false
-        h = sheet.offsetHeight || 1
+        h = reach() || 1
         if (from !== undefined) set(from)
         run(0, from === undefined ? v0 : 0, OPEN, reset, 0.5)
       },
@@ -107,10 +122,11 @@ export function useSheetDrag(
         const v0 = settle?.velocity() ?? 0
         settle?.stop()
         drag = null
-        h = sheet.offsetHeight || 1
+        h = reach() || 1
         run(h, Math.max(v0, 0), BACK, done, 1)
       },
-      offset: () => y,
+      // Пока лист ведёт система, y уже стоит в конце пружины: место на экране у неё.
+      offset: () => (settle ? settle.value() : y),
     }
 
     const scrolledInside = (t: Element | null): boolean => {
@@ -126,7 +142,7 @@ export function useSheetDrag(
       // Колесо крутится само: жест вниз по нему это прокрутка, а не смахивание.
       if (t.closest('input, textarea, .tp-wheel')) return
       settle?.stop()
-      h = sheet.offsetHeight || 1
+      h = reach() || 1
       drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY - y, on: false }
       vt.start(e.clientY, e.timeStamp)
     }
@@ -181,15 +197,39 @@ export function useSheetDrag(
       }
     }
 
+    // Высокий лист и лист с полем в фокусе прилипают к краям (app.css, .attached), как лист
+    // во всю высоту в iOS. Прилипший только выше: высота с ним растёт на отступ над домашней
+    // полоской, и решение не мечется туда-сюда.
+    let field = false
+    const fit = (): void => {
+      sheet.classList.toggle('attached', field || sheet.offsetHeight > window.innerHeight * 0.8)
+    }
+    // Между двумя полями фокус уходит и приходит: смотрим, где он встал, кадром позже.
+    const onFocus = (): void => {
+      requestAnimationFrame(() => {
+        const a = document.activeElement
+        field = Boolean(a && sheet.contains(a) && a.matches('input, textarea'))
+        fit()
+      })
+    }
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null
+    ro?.observe(sheet)
+    fit()
+
     sheet.addEventListener('pointerdown', onDown)
     sheet.addEventListener('pointermove', onMove)
     sheet.addEventListener('pointerup', onUp)
     sheet.addEventListener('pointercancel', onUp)
     sheet.addEventListener('touchmove', onTouchMove, { passive: false })
     sheet.addEventListener('click', onClick, true)
+    sheet.addEventListener('focusin', onFocus)
+    sheet.addEventListener('focusout', onFocus)
     return () => {
       settle?.stop()
+      ro?.disconnect()
       control.current = null
+      sheet.removeEventListener('focusin', onFocus)
+      sheet.removeEventListener('focusout', onFocus)
       sheet.removeEventListener('pointerdown', onDown)
       sheet.removeEventListener('pointermove', onMove)
       sheet.removeEventListener('pointerup', onUp)

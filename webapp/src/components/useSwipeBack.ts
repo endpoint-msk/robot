@@ -9,7 +9,8 @@
 // у листалок, поэтому прокрутка вниз жест не задевает.
 
 import { useEffect, type RefObject } from 'react'
-import { clamp, EDGE_ZONE, holdSelection, landing, project, spring, tracker, type SpringOpts } from '../motion'
+import { clamp, EDGE_ZONE, holdSelection, landing, project, springPlay, tracker, type Look, type SpringOpts, type Track } from '../motion'
+import { heroRunning } from '../hero'
 import { hasOverlay } from '../overlays'
 import { getState, popStill, setUnder, underMode } from '../store'
 import { haptic } from '../telegram'
@@ -39,8 +40,8 @@ let active = false
 /** Идёт свайп назад: листалки в это время не берут ни палец, ни колесо. */
 export const swipingBack = (): boolean => active
 
-/** Есть куда уйти, и поверх экрана ничего не открыто. */
-export const canSwipeBack = (): boolean => getState().stack.length > 1 && !hasOverlay() && underMode() === null
+/** Есть куда уйти, поверх экрана ничего не открыто, и экран не въезжает переходом. */
+export const canSwipeBack = (): boolean => getState().stack.length > 1 && !hasOverlay() && underMode() === null && !heroRunning()
 
 /** Касание принадлежит чужому жесту: своему ведению, прокрутке вбок или листалке не на первой странице. */
 const refused = (target: EventTarget | null, screen: HTMLElement): boolean => {
@@ -114,10 +115,23 @@ export function useSwipeBack(screenRef: RefObject<HTMLElement | null>, enabled: 
       setUnder(null)
     }
 
+    // Доводку после отпускания ведёт система (springPlay): то же, что красит paint, треками
+    // на элементы, найденные один раз на старте пружины.
+    const tracks = (): Track[] => {
+      const shift = (to: number): Look => ({ transform: `translate3d(${to.toFixed(2)}px, 0, 0)` })
+      const k = (to: number): number => clamp(to / width, 0, 1)
+      return [
+        [screen, shift],
+        ...Array.from(bars(), (b): Track => [b, shift]),
+        [zoom(), (to) => ({ transform: `translate3d(${(-PARALLAX * width * (1 - k(to))).toFixed(2)}px, 0, 0)` })],
+        [dim(), (to) => ({ opacity: (DIM * (1 - k(to))).toFixed(3) })],
+      ]
+    }
+
     // Прежний экран под верхним уже стоит целиком, подменять его незачем.
     const away = (v: number): void => {
       leaving = true
-      motion = spring(x, width + 24, Math.max(v, 900), AWAY_SPRING, paint, () => {
+      motion = springPlay(x, width + 24, Math.max(v, 900), AWAY_SPRING, tracks(), paint, () => {
         motion = null
         active = false
         popStill()
@@ -132,7 +146,7 @@ export function useSwipeBack(screenRef: RefObject<HTMLElement | null>, enabled: 
         away(v)
         return
       }
-      motion = spring(x, 0, landing(x, v, BACK_SPRING), BACK_SPRING, paint, () => {
+      motion = springPlay(x, 0, landing(x, v, BACK_SPRING), BACK_SPRING, tracks(), paint, () => {
         motion = null
         finish()
       })

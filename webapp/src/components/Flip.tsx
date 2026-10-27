@@ -3,7 +3,7 @@
 // движения (см. ownTapRecent).
 
 import { useLayoutEffect, useRef, useState } from 'react'
-import { animate, E, ownTapRecent, pr } from '../motion'
+import { animate, E, ownTapRecent, play, pr } from '../motion'
 
 /**
  * `delay` сдвигает перещёлкивание: на одном тапе такты идут волной, а не все разом.
@@ -28,16 +28,16 @@ export function Flip({ value, delay = 0, still = false }: { value: number | stri
     const a = aRef.current
     const b = bRef.current
     if (from === null || !a || !b) return
-    return animate(
+    const p = (t: number): number => pr(t, delay, 340, E.crisp)
+    const run = play(
       delay + 340,
-      (t) => {
-        const p = pr(t, delay, 340, E.crisp)
-        a.style.transform = `translateY(${(-p * 100).toFixed(2)}%)`
-        a.style.opacity = String(Math.max(0, 1 - p * 1.2))
-        b.style.transform = `translateY(${((1 - p) * 100).toFixed(2)}%)`
-      },
+      [
+        [a, (t) => ({ transform: `translateY(${(-p(t) * 100).toFixed(2)}%)`, opacity: String(Math.max(0, 1 - p(t) * 1.2)) })],
+        [b, (t) => ({ transform: `translateY(${((1 - p(t)) * 100).toFixed(2)}%)` })],
+      ],
       () => setFrom(null),
     )
+    return () => void run.stop()
   }, [from])
 
   if (from === null) return <>{text}</>

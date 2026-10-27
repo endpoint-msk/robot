@@ -7,6 +7,7 @@ import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { api } from './api'
 import { foldOut, reappear, vanish, type Dust } from './dust'
+import { heroRunning } from './hero'
 import { showAlert } from './modals'
 import { setData } from './store'
 import { haptic } from './telegram'
@@ -113,12 +114,13 @@ export const topScreen = (): HTMLElement | null =>
 
 /**
  * Навигация сменила экран (верхний уже не `from`), и новый доехал: снимок на ходу поймал
- * бы строку сдвинутой и полупрозрачной.
+ * бы строку сдвинутой и полупрозрачной. Въезд переходом (hero.ts) ведёт не сам экран, а
+ * его снимок, поэтому ждём и конца перехода.
  */
 export const screenSettled = (from: HTMLElement | null): Promise<void> =>
   until(() => {
     const top = topScreen()
-    return !!top && top !== from && top.getAnimations().length === 0
+    return !!top && top !== from && top.getAnimations().length === 0 && !heroRunning()
   }, 1000)
 
 /** Строка по ключу `data-dust`: так её находят и после ухода с экрана, и после возврата. */

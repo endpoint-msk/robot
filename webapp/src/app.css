@@ -14,6 +14,9 @@
        стекла iOS. Готовым цветом, а не color-mix: без его поддержки (iOS до 16.2) переменная
        с color-mix обнуляет фон целиком, и плашка становится прозрачной. */
     --bg-glass: rgba(242, 242, 247, 0.82);
+    /* Подкраска размытого края под нижней кнопкой: фон наполовину, чтобы экран под кнопкой
+       читался, а не пропадал. Тоже готовым цветом, по той же причине, что и --bg-glass. */
+    --bg-edge: rgba(242, 242, 247, 0.5);
     --card: #ffffff;
     --text: #1c1c1e;
     /* rgb-тройка вторичного цвета: из неё собираются все полупрозрачные оттенки. */
@@ -75,9 +78,16 @@
     --ok-soft-strong: rgba(52, 199, 89, 0.12);
     --ev-bg: rgba(191, 90, 242, 0.1);
     --radius-card: 22px;
-    /* Радиус кнопки. Раньше у полноширинных кнопок одного экрана было три разных
-       значения (15, 16 и 22), и разница читалась как сбой вёрстки, а не иерархия. */
-    --radius-btn: 16px;
+    /* Кнопки капсулой, как в iOS 26 и как пиллы («Захостить», «Я приду»): у одного экрана
+       одна форма кнопки. Раньше у полноширинных было три радиуса (15, 16 и 22), и разница
+       читалась как сбой вёрстки, а не иерархия. У плиток гостя («Как пройти», «Активность»)
+       свой радиус: капсулой они читались бы кнопками действия. */
+    --radius-btn: 999px;
+    --radius-tile: 16px;
+    /* Лист парит, как невысокий лист iOS 26: 38 = кнопка в листе (22) + поле листа (16),
+       и углы листа идут параллельно углам кнопок. Снизу отступ над домашней полоской. */
+    --radius-sheet: 38px;
+    --sheet-gap: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     /* Отступ содержимого карточки от её края. Строки, заголовки секций над карточками и
        разделители (Sep) начинаются с одной линии: при 14 у строк и 18 у заголовка глаз
        видел лесенку. */
@@ -103,6 +113,7 @@
     --bg: #000000;
     --bg-0: rgba(0, 0, 0, 0);
     --bg-glass: rgba(0, 0, 0, 0.82);
+    --bg-edge: rgba(0, 0, 0, 0.5);
     --card: #1c1c1e;
     --text: #ffffff;
     --sec: 235, 235, 245;
@@ -340,7 +351,7 @@ body {
     .bottom-bar.in-forward, .bottom-bar.in-back, .bottom-bar.in-fade { animation: screen-in 0.12s ease; }
 }
 
-/* Переходы View Transitions (hero.ts): главная кнопка гостя и тема. */
+/* Переходы View Transitions (hero.ts): экран целиком, главная кнопка гостя и тема. */
 /* Подложка перехода в цвет фона: пока старый кадр гаснет, а новый ещё проявляется, сквозь
    оба просвечивал фон вебвью (в Telegram он бывает белым), и экран вспыхивал белым. */
 ::view-transition { background: var(--bg); }
@@ -348,11 +359,34 @@ body {
     animation-duration: 0.36s;
     animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-/* Главная кнопка гостя общая у соседних экранов, а сами экраны въезжают как обычно. */
-html[data-vt="slide"]::view-transition-new(root) { animation: slide-from-right 0.24s cubic-bezier(0.32, 0.72, 0, 1) both; }
-html[data-vt="slide-back"]::view-transition-new(root) { animation: slide-from-left 0.24s cubic-bezier(0.32, 0.72, 0, 1) both; }
-html[data-vt="slide"]::view-transition-old(*),
-html[data-vt="slide-back"]::view-transition-old(*) { animation: vt-out 0.1s ease both; }
+/* Экран по касанию въезжает целиком, прежний уходит под него на треть и темнеет: та же
+   геометрия, что у свайпа назад (useSwipeBack, .screen-under.swipe), затемнение 0,2 это
+   яркость 0,8. «Назад» обратным ходом, уходящий экран сверху. С главной кнопкой гостя
+   (slide) экраны едут так же, а сама кнопка стоит на месте. Смешение plus-lighter, которое
+   браузер ставит паре снимков, сложило бы экраны там, где они перекрываются. */
+html[data-vt="push"]::view-transition-old(root), html[data-vt="push"]::view-transition-new(root),
+html[data-vt="pop"]::view-transition-old(root), html[data-vt="pop"]::view-transition-new(root),
+html[data-vt="slide"]::view-transition-old(root), html[data-vt="slide"]::view-transition-new(root),
+html[data-vt="slide-back"]::view-transition-old(root), html[data-vt="slide-back"]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation-duration: 0.36s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    animation-fill-mode: both;
+}
+html[data-vt="push"]::view-transition-old(root), html[data-vt="slide"]::view-transition-old(root) { animation-name: vt-under-out; }
+html[data-vt="push"]::view-transition-new(root), html[data-vt="slide"]::view-transition-new(root) { animation-name: vt-page-in; box-shadow: 0 0 28px rgba(0, 0, 0, 0.16); }
+html[data-vt="pop"]::view-transition-old(root), html[data-vt="slide-back"]::view-transition-old(root) { z-index: 1; animation-name: vt-page-out; box-shadow: 0 0 28px rgba(0, 0, 0, 0.16); }
+html[data-vt="pop"]::view-transition-new(root), html[data-vt="slide-back"]::view-transition-new(root) { animation-name: vt-under-in; }
+@keyframes vt-page-in { from { transform: translateX(100%); } }
+@keyframes vt-page-out { to { transform: translateX(100%); } }
+@keyframes vt-under-out { to { transform: translateX(-30%); filter: brightness(0.8); } }
+@keyframes vt-under-in { from { transform: translateX(-30%); filter: brightness(0.8); } }
+/* Палец, попавший в экран на ходу, нажал бы то, что встанет под ним в конце, а не то, что
+   видно: касания ждут конца въезда. */
+html[data-vt="push"], html[data-vt="pop"], html[data-vt="slide"], html[data-vt="slide-back"] { pointer-events: none; }
+/* Главная кнопка гостя при въезде экрана: прежняя подпись гаснет сразу, новая проявляется. */
+html[data-vt="slide"]::view-transition-old(h-cta), html[data-vt="slide"]::view-transition-old(h-cta-label),
+html[data-vt="slide-back"]::view-transition-old(h-cta), html[data-vt="slide-back"]::view-transition-old(h-cta-label) { animation: vt-out 0.1s ease both; }
 /* Тема расходится кругом из точки касания (store.ts, setThemeFrom). */
 html[data-vt="theme"]::view-transition-old(root) { animation: none; }
 html[data-vt="theme"]::view-transition-new(root) { animation: vt-theme 0.55s cubic-bezier(0.32, 0.72, 0, 1) both; }
@@ -371,7 +405,7 @@ html[data-vt="replace"]::view-transition-new(root) { animation: vt-rise 0.42s cu
    отправке капсула вырастает в карточку статуса, и её содержимое проявляется следом.
    Снимки капсулы без подписи (она отдельная часть), поэтому растягиваются по рамке
    целиком, а углы держит пара снимков. */
-::view-transition-image-pair(h-cta) { border-radius: 16px; overflow: hidden; }
+::view-transition-image-pair(h-cta) { border-radius: 25px; overflow: hidden; }
 ::view-transition-old(h-cta), ::view-transition-new(h-cta) { width: 100%; height: 100%; object-fit: cover; }
 ::view-transition-old(h-cta) { animation: vt-out 0.24s ease-out both; }
 ::view-transition-new(h-cta) { animation: vt-in 0.24s ease-out both; }
@@ -576,19 +610,32 @@ html.sheet-recede .float-month { top: calc(var(--sheet-vt, 0px) + 10px); }
     pointer-events: none;
     transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* Лист парит (--radius-sheet, --sheet-gap). Прилипший (attached, ставит useSheetDrag:
+   высокий или с полем в фокусе) встаёт к краям, как лист во всю высоту в iOS: над
+   клавиатурой отступ висел бы полосой затемнения. Радиус доезжает, а отступы встают
+   сразу: в тот же момент iOS подтягивает поле над клавиатурой. */
 .modal-sheet {
     position: relative;
-    width: 100%;
-    max-width: 520px;
-    border-radius: 22px 22px 0 0;
+    width: calc(100% - 16px);
+    max-width: 504px;
+    margin-bottom: var(--sheet-gap);
+    border-radius: var(--radius-sheet);
     background: var(--bg);
-    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.14);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
     pointer-events: auto;
     will-change: transform;
+    transition: border-radius 0.2s ease;
 }
-/* Пружина подъёма перелетает вверх, резинка тянет лист вверх: фон продолжается под
-   листом, иначе в зазоре у нижнего края проступало бы затемнение. */
-.modal-sheet::after {
+.modal-sheet.attached {
+    width: 100%;
+    max-width: 520px;
+    margin-bottom: 0;
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.14);
+}
+/* Прилипший лист пружина и резинка тянут вверх: фон продолжается под ним, иначе в зазоре
+   у нижнего края проступало бы затемнение. Под парящим зазор и так виден. */
+.modal-sheet.attached::after {
     content: "";
     position: absolute;
     left: 0;
@@ -603,8 +650,9 @@ html.sheet-recede .float-month { top: calc(var(--sheet-vt, 0px) + 10px); }
     max-height: calc(var(--modal-vh, 100vh) - 35px - var(--tg-content-safe-area-inset-top, 0px));
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0 16px calc(16px + var(--tg-safe-area-inset-bottom, 0px));
+    padding: 0 16px 16px;
 }
+.modal-sheet.attached > .modal-scroll { padding-bottom: calc(16px + var(--tg-safe-area-inset-bottom, 0px)); }
 .modal-swap { position: relative; }
 /* flow-root: отступы содержимого входят в замер высоты при смене вопроса. */
 .modal-layer { display: flow-root; padding-top: 12px; }
@@ -1571,7 +1619,7 @@ span.collapse { display: block; }
     min-height: 56px;
     padding: 12px;
     border: none;
-    border-radius: var(--radius-btn);
+    border-radius: var(--radius-tile);
     background: var(--card);
     box-shadow: var(--shadow-card);
     font-family: inherit;
@@ -1631,20 +1679,31 @@ span.collapse { display: block; }
 .status-card.proposal .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .note-warn { display: inline-block; margin-top: 6px; color: var(--text); font-weight: 600; }
 
+/* Парит и прилипает, как .modal-sheet. Спрятан целиком: вместе с отступом снизу. */
 .resp-sheet {
     display: flex;
     flex-direction: column;
-    width: 100%;
+    width: calc(100% - 16px);
+    max-width: 504px;
+    margin: 0 auto var(--sheet-gap);
     max-height: 85vh;
     background: var(--bg);
-    border-radius: 20px 20px 0 0;
-    padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
-    transform: translateY(100%);
-    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+    border-radius: var(--radius-sheet);
+    padding-bottom: 8px;
+    transform: translateY(calc(100% + var(--sheet-gap) + 40px));
+    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease;
     will-change: transform;
 }
+.resp-sheet.attached {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
 .tp-overlay.shown .resp-sheet { transform: none; }
-.resp-sheet .tp-bar { background: var(--bg); border-radius: 20px 20px 0 0; }
+.resp-sheet .tp-bar { background: var(--bg); border-radius: var(--radius-sheet) var(--radius-sheet) 0 0; transition: border-radius 0.2s ease; }
+.resp-sheet.attached .tp-bar { border-radius: 20px 20px 0 0; }
 .resp-search { padding: 10px 16px 4px; }
 .resp-body { overflow-y: auto; padding: 4px 16px 16px; -webkit-overflow-scrolling: touch; }
 .resp-group-title {
@@ -1995,16 +2054,26 @@ button.agenda-banner:active { opacity: 0.6; }
 }
 .tp-overlay.shown { opacity: 1; }
 
+/* Парит и прилипает, как .modal-sheet. Спрятан целиком: вместе с отступом снизу. */
 .tp-sheet {
-    width: 100%;
+    width: calc(100% - 16px);
+    max-width: 504px;
+    margin: 0 auto var(--sheet-gap);
     background: var(--card);
+    border-radius: var(--radius-sheet);
+    padding-bottom: 8px;
+    transform: translateY(calc(100% + var(--sheet-gap) + 40px));
+    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease;
+    will-change: transform;
+}
+.tp-sheet.attached {
+    width: 100%;
+    max-width: none;
+    margin: 0;
     border-radius: 20px 20px 0 0;
     /* Единственное место, где отступ считался через env(): в вебвью Telegram он
        отдаёт ноль, и низ шторки упирался в домашний индикатор. */
     padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
-    transform: translateY(100%);
-    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
-    will-change: transform;
 }
 .tp-overlay.shown .tp-sheet { transform: none; }
 
@@ -2328,10 +2397,30 @@ button.agenda-banner:active { opacity: 0.6; }
     right: 0;
     bottom: 0;
     padding: 12px 16px calc(16px + var(--tg-safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, var(--bg) 65%, var(--bg-0));
     max-width: 520px;
     margin: 0 auto;
 }
+/* Под кнопкой не плашка в цвет фона, а край, как под плавающими кнопками iOS 26: экран
+   продолжается размытым и гаснет кверху маской, на 30 px выше панели. Плашка обрывала
+   подсказку под длинной целью визита на полуслове. */
+.bottom-bar::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    left: 0;
+    right: 0;
+    top: -30px;
+    bottom: 0;
+    -webkit-backdrop-filter: blur(9px) saturate(1.3);
+    backdrop-filter: blur(9px) saturate(1.3);
+    background: linear-gradient(to top, var(--bg-edge) 30%, var(--bg-0));
+    -webkit-mask-image: linear-gradient(to top, #000 50%, transparent);
+    mask-image: linear-gradient(to top, #000 50%, transparent);
+    pointer-events: none;
+}
+/* Размытие перерисовывается на каждом кадре прокрутки: слабому Android это дорого. */
+.low-motion .bottom-bar { background: linear-gradient(to top, var(--bg) 65%, var(--bg-0)); }
+.low-motion .bottom-bar::before { content: none; }
 .primary-btn {
     width: 100%;
     min-height: 50px;
@@ -5476,19 +5565,30 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     will-change: opacity;
 }
 .ob-sheet-overlay.shown { opacity: 1; }
+/* Парит и прилипает, как .modal-sheet. Спрятан целиком: вместе с отступом снизу. */
 .ob-sheet {
-    width: 100%;
-    max-width: 520px;
-    max-height: calc(100% - 24px - var(--tg-content-safe-area-inset-top, 0px));
+    width: calc(100% - 16px);
+    max-width: 504px;
+    margin-bottom: var(--sheet-gap);
+    max-height: calc(100% - 24px - var(--tg-content-safe-area-inset-top, 0px) - var(--sheet-gap));
     overflow-y: auto;
     overscroll-behavior: contain;
-    border-radius: 22px 22px 0 0;
+    border-radius: var(--radius-sheet);
     background: var(--bg);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16);
+    padding-bottom: 16px;
+    transform: translateY(calc(100% + var(--sheet-gap) + 40px));
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease;
+    will-change: transform;
+}
+.ob-sheet.attached {
+    width: 100%;
+    max-width: 520px;
+    margin-bottom: 0;
+    max-height: calc(100% - 24px - var(--tg-content-safe-area-inset-top, 0px));
+    border-radius: 22px 22px 0 0;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.12);
     padding-bottom: calc(16px + var(--tg-safe-area-inset-bottom, 0px));
-    transform: translateY(100%);
-    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
-    will-change: transform;
 }
 .ob-sheet-overlay.shown .ob-sheet { transform: none; }
 .ob-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(var(--sec), 0.28); margin: 6px auto 0; }

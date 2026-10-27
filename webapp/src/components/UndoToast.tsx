@@ -5,25 +5,33 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { animate, clamp, E, mix, pr, reducedMotion, spring, tracker } from '../motion'
+import { clamp, E, markOwnTap, mix, play, pr, springPlay, tracker, type Look } from '../motion'
 import { dismissUndo, takeBack, UNDO_MS, useUndoOffer, type UndoOffer } from '../undo'
+import { Flip } from './Flip'
 
 const RING = 2 * Math.PI * 11.5
 const IN_MS = 300
 const OUT_MS = 250
+const SECONDS = Math.ceil(UNDO_MS / 1000)
+
+const look = (y: number, o: number): Look => ({ transform: `translateY(${y.toFixed(2)}px)`, opacity: o.toFixed(3) })
 
 export function UndoToast() {
   const offer = useUndoOffer()
   // Ушедшая плашка дорисовывает уход, поэтому показанная живёт отдельно от текущей.
   const [shown, setShown] = useState<UndoOffer | null>(offer)
+  const [sec, setSec] = useState(SECONDS)
   const leaving = useRef(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const ringRef = useRef<SVGCircleElement>(null)
-  const numRef = useRef<HTMLSpanElement>(null)
   // Где плашка сейчас: уход и возврат после смахивания продолжают с этого места.
-  const pos = useRef({ y: 14, o: 0, drag: false })
+  const pos = useRef({ y: 14, o: 0 })
+  const appear = useRef<{ stop: () => number } | null>(null)
 
-  if (offer && offer !== shown && !leaving.current) setShown(offer)
+  if (offer && offer !== shown && !leaving.current) {
+    setShown(offer)
+    setSec(SECONDS)
+  }
 
   const put = (y: number, o: number): void => {
     const el = boxRef.current
@@ -33,49 +41,60 @@ export function UndoToast() {
     el.style.transform = `translateY(${y.toFixed(2)}px)`
     el.style.opacity = o.toFixed(3)
   }
+  // Появление, остановленное на ходу (смахивание, уход): плашка остаётся там, где была.
+  const freezeAppear = (): void => {
+    const run = appear.current
+    appear.current = null
+    if (!run) return
+    const p = pr(run.stop(), 0, IN_MS, E.crisp)
+    put(mix(14, 0, p), p)
+  }
 
   // Снята (отсчёт, «Вернуть», смахнули): уходит вниз и гаснет с того места, где была.
   useLayoutEffect(() => {
     if (!shown || offer === shown) return
     leaving.current = true
+    freezeAppear()
     const { y, o } = pos.current
-    return animate(
-      OUT_MS,
-      (t) => {
-        const p = pr(t, 0, OUT_MS, E.out)
-        put(y + 14 * p, o * (1 - p))
-      },
-      () => {
-        leaving.current = false
-        setShown(offer)
-      },
-    )
+    const at = (t: number): { y: number; o: number } => {
+      const p = pr(t, 0, OUT_MS, E.out)
+      return { y: y + 14 * p, o: o * (1 - p) }
+    }
+    const run = play(OUT_MS, [[boxRef.current, (t) => { const v = at(t); return look(v.y, v.o) }]], () => {
+      leaving.current = false
+      setShown(offer)
+      setSec(SECONDS)
+    })
+    return () => {
+      // Новая смена посреди ухода продолжает его с того места, где он остановился.
+      pos.current = at(run.stop())
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offer, shown])
 
-  // Появление, отсчёт и место над нижней панелью: правками style, без состояния React.
+  // Появление ведёт система, отсчёт и место над нижней панелью правками style на кадрах.
   useLayoutEffect(() => {
     const el = boxRef.current
     if (!shown || !el) return
-    pos.current = { y: 14, o: 0, drag: false }
+    // Плашка сама ответ на свой тап, а отсчёт дольше окна свежести: секунды перещёлкиваются
+    // до конца, сколько бы ни шёл ответ сервера.
+    markOwnTap()
+    pos.current = { y: 0, o: 1 }
+    appear.current = play(IN_MS, [[el, (t) => { const p = pr(t, 0, IN_MS, E.crisp); return look(mix(14, 0, p), p) }]])
     const t0 = performance.now()
     let raf = 0
     let last = -1
     const tick = (now: number): void => {
       const t = now - t0
-      if (!pos.current.drag && !leaving.current) {
-        const p = reducedMotion() ? 1 : pr(t, 0, IN_MS, E.crisp)
-        if (p < 1 || pos.current.o < 1) put(mix(14, 0, p), p)
-      }
       const bar = document.querySelector<HTMLElement>('.bar-portal .bottom-bar')
       const top = bar ? bar.getBoundingClientRect().top : window.innerHeight
       el.style.bottom = `${Math.max(12, window.innerHeight - top + 8).toFixed(1)}px`
       const left = clamp(UNDO_MS - t, 0, UNDO_MS)
       ringRef.current?.setAttribute('stroke-dashoffset', (RING * (1 - left / UNDO_MS)).toFixed(2))
-      const sec = Math.max(1, Math.ceil(left / 1000))
-      if (sec !== last && numRef.current) {
-        last = sec
-        numRef.current.textContent = String(sec)
+      const s = Math.max(1, Math.ceil(left / 1000))
+      if (s !== last) {
+        last = s
+        setSec(s)
       }
       if (left <= 0) {
         dismissUndo(shown.id)
@@ -98,8 +117,8 @@ export function UndoToast() {
     const onDown = (e: PointerEvent): void => {
       if ((e.target as Element).closest('button') || leaving.current) return
       back?.stop()
+      freezeAppear()
       g = { y0: e.clientY - pos.current.y, id: e.pointerId }
-      pos.current.drag = true
       vt.start(e.clientY, e.timeStamp)
       try {
         el.setPointerCapture(e.pointerId)
@@ -123,9 +142,8 @@ export function UndoToast() {
         dismissUndo(shown.id)
         return
       }
-      back = spring(pos.current.y, 0, v, { response: 0.3, damping: 1 }, (y) => put(y, clamp(1 - y / 90, 0, 1)), () => {
-        pos.current.drag = false
-      })
+      const fade = (y: number): number => clamp(1 - y / 90, 0, 1)
+      back = springPlay(pos.current.y, 0, v, { response: 0.3, damping: 1 }, [[el, (y) => look(y, fade(y))]], (y) => put(y, fade(y)))
     }
     el.addEventListener('pointerdown', onDown)
     el.addEventListener('pointermove', onMove)
@@ -166,8 +184,8 @@ export function UndoToast() {
             strokeDashoffset="0"
           />
         </svg>
-        <span className="undo-ring-n" ref={numRef}>
-          5
+        <span className="undo-ring-n">
+          <Flip value={sec} />
         </span>
       </span>
       <span className="undo-text">{shown.text}</span>
