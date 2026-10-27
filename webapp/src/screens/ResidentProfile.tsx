@@ -1,6 +1,7 @@
 // Карточка резидента: выдача админки в «чате»/каналах и member tag «resident». Всё —
 // только dev (сервер гейтит admin.* через requireDev, здесь прячем управление от не-dev).
-// В будущем сюда переедут настройки профиля и интеграции.
+// Свой профиль из настроек - карточка журнала, как «Мои визиты»: без неё резидент без
+// прав дева видел бы только свою аватарку. Права дева идут под ней.
 
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api'
@@ -12,6 +13,7 @@ import { icons } from '../icons'
 import { BackRow, ErrorState, SectionTitle, Sep, SpinnerCenter } from '../components/common'
 import { ProfileHead } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
+import { PersonPage } from './StatsPerson'
 
 const RESIDENT_TAG = 'resident'
 
@@ -66,23 +68,34 @@ export function ResidentProfile() {
   }
 
   const face = { userId, name: name ?? '', username: username ?? null }
-  const frame = (body: ReactNode) => (
-    <Screen>
-      <BackRow />
-      <ProfileHead
-        user={face}
-        name={name || (username ? '@' + username : 'Резидент')}
-        sub={username ? `@${username}` : undefined}
-        barSub={name && username ? `@${username}` : undefined}
-        actions={
-          hasProfile(face)
-            ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
-            : []
-        }
-      />
-      {body}
-    </Screen>
-  )
+  const label = name || (username ? '@' + username : 'Резидент')
+  const frame = (body: ReactNode) =>
+    userId === boot!.me.id ? (
+      <Screen>
+        <BackRow />
+        <PersonPage
+          userId={userId}
+          known={{ userId, label: username ? '@' + username : label, username: username ?? null }}
+          profile={{ name: label, username: username ?? null }}
+          extra={body}
+        />
+      </Screen>
+    ) : (
+      <Screen>
+        <BackRow />
+        <ProfileHead
+          user={face}
+          name={label}
+          sub={username ? `@${username}` : undefined}
+          actions={
+            hasProfile(face)
+              ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
+              : []
+          }
+        />
+        {body}
+      </Screen>
+    )
 
   if (!isDev) return frame(null)
   if (error) return frame(<ErrorState onRetry={retry} />)

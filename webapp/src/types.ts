@@ -340,6 +340,10 @@ export type StatsDaySummary = {
   to: string
   people: number
   peak: number
+  /** Человекоминуты по двухчасовым интервалам (12): у дней из старого журнала их может не быть. */
+  buckets?: number[]
+  /** Интервалы без данных от роутера. */
+  gaps?: number[]
 }
 
 export type StatsDaysView = { days: StatsDaySummary[] }

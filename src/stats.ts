@@ -86,7 +86,17 @@ export type StatsDayView = {
 }
 
 export type StatsDaysView = {
-    days: { dateKey: string; openMinutes: number; from: string; to: string; people: number; peak: number }[]
+    days: {
+        dateKey: string
+        openMinutes: number
+        from: string
+        to: string
+        people: number
+        peak: number
+        /** Человекоминуты по двухчасовым интервалам и провалы роутера: сутки строкой в списке. */
+        buckets: number[]
+        gaps: number[]
+    }[]
 }
 
 export type StatsPersonView = {
@@ -440,6 +450,10 @@ export const buildStatsDays = async (storage: Storage, tzOffsetMinutes: number):
                 to: d.to,
                 people: Object.keys(d.users).length,
                 peak: d.peak,
+                // У дней из журнала до ячеек их нет: пустой массив, и строка покажет «с … до …».
+                buckets: d.buckets ?? [],
+                // Сегодня считается на лету и провалов не знает: они лежат в стейте дня.
+                gaps: (d.dateKey === today ? stored[today]?.gaps : d.gaps) ?? [],
             })),
     }
 }

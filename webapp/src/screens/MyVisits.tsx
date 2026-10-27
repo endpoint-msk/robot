@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { fmtShortDate, fmtWeekdayDate, plural } from '../dates'
+import { fmtDayMonth, fmtShortDate, fmtWeekdayDate, plural, visitDayWord } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { bump, push, startNewRequest, useStore } from '../store'
@@ -16,6 +16,7 @@ import { Screen } from '../components/Screen'
 const SPACE_CHAT_URL = 'https://t.me/endpointchat'
 
 function VisitRow({ r }: { r: HostingRequest }) {
+  const { data } = useStore()
   const approved = r.status === 'approved'
   const p = r.proposal
   // Резидент предложил новый слот — ход за гостем: строка явно зовёт к действию.
@@ -49,7 +50,7 @@ function VisitRow({ r }: { r: HostingRequest }) {
       {iconSquare}
       <div className="req-main">
         <div className="req-name">
-          {fmtWeekdayDate(r.dateKey)}
+          {`${visitDayWord(r.dateKey, data!.todayKey)}, ${fmtDayMonth(r.dateKey)}`}
         </div>
         <div className={'req-sub' + (needsAnswer ? ' attn' : '')}>{subText}
         </div>

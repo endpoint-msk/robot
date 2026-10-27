@@ -382,7 +382,7 @@ export function Settings() {
         >
           <span className="row-label">
             Мой профиль
-            <span className="row-sublabel">Права и интеграции</span>
+            <span className="row-sublabel">{data!.me.isDev ? 'Права и интеграции' : 'Визиты и статистика'}</span>
           </span>
           <div className="row-right">{icons.chevron()}</div>
         </button>

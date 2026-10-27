@@ -5,7 +5,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
-import { clamp, E, spring } from '../motion'
+import { clamp, E, growField, spring } from '../motion'
 import { getState } from '../store'
 import { sec } from '../theme'
 import type { Attendee, Day, ReminderChoice } from '../types'
@@ -13,13 +13,60 @@ import { Collapse } from './Collapse'
 import { Sep, SwitchRow } from './common'
 import { AvatarStack, userLabel } from './people'
 
-export function defaultTimeFor(dateKey: string): string {
-  const d = getState().data!
-  if (dateKey !== d.todayKey) return '15:00'
-  // Для «сегодня» — ближайший целый час в поясе спейса (nowTime с сервера), но не позже 23:00.
-  const nowH = Number((d.nowTime || '00:00').slice(0, 2))
-  const next = Math.min(nowH + 1, 23)
+/** Гость приходит через полчаса после резидента: «к 19:00» у резидента приблизительное. */
+const GUEST_LAG_MIN = 30
+/** Позже якорь не берём: с полчаса сверху время ушло бы за полночь. */
+const LAST_ANCHOR = '23:29'
+
+const plusMinutes = (t: string, m: number): string => {
+  const total = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) + m
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+/** Время дня, к которому никто не привязан: 15:00, а сегодня ближайший целый час. */
+const plainTime = (today: boolean, now: string): string => {
+  if (!today) return '15:00'
+  // Ближайший целый час в поясе спейса (nowTime с сервера), но не позже 23:00.
+  const next = Math.min(Number(now.slice(0, 2)) + 1, 23)
   return String(next).padStart(2, '0') + ':00'
+}
+
+const dayContext = (dateKey: string) => {
+  const d = getState().data!
+  const today = dateKey === d.todayKey
+  const now = d.nowTime || '00:00'
+  // Сегодня прошедшее время не предлагаем.
+  const fits = (t: string | null | undefined): t is string => Boolean(t) && (!today || t! >= now)
+  const others = (d.days.find((x) => x.dateKey === dateKey)?.attendees ?? []).filter((a) => a.userId !== d.me.id)
+  return { d, today, now, fits, others }
+}
+
+/**
+ * Время, на которое открывается форма заявки гостя: через полчаса после первого
+ * резидента, который в этот день указал время, чтобы гость не ждал у двери, если тот
+ * задержится. Гости в расчёт не идут: хост может прийти позже своего гостя. Никто из
+ * резидентов не указал время - время прошлого визита гостя, у постоянных оно своё.
+ */
+export function defaultTimeFor(dateKey: string): string {
+  const { d, today, now, fits, others } = dayContext(dateKey)
+  const first = others
+    .filter((a) => a.resident && a.time && a.time <= LAST_ANCHOR)
+    .map((a) => plusMinutes(a.time!, GUEST_LAG_MIN))
+    .filter(fits)
+    .sort()[0]
+  if (first) return first
+  const last = (d.myPast ?? []).find((r) => r.status === 'approved')?.time
+  if (fits(last)) return last
+  return plainTime(today, now)
+}
+
+/**
+ * «Ко скольки?» резидента открывается на времени первого, кто придёт в этот день, себя
+ * не считая: чаще всего это гость, которого встречать.
+ */
+export function attendTimeFor(dateKey: string): string {
+  const { today, now, fits, others } = dayContext(dateKey)
+  return others.map((a) => a.time).filter(fits).sort()[0] ?? plainTime(today, now)
 }
 
 /** Слот «на сегодня» уже прошёл (сравнение в поясе спейса — nowTime с сервера). */
@@ -31,24 +78,29 @@ export const isPastForToday = (dateKey: string, time: string): boolean => {
 /**
  * Состояние выбора дня + времени. `timeTouched` — чтобы не перетирать вручную
  * выставленное время при смене дня; `min` на инпуте для «сегодня» подсказывает
- * прошедшие часы.
+ * прошедшие часы. `auto`: время последний раз поставила смена дня, а не колесо, и
+ * подписи вокруг него могут перетечь.
  */
 export function useDayTime(initialDay: string, initialTime: string | null) {
   const [day, setDay] = useState(initialDay)
   const [time, setTime] = useState(initialTime || defaultTimeFor(initialDay))
+  const [auto, setAuto] = useState(false)
   const timeTouched = useRef(Boolean(initialTime))
   const d = getState().data!
   const min = day === d.todayKey ? d.nowTime || '00:00' : undefined
 
   const selectDay = (next: string): void => {
     setDay(next)
-    if (!timeTouched.current) setTime(defaultTimeFor(next))
+    if (timeTouched.current) return
+    setTime(defaultTimeFor(next))
+    setAuto(true)
   }
   const onTimeChange = (v: string): void => {
     timeTouched.current = true
+    setAuto(false)
     setTime(v)
   }
-  return { day, time, min, selectDay, onTimeChange }
+  return { day, time, min, auto, selectDay, onTimeChange }
 }
 
 /** Первый день, на который вообще можно проситься: закрытые пропускаем. */
@@ -310,10 +362,7 @@ export function PurposeInput({
   // заявка в правке стартует с rows=2 и скроллом — 1:1 со старым миниаппом.
   const grow = (): void => {
     const el = ref.current
-    if (el) {
-      el.style.height = 'auto'
-      el.style.height = el.scrollHeight + 'px'
-    }
+    if (el) growField(el)
   }
   return (
     <textarea

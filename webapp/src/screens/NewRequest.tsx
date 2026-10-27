@@ -25,6 +25,7 @@ import {
   reminderWhen,
   useDayTime,
 } from '../components/forms'
+import { XText } from '../components/Flip'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { TimeRow } from '../components/TimeField'
 
@@ -65,6 +66,8 @@ type RemindValue = ReminderChoice | 'off'
  * Напоминание строкой с меню, как «Новые заявки» в настройках: срок справа, момент,
  * когда напишет бот, под названием. Тумблер и пять чипов говорили то же самое. Меню
  * лежит над карточкой, а не в ней: карточка обрезает всё, что выходит за её край.
+ * `flow`: время поставила смена дня, и подпись перетекает вслед за ним, а под колесом
+ * меняется без движения.
  */
 export function useRemind(
   dateKey: string,
@@ -72,6 +75,7 @@ export function useRemind(
   choice: ReminderChoice | null,
   onChange: (c: ReminderChoice | null) => void,
   sent = false,
+  flow = false,
 ) {
   const menu = useRowMenu<'remind'>()
   const available = REMINDER_ORDER.filter((c) => reminderAvailable(dateKey, time, c))
@@ -83,13 +87,19 @@ export function useRemind(
       <span className="row-label">
         Напомнить
         <span className="row-sublabel">
-          {sent
-            ? 'Напоминание уже отправлено'
-            : none
-              ? 'До визита слишком мало времени'
-              : active
-                ? `Бот напишет ${reminderWhen(dateKey, time, active)}`
-                : 'Бот напишет в личку перед визитом'}
+          <XText
+            still={!flow}
+            delay={120}
+            text={
+              sent
+                ? 'Напоминание уже отправлено'
+                : none
+                  ? 'До визита слишком мало времени'
+                  : active
+                    ? `Бот напишет ${reminderWhen(dateKey, time, active)}`
+                    : 'Бот напишет в личку перед визитом'
+            }
+          />
         </span>
       </span>
       <button
@@ -132,7 +142,7 @@ export function NewRequest() {
   // из которого заявку не отправить. Пришли с ивента: день и время уже его.
   const asked = days.find((d) => d.dateKey === params.dateKey && !d.lock)
   const askedTime = asked && typeof params.time === 'string' && !isPastForToday(asked.dateKey, params.time) ? params.time : null
-  const { day, time, min, selectDay, onTimeChange } = useDayTime(asked ? asked.dateKey : firstOpenDay(days), askedTime)
+  const { day, time, min, auto, selectDay, onTimeChange } = useDayTime(asked ? asked.dateKey : firstOpenDay(days), askedTime)
   const locked = days.find((d) => d.dateKey === day)?.lock ?? null
   const [purpose, setPurpose] = useState('')
   const [anon, setAnon] = useState(false)
@@ -141,7 +151,7 @@ export function NewRequest() {
   const [remind, setRemind] = useState<ReminderChoice | null>('h2')
   // Заявка ушла: форма гаснет и уступает место карточке визита (см. visit-rise).
   const [leaving, setLeaving] = useState(false)
-  const remindUi = useRemind(day, time, remind, setRemind)
+  const remindUi = useRemind(day, time, remind, setRemind, false, auto)
   useRulesGate()
 
   const submit = async (): Promise<void> => {
@@ -230,7 +240,7 @@ export function NewRequest() {
         </div>
       </div>
       <BottomBar>
-        <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit} hero="cta">
+        <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit} hero="cta" submit>
           Отправить заявку
         </ActionButton>
       </BottomBar>

@@ -103,7 +103,7 @@ export function EditRequest() {
         {remindUi.items}
       </div>
       <BottomBar>
-        <ActionButton className="primary-btn" onClick={submit}>
+        <ActionButton className="primary-btn" onClick={submit} submit>
           Сохранить
         </ActionButton>
       </BottomBar>

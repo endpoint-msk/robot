@@ -51,7 +51,7 @@ import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
 import { RequestRow } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
-import { defaultTimeFor } from '../components/forms'
+import { attendTimeFor } from '../components/forms'
 import { TimeField } from '../components/TimeField'
 import { usePullDismiss } from '../components/usePullDismiss'
 import { growIn } from '../dust'
@@ -666,7 +666,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
       value={myTime ?? ''}
       placeholder="Ко скольки?"
       prefix="к"
-      fallback={defaultTimeFor(day.dateKey)}
+      fallback={attendTimeFor(day.dateKey)}
       min={isToday ? data!.nowTime : undefined}
       onChange={(v) => void setMyTime(v)}
       onClear={() => void setMyTime(null)}

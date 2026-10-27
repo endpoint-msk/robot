@@ -235,6 +235,30 @@ export const reducedMotion = (): boolean => {
 }
 
 /**
+ * Поле ввода по высоте текста. Пока человек пишет, высота едет за 120 мс, как поле
+ * сообщения в Telegram, а не прыгает строкой за кадр; `still` (текст поставил код, а не
+ * человек) встаёт сразу. Выше `max` поле листается внутри.
+ */
+export function growField(el: HTMLTextAreaElement, { still = false, max = Infinity }: { still?: boolean; max?: number } = {}): void {
+  const from = el.getBoundingClientRect().height
+  el.style.transition = 'none'
+  el.style.height = 'auto'
+  const full = el.scrollHeight
+  const to = Math.min(full, max)
+  el.style.overflowY = full > max ? 'auto' : 'hidden'
+  if (still || reducedMotion() || Math.abs(to - from) < 0.5) {
+    el.style.height = `${to}px`
+    el.style.transition = ''
+    return
+  }
+  el.style.height = `${from}px`
+  // Без чтения раскладки браузер склеил бы обе высоты в одну и перехода бы не было.
+  void el.offsetHeight
+  el.style.transition = 'height 0.12s cubic-bezier(0.2, 0.8, 0.2, 1)'
+  el.style.height = `${to}px`
+}
+
+/**
  * Проигрывает кадры `frame(t)` от 0 до `dur` миллисекунд. Возвращает отмену. При
  * «уменьшении движения» сразу рисует конечный кадр.
  */

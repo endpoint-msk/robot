@@ -29,7 +29,6 @@ import {
   tracker,
 } from '../motion'
 import { UnderContext } from '../screenContext'
-import { PageActiveContext } from './TopBar'
 import { canSwipeBack, registerPagerStart, swipingBack } from './useSwipeBack'
 import { getState, useStore } from '../store'
 import { haptic, setHeaderColor } from '../telegram'
@@ -421,7 +420,7 @@ export function Pager<T>({
             }}
             inert={i !== index}
           >
-            <PageActiveContext.Provider value={i === index}>{renderPage(items[i]!, i === index)}</PageActiveContext.Provider>
+            {renderPage(items[i]!, i === index)}
           </div>
         ))}
       </div>

@@ -74,8 +74,8 @@ export function useSwipeBack(screenRef: RefObject<HTMLElement | null>, enabled: 
 
     const zoom = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-zoom')
     const dim = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-dim')
-    // Обе панели экрана живут вне .screen (порталом) и едут за ним сами.
-    const bars = (): NodeListOf<HTMLElement> => document.querySelectorAll<HTMLElement>('.bar-portal .bottom-bar, .bar-portal .top-bar')
+    // Нижняя панель живёт вне .screen (порталом) и едет за ним сама.
+    const bars = (): NodeListOf<HTMLElement> => document.querySelectorAll<HTMLElement>('.bar-portal .bottom-bar')
 
     const paint = (to: number): void => {
       x = to

@@ -6,9 +6,9 @@
 // Строки истории свои, а не RequestsCard: там главное — гость и время внутри одного
 // дня, а здесь гость один на весь экран и главное — дата.
 
-import { Fragment, useRef } from 'react'
+import { Fragment } from 'react'
 import { api } from '../api'
-import { fmtDayMonth, fmtShortDate, plural, visitsWord, yearOf } from '../dates'
+import { fmtDayMonth, fmtShortDate, plural, yearOf } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
@@ -18,7 +18,7 @@ import { sec } from '../theme'
 import type { GuestProfile, GuestRequestsResponse, HostingRequest, User, VisitOutcome, WalkIn } from '../types'
 import { EmptyState, ErrorState, BackRow, Sep, SectionTitle } from '../components/common'
 import { Avatar, userLabel } from '../components/people'
-import { ProfileHead, scrollToSection, type ProfileAction } from '../components/ProfileHead'
+import { ProfileHead, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkProfile, SkQuad, SkRows } from '../components/skeleton'
@@ -127,7 +127,6 @@ export function GuestVisits() {
   const user = guest.data ? guest.data.user : preset
   const note = (data!.notes || []).find((n) => n.userId === userId) || null
   const profile = guest.data?.profile ?? null
-  const historyRef = useRef<HTMLDivElement>(null)
   const sub = [
     user?.username ? '@' + user.username : '',
     profile ? (profile.firstDateKey ? `первый визит ${fmtWhen(profile.firstDateKey, todayKey)}` : 'визитов пока нет') : '',
@@ -186,9 +185,7 @@ export function GuestVisits() {
             </div>
           </>
         ) : null}
-        <div ref={historyRef}>
-          <SectionTitle>История</SectionTitle>
-        </div>
+        <SectionTitle>История</SectionTitle>
         {items.length === 0 ? (
           <div className="card">
             <EmptyState title="Записей нет" text="Все заявки этого человека уже удалены." />
@@ -216,7 +213,6 @@ export function GuestVisits() {
         ...(hasProfile(user)
           ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(user) }]
           : []),
-        { key: 'visits', label: 'Визиты', icon: icons.door(22, 'currentColor'), onClick: () => scrollToSection(historyRef.current) },
       ]
     : []
 
@@ -228,7 +224,6 @@ export function GuestVisits() {
           user={user}
           name={user.name}
           sub={sub}
-          barSub={profile ? visitsWord(profile.visits) : user.username ? '@' + user.username : undefined}
           actions={actions}
         />
       ) : (

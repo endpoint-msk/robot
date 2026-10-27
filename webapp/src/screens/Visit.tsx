@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { action, mutate } from '../api'
-import { fmtDayMonth, fmtShortDate, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { fmtDayMonth, fmtShortDate, visitDayWord } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
@@ -351,7 +351,7 @@ export function Visit() {
       <div className={rise ? 'visit-rise' : undefined} ref={rootRef}>
       <Header
         title={
-          <XText text={WEEKDAYS_FULL[weekdayIdx(r.dateKey)]!} />
+          <XText text={visitDayWord(r.dateKey, data!.todayKey)} />
         }
         subtitle={
           <>

@@ -8,7 +8,7 @@ import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
 import { push } from '../store'
-import { dayEnd, fmtDuration, hoursNum } from '../stats'
+import { dayEnd, fmtDuration, heatLevel, hoursNum } from '../stats'
 import type { StatsDaySummary, StatsDaysView } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, Sep } from '../components/common'
 import { FloatingMonth } from '../components/FloatingMonth'
@@ -17,6 +17,30 @@ import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 
 type Group = { key: string; title: string; days: StatsDaySummary[]; minutes: number }
+
+/**
+ * Верх шкалы ячеек дня: двое на весь двухчасовой интервал. Шкала одна на все дни, иначе
+ * тихий день и людный выглядели бы одинаково; по самому людному дню бледнели бы все.
+ */
+const DAY_CELL_FULL = 240
+
+/**
+ * Сутки строкой: двенадцать ячеек по два часа в ступенях тепловой карты. Стоят вместо
+ * «с … до …», которые при трёх часах из девятнадцати прятали, когда было людно. Пустая
+ * ячейка с провалом роутера штрихуется, как в карте.
+ */
+function DayStrip({ day }: { day: StatsDaySummary }) {
+  const gaps = new Set(day.gaps ?? [])
+  return (
+    <span className="day12" role="img" aria-label={nb(`с ${day.from} до ${dayEnd(day.to)}`)}>
+      {day.buckets!.map((v, i) => {
+        const level = heatLevel(v, DAY_CELL_FULL)
+        if (level > 0) return <i key={i} style={{ background: `var(--heat-${level})` }} />
+        return <i key={i} className={gaps.has(i) ? 'nodata' : undefined} />
+      })}
+    </span>
+  )
+}
 
 const groupByMonth = (days: StatsDaySummary[]): Group[] => {
   const out: Group[] = []
@@ -137,10 +161,15 @@ export function StatsDays() {
                       <span className="row-label">
                         {fmtDuration(day.openMinutes)}
                         <span className="row-sublabel">
-                          {nb(`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`)}
+                          {day.buckets?.length === 12
+                            ? nb(`${peopleWord(day.people)} · пик ${day.peak}`)
+                            : nb(`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`)}
                         </span>
                       </span>
-                      <div className="row-right">{icons.chevron()}</div>
+                      <div className="row-right">
+                        {day.buckets?.length === 12 ? <DayStrip day={day} /> : null}
+                        {icons.chevron()}
+                      </div>
                     </button>
                   </Fragment>
                 ))}

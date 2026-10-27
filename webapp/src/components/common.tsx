@@ -255,6 +255,7 @@ export function ActionButton({
   disabled,
   label,
   hero,
+  submit = false,
 }: {
   className: string
   onClick: () => unknown
@@ -263,6 +264,11 @@ export function ActionButton({
   label?: string
   /** Кнопка — общая часть перехода между экранами (hero.ts): та же на соседнем экране. */
   hero?: string
+  /**
+   * Её жмёт Ctrl+Enter из поля ввода (Root.tsx). Только там, где отправка набранного
+   * ничего не рассылает: у формы заявки да, у публикации ивента и анонса нет.
+   */
+  submit?: boolean
 }) {
   const [pending, setPending] = useState(false)
   // Успешный ответ часто уносит кнопку вместе со строкой.
@@ -279,6 +285,7 @@ export function ActionButton({
       className={className + ' pend' + (pending ? ' pending' : '')}
       disabled={disabled}
       {...(hero ? { 'data-hero': hero, 'data-hero-screen': hero, 'data-hero-part': hero } : {})}
+      {...(submit ? { 'data-submit': '' } : {})}
       aria-busy={pending || undefined}
       aria-label={label}
       title={label}

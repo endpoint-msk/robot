@@ -5,8 +5,12 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { animate, E, ownTapRecent, pr } from '../motion'
 
-/** `delay` сдвигает перещёлкивание: на одном тапе такты идут волной, а не все разом. */
-export function Flip({ value, delay = 0 }: { value: number | string; delay?: number }) {
+/**
+ * `delay` сдвигает перещёлкивание: на одном тапе такты идут волной, а не все разом.
+ * `still` меняет число без движения, даже после своего тапа: например, пока его крутит
+ * колесо под пальцем.
+ */
+export function Flip({ value, delay = 0, still = false }: { value: number | string; delay?: number; still?: boolean }) {
   const text = String(value)
   const [from, setFrom] = useState<string | null>(null)
   const last = useRef(text)
@@ -17,7 +21,7 @@ export function Flip({ value, delay = 0 }: { value: number | string; delay?: num
     if (last.current === text) return
     const prev = last.current
     last.current = text
-    if (ownTapRecent()) setFrom(prev)
+    if (!still && ownTapRecent()) setFrom(prev)
   }, [text])
 
   useLayoutEffect(() => {
@@ -54,9 +58,10 @@ export function Flip({ value, delay = 0 }: { value: number | string; delay?: num
 
 /**
  * Подпись, которая после своего тапа перетекает: старая уходит вверх и гаснет, новая
- * приходит снизу, как подпись кнопки в знакомстве. Чужую смену показывает сразу.
+ * приходит снизу, как подпись кнопки в знакомстве. Чужую смену и смену со `still`
+ * показывает сразу.
  */
-export function XText({ text, delay = 0 }: { text: string; delay?: number }) {
+export function XText({ text, delay = 0, still = false }: { text: string; delay?: number; still?: boolean }) {
   const [from, setFrom] = useState<string | null>(null)
   const last = useRef(text)
   const aRef = useRef<HTMLSpanElement>(null)
@@ -66,7 +71,7 @@ export function XText({ text, delay = 0 }: { text: string; delay?: number }) {
     if (last.current === text) return
     const prev = last.current
     last.current = text
-    if (ownTapRecent()) setFrom(prev)
+    if (!still && ownTapRecent()) setFrom(prev)
   }, [text])
 
   useLayoutEffect(() => {

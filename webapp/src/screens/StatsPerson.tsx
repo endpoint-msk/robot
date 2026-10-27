@@ -1,7 +1,7 @@
 // Карточка человека в журнале: сколько бывает, когда приходит, последние визиты.
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
-import { Fragment, useRef, type ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { action, api } from '../api'
 import {
   addDays,
@@ -12,7 +12,6 @@ import {
   MONTHS_NOM,
   monthIdx,
   plural,
-  visitsWord,
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
@@ -28,7 +27,7 @@ import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote, Sep } from '../components/common'
 import { avatarTone } from '../components/people'
 import { Pager } from '../components/Pager'
-import { ProfileHead, scrollToSection, type ProfileAction } from '../components/ProfileHead'
+import { ProfileHead, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkCard, SkGrid, SkProfile, SkQuad, SkRows } from '../components/skeleton'
@@ -110,7 +109,21 @@ export function StatsPerson() {
   )
 }
 
-function PersonPage({ userId, known }: { userId: number; known: PersonRef | null }) {
+/**
+ * Карточка одного человека. `profile` делает из неё свой профиль в настройках: в шапке имя
+ * и ник вместо «Мои визиты», а `extra` (права дева) стоит под ней, пока грузится журнал.
+ */
+export function PersonPage({
+  userId,
+  known,
+  profile,
+  extra,
+}: {
+  userId: number
+  known: PersonRef | null
+  profile?: { name: string; username: string | null }
+  extra?: ReactNode
+}) {
   const { data: boot } = useStore()
   const { data, error, pending, reload } = useRemote(
     () => api<StatsPersonView>('stats.person', { userId, period: 'quarter' }),
@@ -118,17 +131,19 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
   )
   const isMe = boot!.me.id === userId
   const who = data?.user ?? known
-  const visitsRef = useRef<HTMLDivElement>(null)
   const face = who ? statsAvatarUser(who) : null
   // Свой профиль в Telegram себе открывать незачем.
-  const actions: ProfileAction[] = [
-    ...(face && !isMe && hasProfile(face)
+  const actions: ProfileAction[] =
+    face && !isMe && hasProfile(face)
       ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
-      : []),
-    ...(data && data.lastVisits.length > 0
-      ? [{ key: 'visits', label: 'Визиты', icon: icons.door(22, 'currentColor'), onClick: () => scrollToSection(visitsRef.current) }]
-      : []),
-  ]
+      : []
+
+  const sinceText = data ? since(data.manualSince || data.joinedSince || data.firstDateKey) : null
+  const sub = !sinceText
+    ? '\u00a0'
+    : profile?.username
+      ? `@${profile.username} · ${sinceText.charAt(0).toLowerCase()}${sinceText.slice(1)}`
+      : sinceText
 
   // Шапка стоит сразу, если человека знает список, из которого пришли: по ней листалка
   // меряет полосу. Подменяется только тело:
@@ -138,15 +153,15 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
       {who && face ? (
         <ProfileHead
           user={face}
-          name={isMe ? 'Мои визиты' : who.label}
-          sub={data ? since(data.manualSince || data.joinedSince || data.firstDateKey) : '\u00a0'}
-          barSub={data ? `${visitsWord(data.visits)} за 3\u00a0месяца` : undefined}
+          name={profile ? profile.name : isMe ? 'Мои визиты' : who.label}
+          sub={sub}
           actions={actions}
         />
       ) : null}
       <Swap loading={!data && !error} skeleton={pending ? <PersonSkeleton head={!who} /> : null}>
         {body}
       </Swap>
+      {extra}
     </>
   )
 
@@ -280,9 +295,7 @@ function PersonPage({ userId, known }: { userId: number; known: PersonRef | null
 
       {data.lastVisits.length > 0 ? (
         <>
-          <div className="section-title" ref={visitsRef}>
-            Последние визиты
-          </div>
+          <div className="section-title">Последние визиты</div>
           <div className="card stats-list">
             {data.lastVisits.map((v, i) => (
               <Fragment key={`${v.dateKey}-${v.from}`}>

@@ -18,7 +18,7 @@ import { useSheetDrag } from './components/useSheetDrag'
 import { requestsWord } from './dates'
 import { nb } from './format'
 import { icons } from './icons'
-import { animate, clamp, E, mix, pr, reducedMotion } from './motion'
+import { animate, clamp, E, growField, mix, pr, reducedMotion } from './motion'
 import { pushOverlay } from './overlays'
 import { getState } from './store'
 import { haptic } from './telegram'
@@ -202,7 +202,7 @@ const DEPTH = 0.06
  * #app containing block для position: fixed внутри него, и нижняя панель считала бы
  * координаты от низа документа: низ видимой области уходит в CSS (--sheet-vb), и
  * панель стоит там же, где стояла, уменьшаясь вместе с экраном. Верх видимой области
- * (--sheet-vt) нужен по той же причине строке на стекле сверху (TopBar).
+ * (--sheet-vt) нужен по той же причине месяцу над списком (FloatingMonth).
  */
 const stage = (() => {
   let app: HTMLElement | null = null
@@ -316,6 +316,9 @@ function Actions({
           type="button"
           className={'modal-btn primary' + (destructive ? ' destructive' : '') + (disabled ? ' disabled' : '')}
           disabled={disabled}
+          // Ctrl+Enter из поля (Root.tsx) подтверждает лист, но красную кнопку жмут только
+          // рукой: закрытие заявки сразу пишет гостю.
+          data-confirm={destructive ? undefined : ''}
           onClick={() => {
             if (destructive) haptic.impact('rigid')
             onConfirm()
@@ -521,6 +524,16 @@ function TextBody({ modal, active }: { modal: Of<'text'>; active: boolean }) {
   // Многострочное поле здесь всегда необязательное (комментарий к действию), и
   // клавиатура, выехавшая сама, закрывала бы главную кнопку.
   const inputRef = useAutoFocus<HTMLInputElement>(active && !modal.multiline)
+  // Многострочное поле растёт за текстом до шести строк, дальше листается внутри: на
+  // трёх строках комментарий гостю подлиннее прятался за прокруткой.
+  const areaRef = useRef<HTMLTextAreaElement>(null)
+  const grow = (still: boolean): void => {
+    const el = areaRef.current
+    if (!el) return
+    const cs = getComputedStyle(el)
+    growField(el, { still, max: parseFloat(cs.lineHeight) * 6 + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) })
+  }
+  useLayoutEffect(() => grow(true), [])
 
   return (
     <>
@@ -528,13 +541,17 @@ function TextBody({ modal, active }: { modal: Of<'text'>; active: boolean }) {
       <div className="card modal-field">
         {modal.multiline ? (
           <textarea
+            ref={areaRef}
             className="text-input modal-text-input modal-textarea"
             rows={3}
             aria-label={modal.placeholder || modal.text}
             placeholder={modal.placeholder}
             maxLength={modal.maxLength}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value)
+              grow(false)
+            }}
           />
         ) : (
           <input

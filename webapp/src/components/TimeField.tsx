@@ -19,6 +19,7 @@ import { createPortal } from 'react-dom'
 import { clamp, landing, project, spring, tracker, type SpringOpts } from '../motion'
 import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
+import { Flip } from './Flip'
 import { useSheetDrag } from './useSheetDrag'
 
 /** Высота строки колеса; должна совпадать с --tp-item-h в app.css. */
@@ -618,6 +619,7 @@ function Unfold({ open, children }: { open: boolean; children: ReactNode }) {
  * значение в строке и подпись напоминания меняются, пока колесо крутится. Шторка с
  * «Готово» здесь лишняя: у формы своя кнопка отправки. В узких местах (строка «Ко
  * скольки?» на экране дня, модалка переноса) колесо остаётся шторкой, это TimeField.
+ * Время, которое поставила смена дня, перещёлкивается; под пальцем на колесе нет.
  */
 export function TimeRow({
   label,
@@ -648,7 +650,7 @@ export function TimeRow({
             setOpen(!open)
           }}
         >
-          {hour + ':' + minute}
+          <Flip value={hour + ':' + minute} still={open} />
         </button>
       </div>
       <Unfold open={open}>

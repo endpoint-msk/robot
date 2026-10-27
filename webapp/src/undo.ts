@@ -67,6 +67,13 @@ export async function takeBack(id: number): Promise<void> {
   }
 }
 
+/** Ctrl+Z в Desktop: вернуть то, что сейчас на плашке. Плашки нет - ничего не делает. */
+export function takeBackLatest(): boolean {
+  if (!offer) return false
+  void takeBack(offer.id)
+  return true
+}
+
 /** Ответ обратимой ручки: свежий bootstrap и токен для «Вернуть». */
 export type Undoable = Bootstrap & { undo?: string }
 

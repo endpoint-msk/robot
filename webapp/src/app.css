@@ -10,9 +10,9 @@
     /* Тот же цвет, что --bg, но с нулевой альфой: для градиента нижней панели.
        `transparent` тут нельзя — часть браузеров интерполирует через чёрный. */
     --bg-0: rgba(242, 242, 247, 0);
-    /* Матовое стекло строки с именем в профиле (TopBar): фон с той же альфой, что у стекла
-       iOS. Готовым цветом, а не color-mix: без его поддержки (iOS до 16.2) переменная с
-       color-mix обнуляет фон целиком, и строка становится прозрачной. */
+    /* Матовое стекло плашки месяца над списком (FloatingMonth): фон с той же альфой, что у
+       стекла iOS. Готовым цветом, а не color-mix: без его поддержки (iOS до 16.2) переменная
+       с color-mix обнуляет фон целиком, и плашка становится прозрачной. */
     --bg-glass: rgba(242, 242, 247, 0.82);
     --card: #ffffff;
     --text: #1c1c1e;
@@ -496,61 +496,8 @@ html[data-vt="replace"]::view-transition-new(root) { animation: vt-rise 0.42s cu
 .header { min-width: 0; }
 .subtitle { font-size: 15px; color: var(--text-2); margin-top: 4px; }
 
-/* Строка на стекле (components/TopBar.tsx): имя в шапке профиля ушло под край, и оно
-   с маленькой аватаркой проступает сверху, как в профиле Telegram. Встаёт сразу под шапкой
-   Telegram и вместе с ней читается одной шапкой, поэтому тени сверху нет. Порталом вне
-   .screen, как нижняя панель, и едет с экраном в свайпе назад так же (useSwipeBack). */
-:root { --topbar-h: 48px; }
-.top-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 20;
-    max-width: 520px;
-    margin: 0 auto;
-    pointer-events: none;
-}
-.top-bar.in-forward, .top-bar.in-back { animation: screen-fade-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
-.top-bar.in-fade { animation: screen-in 0.18s ease; }
-/* Под листом #app уменьшается transform'ом и становится containing block для fixed:
-   строка встаёт к верху видимой области (modals.tsx, stage), а не документа. */
-html.sheet-recede .top-bar { top: var(--sheet-vt, 0px); }
-.tb-glass {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: calc(var(--topbar-h) + var(--tg-content-safe-area-inset-top, 0px));
-    padding: var(--tg-content-safe-area-inset-top, 0px) 16px 0;
-    background: var(--bg-glass);
-    -webkit-backdrop-filter: blur(18px) saturate(1.6);
-    backdrop-filter: blur(18px) saturate(1.6);
-    box-shadow: 0 0.5px 0 var(--sep);
-    opacity: 0;
-    transition: opacity 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.tb-glass.shown { opacity: 1; pointer-events: auto; }
-.tb-glass.instant { transition: none; }
-.tb-layer { display: flex; align-items: center; justify-content: center; gap: 9px; min-width: 0; max-width: 100%; }
-/* Сменилась карточка листалки: прежнее имя тает размытием, новое проявляется на том же
-   месте, как подпись «Захостить» в пилле хоста. */
-.tb-layer.out {
-    position: absolute;
-    inset: var(--tg-content-safe-area-inset-top, 0px) 16px 0;
-    animation: vt-blur-out 0.18s ease-out both;
-}
-.tb-layer.in { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both; }
-.tb-ava { width: 30px; height: 30px; font-size: 13px; }
-.tb-text { display: flex; flex-direction: column; align-items: center; min-width: 0; line-height: 1.2; }
-.tb-title, .tb-sub { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tb-title { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
-.tb-sub { font-size: 12px; color: var(--text-2); }
-/* Размытие на слабом Android рвёт прокрутку: строка плотная и встаёт без перехода. */
-.low-motion .tb-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
-
 /* Месяц над длинным списком, пока его листают (components/FloatingMonth.tsx), как дата в
-   чате Telegram. Порталом вне .screen, как строка на стекле. */
+   чате Telegram. Порталом вне .screen, как нижняя панель. */
 .float-month {
     position: fixed;
     z-index: 20;
@@ -581,10 +528,6 @@ html.sheet-recede .float-month { top: calc(var(--sheet-vt, 0px) + 10px); }
 .fm-label.out { animation: vt-blur-out 0.18s ease-out both; }
 .fm-label.in { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
 .low-motion .float-month { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--card); }
-@media (prefers-reduced-motion: reduce) {
-    .tb-glass { transition: none; }
-}
-
 /* Дев-переключатель перспективы (только для DEV_USER_IDS) */
 .dev-chips { display: flex; gap: 6px; }
 .dev-chip {
@@ -3148,8 +3091,25 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     color: var(--text);
 }
 
-/* Строка ивента на экране дня */
-.ev-row-icon { background: rgba(191, 90, 242, 0.16); }
+/* Строка ивента на экране дня: сама афиша размером со значок, как картинка в списке чатов
+   Telegram. Без фото рисованная афиша в миниатюре, тёмная с оранжевым кольцом, как .evv-poster. */
+.ev-row-icon { position: relative; overflow: hidden; background: #2b1745; }
+.ev-row-icon::after {
+    content: "";
+    position: absolute;
+    right: -9px;
+    bottom: -13px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 4.5px solid #ff9f0a;
+}
+/* Пока снимок грузится, значок залит тоном афиши, кольца у фото нет. */
+.ev-row-icon.photo { background: var(--ev-tone, #2b1745); }
+.ev-row-icon.photo::after { content: none; }
+.ev-row-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ev-row-photo.loading { opacity: 0; filter: blur(6px); }
 .ev-row-main { min-width: 0; flex: 1; }
 .ev-row-title-line { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
 /* Название до двух строк: в одну длинное обрывалось на втором слове, и рядом с плашкой
@@ -4270,6 +4230,22 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .dt-num { font-size: 15px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 /* Списки журнала: длительности и время стоят столбцом, цифры одной ширины. */
 .stats-list .row-label { font-variant-numeric: tabular-nums; }
+/* Сутки дня в «Истории по дням» (StatsDays): двенадцать двухчасовых ячеек в ступенях
+   тепловой карты одной капсулой, как вместимость. Пусто серым, провал роутера штрихом. */
+.day12 { display: flex; gap: 1.5px; }
+.day12 > i { display: block; width: 7px; height: 12px; border-radius: 2px; background: rgba(var(--sec), 0.1); }
+.day12 > i:first-child { border-radius: 4px 2px 2px 4px; }
+.day12 > i:last-child { border-radius: 2px 4px 4px 2px; }
+.day12 > i.nodata {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(var(--sec), 0.3) 0,
+        rgba(var(--sec), 0.3) 1px,
+        transparent 1.5px,
+        transparent 3px,
+        rgba(var(--sec), 0.3) 3.5px
+    );
+}
 /* Вторая плитка даты (журнал) — та же геометрия и та же подпись, см. .ws-month. */
 
 /* Четыре показателя человека сеткой 2×2. */

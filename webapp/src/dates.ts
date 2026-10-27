@@ -40,6 +40,9 @@ export const fmtRange = (a: string, b: string): string =>
     : `${fmtDayMonth(a)}\u00a0– ${fmtDayMonth(b)}`
 export const fmtWeekdayDate = (k: string): string => `${WEEKDAYS_FULL[weekdayIdx(k)]}, ${fmtDayMonth(k)}`
 export const fmtShortDate = (k: string): string => `${WEEKDAYS_SHORT[weekdayIdx(k)]},\u00a0${fmtDayMonth(k)}`
+/** \u0414\u0435\u043d\u044c \u0441\u0432\u043e\u0435\u0433\u043e \u0432\u0438\u0437\u0438\u0442\u0430 \u0443 \u0433\u043e\u0441\u0442\u044f: \u00ab\u0421\u0435\u0433\u043e\u0434\u043d\u044f\u00bb \u0438 \u00ab\u0417\u0430\u0432\u0442\u0440\u0430\u00bb, \u043a\u0430\u043a \u0432 \u0448\u0430\u043f\u043a\u0435 \u0434\u043d\u044f, \u0434\u0430\u043b\u044c\u0448\u0435 \u0434\u0435\u043d\u044c \u043d\u0435\u0434\u0435\u043b\u0438. */
+export const visitDayWord = (k: string, today: string): string =>
+  k === today ? '\u0421\u0435\u0433\u043e\u0434\u043d\u044f' : k === addDays(today, 1) ? '\u0417\u0430\u0432\u0442\u0440\u0430' : WEEKDAYS_FULL[weekdayIdx(k)]!
 
 /** ISO-метка времени (например, правка заметки) → «21 июля». */
 export const fmtIsoDay = (iso: string): string => {

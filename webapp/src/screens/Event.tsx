@@ -12,7 +12,7 @@ import { compressImage, imageToneAt } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { eventPhotoUrl, useIcsLink } from '../links'
-import { markOwnTap, ownTapRecent, reducedMotion, stageTint, toHex, toneColors } from '../motion'
+import { growField, markOwnTap, ownTapRecent, reducedMotion, stageTint, toHex, toneColors } from '../motion'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
 import { usePullDismiss } from '../components/usePullDismiss'
@@ -223,12 +223,14 @@ export function Event() {
   }, [readOnly, first, firstTone])
 
   // Поле описания растёт по тексту: заготовка из канала приносит весь пост, и в окне на
-  // пять строк с прокруткой внутри он выглядел обрезанным.
+  // пять строк с прокруткой внутри он выглядел обрезанным. Плавно только за набором:
+  // текст заготовки или черновика встаёт сразу.
+  const descTyped = useRef(false)
   useLayoutEffect(() => {
     const el = descRef.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    growField(el, { still: !descTyped.current })
+    descTyped.current = false
   }, [description, readOnly])
 
   if (readOnly) return <EventView event={existing!} asGuest={asGuest} />
@@ -336,7 +338,10 @@ export function Event() {
             rows={3}
             maxLength={MAX_DESCRIPTION}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              descTyped.current = true
+              setDescription(e.target.value)
+            }}
           />
         </div>
         <Sep inset="text" />

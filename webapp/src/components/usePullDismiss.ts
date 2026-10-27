@@ -52,7 +52,7 @@ export function usePullDismiss(rootRef: RefObject<HTMLElement | null>, opts: { e
 
     const zoom = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-zoom')
     const dim = (): HTMLElement | null => document.querySelector<HTMLElement>('.screen-under-dim')
-    const bars = (): NodeListOf<HTMLElement> => document.querySelectorAll<HTMLElement>('.bar-portal .bottom-bar, .bar-portal .top-bar')
+    const bars = (): NodeListOf<HTMLElement> => document.querySelectorAll<HTMLElement>('.bar-portal .bottom-bar')
 
     // Скругление — в координатах самой карточки, поэтому делится на масштаб.
     const put = (f: Frame): void => {

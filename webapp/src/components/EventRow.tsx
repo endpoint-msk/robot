@@ -1,8 +1,9 @@
 // Строка ивента в списке — одна и та же на экране дня и в списке «Позже».
 
-import { Fragment, type CSSProperties } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { dayNum, monthIdx, MONTHS_ABBR, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
+import { eventPhotoUrl } from '../links'
 import { toneColors } from '../motion'
 import { push, useStore } from '../store'
 import type { SpaceEvent } from '../types'
@@ -30,6 +31,30 @@ export const toneVars = (tone: string | null): CSSProperties | undefined => {
   } as CSSProperties
 }
 
+/**
+ * Афиша в значке строки. Это тот же адрес, что у афиши на экране ивента: файл остаётся
+ * в кэше, и экран открывается уже с ней. Проявляется целиком, как сама афиша.
+ */
+function RowPoster({ photoId, onError }: { photoId: string; onError: () => void }) {
+  const src = eventPhotoUrl(photoId)
+  const [loading, setLoading] = useState(true)
+  const ref = useRef<HTMLImageElement>(null)
+  useLayoutEffect(() => {
+    const img = ref.current
+    if (img && img.complete && img.naturalWidth > 0) setLoading(false)
+  }, [src])
+  return (
+    <img
+      ref={ref}
+      className={'ev-row-photo' + (loading ? ' loading' : '')}
+      src={src}
+      alt=""
+      onLoad={() => setLoading(false)}
+      onError={onError}
+    />
+  )
+}
+
 export function EventRow({
   event,
   backLabel,
@@ -43,6 +68,9 @@ export function EventRow({
   /** Плитка с датой вместо значка: дальние ивенты различаются с одного взгляда. */
   tile?: boolean
 }) {
+  // Не загрузилась афиша - значок остаётся рисованной афишей, а не пустым квадратом.
+  const [broken, setBroken] = useState(false)
+  const photo = broken ? undefined : (event.photos ?? [])[0]
   const host = event.host.username ? '@' + event.host.username : event.host.name
   return (
     <button type="button" className="row tappable" onClick={() => push('event', { event, ...(backLabel ? { backLabel } : {}) })}>
@@ -52,8 +80,8 @@ export function EventRow({
           <b>{dayNum(event.dateKey)}</b>
         </div>
       ) : (
-        <div className="row-icon ev-row-icon">
-          {icons.calendar(17, '#bf5af2')}
+        <div className={'row-icon ev-row-icon' + (photo ? ' photo' : '')} aria-hidden="true" style={photo ? toneVars(eventTone(event)) : undefined}>
+          {photo ? <RowPoster photoId={photo} onError={() => setBroken(true)} /> : null}
         </div>
       )}
       <div className="ev-row-main">

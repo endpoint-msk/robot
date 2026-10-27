@@ -13,6 +13,7 @@ import { bump, getState, openAt, openOnboardingRoot, pop, push, setData, setPers
 import { applyTheme, refreshAccent } from './theme'
 import { tg } from './telegram'
 import { ApiError, type Bootstrap } from './types'
+import { takeBackLatest, topScreen } from './undo'
 
 const NoTg = () => (
   <div className="center-screen">
@@ -137,21 +138,55 @@ export function Root() {
     // На десктопе тот же смысл несёт Escape, как в Telegram Desktop: до системной «Назад»
     // тянуться мышью. Из поля ввода первый Escape только выходит: черновик есть не у каждой
     // формы, и случайное нажатие посреди текста не должно уводить с экрана.
+    // Ещё три сочетания: «/» ставит курсор в поиск экрана, Ctrl+Z возвращает то, что на
+    // плашке «Вернуть» (в поле ввода это по-прежнему отмена набора), а Ctrl+Enter из поля
+    // отправляет набранное. Отправляет он только то, что ничего не рассылает: лист вопроса
+    // без красной кнопки (`data-confirm`) и форму заявки (`data-submit`). Публикацию ивента
+    // и анонс по привычной клавише можно было бы разослать нечаянно. Клавиши берутся по
+    // месту (`code`), а не по букве: в русской раскладке на Z стоит «Я», на «/» точка.
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || e.repeat) return
-      if (closeTopOverlay()) {
-        e.preventDefault()
-        return
-      }
+      if (e.repeat) return
       const field = document.activeElement
-      if (field instanceof HTMLElement && field.matches('input, textarea, select, [contenteditable]')) {
-        field.blur()
-        e.preventDefault()
+      const typing = field instanceof HTMLElement && field.matches('input, textarea, select, [contenteditable]')
+      const mod = e.ctrlKey || e.metaKey
+      if (e.key === 'Escape') {
+        if (closeTopOverlay()) {
+          e.preventDefault()
+          return
+        }
+        if (typing) {
+          ;(field as HTMLElement).blur()
+          e.preventDefault()
+          return
+        }
+        if (getState().stack.length > 1) {
+          e.preventDefault()
+          pop()
+        }
         return
       }
-      if (getState().stack.length > 1) {
-        e.preventDefault()
-        pop()
+      if (e.code === 'Slash' && !typing && !mod && !e.altKey && !hasOverlay()) {
+        const search = topScreen()?.querySelector<HTMLInputElement>('.search-field input')
+        if (search) {
+          e.preventDefault()
+          search.focus()
+        }
+        return
+      }
+      if (e.code === 'KeyZ' && mod && !e.shiftKey && !e.altKey && !typing) {
+        if (takeBackLatest()) e.preventDefault()
+        return
+      }
+      if (e.key === 'Enter' && mod && typing) {
+        // Открыт лист: только его подтверждение, кнопку экрана под ним не трогаем.
+        const pool = hasOverlay()
+          ? document.querySelectorAll<HTMLButtonElement>('.modal-sheet [data-confirm]')
+          : document.querySelectorAll<HTMLButtonElement>('.bottom-bar [data-submit]')
+        const target = pool[pool.length - 1]
+        if (target && !target.disabled) {
+          e.preventDefault()
+          target.click()
+        }
       }
     }
     window.addEventListener('keydown', onKey)
