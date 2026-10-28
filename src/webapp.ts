@@ -216,6 +216,7 @@ import {
 } from './resident-admin.js'
 import { accountStatus, deleteAccount, grantAccess, takenHint } from './resident-access.js'
 import type { AuthentikClient } from './authentik.js'
+import type { OutlineClient } from './outline.js'
 import type { Storage } from './storage.js'
 import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, ResidentMacs, SpaceEvent, WalkIn } from './types.js'
 import { own } from './types.js'
@@ -726,6 +727,8 @@ export type WebappDeps = {
     hasPrinter: boolean
     /** Аккаунты резидентов (AUTHENTIK_*). null - раздел «Аккаунт» и кабинет скрыты. */
     authentik: AuthentikClient | null
+    /** Вики (OUTLINE_*): возвращаемому резиденту снимается отключение. */
+    outline: OutlineClient | null
     /** Бот, как его видят в чатах: ник для диплинков из знакомства, имя для сцен в нём. */
     bot: { username: string | null; name: string }
 }

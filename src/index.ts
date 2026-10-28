@@ -48,6 +48,7 @@ import { setPresenceLogTz } from './presence-log.js'
 import { parseWebappConfig, startWebappServer } from './webapp.js'
 import { buildAdminTargets } from './resident-admin.js'
 import { AuthentikClient, parseAuthentikConfig } from './authentik.js'
+import { OutlineClient, parseOutlineConfig } from './outline.js'
 import { registerResidentAccessHandlers, startAccessReconciler } from './resident-access.js'
 
 const required = (name: string): string => {
@@ -107,6 +108,10 @@ const main = async () => {
         emailDomain: process.env.AUTHENTIK_EMAIL_DOMAIN,
     })
     const authentik = authentikConfig ? new AuthentikClient(authentikConfig) : null
+    // Вики: выключенный аккаунт Authentik она замечает только через час после входа и
+    // на перезагрузке, поэтому вышедшего бот отключает в ней сам.
+    const outlineConfig = parseOutlineConfig({ url: process.env.OUTLINE_URL, token: process.env.OUTLINE_TOKEN })
+    const outline = outlineConfig ? new OutlineClient(outlineConfig) : null
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
     const keeneticConfig = parseKeeneticConfig({
@@ -159,6 +164,9 @@ const main = async () => {
         console.warn('[warn] RESIDENTS_CHAT_ID не задан: аккаунты Authentik выдаются только кнопкой дева, на выход из чата бот не реагирует.')
     } else {
         console.log(`[access] аккаунты Authentik: ${authentikConfig.baseUrl}, группа «${authentikConfig.group}»`)
+    }
+    if (authentikConfig !== null && outlineConfig === null) {
+        console.warn('[warn] OUTLINE_URL/OUTLINE_TOKEN не заданы: вышедшего вики выкинет сама, но не раньше часа после его входа.')
     }
 
     if ((forwardFrom === null) !== (forwardTo === null)) {
@@ -216,7 +224,7 @@ const main = async () => {
     // Вступил в чат резидентов - аккаунт Authentik, вышел - доступы сняты отовсюду.
     // Права в чатах снимаются и без Authentik: выдаёт их dev-экран миниаппа.
     if (residentsChatId !== null && (authentik !== null || adminTargets.length > 0)) {
-        registerResidentAccessHandlers(dp, { client: tg, residents, adminTargets, authentik, residentsChatId })
+        registerResidentAccessHandlers(dp, { client: tg, residents, adminTargets, authentik, outline, residentsChatId })
     }
     // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
     // поэтому без WEBAPP_URL приёмник бесполезен.
@@ -278,6 +286,7 @@ const main = async () => {
             githubRepo,
             adminTargets,
             authentik,
+            outline,
             hasPrinter: printerUrl !== null,
             bot: { username: self.username ?? null, name: self.displayName },
         })
@@ -416,7 +425,7 @@ const main = async () => {
     // Страховка на выход из чата, проспанный ботом: сверка аккаунтов с составом раз в час.
     const accessReconciler =
         authentik !== null && residentsChatId !== null
-            ? startAccessReconciler({ client: tg, residents, adminTargets, authentik })
+            ? startAccessReconciler({ client: tg, residents, adminTargets, authentik, outline })
             : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null

@@ -4,16 +4,14 @@ import { audit, auditUser } from './audit.js'
 import { loginFor, type AuthentikClient, type AuthentikUser } from './authentik.js'
 import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
+import type { OutlineClient } from './outline.js'
 import { RESIDENT_TAG, readMemberState, revokeAdmin, setMemberTag, type AdminTarget } from './resident-admin.js'
 import type { ResidentDirectory } from './residents.js'
 
 /**
- * Доступы резидента за пределами бота: аккаунт Authentik с группой и права в чатах
+ * Доступы резидента за пределами бота: аккаунт Authentik с группой, вики и права в чатах
  * спейса. Вступил в чат резидентов - аккаунт заводится или включается, вышел - доступ
  * снимается отовсюду, куда бот дотягивается.
- *
- * Вики отдельно не трогаем: выключенный аккаунт теряет OAuth-токены, и Outline, сверяя
- * токен с Authentik на следующем открытии, сам выкидывает человека из всех сессий.
  */
 
 export type AccessDeps = {
@@ -21,6 +19,7 @@ export type AccessDeps = {
     residents: ResidentDirectory
     adminTargets: AdminTarget[]
     authentik: AuthentikClient | null
+    outline: OutlineClient | null
 }
 
 export type AccountStatus = {
@@ -87,7 +86,7 @@ export const grantAccess = async (
         if (found) {
             if (!found.active) await authentik.setActive(found.pk, true)
             if (!(await authentik.inGroup(found))) await authentik.addToGroup(found.pk)
-            return { kind: 'ok' }
+            return await unsuspendWiki(deps, found)
         }
         const login = loginFor(person.userId, person.username)
         if (await authentik.loginTaken(login)) return { kind: 'taken', login }
@@ -103,17 +102,43 @@ export const grantAccess = async (
     }
 }
 
+/** Вернулся - вики снова пускает. Новому аккаунту нечего: в вики его ещё нет. */
+const unsuspendWiki = async (deps: AccessDeps, user: AuthentikUser): Promise<GrantResult> => {
+    if (!deps.outline || !user.email) return { kind: 'ok' }
+    try {
+        const wiki = await deps.outline.findByEmail(user.email)
+        if (wiki?.suspended) await deps.outline.activate(wiki.id)
+        return { kind: 'ok' }
+    } catch (err) {
+        return { kind: 'error', reason: `вики: ${reason(err)}` }
+    }
+}
+
 /**
- * Выключить аккаунт и забрать группу. Группу снимаем последней: участник группы, которого
- * нет в чате резидентов, - метка «доступ снят не весь», по ней сверка повторит попытку.
+ * Выключить аккаунт, отключить в вики и забрать группу. Группу снимаем последней и только
+ * если остальное прошло: участник группы, которого нет в чате резидентов, - метка
+ * «доступ снят не весь», по ней сверка повторит попытку.
  */
 const revokeAccount = async (deps: AccessDeps, telegramId: number, known?: AuthentikUser): Promise<string | null> => {
-    const { authentik } = deps
+    const { authentik, outline } = deps
     if (!authentik) return null
+    let user: AuthentikUser | null
     try {
-        const user = known ?? (await authentik.findByTelegramId(telegramId))
+        user = known ?? (await authentik.findByTelegramId(telegramId))
         if (!user) return null
         if (user.active) await authentik.setActive(user.pk, false)
+    } catch (err) {
+        return `authentik: ${reason(err)}`
+    }
+    if (outline && user.email) {
+        try {
+            const wiki = await outline.findByEmail(user.email)
+            if (wiki && !wiki.suspended) await outline.suspend(wiki.id)
+        } catch (err) {
+            return `вики: ${reason(err)}`
+        }
+    }
+    try {
         if (await authentik.inGroup(user)) await authentik.removeFromGroup(user.pk)
         return null
     } catch (err) {
