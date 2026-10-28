@@ -22,7 +22,7 @@ import { useRemote } from '../remote'
 import { mixc, palette } from '../motion'
 import { push, setTopParams, useParams, useStore } from '../store'
 import { fmtDuration, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
-import { haptic, hasProfile, openProfile } from '../telegram'
+import { haptic, hasProfile, openProfile, openUrl } from '../telegram'
 import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote, Sep } from '../components/common'
 import { avatarTone } from '../components/people'
@@ -132,9 +132,14 @@ export function PersonPage({
   const isMe = boot!.me.id === userId
   const who = data?.user ?? known
   const face = who ? statsAvatarUser(who) : null
-  // Свой профиль в Telegram себе открывать незачем.
-  const actions: ProfileAction[] =
-    face && !isMe && hasProfile(face)
+  const accountUrl = boot!.accountUrl
+  // Свой профиль в Telegram себе открывать незачем, а из своего профиля в настройках
+  // ведёт кабинет аккаунта спейса.
+  const actions: ProfileAction[] = isMe
+    ? profile && accountUrl
+      ? [{ key: 'account', label: 'Кабинет', icon: icons.account(22, 'currentColor'), onClick: () => openUrl(accountUrl) }]
+      : []
+    : face && hasProfile(face)
       ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
       : []
 

@@ -47,6 +47,8 @@ import { ensureVisitsSince, parseHostingTzOffset } from './hosting.js'
 import { setPresenceLogTz } from './presence-log.js'
 import { parseWebappConfig, startWebappServer } from './webapp.js'
 import { buildAdminTargets } from './resident-admin.js'
+import { AuthentikClient, parseAuthentikConfig } from './authentik.js'
+import { registerResidentAccessHandlers, startAccessReconciler } from './resident-access.js'
 
 const required = (name: string): string => {
     const v = process.env[name]
@@ -96,6 +98,15 @@ const main = async () => {
     // Чат резидентов: его участники и есть резиденты. Не задан — откат на прежнее
     // правило «админ любого allowlist-чата», иначе забытая переменная выключила бы полбота.
     const residentsChatId = parseChatId(process.env.RESIDENTS_CHAT_ID)
+    // Аккаунты резидентов в Authentik: заводятся на вступлении в чат резидентов и
+    // выключаются на выходе. Без URL и токена бот снимает на выходе только права в чатах.
+    const authentikConfig = parseAuthentikConfig({
+        url: process.env.AUTHENTIK_URL,
+        token: process.env.AUTHENTIK_TOKEN,
+        group: process.env.AUTHENTIK_GROUP,
+        emailDomain: process.env.AUTHENTIK_EMAIL_DOMAIN,
+    })
+    const authentik = authentikConfig ? new AuthentikClient(authentikConfig) : null
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
     const keeneticConfig = parseKeeneticConfig({
@@ -140,6 +151,14 @@ const main = async () => {
         console.log(`[admin] выдача прав резидентам включена для: ${adminTargets.map((t) => t.key).join(', ')}`)
     } else {
         console.warn('[warn] MAIN_CHAT_ID / LIVE_CHANNEL_ID не заданы — выдача прав резидентам в миниаппе выключена.')
+    }
+
+    if (authentikConfig === null) {
+        console.warn('[warn] AUTHENTIK_URL/AUTHENTIK_TOKEN не заданы: аккаунты резидентов в Authentik не ведутся.')
+    } else if (residentsChatId === null) {
+        console.warn('[warn] RESIDENTS_CHAT_ID не задан: аккаунты Authentik выдаются только кнопкой дева, на выход из чата бот не реагирует.')
+    } else {
+        console.log(`[access] аккаунты Authentik: ${authentikConfig.baseUrl}, группа «${authentikConfig.group}»`)
     }
 
     if ((forwardFrom === null) !== (forwardTo === null)) {
@@ -193,6 +212,11 @@ const main = async () => {
         registerInlineHandlers(dp, { storage, residents, tzOffsetMinutes: hostingTzOffset })
         // Вступил в чат резидентов - бот сам зовёт в знакомство, оно живёт в миниаппе.
         registerOnboardingHandlers(dp, { client: tg, storage, residents, residentsChatId, webappUrl: webappConfig.publicUrl })
+    }
+    // Вступил в чат резидентов - аккаунт Authentik, вышел - доступы сняты отовсюду.
+    // Права в чатах снимаются и без Authentik: выдаёт их dev-экран миниаппа.
+    if (residentsChatId !== null && (authentik !== null || adminTargets.length > 0)) {
+        registerResidentAccessHandlers(dp, { client: tg, residents, adminTargets, authentik, residentsChatId })
     }
     // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
     // поэтому без WEBAPP_URL приёмник бесполезен.
@@ -253,6 +277,7 @@ const main = async () => {
             tzOffsetMinutes: hostingTzOffset,
             githubRepo,
             adminTargets,
+            authentik,
             hasPrinter: printerUrl !== null,
             bot: { username: self.username ?? null, name: self.displayName },
         })
@@ -388,6 +413,11 @@ const main = async () => {
     // Знакомство живёт в миниаппе. Включается один раз: всех нынешних резидентов
     // записываем прошедшими, иначе оно разом открылось бы у всего спейса.
     const onboardingSeeder = webappConfig !== null ? startOnboardingSeeder(storage, residents) : null
+    // Страховка на выход из чата, проспанный ботом: сверка аккаунтов с составом раз в час.
+    const accessReconciler =
+        authentik !== null && residentsChatId !== null
+            ? startAccessReconciler({ client: tg, residents, adminTargets, authentik })
+            : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
@@ -506,6 +536,7 @@ const main = async () => {
         visitReminders?.stop()
         attendAlerts?.stop()
         onboardingSeeder?.stop()
+        accessReconciler?.stop()
         printerWatcher?.stop()
         macPoller?.stop()
         webappServer?.stop()

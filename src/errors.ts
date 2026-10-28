@@ -9,11 +9,13 @@ const DEDUP_MS = 60_000
 const SELF_PREFIX = '[errors]'
 /**
  * В личку идёт только критичное - остальное молча копится в журнале (/errors).
- * Критичное = процесс умирает (uncaughtException/unhandledRejection) или бьётся стейт
- * ([storage]: битый data.json / сбой записи). Роутер, dispatcher, недоступный принтер и
- * прочие внешние сбои - в журнал без личек: они шумели больше всего, а лечатся сами.
+ * Критичное = процесс умирает (uncaughtException/unhandledRejection), бьётся стейт
+ * ([storage]: битый data.json / сбой записи) или доступ резидента выдан либо снят не
+ * до конца ([access]: сам он не долечится, а вышедший так и ходил бы в вики). Роутер,
+ * dispatcher, недоступный принтер и прочие внешние сбои - в журнал без личек: они
+ * шумели больше всего, а лечатся сами.
  */
-const CRITICAL_PREFIXES = ['[uncaughtException]', '[unhandledRejection]', '[storage]']
+const CRITICAL_PREFIXES = ['[uncaughtException]', '[unhandledRejection]', '[storage]', '[access]']
 const isCritical = (text: string): boolean => CRITICAL_PREFIXES.some((p) => text.startsWith(p))
 
 const formatArg = (a: unknown): string => {

@@ -313,6 +313,14 @@ export const icons = {
       <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke={color} strokeWidth={width || 1.9} strokeLinecap="round" />
     </svg>
   ),
+  /** Человек в круге: кабинет аккаунта спейса в Authentik. */
+  account: (size: number, color: string): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="7.6" fill="none" stroke={color} strokeWidth="1.6" />
+      <circle cx="10" cy="8.2" r="2.6" fill="none" stroke={color} strokeWidth="1.6" />
+      <path d="M5.2 15.6c.9-1.9 2.7-3 4.8-3s3.9 1.1 4.8 3" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
   /** Дверь подъезда: строка домофона. */
   door: (size: number, color: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 20 20">

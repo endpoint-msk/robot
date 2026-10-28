@@ -214,6 +214,8 @@ import {
     type AdminTarget,
     type AdminTargetKind,
 } from './resident-admin.js'
+import { accountStatus, deleteAccount, grantAccess, takenHint } from './resident-access.js'
+import type { AuthentikClient } from './authentik.js'
 import type { Storage } from './storage.js'
 import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, ResidentMacs, SpaceEvent, WalkIn } from './types.js'
 import { own } from './types.js'
@@ -545,6 +547,12 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'admin.grant': 'heavy',
     'admin.revoke': 'heavy',
     'admin.tag': 'heavy',
+    // Ходят в Authentik, а не в Telegram, но так же наружу. Статус - чтение: карточка
+    // резидента просит его рядом с admin.status, и два heavy на открытие упёрли бы дева
+    // в полку на пятой карточке, а FLOOD_WAIT от Authentik бот не ловит.
+    'account.status': 'read',
+    'account.create': 'heavy',
+    'account.delete': 'heavy',
     // Кандидаты сверяются с составом резидентов, а добавление по @нику идёт в Telegram.
     'walkin.candidates': 'heavy',
     'walkin.add': 'heavy',
@@ -716,6 +724,8 @@ export type WebappDeps = {
     adminTargets: AdminTarget[]
     /** Подключён ли принтер (PRINTER_URL): без него знакомство не зовёт в /printer. */
     hasPrinter: boolean
+    /** Аккаунты резидентов (AUTHENTIK_*). null - раздел «Аккаунт» и кабинет скрыты. */
+    authentik: AuthentikClient | null
     /** Бот, как его видят в чатах: ник для диплинков из знакомства, имя для сцен в нём. */
     bot: { username: string | null; name: string }
 }
@@ -1289,6 +1299,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         // Код домофона - ключ от подъезда: только резидентам и дев-аккаунтам, которые
         // его правят. Гостю не уходит никогда.
         ...(resident || isDevUser(ctx) ? { door: doorView(ctx) } : {}),
+        // Кабинет в Authentik. Есть ли там аккаунт, не спрашиваем: bootstrap собирается
+        // на каждую мутацию, а без аккаунта кабинет просто попросит войти через Telegram.
+        ...(resident && ctx.authentik ? { accountUrl: ctx.authentik.accountUrl } : {}),
     }
 }
 
@@ -1316,7 +1329,7 @@ const AUDITED = new Set([
     'event.app.approve', 'event.app.decline',
     'dues.claim', 'dues.confirm', 'dues.clear', 'dues.rate', 'dues.settings',
     'announce.send', 'stats.residentSince',
-    'admin.grant', 'admin.revoke', 'admin.tag',
+    'admin.grant', 'admin.revoke', 'admin.tag', 'account.create', 'account.delete',
     'dev.seed', 'dev.update', 'dev.delete',
     'onboarding.done', 'door.set', 'undo',
 ])
@@ -1535,6 +1548,10 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
         }
         case 'admin.tag':
             return `${body.on === true ? 'поставил' : 'снял'} тег резидента — ${idOf(body.userId)}`
+        case 'account.create':
+            return `выдал аккаунт Authentik (${idOf(body.userId)})`
+        case 'account.delete':
+            return `удалил аккаунт Authentik (${idOf(body.userId)})`
         case 'onboarding.done':
             return 'прошёл знакомство с ботом'
         // Сам код в журнал не пишем: ключ от подъезда не должен оседать в файлах на сервере.
@@ -3686,6 +3703,69 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
+            return
+        }
+
+        // Аккаунт резидента в Authentik (src/resident-access.ts): логин tg<id>, включён ли,
+        // в группе ли. Мутации отдают свежий статус, как и admin.*.
+        case 'account.status':
+        case 'account.create':
+        case 'account.delete': {
+            if (!requireDev()) return
+            const targetUser = Number(body.userId)
+            if (!Number.isSafeInteger(targetUser) || targetUser <= 0) {
+                sendError(res, 400, 'bad_user', 'Не указан пользователь.')
+                return
+            }
+            // Статус без Authentik - не ошибка: карточка просто не покажет раздел.
+            if (!ctx.authentik && method !== 'account.status') {
+                sendError(res, 409, 'no_authentik', 'Authentik не подключён: задайте AUTHENTIK_URL и AUTHENTIK_TOKEN.')
+                return
+            }
+            if (method === 'account.create') {
+                // Группа открывает сервисы резидентов: не резиденту её выдавать нельзя.
+                if (!(await residents.isResident(targetUser))) {
+                    sendError(res, 409, 'not_resident', 'Его нет в чате резидентов, аккаунт ему не положен.')
+                    return
+                }
+                // Состав кэшируется на пять минут, и вступившего только что в нём может не быть.
+                let person: { name: string; username: string | null } | undefined = (await residents.list()).users.find(
+                    (u) => u.userId === targetUser,
+                )
+                if (person === undefined) {
+                    try {
+                        const [tgUser] = await client.getUsers(targetUser)
+                        if (tgUser) person = { name: displayName(tgUser.displayName), username: tgUser.username }
+                    } catch (err) {
+                        console.warn(`[account] не удалось узнать имя ${targetUser}:`, err)
+                    }
+                }
+                const result = await grantAccess(ctx, {
+                    userId: targetUser,
+                    name: person?.name ?? `id ${targetUser}`,
+                    username: person?.username ?? null,
+                })
+                if (result.kind === 'taken') {
+                    sendError(res, 409, 'login_taken', takenHint(result.login, targetUser))
+                    return
+                }
+                if (result.kind === 'error') {
+                    // Не [access]: дев видит отказ на экране, в личку его дублировать незачем.
+                    console.error(`[account] не удалось выдать аккаунт ${targetUser}: ${result.reason}`)
+                    sendError(res, 502, 'authentik_error', `Authentik отклонил операцию (${result.reason}).`)
+                    return
+                }
+            }
+            if (method === 'account.delete') {
+                try {
+                    await deleteAccount(ctx, targetUser)
+                } catch (err) {
+                    console.error(`[account] не удалось удалить аккаунт ${targetUser}:`, err)
+                    sendError(res, 502, 'authentik_error', 'Authentik отклонил удаление. Токену нужно право удалять пользователей.')
+                    return
+                }
+            }
+            sendJson(res, 200, { userId: targetUser, account: await accountStatus(ctx, targetUser) })
             return
         }
 

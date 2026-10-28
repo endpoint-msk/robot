@@ -8,7 +8,7 @@
 
 ## Что делает бот
 
-Восемь подсистем с общим стейтом:
+Девять подсистем с общим стейтом:
 
 1. **Сборы донатов** (`fundraiser.ts`, `handlers.ts`, `scheduler.ts`) - один сбор на период, `/goals`, `/donate`, `/remove`, `/setgoal`, `/settitle`, `/history`. Лидерборд по нику (lower-case), топ-3 с медалями, `PAGE_SIZE = 10`. Цель, тема и описание «липкие»: новый период копирует настройки прошлого (`ensureCurrentFundraiser`), сбрасываются только донаты. Сообщение `/history` не попадает в `lastMessages`, иначе шедулер перерисовал бы его в текущий сбор.
 2. **Присутствие резидентов** (`presence.ts`, `menu.ts`, `keenetic.ts`) - `/start`/`/menu` в личке (меню резидента, владелец команд `menu.ts`), чек-ин с ником или без. Пинг раз в 3 ч, без ответа 15 мин отметка снимается. «Кто внутри» показывает доска (`hosting-board.ts`) через `setPresenceChangeHook`; `/inside` постит разовый снимок, в личке только для `residents.isMember`. **Авто-отметка по MAC**: `/bindmac`, поллер Keenetic RCI ставит `source: 'mac'`, снимает через `MAC_ABSENCE_GRACE_MS` (10 мин). Онлайн-MAC держатся в памяти процесса (`isMacOnline`). Потолок mac-отметки `MAC_MAX_PRESENCE_MS` (14 ч), дальше обычный пинг. «Уйти» ставит подавление (`suppressedAt`), снимается уходом устройства из сети, не таймером. «Невидимка» (`presenceInvisible`) выключает авто-отметку. Роутер молчит дольше `MAC_STALE_MS` (30 мин) - все mac-отметки снимаются разом; ошибка роутера только в журнал (`/errors`), не чаще `MAC_REPORT_COOLDOWN_MS` (6 ч), кулдаун переживает восстановление.
@@ -18,6 +18,7 @@
 6. **Анонсы версий** (`announce.ts`) - релиз из тега через `release.yml`, дев правит текст в миниаппе и рассылает во все чаты минус `/announcemute`. Ядро - бродкаст произвольного текста.
 7. **Резидентские взносы** (`dues.ts`) - ежемесячный платёж, одна настройка на спейс. Только личка и миниапп, **в общий чат ничего**. Две стадии: `claimed` (резидент) → `paid` (dev). Зачтён только `paid`.
 8. **Журнал присутствия** (`presence-log.ts`, `stats.ts`) - история визитов и статистика в миниаппе, раздел резидентский, отказ через `presenceNoLog`.
+9. **Аккаунты резидентов** (`authentik.ts`, `resident-access.ts`) - вступил в `RESIDENTS_CHAT_ID`: аккаунт Authentik с логином-ником из Telegram в группе `AUTHENTIK_GROUP`. Вышел: аккаунт выключен, группа снята, админка и тег в чатах сняты. Кабинет в своём профиле, у дева «Создать»/«Удалить» в карточке резидента. Подробно - «Поток аккаунтов».
 
 ## Архитектура
 
@@ -45,6 +46,8 @@ src/printer.ts        - /printer, Moonraker, поллер окончания п�
 src/keenetic.ts       - RCI-клиент Keenetic
 src/residents.ts      - ResidentDirectory: единый источник «кто резидент/админ» (точка замены под Authentik)
 src/resident-admin.ts - выдача резиденту админки и тега «resident» в MAIN_CHAT_ID/каналах (dev)
+src/authentik.ts      - клиент API Authentik: аккаунты по атрибуту telegram_id, группа резидентов
+src/resident-access.ts - доступы на вступлении и выходе из чата резидентов, часовая сверка, account.* для дева
 src/fundraiser.ts     - чистая модель сборов и рендер
 src/hosting.ts        - модель хостинга целиком (заявки, перенос, передача, блок, заметки, замки, вместимость, повестка, визиты, профиль, .ics)
 src/visit-reminder.ts - напоминание гостю о визите
@@ -238,6 +241,17 @@ webapp/               - React + Vite + TS. main.tsx → Root → App; экран
 - «Прошёл» пишется на «Готово». Поднятая `ONBOARDING_VERSION` показывает заново.
 - В сотах «в спейсе» только отметившиеся с ником. Шаги зависят от данных (взносы, принтер).
 
+### Поток аккаунтов (`src/resident-access.ts`, `src/authentik.ts`)
+
+- **Ключ - атрибут `telegram_id`, а не логин.** Логин - ник из Telegram строчными (без ника `tg<id>`), почта - `<логин>@AUTHENTIK_EMAIL_DOMAIN` (Outline без email не пускает). Ник человек меняет, и освободившийся занимает другой, поэтому искать и связывать по нему нельзя. Привязать аккаунт ко входу через Telegram API не умеет (`user` у связи с источником только для чтения, goauthentik/authentik#25673), а `sub` из id_token Telegram не равен id. Связывает сам Authentik: у источника `telegam` режим username_link и маппинг, который находит аккаунт по `telegram_id` из id_token (`ak_user_by`) и подставляет его логин. Не нашёл - `None`, вход отклоняется: через Telegram регистрируются только аккаунты от бота. Маппинг в `.env.example`.
+- **Атрибут бывает строкой и числом** (руками в YAML его пишут без кавычек): `findByTelegramId` и маппинг пробуют оба. Ответ фильтра по атрибутам сверяется на месте: на ошибке разбора Authentik отдаёт всех.
+- **Логин занят** (без учёта регистра) - `taken`, второй аккаунт не заводится: обычно это старый аккаунт того же человека. Его отдают боту, вписав атрибут `telegram_id` (id в карточке у дева), не переименовывая. Вписывать только убедившись, что аккаунт его: иначе человек войдёт в чужой.
+- **Выход** (`left`/`kicked`/`demoted_kicked`): `is_active: false` - Authentik в этом же вызове удаляет сессии и стирает OAuth-токены, Outline на следующем открытии сверяет токен и выкидывает человека сам, отдельного клиента вики нет. Группа снимается последней: участник группы вне чата резидентов - метка «снято не всё» для сверки. Админка и тег - только выданное ботом (`canEdit`), владельца не трогаем. Сбой - `[access]`, он из `CRITICAL_PREFIXES`.
+- **Хендлер в группе диспетчера 1**: знакомство в группе 0 вступление дальше не пропускает.
+- **Сверка раз в час** (`startAccessReconciler`): только участники группы с `telegram_id`, только по полному составу меньше 200 и после одиночного `isResident` (состав кэшируется на 5 минут). Права в чатах не сверяет. Сама аккаунты не заводит. Лежащий Authentik - повтор на следующем тике без ошибки пульса, иначе он ронял бы `/healthz`.
+- **`account.create` не резиденту - 409.** Вернуть доступ - «Включить», а не удалить и создать: у нового аккаунта новый `sub`, а неподтверждённую почту (`email_verified: False` у стандартного маппинга) Outline к прежнему аккаунту вики не привяжет.
+- Кабинет - `${AUTHENTIK_URL}/if/user/` в `bootstrap.accountUrl`, только резидентам, без похода в Authentik.
+
 ### Код домофона (`src/door.ts`)
 
 Код в стейте (репо публичный), правит dev, в журнал только факт. Наружу только резидентам и dev: `bootstrap.door` и кнопка в `/menu` (всплывающим окном, не сообщением). На главной миниаппа - под пеленой-спойлером, под которой болванка, а не код; сама закрывается через минуту.
@@ -278,7 +292,7 @@ npm --prefix webapp run typecheck
 
 После любых правок - `npm run typecheck`.
 
-`.env`: обязательны `API_ID`, `API_HASH`, `BOT_TOKEN`, `ALLOWED_CHATS`. Опционально: `DATA_FILE` (`./data.json`), `SESSION_FILE` (`./bot.session`), `PRINTER_URL` + `PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD` (все три) + `KEENETIC_RCI_PATH` (дефолт `show/ip/hotspot`), `WEBAPP_URL` + `WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `GITHUB_REPO` (дефолт `endpoint-msk/robot`), `RESIDENTS_CHAT_ID`, `DEV_USER_IDS`, `FORWARD_FROM_CHAT`/`FORWARD_TO_CHAT` (оба), `LIVE_CHAT_ID` (гард), `MAIN_CHAT_ID` (цель выдачи админки и тега, бот - админ с правом добавлять админов и менять теги), `LIVE_CHANNEL_ID` (лайв-канал, не путать с `LIVE_CHAT_ID`). **В Docker `DATA_FILE` и `SESSION_FILE` - внутри примонтированного тома** (задаются в `docker-compose.yaml`).
+`.env`: обязательны `API_ID`, `API_HASH`, `BOT_TOKEN`, `ALLOWED_CHATS`. Опционально: `DATA_FILE` (`./data.json`), `SESSION_FILE` (`./bot.session`), `PRINTER_URL` + `PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD` (все три) + `KEENETIC_RCI_PATH` (дефолт `show/ip/hotspot`), `WEBAPP_URL` + `WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `GITHUB_REPO` (дефолт `endpoint-msk/robot`), `RESIDENTS_CHAT_ID`, `DEV_USER_IDS`, `FORWARD_FROM_CHAT`/`FORWARD_TO_CHAT` (оба), `LIVE_CHAT_ID` (гард), `MAIN_CHAT_ID` (цель выдачи админки и тега, бот - админ с правом добавлять админов и менять теги), `LIVE_CHANNEL_ID` (лайв-канал, не путать с `LIVE_CHAT_ID`), `AUTHENTIK_URL` + `AUTHENTIK_TOKEN` (+ `AUTHENTIK_GROUP`, дефолт `resident`, `AUTHENTIK_EMAIL_DOMAIN`, дефолт `endpoint.moscow`). **В Docker `DATA_FILE` и `SESSION_FILE` - внутри примонтированного тома** (задаются в `docker-compose.yaml`).
 
 ## Что НЕ делать
 

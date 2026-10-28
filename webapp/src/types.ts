@@ -446,6 +446,23 @@ export type AdminTargetStatus = {
 }
 
 export type AdminStatus = { userId: number; targets: AdminTargetStatus[] }
+
+/** Аккаунт резидента в Authentik (src/resident-access.ts). */
+export type AccountStatus = {
+  /** По атрибуту telegram_id бот находит аккаунт, а Authentik связывает вход через Telegram. */
+  telegramId: number
+  /** Логин - ник из Telegram. null - аккаунта нет. */
+  username: string | null
+  group: string
+  exists: boolean
+  active: boolean
+  inGroup: boolean
+  email: string | null
+  error: string | null
+}
+
+/** account: null - Authentik не подключён. */
+export type AccountResponse = { userId: number; account: AccountStatus | null }
 export type ResidentsListResponse = { people: User[] }
 
 export type Me = {
@@ -512,6 +529,8 @@ export type Bootstrap = {
   door?: DoorCode | null
   /** Итоги прошлого месяца. Только резидентам; null: итогов нет. */
   wrap?: WrapInfo | null
+  /** Кабинет аккаунта спейса в Authentik. Только резидентам и только с подключённым Authentik. */
+  accountUrl?: string
 }
 
 export type OnboardingInfo = {
