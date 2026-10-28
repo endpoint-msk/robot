@@ -35,7 +35,7 @@ export const parseAuthentikConfig = (env: {
     return {
         baseUrl,
         token,
-        group: env.group?.trim() || 'resident',
+        group: env.group?.trim() || 'Residents',
         emailDomain: env.emailDomain?.trim().replace(/^@/, '') || 'endpoint.moscow',
     }
 }
