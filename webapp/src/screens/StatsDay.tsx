@@ -11,7 +11,7 @@ import { push, useParams } from '../store'
 import { dayEnd, fmtDuration, fmtMinutes, statsAvatarUser, useScrub } from '../stats'
 import { haptic } from '../telegram'
 import type { StatsDayRow, StatsDayView } from '../types'
-import { BackRow, EmptyState, ErrorState, Footnote, Header } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Footnote, Header, Units } from '../components/common'
 import { Avatar } from '../components/people'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
@@ -379,7 +379,9 @@ export function StatsDay() {
     <>
       <div className="card stats-card">
         <div className="stats-figure">
-          <span className="sf-main sf-mid">{fmtDuration(data.openMinutes)}</span>
+          <span className="sf-main sf-mid">
+            <Units text={fmtDuration(data.openMinutes)} />
+          </span>
         </div>
         <div className="stats-note">{nb(`Открыт с ${data.from} до ${dayEnd(data.to)}`)}</div>
         <div className="sep" style={{ margin: '14px 0 12px' }} />

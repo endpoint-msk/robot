@@ -1,10 +1,10 @@
 // Строка дня в обзоре недели (резидент) и в неделе архива, сегодняшний день карточкой.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
-import { E, ownTapRecent, reducedMotion } from '../motion'
+import { E, ownTapRecent, reducedMotion, stageTint, stageTop } from '../motion'
 import { useStore } from '../store'
 import { sec } from '../theme'
 import type { Attendee, DayAgenda, DayLock, HostingRequest, SpaceEvent } from '../types'
@@ -215,7 +215,9 @@ export function TodayCard({ day, onOpen, guest = false }: { day: DayRowData; onO
   return (
     <button
       type="button"
-      className={'today-card' + (lock ? ' day-locked' : '') + (guest && att.length > 0 ? ' tc-nofoot' : '')}
+      className={'today-card lit' + (lock ? ' day-locked' : '') + (guest && att.length > 0 ? ' tc-nofoot' : '')}
+      // Главное на главной светится тоном дня, тем же, что верх шапки дня (bandLight).
+      style={{ '--tc-lit': stageTop(stageTint(lock ? 'orange' : 'blue')) } as CSSProperties}
       title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined}
       onClick={onOpen}
     >

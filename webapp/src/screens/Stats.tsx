@@ -27,14 +27,12 @@ import {
   heatValue,
   hoursNum,
   hoursNumWord,
-  hoursWord,
   statsAvatarUser,
   useScrub,
 } from '../stats'
 import { haptic } from '../telegram'
 import type { StatsBar, StatsChart, StatsHeatCell, StatsOverview, StatsPeriod } from '../types'
 import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
-import { Collapse } from '../components/Collapse'
 import { Crossfade } from '../components/Crossfade'
 import { Flip, XText } from '../components/Flip'
 import { Avatar } from '../components/people'
@@ -795,8 +793,17 @@ export function Stats() {
   }
 
   const prev = shown.prevOpenMinutes
-  const compareMax = prev !== null ? Math.max(prev, shown.openMinutes, 1) : 1
   const deltaMinutes = prev !== null ? shown.openMinutes - prev : 0
+  // «−9 ч (5%)»: меньше получаса - столько же, процент только от ненулевого прошлого.
+  const deltaText =
+    prev === null
+      ? ''
+      : Math.abs(deltaMinutes) < 30
+        ? 'как раньше'
+        : nb(
+            `${deltaMinutes > 0 ? '+' : '\u2212'}${hoursNum(Math.abs(deltaMinutes))} ч` +
+              (prev > 0 ? ` (${Math.round((Math.abs(deltaMinutes) / prev) * 100)}%)` : ''),
+          )
   const top = shown.top.slice(0, TOP_PREVIEW)
   const rest = shown.top.slice(TOP_PREVIEW)
   const topMax = shown.top[0]?.minutes ?? 1
@@ -840,30 +847,19 @@ export function Stats() {
     // список людей перетекает.
     <div className={'stats-body' + (held ? ' stale' : '')} aria-busy={held ? true : undefined}>
       <div className="card stats-card">
+        {/* Как обзор статистики Telegram: число с единицей тише, рядом разница к прошлому
+            периоду со знаком и цветом, подпись под числом. У «всего времени» прошлого
+            периода нет, разница гаснет. */}
         <div className="stats-figure">
           <span className="sf-main">
             <Flip value={hoursNum(shown.openMinutes)} />
+            <span className="num-unit">{'\u00a0ч'}</span>
           </span>
-          <span className="sf-of">{`${hoursNumWord(shown.openMinutes)} спейс был открыт`}</span>
+          <span className={'sf-delta' + (prev === null || Math.abs(deltaMinutes) < 30 ? '' : deltaMinutes > 0 ? ' up' : ' down')}>
+            <XText text={deltaText} />
+          </span>
         </div>
-        {/* У «всего времени» прошлого периода нет: сравнение сворачивается по высоте,
-            а не пропадает вместе с половиной карточки в одном кадре. */}
-        <Collapse open={prev !== null}>
-          {/* Прошлый период — только строкой текста. Второй полосой он читался
-              как самостоятельная метрика, хотя это всего лишь «было столько». */}
-          <div className="compare-bar">
-            <i style={{ width: `${(shown.openMinutes / compareMax) * 100}%` }} />
-          </div>
-          <div className="stats-note">
-            <XText
-              text={
-                Math.abs(deltaMinutes) < 30
-                  ? 'Столько же, сколько периодом раньше'
-                  : nb(`На ${hoursWord(Math.abs(deltaMinutes))} ${deltaMinutes > 0 ? 'больше' : 'меньше'}, чем периодом раньше`)
-              }
-            />
-          </div>
-        </Collapse>
+        <div className="sf-of sf-under">спейс был открыт</div>
         <Sep />
         {/* Человекочасы отдельной цифрой со своей подписью, как пара на экране дня: их
             постоянно путают с часами работы спейса из крупной цифры выше. */}

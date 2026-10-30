@@ -18,7 +18,7 @@ import { ActionButton, Sep } from './common'
 import { Collapse } from './Collapse'
 import { XText } from './Flip'
 import { markOwnTap, ownTapRecent, reducedMotion } from '../motion'
-import { SwipeRow, type SwipeAction } from './SwipeRow'
+import { SwipeRow, swipeIcons, type SwipeAction } from './SwipeRow'
 import { dustRow, offerUndo, removeRow, sheetGone, type Undoable } from '../undo'
 
 /** Слот предложения: «Пт, 17 июля · 15:00», если день отличается от текущего дня заявки; иначе только время. */
@@ -543,13 +543,13 @@ export function RequestRow({
   // Заметка о госте — общая память резидентов; в архиве тоже доступна: заметка живёт
   // отдельно от заявки, и дописать её после визита осмысленно.
   if (me.isResident) {
-    swipeActions.push({ key: 'note', label: 'Заметка', icon: icons.note(21, '#fff'), tone: 'neutral', onSelect: openNote })
+    swipeActions.push({ key: 'note', label: 'Заметка', icon: swipeIcons.note(), tone: 'neutral', onSelect: openNote })
   }
   if (canReschedule) {
     swipeActions.push({
       key: 'reschedule',
       label: 'Перенести',
-      icon: icons.clock(21, '#fff'),
+      icon: swipeIcons.clock(),
       onSelect: () => proposeRescheduleFor(r, subject),
     })
   }
@@ -559,14 +559,14 @@ export function RequestRow({
     swipeActions.push({
       key: 'close',
       label: 'Закрыть заявку',
-      icon: icons.xmark(21, '#fff'),
+      icon: swipeIcons.close(),
       tone: 'orange',
       onSelect: () => closeRequest(r, subject),
     })
   }
   // Блокировать гостя вправе любой резидент, но не в архиве (там только чтение).
   if (me.isResident && !archive) {
-    swipeActions.push({ key: 'block', label: 'Заблокировать', icon: icons.ban(21, '#fff'), tone: 'red', onSelect: () => blockGuest(r, subject) })
+    swipeActions.push({ key: 'block', label: 'Заблокировать', icon: swipeIcons.ban(), tone: 'red', onSelect: () => blockGuest(r, subject) })
   }
 
   // Кто перед резидентом: новичок (встретить, объяснить про дверь), завсегдатай или

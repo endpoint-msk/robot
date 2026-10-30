@@ -13,7 +13,7 @@ import { useRemote } from '../remote'
 import { push, useParams, useStore } from '../store'
 import { haptic } from '../telegram'
 import type { DuesRow, DuesSnapshot, DuesStatus } from '../types'
-import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
+import { BackRow, EmptyState, ErrorState, Header, SectionTitle, Sep, Units } from '../components/common'
 import { Collapse } from '../components/Collapse'
 import { useCopyFeedback } from '../components/CopyFeedback'
 import { Flip } from '../components/Flip'
@@ -21,7 +21,7 @@ import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
-import { SwipeRow, type SwipeAction } from '../components/SwipeRow'
+import { SwipeRow, swipeIcons, type SwipeAction } from '../components/SwipeRow'
 
 /** «месяц» / «2 месяца»: подпись к просрочке. */
 export const debtWord = (missed: number): string => (missed >= 2 ? monthsWord(missed) : 'месяц')
@@ -108,10 +108,10 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
   if (!snap.canEdit) return body
 
   const actions: SwipeAction[] = [
-    { key: 'rate', label: 'Ставка', icon: icons.tag(19, '#fff'), tone: 'neutral', onSelect: open },
+    { key: 'rate', label: 'Ставка', icon: swipeIcons.tag(), tone: 'neutral', onSelect: open },
     row.status === 'paid'
-      ? { key: 'undo', label: 'Снять отметку', icon: icons.undo(19, '#fff'), tone: 'red', onSelect: () => mark(row, 'none') }
-      : { key: 'ok', label: 'Отметить взнос', icon: icons.check(18, '#fff', 2), onSelect: () => mark(row, 'paid') },
+      ? { key: 'undo', label: 'Снять отметку', icon: swipeIcons.undo(), tone: 'red', onSelect: () => mark(row, 'none') }
+      : { key: 'ok', label: 'Отметить взнос', icon: swipeIcons.check(), onSelect: () => mark(row, 'paid') },
   ]
   return <SwipeRow actions={actions}>{body}</SwipeRow>
 }
@@ -215,31 +215,28 @@ function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: (
     if (!(await clip.copy(snap.requisites, e))) showAlert('Не получилось скопировать. Выделите текст вручную.')
   }
 
-  // Ставка 0 — человек освобождён: плашка остаётся, но без реквизитов и кнопки.
+  const title = `Взнос за ${snap.periodLabel.split(' ')[0]?.toLowerCase() ?? ''}`
+  // Ставка 0 — человек освобождён: карточка остаётся, но без реквизитов и кнопки.
   if (snap.me.amount <= 0) {
     return (
       <div className="my-dues">
-        <div className="my-dues-kicker">Мой взнос</div>
+        <div className="my-dues-title">{title}</div>
         <div className="my-dues-sum">Не требуется</div>
         <div className="my-dues-sub">Ставка обнулена, взнос с вас не спрашивают.</div>
       </div>
     )
   }
 
-  // Подтверждённый взнос остаётся зелёной карточкой до конца периода: о сверке
-  // резиденту ничего не приходит, и это единственное место, где он про неё узнаёт.
+  // Карточка белая во всех состояниях, статус говорит капсула. Подтверждённый взнос до
+  // конца периода с капсулой «Внесён» и строкой сверки: о сверке резиденту ничего не
+  // приходит, и это единственное место, где он про неё узнаёт.
   const status = claiming && snap.me.status === 'none' ? 'claimed' : snap.me.status
   const paidOn = status === 'paid' && snap.me.at ? ` ${fmtIsoDay(snap.me.at)}` : ''
   return (
     <div className={`my-dues md-card md-${status}` + (moving ? ' md-moving' : '')}>
-      <div className="md-tint" aria-hidden="true">
-        <i className="md-s" data-s="none" />
-        <i className="md-s" data-s="claimed" />
-        <i className="md-s" data-s="paid" />
-      </div>
       <div className="md-body">
         <div className="md-top">
-          <div className="my-dues-kicker">Мой взнос</div>
+          <div className="my-dues-title">{title}</div>
           <span className="md-tags">
             <span className="ob-tag warn md-s" data-s="none">
               Не внесён
@@ -252,15 +249,18 @@ function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: (
             </span>
           </span>
         </div>
-        <div className="my-dues-sum">{money(snap.me.amount, snap.currency)}</div>
+        <div className="my-dues-sum">
+          <Units text={money(snap.me.amount, snap.currency)} />
+        </div>
         {/* Реквизиты нужны только до перевода; после тапа они сворачиваются по
             высоте, а не пропадают одним кадром. */}
         {snap.requisites && (status === 'none' || moving) ? (
           <div className="md-req">
             <div className="md-req-in">
               <div className="my-dues-req">
-                <div className="mdr-text">
-                  {snap.requisites}
+                <div className="mdr-main">
+                  <div className="mdr-k">Реквизиты</div>
+                  <div className="mdr-text">{snap.requisites}</div>
                 </div>
                 <button className="mdr-copy" aria-label="Скопировать реквизиты" onClick={(e) => void copy(e)}>
                   {clip.glyph}
@@ -306,7 +306,9 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
           <Flip value={paid} />
         </span>
         <span className="df-of">{nb(`из ${total} подтверждено`)}</span>
-        <span className="df-sum">{money(collected, snap.currency)}</span>
+        <span className="df-sum">
+          <Units text={money(collected, snap.currency)} />
+        </span>
       </div>
       <div className="dues-bar">
         {/* Пустой сегмент не рисуем: зазор между сегментами иначе отодвигал бы

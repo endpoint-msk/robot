@@ -74,6 +74,10 @@ export type Palette = {
   pass: string
   text2: string
   dotOff: string
+  /** Во сколько раз верх света полосы дальше от фона, чем сама подложка: на чёрном сильнее. */
+  lift: number
+  /** Блик сверху света полосы. */
+  glint: string
 }
 
 const TONES = { blue: '#007aff', green: '#34c759', indigo: '#5856d6', orange: '#ff9500', purple: '#bf5af2' }
@@ -88,6 +92,8 @@ const LIGHT: Palette = {
   pass: '#e9ecf8',
   text2: 'rgba(60,60,67,.6)',
   dotOff: 'rgba(60,60,67,.2)',
+  lift: 1.55,
+  glint: 'rgba(255,255,255,.55)',
 }
 const DARK: Palette = {
   bg: '#000000',
@@ -97,6 +103,8 @@ const DARK: Palette = {
   pass: '#08090f',
   text2: 'rgba(235,235,245,.6)',
   dotOff: 'rgba(235,235,245,.22)',
+  lift: 1.9,
+  glint: 'rgba(255,255,255,.08)',
 }
 
 let tinted: { key: string; value: Palette } | null = null
@@ -113,6 +121,26 @@ export const palette = (): Palette => {
 
 /** Подложка сцены в тон: тон поверх фона, на чёрном гуще. */
 export const stageTint = (tone: Tone, C: Palette = palette()): string => mixc(C.bg, C.tones[tone], C.mixp)
+
+/** Верх света полосы: подложка, отодвинутая от фона ещё дальше. Этим же цветом красится шапка Telegram. */
+export const stageTop = (stage: string, C: Palette = palette()): string => {
+  const [r, g, b] = parseColor(mixc(C.bg, stage, C.lift))
+  return `rgb(${[r, g, b].map((v) => clamp(Math.round(v), 0, 255)).join(',')})`
+}
+
+/** На столько полоса света уходит ниже шапки, растворяясь в фоне страницы. */
+export const BAND_FADE = 56
+
+/**
+ * Полоса тона светом, а не заливкой: сверху ярче подложки и с бликом, к низу шапки
+ * подложка, ниже фон страницы без края. `head` - высота до низа шапки, без BAND_FADE.
+ * Цвета смешиваются линейно, поэтому листалке хватает одного слоя: свет между двумя
+ * днями - свет их смешанной подложки.
+ */
+export const bandLight = (stage: string, head: number, C: Palette = palette()): string => {
+  const mid = ((head * 0.62) / (head + BAND_FADE)) * 100
+  return `radial-gradient(130% 75% at 50% 0%, ${C.glint} 0%, transparent 60%), linear-gradient(to bottom, ${stageTop(stage, C)} 0%, ${stage} ${mid.toFixed(1)}%, ${C.bg} 100%)`
+}
 
 // --- тон афиши ----------------------------------------------------------------
 // Ивент с фото красится в тон первой афиши (SpaceEvent.tone). Тон снимка почти всегда

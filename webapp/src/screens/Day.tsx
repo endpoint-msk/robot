@@ -15,6 +15,8 @@ import { confirmDialog, numberPrompt, textPrompt } from '../modals'
 import {
   animate,
   arrowStep,
+  BAND_FADE,
+  bandLight,
   clamp,
   E,
   EDGE_ZONE,
@@ -33,6 +35,7 @@ import {
   rubber,
   springAt,
   stageTint,
+  stageTop,
   toHex,
   tracker,
   type Tone,
@@ -940,8 +943,9 @@ export function DayPager({
       const base = mixc(stageTint(tA, C), stageTint(tB, C), f)
       const stage = S.tint ? mixc(S.tint.from, base, S.tint.p) : base
       S.stage = stage
-      band.style.background = stage
-      band.style.height = `${(mix(S.heads[i0] ?? 0, S.heads[i1] ?? 0, f) - S.bandTop).toFixed(1)}px`
+      const head = mix(S.heads[i0] ?? 0, S.heads[i1] ?? 0, f) - S.bandTop
+      band.style.background = bandLight(stage, head, C)
+      band.style.height = `${(head + BAND_FADE).toFixed(1)}px`
       hatch.style.opacity = mix(locked(A) ? 1 : 0, locked(B) ? 1 : 0, f).toFixed(3)
       // Катящаяся штриховка принадлежит своему дню: перелистнули — её не видно.
       const roller = rollRef.current
@@ -1275,7 +1279,7 @@ export function DayPager({
   usePullDismiss(rootRef, { enabled: !under })
   useEffect(() => {
     const d = days[index]
-    if (d && !under) afterHero(() => setHeaderColor(toHex(stageTint(toneOf(d, todayKey)))))
+    if (d && !under) afterHero(() => setHeaderColor(toHex(stageTop(stageTint(toneOf(d, todayKey))))))
   }, [index, days, todayKey, theme, under])
   useEffect(() => () => {
     if (!under) afterHero(() => applyTheme(getState().theme))
@@ -1285,7 +1289,8 @@ export function DayPager({
     const el = rollRef.current
     if (!el || reducedMotion()) return () => {}
     rolling.current?.stop()
-    el.style.backgroundColor = stageTint('orange')
+    // Под штриховкой тот же свет закрытого дня, что ляжет на полосу, когда она докатится.
+    el.style.backgroundImage = `repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px), ${bandLight(stageTint('orange'), el.offsetHeight - BAND_FADE)}`
     const clip = (c: number): void => {
       const w = el.offsetWidth
       const x = (w + ROLL_SLANT) * (1 - c) - ROLL_SLANT

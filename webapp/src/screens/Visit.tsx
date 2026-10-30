@@ -47,7 +47,7 @@ const countdown = (ms: number): string => {
 
 /**
  * «Я на месте»: гость у двери жмёт кнопку, DM уходит хосту и тем, кто внутри.
- * Отдельный компонент из-за секундного таймера - он нужен только пока карточка на
+ * Отдельный компонент из-за секундного таймера - он нужен только пока кнопка на
  * экране, а отсчёт до следующего нажатия должен идти сам: bootstrap за это время не
  * перезапрашивается, и без тика кнопка так и осталась бы выключенной.
  */
@@ -62,7 +62,7 @@ export function useNowMin(): number {
   return minuteOfDay(data!.nowTime) + Math.floor((Date.now() - getDataAt()) / 60_000)
 }
 
-function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null }) {
+function ArrivalButton({ id, arrivedAt }: { id: string; arrivedAt?: string | null }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -81,39 +81,32 @@ function ArrivalCard({ id, arrivedAt }: { id: string; arrivedAt?: string | null 
   const sent = Number.isFinite(at)
   const left = sent ? at + ARRIVAL_COOLDOWN_MS - now : 0
   const waiting = left > 0
-  const mins = sent ? Math.max(0, Math.floor((now - at) / 60_000)) : 0
 
+  // Капсула без плашки: пока идёт антиспам, она серая и считает до следующего раза, как
+  // «Отправить код ещё раз» в Telegram, а прятать её значило бы оставить гостя без кнопки.
+  // Единственная кнопка, которую гость жмёт у двери, нервничая: удар сразу, ждёт она
+  // сама, а не весь экран. Ушло сообщение, и галочка встаёт с успехом.
   return (
-    <div className="arrival-card">
-      <div className="arrival-head">
-        <div className={'arrival-icon' + (pop ? ' pop' : '')}>{sent ? icons.check(19, '#34c759', 2.2) : icons.pin(19, '#34c759')}</div>
-        <div style={{ minWidth: 0 }}>
-          <div className="arrival-title">
-            <XText text={!sent ? 'Уже у двери?' : mins === 0 ? 'Сообщили только что' : nb(`Сообщили ${mins} мин назад`)} />
-          </div>
-          <div className="arrival-sub">
-            <XText text={sent ? 'Открывают. Если никто не вышел, сообщите ещё раз' : 'Скажу тем, кто сейчас в спейсе'} delay={60} />
-          </div>
-        </div>
-      </div>
-      {/* Единственная кнопка, которую гость жмёт у двери, нервничая: удар сразу, ждёт она
-          сама, а не весь экран. Ушло сообщение, и галочка встаёт с успехом. */}
-      <ActionButton
-        className="arrival-btn"
-        disabled={waiting}
-        onClick={async () => {
-          haptic.impact('medium')
-          markOwnTap()
-          const done = await action('arrived', { id }, { quiet: true })
-          if (done) {
-            haptic.notify('success')
-            setPop(true)
-          }
-        }}
-      >
-        {waiting ? `Сообщить ещё раз можно через ${countdown(left)}` : sent ? 'Сообщить ещё раз' : 'Я на месте'}
-      </ActionButton>
-    </div>
+    <ActionButton
+      className={'arrival-btn' + (waiting ? ' sent' : '')}
+      disabled={waiting}
+      onClick={async () => {
+        haptic.impact('medium')
+        markOwnTap()
+        const done = await action('arrived', { id }, { quiet: true })
+        if (done) {
+          haptic.notify('success')
+          setPop(true)
+        }
+      }}
+    >
+      <span className={'arrival-ic' + (pop ? ' pop' : '')}>{sent ? icons.check(18, 'currentColor', 2.2) : icons.pin(18, 'currentColor')}</span>
+      {/* Отсчёт не в XText: после своего тапа тот перетекал бы на каждой секунде. */}
+      <span>
+        <XText text={waiting ? 'Сообщили · ещё раз через' : sent ? 'Сообщить ещё раз' : 'Я на месте'} />
+        {waiting ? `\u00a0${countdown(left)}` : null}
+      </span>
+    </ActionButton>
   )
 }
 
@@ -161,15 +154,13 @@ export function Visit() {
   let statusCard = null
   let proposalCard = null
   if (approved) {
+    // Белая карточка хоста, статус капсулой, как у всех статусов: зелёной плашкой визит
+    // был единственным местом приложения, где статус говорила заливка.
     statusCard = (
       <div className="status-card approved">
-        <div className="status-card-head">
-          <div className="status-card-icon">{icons.check(14, 'currentColor', 2)}</div>
-          <span className="status-card-title">Ваш визит подтверждён</span>
-        </div>
         <div className="status-card-body">
           <Avatar user={r.approvedBy!} className="host-avatar" profile />
-          <div style={{ minWidth: 0 }}>
+          <div className="host-main">
             <div className="host-kicker">Вас хостит</div>
             <Profile user={r.approvedBy!} className="host-name">
               {r.approvedBy!.name}
@@ -178,6 +169,7 @@ export function Visit() {
               {(r.approvedBy!.username ? '@' + r.approvedBy!.username + ' · ' : '') + 'резидент'}
             </div>
           </div>
+          <span className="ob-tag green">подтверждён</span>
         </div>
       </div>
     )
@@ -361,7 +353,7 @@ export function Visit() {
           </>
         }
       />
-      {arrivalOpen ? <ArrivalCard id={r.id} arrivedAt={r.arrivedAt} /> : null}
+      {arrivalOpen ? <ArrivalButton id={r.id} arrivedAt={r.arrivedAt} /> : null}
       {isPast ? null : statusCard}
       <Collapse open={!isPast && Boolean(proposalCard)}>{proposalCard}</Collapse>
       <SectionTitle>Детали</SectionTitle>

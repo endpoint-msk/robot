@@ -26,7 +26,7 @@ import { push, setTopParams, useParams, useStore } from '../store'
 import { fmtDuration, heatCell, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
 import { haptic, hasProfile, openProfile, openUrl } from '../telegram'
 import type { StatsPersonView } from '../types'
-import { BackRow, ErrorState, Footnote, Sep } from '../components/common'
+import { BackRow, ErrorState, Footnote, Sep, Units } from '../components/common'
 import { avatarTone } from '../components/people'
 import { Pager } from '../components/Pager'
 import { ProfileHead, type ProfileAction } from '../components/ProfileHead'
@@ -359,7 +359,7 @@ export function PersonPage({
         <div className="sep" style={{ margin: '0 16px' }} />
         <div className="sq-row">
           <div className="sq-cell">
-            <div className="sq-num small">{data.avgMinutes > 0 ? fmtDuration(data.avgMinutes) : '—'}</div>
+            <div className="sq-num small">{data.avgMinutes > 0 ? <Units text={fmtDuration(data.avgMinutes)} /> : '—'}</div>
             <div className="sq-label">средний визит</div>
           </div>
           <div className="sq-vsep" />

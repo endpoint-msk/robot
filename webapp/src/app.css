@@ -28,18 +28,10 @@
     --busy: rgba(242, 242, 247, 0.45);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
 
-    /* Карточка «визит подтверждён»: своя зелёная палитра, не завязана на акценты.
-       В светлой теме — светлая плашка с тёмно-зелёным текстом (как в макете),
-       в тёмной — инвертировано: тёмная плашка со светло-зелёным. */
-    --ok-bg: #e5ffe6;
     --ok-fg: #0d7a2f;
     /* Оранжевый для текста. Сам --orange на белом даёт 2,2:1 и годится только заливкам и
        иконкам; словом «Не внесён» и «неявка» пишут этим, как зелёным пишут --ok-fg. */
     --warn-fg: #b25000;
-    --ok-check: #ffffff;
-    --ok-name: #123a1f;
-    --ok-sec: 13, 90, 40;
-    --ok-shadow: 0 1px 2px rgba(0, 60, 20, 0.06);
 
     /* Акцент: кнопки, ссылки, «сегодня», выбранное. Внутри Telegram его заменяет цвет
        кнопки из темы клиента (theme.ts, applyAccent), инлайном на <html>, вместе с
@@ -75,7 +67,6 @@
        обратно одним тумблером. Альфа низкая — поверх штриховки должен читаться текст. */
     --hatch: rgba(255, 149, 0, 0.16);
     --ok-soft-bg: rgba(52, 199, 89, 0.1);
-    --ok-soft-strong: rgba(52, 199, 89, 0.12);
     --ev-bg: rgba(191, 90, 242, 0.1);
     --radius-card: 22px;
     /* Кнопки капсулой, как в iOS 26 и как пиллы («Захостить», «Я приду»): у одного экрана
@@ -123,14 +114,8 @@
     /* На чёрном фоне тень не читается — карточки разделяет сам цвет. */
     --shadow-card: none;
 
-    --ok-bg: #102c19;
     --ok-fg: #34c759;
     --warn-fg: #ffb340;
-    /* Кружок в тёмной теме яркий, поэтому галочка на нём — тёмная. */
-    --ok-check: #06240f;
-    --ok-name: #e8f8ec;
-    --ok-sec: 190, 240, 200;
-    --ok-shadow: none;
 
     --gray: #636366;
     --attn: rgba(var(--blue-rgb), 0.24);
@@ -142,7 +127,6 @@
     /* На чёрной карточке тот же штрих почти не виден — берём чуть заметнее. */
     --hatch: rgba(255, 159, 20, 0.16);
     --ok-soft-bg: #1b3826;
-    --ok-soft-strong: #1e412b;
     --ev-bg: #3b2848;
 
     --chart-blue: #0a84ff;
@@ -1398,6 +1382,21 @@ button.invite-btn {
 /* Иконки подрастают, когда строка уходит за порог открытия, и ужимаются обратно. */
 .swipe-action > * { transform: scale(0.9); transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
 .swipe-actions.armed .swipe-action > * { transform: none; }
+/* Значки действий играют, когда строку открыли (swipeIcons в SwipeRow.tsx), как в списке
+   чатов Telegram: крайнее правое открывается первым, следующие на 70 мс позже. Длина
+   пути - единица: штрих 1 и пропуск 2, со сдвигом 1 черта ещё не нарисована. */
+.swipe-action:nth-last-child(2) { --sw-d: 70ms; }
+.swipe-action:nth-last-child(3) { --sw-d: 140ms; }
+.swipe-action:nth-last-child(4) { --sw-d: 210ms; }
+.swipe-actions.revealed .sw-draw { stroke-dasharray: 1 2; animation: sw-draw 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) var(--sw-d, 0ms) both; }
+.swipe-actions.revealed .sw-draw.sw-late { animation-delay: calc(var(--sw-d, 0ms) + 140ms); }
+.swipe-actions.revealed .sw-sheet { transform-box: fill-box; transform-origin: center; animation: sw-tilt 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) var(--sw-d, 0ms) both; }
+.swipe-actions.revealed .sw-hands { transform-origin: 9px 9px; animation: sw-turn 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) var(--sw-d, 0ms) both; }
+.swipe-actions.revealed .sw-swing { transform-origin: 13.4px 6.6px; animation: sw-swing 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) var(--sw-d, 0ms) both; }
+@keyframes sw-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes sw-tilt { from { transform: rotate(-14deg); } }
+@keyframes sw-turn { from { transform: rotate(-360deg); } }
+@keyframes sw-swing { from { transform: rotate(-16deg); } }
 /* Непрозрачный фон обязателен: он перекрывает действия во время жеста.
    touch-action: pan-y отдаёт браузеру вертикальный скролл, а горизонталь — нам. */
 .swipe-content {
@@ -1527,7 +1526,7 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .attend-btn.on { background: var(--green); color: #fff; box-shadow: none; }
 
 /* --- Экран дня листается (screens/Day.tsx) ---
-   Полоса под шапкой в тон дня, как сцена шага в знакомстве. Её цвет и высоту, сдвиг
+   Полоса под шапкой в тон дня светом (bandLight в motion.ts). Её свет и высоту, сдвиг
    страниц и точки рисует листалка прямыми правками style; здесь раскладка в покое. */
 .dpg { position: relative; }
 .dpg-band {
@@ -1552,6 +1551,12 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
     position: absolute;
     inset: 0;
     background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
+}
+/* Полоса уходит в фон на BAND_FADE ниже шапки (bandLight в motion.ts): штриховка гаснет
+   вместе с ней, а не обрывается краем. */
+.dpg-hatch, .dpg-lockroll {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
 }
 .dpg > .back-row, .dpg-dots, .dpg-track { position: relative; z-index: 1; }
 
@@ -1795,6 +1800,21 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     font-weight: 600;
     letter-spacing: 0.01em;
 }
+/* Точка над правым краем значка (26 px по центру вкладки, его верх в 7,5 px от верха
+   вкладки). Кольцо цвета панели отделяет её от штриха значка. */
+.tab-dot {
+    position: absolute;
+    top: 5px;
+    left: calc(50% + 6px);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 0 2px var(--card);
+    pointer-events: none;
+}
+.tab-dot.out { animation: tab-dot-out 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes tab-dot-out { to { opacity: 0; transform: scale(0.3); filter: blur(2px); } }
 .tab-plus {
     flex: none;
     width: 62px;
@@ -1869,25 +1889,25 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 @media (prefers-reduced-motion: reduce) {
     .tab-sel, .tab-ic, .tab-plus { transition: none; }
     .tab-ic.play * { animation: none !important; }
+    .swipe-actions [class*="sw-"] { animation: none !important; }
 }
 .low-motion .tab-ic.play * { animation: none !important; }
+.low-motion .swipe-actions [class*="sw-"] { animation: none !important; }
 
-/* --- Зелёная карточка статуса (визит подтверждён) --- */
+/* --- Карточка статуса визита: белая, как все карточки; подтверждённый визит - карточка
+   хоста с зелёной капсулой статуса (Visit.tsx) --- */
 
 .status-card {
     border-radius: var(--radius-card);
     padding: 18px var(--row-x) 16px;
     margin-bottom: 18px;
 }
-.status-card.approved {
-    background: var(--ok-bg);
-    box-shadow: var(--ok-shadow);
-    color: var(--ok-name);
-}
+.status-card.approved,
 .status-card.pending {
     background: var(--card);
     box-shadow: var(--shadow-card);
 }
+.status-card.approved { padding-top: 14px; padding-bottom: 14px; }
 /* flex-start, а не center: заголовок может уехать на две строки, и тогда кружок
    с иконкой должен остаться у первой, а не повиснуть посередине. */
 .status-card-head { display: flex; align-items: flex-start; gap: 8px; }
@@ -1900,19 +1920,17 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     justify-content: center;
     flex-shrink: 0;
 }
-/* Галочка внутри кружка рисуется currentColor — так её цвет живёт в теме, а не в JS. */
-.status-card.approved .status-card-icon { background: var(--ok-fg); color: var(--ok-check); }
 .status-card.pending .status-card-icon { background: var(--chip); }
 /* line-height под высоту кружка-иконки — так однострочный заголовок с ней вровень,
    а min-width снимает флексовый min-width:auto, из-за которого длинный заголовок
    не переносился, а вылезал за карточку. */
 .status-card-title { font-size: 17px; font-weight: 700; line-height: 26px; min-width: 0; overflow-wrap: anywhere; }
-.status-card.approved .status-card-title { color: var(--ok-fg); }
-.status-card-body { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.host-avatar { width: 46px; height: 46px; font-size: 18px; box-shadow: 0 0 0 2px var(--ok-bg); }
-.host-kicker { font-size: 12px; color: rgba(var(--ok-sec), 0.7); }
-.host-name { font-size: 17px; font-weight: 700; line-height: 1.2; color: var(--ok-name); }
-.host-sub { font-size: 13px; color: rgba(var(--ok-sec), 0.75); }
+.status-card-body { display: flex; align-items: center; gap: 12px; }
+.host-avatar { width: 46px; height: 46px; font-size: 18px; }
+.host-main { flex: 1; min-width: 0; }
+.host-kicker { font-size: 12px; color: var(--text-2); }
+.host-name { font-size: 17px; font-weight: 700; line-height: 1.2; color: var(--text); }
+.host-sub { font-size: 13px; color: var(--text-2); }
 .status-card.pending .status-card-note,
 .status-card.proposal .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .note-warn { display: inline-block; margin-top: 6px; color: var(--text); font-weight: 600; }
@@ -2109,6 +2127,13 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
 }
 .today-card.day-locked .tc-today { color: var(--text-2); }
+/* Свет дня сверху карточки «Сегодня» (--tc-lit, DayRow.tsx): к людям уходит в её цвет. */
+.today-card.lit { background-image: radial-gradient(150% 95% at 50% -25%, var(--tc-lit) 0%, transparent 72%); }
+.today-card.lit.day-locked {
+    background-image:
+        repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px),
+        radial-gradient(150% 95% at 50% -25%, var(--tc-lit) 0%, transparent 72%);
+}
 .day-chip.locked { cursor: default; }
 .day-chip.locked .dc-dow, .day-chip.locked .dc-num { color: var(--text-3); }
 /* Дата приглушается, как у пустого дня: слова «закрыт» в строке нет, роль берут
@@ -2808,9 +2833,9 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 }
 .rows-disabled { opacity: 0.45; pointer-events: none; }
 
-/* Баннер «нужно твоё действие» (взнос не отмечен, бот не может писать в личку) —
-   тот же тёплый тон, что у плашки взноса. На подложке карточки он не отличался от
-   рядовой строки списка, хотя это единственное на экране, что просит действия. */
+/* Баннер «нужно твоё действие» (бот не может писать в личку) в тёплом тоне: на
+   подложке карточки он не отличался от рядовой строки списка, хотя это единственное
+   на экране, что просит действия. */
 .write-banner {
     display: flex;
     align-items: center;
@@ -2836,10 +2861,6 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .wb-text { flex: 1; min-width: 0; }
 .wb-title { font-size: 15px; font-weight: 600; }
 .wb-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
-/* Приглашение, а не долг: та же форма, но синяя (плашка «Привяжите телефон»). */
-.write-banner.invite { background: var(--blue-soft); }
-.write-banner.invite .wb-icon { background: var(--blue); }
-.write-banner.invite > svg { opacity: 0.7; }
 
 /* Код домофона на главной: справа пелена, по тапу сам код. Буква клавиши - в
    рамке, как на панели, цифры табличные: код читают с одного взгляда у двери. */
@@ -3725,13 +3746,9 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 /* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
 .my-dues { position: relative; border-radius: var(--radius-card); padding: 18px var(--row-x); margin-bottom: 18px; background: var(--card); box-shadow: var(--shadow-card); }
 /* Три состояния живут в одной карточке слоями, как в сцене взносов знакомства: «Я внёс»
-   перекрашивает подложку и меняет метку на месте, а не подменяет карточку другой. */
-.my-dues.md-card { overflow: hidden; background: none; box-shadow: none; }
-.my-dues.md-card.md-claimed { box-shadow: var(--shadow-card); }
-.md-tint, .md-tint > i { position: absolute; inset: 0; }
-.md-tint > i[data-s="none"] { background: var(--warn-bg); }
-.md-tint > i[data-s="claimed"] { background: var(--card); }
-.md-tint > i[data-s="paid"] { background: var(--ok-soft-bg); }
+   меняет метку и кнопку на месте, а не подменяет карточку другой. Карточка белая во всех
+   трёх: статус говорит капсула, как у всех статусов приложения. */
+.my-dues.md-card { overflow: hidden; }
 .md-body { position: relative; }
 .md-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; }
 .md-tags { display: grid; justify-items: end; }
@@ -3753,13 +3770,16 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .md-act { display: grid; margin-top: 14px; }
 .my-dues .md-act .primary-btn { margin-top: 0; }
 .md-act .ob-pay-line { position: static; min-height: 50px; border-radius: var(--radius-btn); }
-.my-dues-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+.my-dues-title { font-size: 15px; font-weight: 600; line-height: 1.3; }
 .my-dues-sum { margin-top: 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .my-dues-sub { margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
 .my-dues .primary-btn { margin-top: 14px; }
-/* Реквизиты прямо в плашке: перевод делают отсюда, а не идут искать закреп в чате. */
-.my-dues-req { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: rgba(var(--sec), 0.06); }
-.mdr-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Реквизиты прямо в карточке: перевод делают отсюда, а не идут искать закреп в чате.
+   Строкой с подписью под чертой, без серого ящика. */
+.my-dues-req { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 0.5px solid var(--sep); }
+.mdr-main { flex: 1; min-width: 0; }
+.mdr-k { margin-bottom: 2px; font-size: 13px; line-height: 1.3; color: var(--text-2); }
+.mdr-text { font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mdr-copy { flex-shrink: 0; border: 0; background: none; padding: 2px; color: var(--blue); cursor: pointer; }
 
 /* Строка периода в истории: мини-полоса вместо цифр рядом с суммой. */
@@ -3964,45 +3984,31 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 
 /* «Я на месте»: блок живёт только в окне вокруг слота, поэтому он и первый на экране -
    в этот момент человек стоит у двери, и всё остальное подождёт. */
-.arrival-card {
-    padding: 16px;
-    border-radius: 22px;
-    background: var(--ok-soft-strong);
-    box-shadow: inset 0 0 0 1.5px rgba(52, 199, 89, 0.4);
-    margin-bottom: 12px;
-}
-.arrival-head { display: flex; align-items: center; gap: 10px; }
 .ptb-keep { margin-top: 12px; }
-.arrival-icon.pop svg { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.arrival-icon {
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
-    border-radius: 11px;
-    background: rgba(52, 199, 89, 0.2);
+.arrival-ic { display: inline-flex; flex-shrink: 0; }
+.arrival-ic.pop svg { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* «Я на месте» (Visit.tsx, ArrivalButton): капсула без плашки, синяя, как главные кнопки.
+   Пока идёт антиспам, серая с отсчётом до следующего раза. */
+.arrival-btn {
+    width: 100%;
+    min-height: 50px;
+    margin-bottom: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-.arrival-title { font-size: 16px; font-weight: 700; color: var(--text); }
-.arrival-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
-.arrival-btn {
-    width: 100%;
-    margin-top: 12px;
-    min-height: 48px;
+    gap: 8px;
     border: none;
     border-radius: var(--radius-btn);
-    background: var(--green);
+    background: var(--blue);
     color: #fff;
     font-family: inherit;
     font-size: 17px;
     font-weight: 700;
     cursor: pointer;
+    transition: background-color 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .arrival-btn:active { opacity: 0.8; }
-/* Пока идёт антиспам, кнопка остаётся на месте с обратным отсчётом: прятать её
-   значит оставить на экране текст «сообщите ещё раз» и нечем это сделать. */
-.arrival-btn:disabled { opacity: 0.45; cursor: default; }
+.arrival-btn.sent { background: rgba(var(--sec), 0.12); color: var(--text-2); cursor: default; }
 
 /* Подсказка-плашка в форме заявки: про кнопку «Я на месте» надо сказать заранее -
    у двери читать инструкции поздно. */
@@ -4156,22 +4162,14 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .stats-note { margin-top: 8px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .stats-card .sep { margin: 14px 0 12px; }
 
-/* Полоса текущего окна относительно максимума пары «сейчас / раньше».
-   Прошлый период — строкой текста под ней, отдельной полосы у него нет. */
-.compare-bar {
-    height: 6px;
-    border-radius: 999px;
-    background: rgba(var(--sec), 0.1);
-    margin-top: 16px;
-    overflow: hidden;
-}
-.compare-bar i {
-    display: block;
-    height: 100%;
-    border-radius: 999px;
-    background: var(--chart-blue);
-    transition: width 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-}
+/* Обзор, как статистика Telegram (Stats.tsx): разница к прошлому периоду рядом с числом,
+   со знаком и цветом, подпись под числом. */
+.sf-delta { font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.sf-delta.up { color: var(--ok-fg); }
+.sf-delta.down { color: var(--red); }
+.sf-of.sf-under { display: block; margin-top: 6px; }
+/* Число главное (Units в common.tsx): единица мельче и тише цифр. */
+.num-unit { font-size: 0.66em; font-weight: 700; letter-spacing: 0; color: var(--text-2); }
 
 .stats-pair { display: flex; gap: 24px; }
 .sp-num { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }

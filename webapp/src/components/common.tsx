@@ -23,6 +23,15 @@ const LEAD = { text: 0, icon: 30, avatar: 40 }
  * он свой (плитка дня, отметка взноса). Готовым числом отступ не задаётся: при смене
  * отступа строк сотня литералов разъехалась бы с текстом. Без `inset` - во всю ширину.
  */
+/**
+ * Число главное: единицы (₽, ч, мин) тише цифр, как в обзорах Telegram. Текст уже собран
+ * форматтером (money, fmtDuration): единицей считается всё, что не цифра и не разделитель.
+ */
+export function Units({ text }: { text: string }) {
+  const parts = text.split(/([^\d\s\u00a0\u202f,.:+\u2212-]+)/)
+  return <>{parts.map((p, i) => (i % 2 === 1 ? <span key={i} className="num-unit">{p}</span> : p))}</>
+}
+
 export function Sep({ inset }: { inset?: keyof typeof LEAD | number }) {
   if (inset === undefined) return <div className="sep" />
   const lead = typeof inset === 'number' ? inset : LEAD[inset]

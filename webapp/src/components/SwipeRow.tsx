@@ -13,6 +13,58 @@ import { project, reducedMotion, rubber, spring, tracker, type SpringOpts } from
 import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
 
+/**
+ * Значки действий свайпа. Части с классами sw-* играют, когда строку открыли (app.css,
+ * .swipe-actions.revealed), как значки в списке чатов Telegram: черты и круги
+ * дорисовываются, стрелки часов делают оборот. Свои, а не из icons.tsx: там галочку и
+ * крестик рисуют штрихом в пикселях, а здесь длина пути - единица.
+ */
+export const swipeIcons = {
+  note: (size = 21): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <rect className="sw-sheet" x="2.6" y="2.6" width="10.8" height="10.8" rx="3.2" fill="none" stroke="#fff" strokeWidth="1.5" />
+      <path className="sw-draw sw-late" d="M5.5 6.5h5M5.5 9.4h3.2" pathLength={1} stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  clock: (size = 21): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18">
+      <circle cx="9" cy="9" r="7" fill="none" stroke="#fff" strokeWidth="1.6" />
+      <path className="sw-hands" d="M9 5v4.2l2.6 1.6" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  close: (size = 21): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path className="sw-draw" d="M5.5 5.5l9 9M14.5 5.5l-9 9" pathLength={1} stroke="#fff" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  ),
+  // Круг начинается слева сверху, оттуда же идёт черта.
+  ban: (size = 21): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <circle className="sw-draw" cx="10" cy="10" r="7.2" transform="rotate(-135 10 10)" pathLength={1} fill="none" stroke="#fff" strokeWidth="1.7" />
+      <path className="sw-draw sw-late" d="M5 5l10 10" pathLength={1} stroke="#fff" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
+  tag: (size = 19): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <g className="sw-swing">
+        <path d="M10.2 2.4H16a1.6 1.6 0 0 1 1.6 1.6v5.8a1.6 1.6 0 0 1-.5 1.1l-6 6a1.6 1.6 0 0 1-2.2 0l-5.4-5.4a1.6 1.6 0 0 1 0-2.2l6-6a1.6 1.6 0 0 1 1.1-.5z" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinejoin="round" />
+        <circle cx="13.4" cy="6.6" r="1.3" fill="#fff" />
+      </g>
+    </svg>
+  ),
+  undo: (size = 19): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 20 20">
+      <path className="sw-draw" d="M4.5 9.5A5.8 5.8 0 1 1 10 16" pathLength={1} fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+      <path className="sw-draw sw-late" d="M4.4 5.4v4.3h4.3" pathLength={1} fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  check: (size = 18): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 14 14">
+      <path className="sw-draw" d="M2.5 7.5l3 3L11.5 4" pathLength={1} fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+}
+
 export type SwipeAction = {
   key: string
   /** Подпись действия: показывается, если нет иконки, и всегда идёт в aria-label. */

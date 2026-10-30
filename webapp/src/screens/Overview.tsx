@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Ref, type RefObject } from 'react'
 import { fmtRange, requestsWord } from '../dates'
-import { money } from '../format'
 import { icons } from '../icons'
 import { animate, clamp, pr, reducedMotion } from '../motion'
 import { push, useStore } from '../store'
@@ -9,59 +8,7 @@ import { resolvedTheme } from '../theme'
 import { DevChips, Header, Sep } from '../components/common'
 import { DayRow, TodayCard } from '../components/DayRow'
 import { LaterEvents } from '../components/EventRow'
-import { MacSheet } from '../components/MacSheet'
 import { Screen } from '../components/Screen'
-
-/**
- * Плашка «взнос не отмечен»: висит, пока свой взнос не закрыт, дальше исчезает.
- * Нулевая ставка — освобождение: с человека взнос не спрашивают, и напоминать не о чем.
- */
-function DuesBanner() {
-  const { data } = useStore()
-  const dues = data!.dues
-  if (!dues || !dues.enabled || !dues.me.inRoster || dues.me.amount <= 0 || dues.me.status !== 'none') return null
-  return (
-    <button type="button" className="write-banner" onClick={() => push('dues')}>
-      <div className="wb-icon">{icons.rub(17, '#fff')}</div>
-      <div className="wb-text">
-        <div className="wb-title">{`Взнос за ${dues.periodLabel.split(' ')[0]?.toLowerCase()}, ${money(dues.me.amount, dues.currency)}`}</div>
-        <div className="wb-sub">Ещё не отмечен</div>
-      </div>
-      {icons.chevron()}
-    </button>
-  )
-}
-
-/** Сколько после вступления на главной висит плашка «Привяжите телефон». */
-const PHONE_BANNER_MS = 7 * 24 * 60 * 60 * 1000
-
-/**
- * Плашка для тех, кто пропустил привязку телефона в знакомстве: неделю после
- * вступления, пока телефон не привязан. Синяя, а не тёплая, как у взноса: это
- * приглашение, а не долг.
- */
-function PhoneBanner() {
-  const { data } = useStore()
-  const [sheet, setSheet] = useState(false)
-  const joinedAt = data!.onboarding?.joinedAt
-  const bound = (data!.settings?.macs.length ?? 0) > 0
-  const fresh = joinedAt ? Date.now() - Date.parse(joinedAt) < PHONE_BANNER_MS : false
-  return (
-    <>
-      {fresh && !bound ? (
-        <button type="button" className="write-banner invite" onClick={() => setSheet(true)}>
-          <div className="wb-icon">{icons.wifi()}</div>
-          <div className="wb-text">
-            <div className="wb-title">Привяжите телефон</div>
-            <div className="wb-sub">Бот сам отметит вас в спейсе</div>
-          </div>
-          {icons.chevron('var(--blue)')}
-        </button>
-      ) : null}
-      {sheet ? <MacSheet onClose={() => setSheet(false)} /> : null}
-    </>
-  )
-}
 
 /** Сколько код домофона остаётся открытым: главную часто скриншотят в чаты. */
 const DOOR_REVEAL_MS = 60_000
@@ -333,8 +280,6 @@ export function Overview() {
   return (
     <Screen>
       <Header title="Ближайшие дни" subtitle={`${fmtRange(first, last)} · ${requestsWord(total)}`} chip={<DevChips />} />
-      <DuesBanner />
-      <PhoneBanner />
       {today ? <TodayCard day={today} onOpen={() => push('day', { dateKey: today.dateKey })} /> : null}
       <div className="card">
         {week.map((day, i) => (

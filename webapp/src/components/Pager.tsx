@@ -13,6 +13,8 @@ import { useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from '
 import { afterHero } from '../hero'
 import {
   arrowStep,
+  BAND_FADE,
+  bandLight,
   clamp,
   EDGE_ZONE,
   holdSelection,
@@ -25,6 +27,7 @@ import {
   reducedMotion,
   rubber,
   springAt,
+  stageTop,
   toHex,
   tracker,
 } from '../motion'
@@ -111,10 +114,11 @@ export function Pager<T>({
       const i1 = Math.min(last, i0 + 1)
       const f = pp - i0
       const stage = mixc(toneOf(list[i0]!), toneOf(list[i1]!), f)
-      band.style.background = stage
       const h0 = S.heads.get(i0) ?? S.heads.get(cur) ?? 0
       const h1 = S.heads.get(i1) ?? h0
-      band.style.height = `${Math.max(0, mix(h0, h1, f) - S.bandTop).toFixed(1)}px`
+      const head = Math.max(0, mix(h0, h1, f) - S.bandTop)
+      band.style.background = bandLight(stage, head, C)
+      band.style.height = `${(head + BAND_FADE).toFixed(1)}px`
       pageEls.current.forEach((el, i) => {
         const d = i - S.p
         if (Math.abs(d) >= 1) {
@@ -383,7 +387,7 @@ export function Pager<T>({
   // Шапку Telegram красим в тон карточки, когда она встала (и после перехода из строки).
   useEffect(() => {
     const it = items[index]
-    if (it && !under) afterHero(() => setHeaderColor(toHex(tone(it))))
+    if (it && !under) afterHero(() => setHeaderColor(toHex(stageTop(tone(it)))))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, items, theme, under])
   useEffect(

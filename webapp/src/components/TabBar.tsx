@@ -2,11 +2,13 @@
 // круглая «+». Капсула выбора стоит под вкладкой по номеру (--i) и переезжает CSS-переходом;
 // её можно вести пальцем по панели. Значок вкладки, ставшей выбранной, проигрывает своё
 // движение (app.css, .tab-ic.play): по ключу он ремаунтится, и анимация начинается заново.
+// Красная точка на вкладке - там ждёт ваше дело, как непрочитанное в Telegram.
 
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement } from 'react'
 import { icons } from '../icons'
-import { clamp, EDGE_ZONE, markOwnTap, reducedMotion } from '../motion'
-import { startNewRequest, switchTab, type Anim, type ScreenName } from '../store'
+import type { Bootstrap } from '../types'
+import { clamp, EDGE_ZONE, markOwnTap, ownTapRecent, reducedMotion } from '../motion'
+import { startNewRequest, switchTab, useStore, type Anim, type ScreenName } from '../store'
 import { haptic } from '../telegram'
 
 const svg = (cls: string, children: ReactElement | ReactElement[]): ReactElement => (
@@ -84,6 +86,40 @@ const LABELS: Partial<Record<ScreenName, string>> = {
   route: 'Как пройти',
 }
 
+/** Сколько после вступления точка на «Настройках» зовёт привязать телефон. */
+const PHONE_DOT_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Вкладки с точкой. «Взносы» - свой взнос не отмечен; нулевая ставка - освобождение, звать
+ * не к чему. «Настройки» - неделю после вступления, пока телефон не привязан: это
+ * приглашение для тех, кто пропустил привязку в знакомстве.
+ */
+function dotsOf(data: Bootstrap | null): ScreenName[] {
+  if (!data) return []
+  const out: ScreenName[] = []
+  const dues = data.dues
+  if (dues && dues.enabled && dues.me.inRoster && dues.me.amount > 0 && dues.me.status === 'none') out.push('dues')
+  const joinedAt = data.onboarding?.joinedAt
+  const fresh = joinedAt ? Date.now() - Date.parse(joinedAt) < PHONE_DOT_MS : false
+  if (data.settings && fresh && data.settings.macs.length === 0) out.push('settings')
+  return out
+}
+
+/** Точка гаснет по эталону, только если дело сделано своим касанием; иначе просто пропадает. */
+function TabDot({ on }: { on: boolean }) {
+  const [shown, setShown] = useState(on)
+  const [out, setOut] = useState(false)
+  useEffect(() => {
+    if (on) {
+      setShown(true)
+      setOut(false)
+    } else if (ownTapRecent() && !reducedMotion()) setOut(true)
+    else setShown(false)
+  }, [on])
+  if (!shown) return null
+  return <i className={'tab-dot' + (out ? ' out' : '')} aria-hidden="true" onAnimationEnd={() => setShown(false)} />
+}
+
 /** Палец ведёт капсулу, только сдвинувшись на столько: короче это касание вкладки. */
 const DRAG_SLOP = 6
 
@@ -94,6 +130,8 @@ type Drag = { id: number; x0: number; on: boolean; hot: number }
  * `anim` - класс въезда корня: без View Transitions панель проявляется вместе с экраном.
  */
 export function TabBar({ tabs, active, anim = null, still = false }: { tabs: ScreenName[]; active: ScreenName; anim?: Anim; still?: boolean }) {
+  const { data } = useStore()
+  const dots = dotsOf(data)
   const guest = tabs[0] === 'myVisits'
   const index = Math.max(0, tabs.indexOf(active))
   const capsRef = useRef<HTMLDivElement>(null)
@@ -212,6 +250,7 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
               {ICONS[name]}
             </span>
             <span className="tab-label">{LABELS[name]}</span>
+            <TabDot on={dots.includes(name)} />
           </button>
         ))}
       </div>
