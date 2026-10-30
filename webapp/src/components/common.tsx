@@ -156,6 +156,23 @@ export const ReadonlyBadge = () => (
 )
 
 /**
+ * Значок потока уведомлений в строке с выбором: у выключенного плитка серая, а колокольчик
+ * перечёркнут, как bell.slash в iOS. Иначе «Выкл» читался только по подписи справа.
+ */
+export function NotifyIcon({ color, off }: { color: string; off: boolean }) {
+  return (
+    <div className={'row-icon notify-icon' + (off ? ' off' : '')} style={{ background: color }}>
+      <i className="ni-gray" />
+      {icons.bell()}
+      <svg className="ni-slash" viewBox="0 0 30 30" aria-hidden="true">
+        <path className="ni-cut" d="M8.6 7.4l13.6 15.2" pathLength={1} />
+        <path className="ni-line" d="M8.6 7.4l13.6 15.2" pathLength={1} />
+      </svg>
+    </div>
+  )
+}
+
+/**
  * Строка с тумблером целиком - один переключатель, как в Telegram для Android и Desktop:
  * касание по подписи переключает его же, а мышь в паре пикселей от тумблера больше не
  * проходит мимо. Сам тумблер нарисован внутри и кнопкой не является: кнопка в кнопке
@@ -174,7 +191,9 @@ export function SwitchRow({
   onToggle: () => void | Promise<unknown>
   label: ReactNode
   sub?: ReactNode
-  icon?: ReactNode
+  // Значок, который зависит от положения (NotifyIcon), получает показанное положение:
+  // ползунок встаёт на тапе, и значок по данным отставал бы от него до ответа сервера.
+  icon?: ReactNode | ((on: boolean) => ReactNode)
   disabled?: boolean
   className?: string
 }) {
@@ -203,7 +222,7 @@ export function SwitchRow({
         }
       }}
     >
-      {icon}
+      {typeof icon === 'function' ? icon(shown) : icon}
       <span className="row-label">
         {label}
         {sub ? <span className="row-sublabel">{sub}</span> : null}

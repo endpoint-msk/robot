@@ -1,6 +1,6 @@
 // День у гостя тем же экраном, что у резидента: полоса в тон дня, кто придёт, «Хочу прийти»
 // в шапке, дни листаются (DayPager из Day.tsx). На странице только то, что гостю и так
-// приходит в bootstrap: публичное «кто придёт», повестка, ивенты и замок.
+// приходит в bootstrap: публичное «кто придёт», тема дня, ивенты и замок.
 
 import { Fragment } from 'react'
 import { fmtDayMonth, peopleWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
@@ -8,8 +8,8 @@ import { icons } from '../icons'
 import { push, startNewRequest, useParams, useStore } from '../store'
 import type { DayLock } from '../types'
 import { Header, SectionTitle, Sep } from '../components/common'
-import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeesCard } from '../components/attendees'
+import { DayTopic } from '../components/DayTopic'
 import { EventRow } from '../components/EventRow'
 import { Avatar, userLabel } from '../components/people'
 import { ComingNames, DayPager, DroppedDay, type DayPageProps } from './Day'
@@ -44,6 +44,7 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
           title={weekday}
           subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(day.dateKey)}${att.length > 0 ? ` · ${peopleWord(att.length)}` : ''}`}
         />
+        {day.agenda ? <DayTopic text={day.agenda.text} dateKey={day.dateKey} /> : null}
         <div className="dpg-coming">
           <div className="dpg-faces" aria-hidden="true">
             {faces.length === 0 ? (
@@ -83,7 +84,6 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
       </div>
       <div className="dpg-body">
         {day.lock ? <LockBanner lock={day.lock} /> : null}
-        {day.agenda ? <AgendaBanner agenda={day.agenda} /> : null}
         {/* Ивенты над людьми: это главное, что происходит в этот день. Сам ивент
             открывается афишей. */}
         {day.events.length > 0 ? (

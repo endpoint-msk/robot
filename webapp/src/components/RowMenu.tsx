@@ -12,6 +12,9 @@ import { haptic } from '../telegram'
  */
 export function useRowMenu<K extends string>() {
   const [openFor, setOpenFor] = useState<K | null>(null)
+  // Чья строка в меню. Закрытое меню ещё гаснет, и значения в нём должны остаться от неё:
+  // по openFor отметка на миг перескочила бы на значение соседней строки.
+  const [shownFor, setShownFor] = useState<K | null>(null)
   const [place, setPlace] = useState<{ top?: number; bottom?: number }>({})
   const hostRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -36,6 +39,7 @@ export function useRowMenu<K extends string>() {
     // Строка у низа экрана: меню раскрывается вверх, иначе уехало бы за край.
     const up = window.innerHeight - r.bottom < 220
     setPlace(!host ? {} : up ? { bottom: host.bottom - r.top + 4 } : { top: r.bottom - host.top + 4 })
+    setShownFor(key)
     setOpenFor(key)
   }
   /** Выбор отвечает щелчком и даёт меню мигнуть отметкой, прежде чем закрыться. */
@@ -43,7 +47,7 @@ export function useRowMenu<K extends string>() {
     haptic.tick()
     setTimeout(() => setOpenFor(null), 140)
   }
-  return { openFor, place, hostRef, open, close }
+  return { openFor, shownFor, place, hostRef, open, close }
 }
 
 export function MenuItems<V extends string>({

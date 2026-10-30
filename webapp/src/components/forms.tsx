@@ -527,6 +527,7 @@ export function RemindCard({
                 <button
                   key={c}
                   className={'remind-chip' + (c === choice ? ' selected' : '') + (off ? ' off' : '')}
+                  data-label={REMINDER_LABELS[c]}
                   disabled={off}
                   onClick={() => onChange(c)}
                 >

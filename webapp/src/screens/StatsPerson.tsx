@@ -37,6 +37,33 @@ const DOT_WEEKS = 12
 /** Маркер «резидент с самого начала» вместо ключа дня (см. RESIDENT_SINCE_ORIGIN на бэке). */
 const ORIGIN = 'origin'
 
+/** Ячейка полосы визита - два часа: полная, если человек был все два. */
+const VISIT_CELL_MIN = 120
+
+const minuteOf = (time: string): number => {
+  const [h, m] = time.split(':').map(Number)
+  return (h ?? 0) * 60 + (m ?? 0)
+}
+
+/**
+ * Визит строкой суток, как день в «Истории по дням» (.day12): двенадцать ячеек по два
+ * часа, тон по минутам визита в ячейке. Видно, вечером он был или днём; время целиком
+ * уходит в подпись для экранного чтеца. Визит через полночь доходит в полосе до 24:00,
+ * длительность в строке полная.
+ */
+function VisitStrip({ from, to }: { from: string; to: string }) {
+  const a = minuteOf(from)
+  const b = minuteOf(to) < a ? 24 * 60 : minuteOf(to)
+  return (
+    <span className="day12" role="img" aria-label={nb(`с ${from} до ${to}`)}>
+      {Array.from({ length: 12 }, (_, i) => {
+        const level = heatLevel(Math.min(b, (i + 1) * VISIT_CELL_MIN) - Math.max(a, i * VISIT_CELL_MIN), VISIT_CELL_MIN)
+        return <i key={i} style={level > 0 ? { background: `var(--heat-${level})` } : undefined} />
+      })}
+    </span>
+  )
+}
+
 /** Скелет карточки: шапка, четыре показателя, сетка визитов и список последних. */
 function PersonSkeleton({ head }: { head: boolean }) {
   return (
@@ -316,11 +343,12 @@ export function PersonPage({
                   </div>
                   <span className="row-label">
                     {fmtDuration(v.minutes)}
-                    <span className="row-sublabel">
-                      {`${v.from} – ${v.to} · ${v.source === 'mac' ? 'по MAC' : 'отметился сам'}`}
-                    </span>
+                    <span className="row-sublabel">{v.source === 'mac' ? 'по MAC' : 'отметился сам'}</span>
                   </span>
-                  <div className="row-right">{icons.chevron()}</div>
+                  <div className="row-right">
+                    <VisitStrip from={v.from} to={v.to} />
+                    {icons.chevron()}
+                  </div>
                 </button>
               </Fragment>
             ))}

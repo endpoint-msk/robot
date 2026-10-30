@@ -37,7 +37,7 @@ import { applyTheme, sec } from '../theme'
 import { eventPhotoUrl } from '../links'
 import { haptic, openBotSection, setBottomBarColor, setHeaderColor, switchInline, tg } from '../telegram'
 import type { Bootstrap, NotifyPrefs, OnboardingPerson, User } from '../types'
-import { Sep, SwitchRow } from '../components/common'
+import { NotifyIcon, Sep, SwitchRow } from '../components/common'
 import { AnimContext } from '../components/Screen'
 import { MacSheet } from '../components/MacSheet'
 import {
@@ -506,13 +506,32 @@ const notifySummary = (s: { notify: NotifyPrefs; eventNotify: NotifyPrefs }, due
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
 }
 
-/** Строки знакомства: иконка слева, подпись с пояснением, справа стрелка или значение. */
-function InfoRow({ icon, color, label, sub, right }: { icon: ReactNode; color: string; label: string; sub?: string; right?: ReactNode }) {
+/**
+ * Строки знакомства: иконка слева, подпись с пояснением, справа стрелка или значение.
+ * `tile` заменяет плитку иконки целиком (значок потока уведомлений, NotifyIcon).
+ */
+function InfoRow({
+  icon,
+  color,
+  tile,
+  label,
+  sub,
+  right,
+}: {
+  icon?: ReactNode
+  color?: string
+  tile?: ReactNode
+  label: string
+  sub?: string
+  right?: ReactNode
+}) {
   return (
     <>
-      <div className="row-icon" style={{ background: color }}>
-        {icon}
-      </div>
+      {tile ?? (
+        <div className="row-icon" style={{ background: color }}>
+          {icon}
+        </div>
+      )}
       <span className="row-label">
         {label}
         {sub ? <span className="row-sublabel">{sub}</span> : null}
@@ -541,6 +560,9 @@ export function Onboarding() {
   const [step, setStep] = useState(0)
   const [sheet, setSheet] = useState(false)
   const [menuFor, setMenuFor] = useState<'req' | 'ev' | null>(null)
+  // Чья строка в меню: закрытое меню ещё гаснет, и отметка в нём не должна перескакивать
+  // на значение соседней строки (useRowMenu, shownFor).
+  const [menuShown, setMenuShown] = useState<'req' | 'ev'>('req')
   const [menuTop, setMenuTop] = useState(0)
   const [reduce] = useState(reducedMotion)
 
@@ -702,6 +724,7 @@ export function Onboarding() {
     const host = extraRef.current?.getBoundingClientRect()
     const r = btn.getBoundingClientRect()
     setMenuTop(host ? r.bottom - host.top + 4 : 0)
+    setMenuShown(key)
     setMenuFor(key)
   }
 
@@ -875,8 +898,7 @@ export function Onboarding() {
                 <div className="card">
                   <div className="row">
                     <InfoRow
-                      icon={icons.bell()}
-                      color="var(--orange)"
+                      tile={<NotifyIcon color="var(--orange)" off={!settings.notify.enabled} />}
                       label="Новые заявки"
                       right={
                         <button type="button" className="ob-popup" onClick={(e) => openMenu('req', e.currentTarget)}>
@@ -889,8 +911,7 @@ export function Onboarding() {
                   <Sep inset="icon" />
                   <div className="row">
                     <InfoRow
-                      icon={icons.bell()}
-                      color="var(--purple)"
+                      tile={<NotifyIcon color="var(--purple)" off={!settings.eventNotify.enabled} />}
                       label="Новые ивенты"
                       right={
                         <button type="button" className="ob-popup" onClick={(e) => openMenu('ev', e.currentTarget)}>
@@ -918,7 +939,7 @@ export function Onboarding() {
                 </div>
                 <div className={'ob-menu' + (menuFor ? ' open' : '')} style={{ top: menuTop }} role="menu">
                   {(['today', 'all', 'off'] as NotifyChoice[]).map((c) => {
-                    const cur = menuFor === 'ev' ? settings.eventNotify : settings.notify
+                    const cur = menuShown === 'ev' ? settings.eventNotify : settings.notify
                     return (
                       <Fragment key={c}>
                         {c === 'off' ? <div className="ob-menu-gap" /> : null}

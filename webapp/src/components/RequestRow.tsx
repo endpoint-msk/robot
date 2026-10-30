@@ -11,13 +11,13 @@ import { choiceDialog, confirmDialog, reschedulePrompt, showAlert, textPrompt, t
 import { push, setData, useStore } from '../store'
 import { sec } from '../theme'
 import { haptic } from '../telegram'
-import type { Bootstrap, DayCapacity, HostingRequest, RescheduleProposal } from '../types'
+import type { Bootstrap, DayCapacity, HostingRequest, RescheduleProposal, User } from '../types'
 import { Avatar, Profile, userLabel } from './people'
 import { CapBar } from './CapBar'
 import { ActionButton, Sep } from './common'
 import { Collapse } from './Collapse'
 import { XText } from './Flip'
-import { markOwnTap } from '../motion'
+import { markOwnTap, ownTapRecent, reducedMotion } from '../motion'
 import { SwipeRow, type SwipeAction } from './SwipeRow'
 import { dustRow, offerUndo, removeRow, sheetGone, type Undoable } from '../undo'
 
@@ -190,6 +190,54 @@ export function MorphWord({ text, on }: { text: string; on: boolean }) {
  */
 const HOST_ARM_MS = 5000
 
+type Handoff = { from: User; on: boolean }
+
+/**
+ * «Взять визит» своим тапом: пилл прежнего хоста не подменяется вашим, а становится им
+ * на месте. Первый кадр рисует прежнего хоста, следующий переключает слои, и переходы
+ * CSS ведут ник буквами, как у «Захостить», и аватарку размытием. Чужая передача и
+ * уменьшенное движение встают сразу.
+ */
+function useHandoff(r: HostingRequest, meId: number): Handoff | null {
+  const host = r.status === 'approved' ? (r.approvedBy ?? null) : null
+  const last = useRef<User | null>(host)
+  const [h, setH] = useState<Handoff | null>(null)
+  useLayoutEffect(() => {
+    const prev = last.current
+    last.current = host
+    if (!prev || !host || prev.userId === host.userId || host.userId !== meId) return
+    if (!ownTapRecent() || reducedMotion()) return
+    setH({ from: prev, on: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host?.userId])
+  useEffect(() => {
+    if (!h) return
+    if (!h.on) {
+      const raf = requestAnimationFrame(() => setH((x) => (x ? { ...x, on: true } : x)))
+      return () => cancelAnimationFrame(raf)
+    }
+    const timer = window.setTimeout(() => setH(null), 640)
+    return () => window.clearTimeout(timer)
+  }, [h])
+  return h
+}
+
+/** Ник в пилле на время передачи: два слова слоями, ширина едет от прежнего к новому. */
+function HandoffName({ from, to, on }: { from: string; to: string; on: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const box = ref.current
+    const [a, b] = box ? Array.from(box.querySelectorAll<HTMLElement>('.hb-l')) : []
+    if (box && a && b) box.style.width = `${(on ? b : a).offsetWidth}px`
+  }, [on])
+  return (
+    <span className="hb-labels ph-names" ref={ref}>
+      <MorphWord text={from} on={!on} />
+      <MorphWord text={to} on={on} />
+    </span>
+  )
+}
+
 export function RequestRow({
   r,
   archive = false,
@@ -236,6 +284,7 @@ export function RequestRow({
   const approverRef = useRef<HTMLDivElement>(null)
   const hostedByMe = r.status === 'approved' && r.approvedBy?.userId === me.id
   const hostedByOther = r.status === 'approved' && !hostedByMe
+  const handoff = useHandoff(r, me.id)
   useLayoutEffect(() => {
     if (!morph) return
     // Гонку выиграл другой резидент: его пилл встаёт без морфа, наш нечего показывать.
@@ -294,7 +343,18 @@ export function RequestRow({
     // повторяла его. Словами остаётся в aria-label.
     const host = (
       <span className="pill-host">
-        <Avatar user={r.approvedBy} />
+        {handoff ? (
+          <span className="ph-av">
+            <span className={'ph-a' + (handoff.on ? ' off' : '')}>
+              <Avatar user={handoff.from} />
+            </span>
+            <span className={'ph-b' + (handoff.on ? '' : ' off')}>
+              <Avatar user={r.approvedBy} />
+            </span>
+          </span>
+        ) : (
+          <Avatar user={r.approvedBy} />
+        )}
         <span className="pill-ok" role="img" aria-label="хостит">
           {icons.check(8, '#fff', 3.2)}
         </span>
@@ -304,8 +364,15 @@ export function RequestRow({
       // Многоточие, а не крестик: за пиллом теперь два действия — передать и снять с себя.
       <button type="button" className="pill mine" aria-label="Вы хостите. Действия с хостингом" onClick={() => hostMenu(r, subject)}>
         {host}
-        <span className="pill-name">{userLabel(r.approvedBy)}</span>
-        <span className="pill-x">···</span>
+        <span className="pill-name">
+          {handoff ? <HandoffName from={userLabel(handoff.from)} to={userLabel(r.approvedBy)} on={handoff.on} /> : userLabel(r.approvedBy)}
+        </span>
+        {/* Свой ключ на время передачи: первый рендер своего пилла идёт ещё без неё (её
+            ставит layout-эффект), и многоточие с классом ph-off уезжало бы в ноль переходом,
+            а не стояло спрятанным с первого кадра. */}
+        <span key={handoff ? 'handoff' : 'x'} className={'pill-x' + (handoff && !handoff.on ? ' ph-off' : '')}>
+          ···
+        </span>
         {morph ? (
           <span className="pill-fx" aria-hidden="true">
             <span className="pill-fx-word">

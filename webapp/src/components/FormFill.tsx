@@ -2,7 +2,6 @@
 // id блока, наружу отдаёт onChange. Пустой ответ на обязательный блок валидирует
 // вызывающий (см. isFormComplete).
 
-import { icons } from '../icons'
 import type { EventFormField } from '../types'
 
 export type FieldAnswer = { text?: string; optionIds?: string[]; writeIn?: string }
@@ -49,10 +48,18 @@ function Choice({
             key={o.id}
             type="button"
             className={'ff-option' + (on ? ' on' : '')}
+            aria-pressed={on}
             disabled={disabled}
             onClick={() => toggle(o.id)}
           >
-            <span className={'ff-mark' + (field.multi ? ' box' : '')}>{on ? icons.check(12, '#fff', 2.6) : null}</span>
+            {/* Отметка рисуется, как в «Кто пришёл»: заливка растёт из середины, галочка
+                дорисовывается штрихом (app.css, .ff-fill и .ff-ck). */}
+            <span className={'ff-mark' + (field.multi ? ' box' : '')} aria-hidden="true">
+              <i className="ff-fill" />
+              <svg className="ff-ck" width="12" height="12" viewBox="0 0 14 14">
+                <path d="M2.5 7.5l3 3L11.5 4" pathLength={1} fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
             <span className="ff-option-label">{o.label}</span>
           </button>
         )

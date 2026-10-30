@@ -7,7 +7,7 @@ import { push, setData, setThemeFrom, useStore } from '../store'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import { accent } from '../theme'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
-import { BackRow, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
+import { BackRow, Header, NotifyIcon, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { MacSheet } from '../components/MacSheet'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Notification } from '../components/OnboardingScenes'
@@ -124,11 +124,7 @@ function NotifyCard<M extends string>({
   return (
     <div className="card">
       <SwitchRow
-        icon={
-          <div className="row-icon" style={{ background: color }}>
-            {icons.bell()}
-          </div>
-        }
+        icon={(on) => <NotifyIcon color={color} off={!on} />}
         label={title}
         on={prefs.enabled}
         onToggle={async () => {
@@ -157,7 +153,7 @@ function NotifyCard<M extends string>({
 function NotifySection({ s }: { s: SettingsData }) {
   const { data } = useStore()
   const menu = useRowMenu<'req' | 'ev'>()
-  const cur = menu.openFor === 'ev' ? s.eventNotify : s.notify
+  const cur = menu.shownFor === 'ev' ? s.eventNotify : s.notify
 
   const pick = (choice: NotifyChoice): void => {
     if (!menu.openFor) return
@@ -171,9 +167,7 @@ function NotifySection({ s }: { s: SettingsData }) {
   const botName = data!.onboarding?.botName || 'Endpoint Robot'
   const row = (key: 'req' | 'ev', label: string, color: string, prefs: SettingsData['notify']): ReactNode => (
     <div className="row">
-      <div className="row-icon" style={{ background: color }}>
-        {icons.bell()}
-      </div>
+      <NotifyIcon color={color} off={!prefs.enabled} />
       <span className="row-label">{label}</span>
       <button
         type="button"

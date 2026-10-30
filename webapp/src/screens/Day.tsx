@@ -42,10 +42,10 @@ import { haptic, setHeaderColor } from '../telegram'
 import { accentTriple, applyTheme, sec } from '../theme'
 import type { Attendee, Day as DayData, DayAgenda, DayLock, HostingRequest, User } from '../types'
 import { BackRow, EmptyState, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
-import { AgendaBanner } from '../components/AgendaBanner'
 import { AttendeeRow } from '../components/attendees'
 import { CapBar } from '../components/CapBar'
 import { Collapse } from '../components/Collapse'
+import { DayTopic, markOwnTopic } from '../components/DayTopic'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
@@ -68,7 +68,7 @@ const askReason = (initial: string): Promise<string | null> =>
     confirmLabel: 'Готово',
   })
 
-/** Повестку правят с плашки под шапкой и строкой в карточке «День»; пустой текст её снимает. */
+/** Тему дня правят со строки в шапке и строкой в карточке «День»; пустой текст её снимает. */
 const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<void> => {
   const current = agenda?.text ?? ''
   const text = await textPrompt({
@@ -81,6 +81,7 @@ const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<vo
   })
   if (text === null || text === current) return
   markOwnTap()
+  if (text) markOwnTopic(dateKey)
   await action('day.agenda', { dateKey, text }, { quiet: true })
 }
 
@@ -210,10 +211,17 @@ function DayCard({ day }: { day: DayData }) {
     <>
       <SectionTitle>День</SectionTitle>
       <div className="card ctl-card">
+        {/* Сама тема стоит в шапке дня, здесь вход в правку и автор: текст в строке
+            повторял бы шапку. */}
         <button type="button" className="row tappable" onClick={() => editAgenda(dateKey, day.agenda)}>
-          <span className="row-label">Тема дня</span>
+          <span className="row-label">
+            Тема дня
+            <Collapse open={Boolean(day.agenda?.by)} as="span" ms={320} ease={E.crisp}>
+              {day.agenda?.by ? <span className="row-sublabel">{`поставил ${userLabel(day.agenda.by)}`}</span> : null}
+            </Collapse>
+          </span>
           <div className="row-right">
-            <span className="lock-reason">{day.agenda ? day.agenda.text : 'Добавить'}</span>
+            {day.agenda ? null : <span className="lock-reason">Добавить</span>}
             {icons.chevron()}
           </div>
         </button>
@@ -683,15 +691,19 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
           title={WEEKDAYS_FULL[weekdayIdx(day.dateKey)]}
           subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(day.dateKey)} · ${requestsWord(requests.length)}`}
         />
+        {/* Поставили тему своим тапом: строка вырастает в шапке, полоса под шапкой растёт
+            вместе с ней (её меряет ResizeObserver листалки). */}
+        <Collapse open={Boolean(day.agenda)} ms={320} ease={E.crisp}>
+          {day.agenda ? (
+            <DayTopic text={day.agenda.text} dateKey={day.dateKey} onEdit={() => editAgenda(day.dateKey, day.agenda)} />
+          ) : null}
+        </Collapse>
         <ComingRow attendees={attendees} coming={coming} onToggle={() => void toggle()} />
       </div>
       <div className="dpg-body">
-        {/* Закрыли день или поставили повестку своим тапом: плашка вырастает на месте, а
-            не вставляется рывком, сдвигая всё, на что смотрят. */}
+        {/* Закрыли день своим тапом: плашка вырастает на месте, а не вставляется рывком,
+            сдвигая всё, на что смотрят. */}
         <Collapse open={Boolean(day.lock)}>{day.lock ? <LockBanner lock={day.lock} /> : null}</Collapse>
-        <Collapse open={Boolean(day.agenda)}>
-          {day.agenda ? <AgendaBanner agenda={day.agenda} onEdit={() => editAgenda(day.dateKey, day.agenda)} /> : null}
-        </Collapse>
         {/* Ивентов на день может быть сколько угодно, поэтому вход в редактор нужен и
             тогда, когда список уже не пуст. */}
         {events.length > 0 ? (

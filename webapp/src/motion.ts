@@ -612,7 +612,7 @@ export const tracker = () => {
  * изменение. Отличить их можно только по времени: что пришло вскоре после своего
  * нажатия, то и анимируем. Окно с запасом на медленную сеть.
  */
-const OWN_TAP_WINDOW_MS = 5000
+export const OWN_TAP_WINDOW_MS = 5000
 
 let ownTapAt = -Infinity
 

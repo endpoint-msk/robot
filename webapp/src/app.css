@@ -10,8 +10,8 @@
     /* Тот же цвет, что --bg, но с нулевой альфой: для градиента нижней панели.
        `transparent` тут нельзя — часть браузеров интерполирует через чёрный. */
     --bg-0: rgba(242, 242, 247, 0);
-    /* Матовое стекло плашки месяца над списком (FloatingMonth): фон с той же альфой, что у
-       стекла iOS. Готовым цветом, а не color-mix: без его поддержки (iOS до 16.2) переменная
+    /* Матовое стекло плашки месяца над списком (FloatingMonth) и прилипшего переключателя
+       статистики: фон с той же альфой, что у стекла iOS. Готовым цветом, а не color-mix: без его поддержки (iOS до 16.2) переменная
        с color-mix обнуляет фон целиком, и плашка становится прозрачной. */
     --bg-glass: rgba(242, 242, 247, 0.82);
     /* Подкраска размытого края под нижней кнопкой: фон наполовину, чтобы экран под кнопкой
@@ -173,7 +173,7 @@
    правилу самого класса. Без этого он оказывался специфичнее (0-1-1 против 0-1-0)
    и молча перебивал их: баннер терял свой фон и становился прозрачным, кнопка
    «назад» растягивалась во всю ширину, у сегмента текст уезжал влево. */
-button:where(.row, .back-row, .write-banner, .agenda-banner, .rule-row, .tl-row, .seg, .bar-slot, .fb-toggle-row) {
+button:where(.row, .back-row, .write-banner, .dpg-topic, .rule-row, .tl-row, .seg, .bar-slot, .fb-toggle-row) {
     width: 100%;
     padding: 0;
     border: none;
@@ -311,7 +311,7 @@ body {
     text-wrap: balance;
 }
 .ob-lead, .rule-text, .rules-wiki, .footnote, .hint-text, .remind-caption,
-.status-card-note, .my-dues-sub, .stats-note, .dues-note, .ab-title, .lb-sub {
+.status-card-note, .my-dues-sub, .stats-note, .dues-note, .dpg-topic-t, .lb-sub {
     text-wrap: pretty;
 }
 
@@ -1197,6 +1197,23 @@ mark.found { background: none; color: var(--blue); }
 .pill.mine::after { content: ""; position: absolute; inset: -9px -6px; }
 .pill.mine:active { opacity: 0.6; }
 .pill.mine .pill-x { font-size: 13px; font-weight: 700; color: var(--text-2); padding: 0 2px 0 0; line-height: 1; letter-spacing: 0.5px; }
+/* «Взять визит» своим тапом (useHandoff в RequestRow): ник меняется буквами, как у
+   «Захостить», и ширина ника едет вместе с ним; аватарка тает и проступает на месте,
+   «···» своего пилла раскрывается последним. У чужого пилла многоточия нет, поэтому
+   раскрывается и место под ним: иначе пилл в первом кадре вырос бы рывком. */
+.pill-name .ph-names { display: inline-grid; justify-items: start; vertical-align: top; transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ph-av { position: relative; display: flex; }
+.ph-av > span { display: flex; transition: opacity 0.2s ease-out, filter 0.24s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ph-av > .ph-b { position: absolute; inset: 0; transition-delay: 0.09s; }
+.ph-av > .off { opacity: 0; filter: blur(3px); transform: scale(0.82); }
+.pill.mine .pill-x {
+    display: inline-block;
+    max-width: 24px;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: max-width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), margin-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.24s ease-out 0.22s;
+}
+.pill.mine .pill-x.ph-off { max-width: 0; margin-left: -6px; opacity: 0; transition-delay: 0s; }
 
 /* «Отозвать» внутри плашки своего предложения. */
 .pn-undo { margin-left: 6px; font-size: 13px; padding: 2px 0; }
@@ -1522,6 +1539,24 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .dpg-page:not(.active) { position: absolute; top: 0; left: 0; right: 0; }
 .dpg-head { padding-bottom: 16px; user-select: none; -webkit-user-select: none; }
 .dpg-head .header { margin-bottom: 0; }
+/* Тема дня строкой шапки, под датой: кегль темы в карточке «Сегодня» (.tc-ag). Длинная
+   в две строки, целиком она в листе правки. */
+.dpg-topic { display: block; margin: 0 4px; padding-top: 10px; transform-origin: 0 50%; }
+.dpg-topic-t {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+button.dpg-topic { width: calc(100% - 8px); cursor: pointer; }
+button.dpg-topic:active { opacity: 0.6; }
+/* Своя тема проступает на месте по эталону «Захостить», пока строка растёт по высоте. */
+.dpg-topic.fresh { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
 .dpg-body { padding-top: 18px; }
 .dpg-events + .dpg-acts { margin-top: 12px; }
 .dpg-coming { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 14px 4px 0; }
@@ -1912,35 +1947,6 @@ span.collapse { display: block; }
 .lb-text { flex: 1; min-width: 0; }
 .lb-title { font-size: 15px; font-weight: 600; }
 .lb-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; overflow-wrap: anywhere; }
-
-/* Повестка дня: та же плашка, но в нейтральном тоне. Это описание дня, а не
-   предупреждение и не зов. Цвета в этом списке заняты смыслом: фиолетовый за ивентом,
-   оранжевый за закрытием, синий за действием. */
-.agenda-banner {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    border-radius: var(--radius-card);
-    background: var(--card);
-    box-shadow: var(--shadow-card);
-}
-button.agenda-banner { cursor: pointer; }
-button.agenda-banner:active { opacity: 0.6; }
-.ab-icon {
-    width: 32px;
-    height: 32px;
-    flex-shrink: 0;
-    border-radius: 8px;
-    background: var(--gray);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.ab-text { flex: 1; min-width: 0; }
-.ab-title { font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-.ab-sub { font-size: 13px; color: var(--text-2); margin-top: 2px; }
 
 /* Причина в строке карточки: длинную обрезаем — целиком она видна в плашке выше. */
 .lock-reason {
@@ -2520,6 +2526,21 @@ button.agenda-banner:active { opacity: 0.6; }
     justify-content: center;
     color: #fff;
 }
+/* Выключенный поток уведомлений (NotifyIcon): плитка сереет, колокольчик перечёркивается
+   штрихом с вырезом цвета плитки, как bell.slash в iOS; включение стирает штрих обратно. */
+.notify-icon { position: relative; overflow: hidden; }
+.notify-icon > svg:not(.ni-slash) { position: relative; }
+.ni-gray { position: absolute; inset: 0; background: var(--gray); opacity: 0; transition: opacity 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.notify-icon.off .ni-gray { opacity: 1; }
+.ni-slash { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ni-slash path { fill: none; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 0.16s ease-out; }
+.ni-cut { stroke: var(--gray); stroke-width: 4.2; }
+.ni-line { stroke: #fff; stroke-width: 1.7; }
+.notify-icon.off .ni-slash path { stroke-dashoffset: 0; transition: stroke-dashoffset 0.26s ease-in-out 0.12s; }
+@media (prefers-reduced-motion: reduce) {
+    .ni-gray, .ni-slash path { transition: none !important; }
+}
+.low-motion .ni-gray, .low-motion .ni-slash path { transition: none !important; }
 /* Межстрочный задан, а не normal: у SF, Segoe UI и Roboto он разный, и одна и та же
    двухстрочная строка была 58 px на iPhone и 62 в Desktop. */
 .row-label { font-size: 16px; line-height: 21px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2695,11 +2716,27 @@ button.agenda-banner:active { opacity: 0.6; }
     cursor: pointer;
     background: var(--chip);
     color: var(--blue);
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background 0.28s ease-out, color 0.28s ease-out;
 }
 .perm-pill:active { opacity: 0.6; }
 .perm-pill[disabled] { opacity: 0.55; }
 .perm-pill.on { background: var(--green-soft); color: var(--green); }
+/* Выдача своим тапом (PermPill в ResidentProfile.tsx): подпись перетекает буквами, как у
+   «Захостить», ширина подписи едет к новому слову, галочка раскрывается последней. Минус
+   у галочки гасит зазор пилла, пока её нет. */
+.perm-pill .pp-labels { display: inline-grid; justify-items: start; transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pp-check {
+    display: inline-flex;
+    width: 0;
+    margin-left: -5px;
+    overflow: hidden;
+    opacity: 0;
+    filter: blur(3px);
+    transform: scale(0.6);
+    transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), margin-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+        opacity 0.2s ease-out 0.12s, filter 0.24s ease-out 0.12s, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s;
+}
+.perm-pill.on .pp-check { width: 13px; margin-left: 0; opacity: 1; filter: none; transform: none; }
 /* «Не в чате» / «владелец» — не действие, а состояние: приглушённый текст, без пилюли. */
 .perm-state { margin-left: auto; flex-shrink: 0; font-size: 14px; font-weight: 500; color: var(--text-3); }
 
@@ -3809,6 +3846,16 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     cursor: pointer;
 }
 .remind-chip.selected { background: var(--blue); color: #fff; font-weight: 700; }
+/* Невидимая жирная копия подписи держит ширину чипа: без неё выбранный шире прочих, и ряд
+   перестраивается под пальцем («утром» перескакивает между строками). */
+.remind-chip::after {
+    content: attr(data-label);
+    display: block;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: 700;
+}
 /* Неподходящий срок не прячем, а зачёркиваем: иначе набор чипов молча меняется
    при каждом сдвиге времени, и непонятно, куда делся вариант. */
 .remind-chip.off { color: var(--text-3); text-decoration: line-through; cursor: default; }
@@ -3869,7 +3916,7 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     right: -16px;
     top: calc(-8px - var(--tg-content-safe-area-inset-top, 0px));
     bottom: -8px;
-    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    background: var(--bg-glass);
     -webkit-backdrop-filter: blur(18px) saturate(1.6);
     backdrop-filter: blur(18px) saturate(1.6);
     box-shadow: 0 0.5px 0 var(--sep);
@@ -4717,6 +4764,8 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 }
 .ff-option.on { border-color: var(--blue); background: var(--attn); }
 .ff-mark {
+    position: relative;
+    overflow: hidden;
     width: 22px;
     height: 22px;
     border-radius: 50%;
@@ -4725,9 +4774,22 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    transition: border-color 0.2s ease-out;
 }
 .ff-mark.box { border-radius: 6px; }
-.ff-option.on .ff-mark { background: var(--blue); border-color: var(--blue); }
+.ff-option.on .ff-mark { border-color: var(--blue); }
+/* Отметка своим тапом, как в «Кто пришёл» и у самого Telegram, только без отскока:
+   заливка растёт из середины, затем штрих галочки дорисовывается; снятие обратным ходом
+   и быстрее. Заливка масштабом, на композиторе. */
+.ff-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--blue); transform: scale(0); transition: transform 0.16s ease-out 0.06s; }
+.ff-option.on .ff-fill { transform: none; transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ff-ck { position: relative; }
+.ff-ck path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 0.12s ease-out; }
+.ff-option.on .ff-ck path { stroke-dashoffset: 0; transition: stroke-dashoffset 0.22s ease-in-out 0.08s; }
+.low-motion .ff-mark, .low-motion .ff-fill, .low-motion .ff-ck path { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+    .ff-mark, .ff-fill, .ff-ck path { transition: none !important; }
+}
 .ff-option-label { flex: 1; }
 
 /* --- Разбор заявок (EventApps) --- */
@@ -4761,6 +4823,12 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .ea-chip.writein::before { content: '✎ '; }
 .ea-actions { display: flex; gap: 10px; margin-top: 14px; }
 .ea-actions .host-btn { flex: 1; justify-content: center; min-height: 40px; }
+/* «Принять» своим тапом: подпись меняется буквами, как у «Захостить», заливка зеленеет,
+   галочка вырастает впереди. Ширина прежняя: «Отклонить» рядом не сдвигается. */
+.ea-accept { display: inline-flex; align-items: center; }
+.ea-accept.accepted { background-color: var(--ok-soft-bg); color: var(--ok-fg); cursor: default; }
+.ea-accept.accepted:active { opacity: 1; }
+.ea-accept.accepted .ib-check { width: 13px; margin-right: 4px; opacity: 1; filter: none; transform: none; }
 .ea-decline {
     border: none;
     background: var(--chip);
@@ -5769,14 +5837,14 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
    кнопка ощущалась веб-страницей. Сами значения нажатия остаются в правилах :active
    у каждого компонента. */
 .lightbox-close, .secondary-btn, .search-clear, .note-flag, .purpose-toggle, .linkified, .person-tap,
-.pill.mine, .host-btn, .link-btn, .accept-btn, .chip-btn, .attend-btn, .build-link, button.agenda-banner,
+.pill.mine, .host-btn, .link-btn, .accept-btn, .chip-btn, .attend-btn, .build-link, button.dpg-topic,
 .time-field, .tp-bar-btn, .dp-nav, .write-banner, .retry-btn, .ev-source, .ev-thumb-del, .ev-thumb-add,
 .ev-step, .route-door.tappable, .arrival-btn, .evv-cal {
     transition: opacity 0.3s ease-out;
 }
 .lightbox-close:active, .secondary-btn:active, .search-clear:active, .note-flag:active, .purpose-toggle:active,
 .linkified:active, .person-tap:active, .pill.mine:active, .host-btn:active, .link-btn:active, .accept-btn:active,
-.chip-btn:active, .attend-btn:active, .build-link:active, button.agenda-banner:active, .time-field:active,
+.chip-btn:active, .attend-btn:active, .build-link:active, button.dpg-topic:active, .time-field:active,
 .tp-bar-btn:active, .dp-nav:active, .write-banner:active, .retry-btn:active, .ev-source:active,
 .ev-thumb-del:active, .ev-thumb-add:active, .ev-step:active, .route-door.tappable:active, .arrival-btn:active {
     transition-duration: 0s;
@@ -5804,8 +5872,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
         box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07);
     }
     .secondary-btn:hover, .evv-cal:hover, .attend-btn:hover, .dpg-pill:hover, .destructive-btn:hover,
-    .day-chip:not(.selected):not(:disabled):hover, .today-card:hover, .prof-act:hover, .home-tile:hover,
-    button.agenda-banner:hover {
+    .day-chip:not(.selected):not(:disabled):hover, .today-card:hover, .prof-act:hover, .home-tile:hover {
         box-shadow: var(--shadow-card), inset 0 0 0 100vmax rgba(var(--sec), 0.05);
     }
     .vm-btn:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07); }
@@ -5815,7 +5882,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     .modal-btn:hover, .ob-menu button:not(:disabled):hover, .ctx-item:hover { background: rgba(var(--sec), 0.05); }
     .swipe-action:hover { filter: brightness(1.08); }
     .link-btn:hover, .linkified:hover, .purpose-toggle:hover, .build-link:hover, .ev-source:hover,
-    .ob-popup:not(:disabled):hover, .visit-who:hover, .mdr-copy:hover { opacity: 0.75; }
+    .ob-popup:not(:disabled):hover, .visit-who:hover, .mdr-copy:hover, button.dpg-topic:hover { opacity: 0.75; }
 }
 
 /* Ожидание в кнопке не мигает подсветкой поверх своей крутилки. */

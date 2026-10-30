@@ -4,19 +4,45 @@
 // Свой профиль из настроек - карточка журнала, как «Мои визиты»: без неё резидент без
 // прав дева видел бы только свою аватарку. Права дева идут под ней.
 
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { confirmDialog, showAlert } from '../modals'
+import { markOwnTap } from '../motion'
 import { useParams, useStore } from '../store'
 import { haptic, hasProfile, openProfile } from '../telegram'
 import type { AccountResponse, AccountStatus, AdminStatus } from '../types'
 import { icons } from '../icons'
 import { BackRow, ErrorState, SectionTitle, Sep, SpinnerCenter } from '../components/common'
 import { ProfileHead } from '../components/ProfileHead'
+import { MorphWord } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 import { PersonPage } from './StatsPerson'
 
 const RESIDENT_TAG = 'resident'
+
+/**
+ * Выдача и снятие права одной кнопкой: подпись перетекает буквами, как «Захостить», пилл
+ * растягивается под новое слово, заливка зеленеет, галочка раскрывается последней.
+ */
+function PermPill({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const box = ref.current
+    const [a, b] = box ? Array.from(box.querySelectorAll<HTMLElement>('.hb-l')) : []
+    if (box && a && b) box.style.width = `${(on ? b : a).offsetWidth}px`
+  }, [on, label])
+  return (
+    <button type="button" className={'perm-pill' + (on ? ' on' : '')} aria-label={on ? label : 'Выдать'} onClick={onClick}>
+      <span className="hb-labels pp-labels" ref={ref} aria-hidden="true">
+        <MorphWord text="Выдать" on={!on} />
+        <MorphWord text={label} on={on} />
+      </span>
+      <span className="pp-check" aria-hidden="true">
+        {icons.check(13, '#34c759', 2.6)}
+      </span>
+    </button>
+  )
+}
 
 // Без аккаунта под строкой id: его вписывают старому аккаунту атрибутом telegram_id.
 const accountLine = (a: AccountStatus): string =>
@@ -75,19 +101,30 @@ export function ResidentProfile() {
     }
   }
 
+  // Право, которое меняют сейчас: пилл встаёт в новое положение на тапе, свежий статус из
+  // ответа его подтверждает, отказ возвращает прежнее.
+  const [want, setWant] = useState<Record<string, boolean>>({})
+
   // Мутация возвращает свежий статус — обновляем экран прямо из ответа, без повторного
-  // тяжёлого запроса. Кнопки на время запроса гасим, чтобы не выстрелить дважды.
-  const run = async (method: string, body: Record<string, unknown>): Promise<void> => {
+  // тяжёлого запроса. Второй запрос, пока летит первый, не уходит.
+  const run = async (method: string, body: Record<string, unknown>, key: string, next: boolean): Promise<void> => {
     if (busy) return
+    markOwnTap()
+    haptic.impact('light')
+    setWant((w) => ({ ...w, [key]: next }))
     setBusy(true)
     try {
       const s = await api<AdminStatus>(method, { userId, ...body })
       setStatus(s)
-      haptic.notify('success')
     } catch (e) {
       haptic.notify('error')
       showAlert((e as Error).message)
     } finally {
+      setWant((w) => {
+        const rest = { ...w }
+        delete rest[key]
+        return rest
+      })
       setBusy(false)
     }
   }
@@ -170,17 +207,17 @@ export function ResidentProfile() {
                     <span className="perm-state">владелец</span>
                   ) : !t.present ? (
                     <span className="perm-state">не в чате</span>
-                  ) : t.admin && !t.canEdit ? (
+                  ) : t.admin && !t.canEdit && want[t.key] === undefined ? (
                     <span className="perm-state">админ, выдал не бот</span>
-                  ) : t.admin ? (
-                    <button type="button" className="perm-pill on" disabled={busy} onClick={() => run('admin.revoke', { target: t.key })}>
-                      Админ
-                      {icons.check(13, '#34c759', 2.6)}
-                    </button>
                   ) : (
-                    <button type="button" className="perm-pill" disabled={busy} onClick={() => run('admin.grant', { target: t.key })}>
-                      Выдать
-                    </button>
+                    <PermPill
+                      on={want[t.key] ?? t.admin}
+                      label="Админ"
+                      onClick={() => {
+                        const on = want[t.key] ?? t.admin
+                        void run(on ? 'admin.revoke' : 'admin.grant', { target: t.key }, t.key, !on)
+                      }}
+                    />
                   )}
                 </div>
               </Fragment>
@@ -197,15 +234,15 @@ export function ResidentProfile() {
                     <span className="perm-state">нет доступа</span>
                   ) : !tagTarget.present ? (
                     <span className="perm-state">не в чате</span>
-                  ) : tagTarget.tag ? (
-                    <button type="button" className="perm-pill on" disabled={busy} onClick={() => run('admin.tag', { on: false })}>
-                      {tagTarget.tag}
-                      {icons.check(13, '#34c759', 2.6)}
-                    </button>
                   ) : (
-                    <button type="button" className="perm-pill" disabled={busy} onClick={() => run('admin.tag', { on: true })}>
-                      Выдать
-                    </button>
+                    <PermPill
+                      on={want['#tag'] ?? Boolean(tagTarget.tag)}
+                      label={tagTarget.tag || RESIDENT_TAG}
+                      onClick={() => {
+                        const on = want['#tag'] ?? Boolean(tagTarget.tag)
+                        void run('admin.tag', { on: !on }, '#tag', !on)
+                      }}
+                    />
                   )}
                 </div>
               </div>
