@@ -2127,13 +2127,6 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     background-image: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px);
 }
 .today-card.day-locked .tc-today { color: var(--text-2); }
-/* Свет дня сверху карточки «Сегодня» (--tc-lit, DayRow.tsx): к людям уходит в её цвет. */
-.today-card.lit { background-image: radial-gradient(150% 95% at 50% -25%, var(--tc-lit) 0%, transparent 72%); }
-.today-card.lit.day-locked {
-    background-image:
-        repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 11px),
-        radial-gradient(150% 95% at 50% -25%, var(--tc-lit) 0%, transparent 72%);
-}
 .day-chip.locked { cursor: default; }
 .day-chip.locked .dc-dow, .day-chip.locked .dc-num { color: var(--text-3); }
 /* Дата приглушается, как у пустого дня: слова «закрыт» в строке нет, роль берут
