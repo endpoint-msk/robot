@@ -86,7 +86,7 @@ export function UndoToast() {
     let last = -1
     const tick = (now: number): void => {
       const t = now - t0
-      const bar = document.querySelector<HTMLElement>('.bar-portal .bottom-bar')
+      const bar = document.querySelector<HTMLElement>('.bar-portal .bottom-bar') ?? document.querySelector<HTMLElement>('.tab-bar.live .tab-caps')
       const top = bar ? bar.getBoundingClientRect().top : window.innerHeight
       el.style.bottom = `${Math.max(12, window.innerHeight - top + 8).toFixed(1)}px`
       const left = clamp(UNDO_MS - t, 0, UNDO_MS)

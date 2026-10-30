@@ -6,10 +6,11 @@ import { createPortal } from 'react-dom'
 import { BarContext } from './barContext'
 import { afterHero } from './hero'
 import { ModalHost } from './modals'
-import { EntryContext, SnapContext, UnderContext } from './screenContext'
-import { heldData, releaseHeld, useStore, useUnder, type NavEntry, type ScreenName, type UnderMode } from './store'
+import { EntryContext, SnapContext, TabsContext, UnderContext } from './screenContext'
+import { heldData, releaseHeld, tabRoots, useStore, useUnder, type NavEntry, type ScreenName, type UnderMode } from './store'
 import { tg } from './telegram'
 import { AnimContext } from './components/Screen'
+import { TabBar } from './components/TabBar'
 import { UndoToast } from './components/UndoToast'
 import { Overview } from './screens/Overview'
 import { Day } from './screens/Day'
@@ -101,9 +102,10 @@ function BusyOverlay() {
  * Прежний экран под верхним на время жеста «вниз» или свайпа назад: картинка в той прокрутке,
  * в которой его оставили. Окно прокручивает верхний экран, поэтому нижний сдвинут сам и тапы не ловит.
  * Его нижняя панель тоже в картинке, под затемнением: появись она только после жеста,
- * в последнем кадре посадки она выскочила бы рывком.
+ * в последнем кадре посадки она выскочила бы рывком. Так же и панель вкладок, если под
+ * верхним корень вкладки: она в картинке, а не в прокрутке, и стоит у низа.
  */
-function UnderScreen({ entry, mode }: { entry: NavEntry; mode: UnderMode }) {
+function UnderScreen({ entry, mode, tabs }: { entry: NavEntry; mode: UnderMode; tabs: ScreenName[] | null }) {
   const Comp = SCREENS[entry.name]
   const [bar, setBar] = useState<HTMLDivElement | null>(null)
   return (
@@ -114,13 +116,16 @@ function UnderScreen({ entry, mode }: { entry: NavEntry; mode: UnderMode }) {
             <UnderContext.Provider value>
               <EntryContext.Provider value={entry.id}>
                 <SnapContext.Provider value={heldData(entry)}>
-                  <Comp />
+                  <TabsContext.Provider value={tabs !== null}>
+                    <Comp />
+                  </TabsContext.Provider>
                 </SnapContext.Provider>
               </EntryContext.Provider>
             </UnderContext.Provider>
           </BarContext.Provider>
         </div>
         <div ref={setBar} />
+        {tabs ? <TabBar tabs={tabs} active={entry.name} still /> : null}
       </div>
       <div className="screen-under-dim" />
     </div>
@@ -128,7 +133,7 @@ function UnderScreen({ entry, mode }: { entry: NavEntry; mode: UnderMode }) {
 }
 
 export function App() {
-  const { stack, navId, anim } = useStore()
+  const { stack, navId, anim, perspective, data } = useStore()
   const under = useUnder()
   const [barNode, setBarNode] = useState<HTMLDivElement | null>(null)
 
@@ -156,6 +161,11 @@ export function App() {
   const below = under ? stack[stack.length - 2] : undefined
   const ScreenComp = SCREENS[top.name]
   const held = heldData(top)
+  // Панель вкладок только на корне вкладки: глубже экран занимает весь низ, а панель уезжает
+  // вместе с корнем (в переходе она часть его снимка).
+  const tabs = tabRoots(perspective, data)
+  const onTab = stack.length === 1 && tabs.includes(top.name)
+  const underTabs = below && stack.length === 2 && tabs.includes(below.name) ? tabs : null
 
   // Вернулись на экран после своего действия глубже: он въехал таким, каким его оставили,
   // а свежие данные берёт, когда встал, и смена играет на глазах. Конец перехода даёт
@@ -186,14 +196,17 @@ export function App() {
 
   return (
     <BarContext.Provider value={barNode}>
-      {below && under ? <UnderScreen entry={below} mode={under} /> : null}
+      {below && under ? <UnderScreen entry={below} mode={under} tabs={underTabs} /> : null}
       <AnimContext.Provider value={anim}>
         <EntryContext.Provider value={top.id}>
           <SnapContext.Provider value={held}>
-            <ScreenComp key={navId} />
+            <TabsContext.Provider value={onTab}>
+              <ScreenComp key={navId} />
+            </TabsContext.Provider>
           </SnapContext.Provider>
         </EntryContext.Provider>
       </AnimContext.Provider>
+      {onTab ? <TabBar tabs={tabs} active={top.name} anim={anim} /> : null}
       <div className="bar-portal" ref={setBarNode} />
       <BusyOverlay />
       <ModalHost />

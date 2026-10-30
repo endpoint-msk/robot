@@ -15,3 +15,6 @@ export const UnderContext = createContext(false)
  * действия он встаёт таким, каким его оставили, и меняется уже на глазах.
  */
 export const SnapContext = createContext<Bootstrap | null>(null)
+
+/** Экран - корень вкладки, и под ним панель вкладок (App.tsx): ему нужен отступ снизу. */
+export const TabsContext = createContext(false)

@@ -9,7 +9,7 @@ import { BootSkeleton } from './components/skeleton'
 import { launchTarget, targetEntries } from './deeplink'
 import { icons } from './icons'
 import { closeTopOverlay, hasOverlay } from './overlays'
-import { bump, getState, openAt, openOnboardingRoot, pop, push, setData, setPerspective } from './store'
+import { bump, getState, openAt, openOnboardingRoot, pop, push, setData, setPerspective, switchTab } from './store'
 import { applyTheme, refreshAccent } from './theme'
 import { tg } from './telegram'
 import { ApiError, type Bootstrap } from './types'
@@ -120,12 +120,12 @@ export function Root() {
     } catch {
       /* старый клиент */
     }
-    // Пункт «Настройки» в меню «⋯» Telegram открывает наши настройки с любого экрана, без
-    // возврата на главную. Открытые поверх листы и шторки сначала закрываются.
+    // Пункт «Настройки» в меню «⋯» Telegram открывает вкладку настроек с любого экрана: стопка,
+    // где был человек, остаётся на своей вкладке. Открытые поверх листы и шторки сначала закрываются.
     const openSettings = (): void => {
       while (hasOverlay()) closeTopOverlay()
       const { stack } = getState()
-      if (stack[stack.length - 1]?.name !== 'settings') push('settings')
+      if (stack.length > 1 || stack[0]?.name !== 'settings') switchTab('settings')
     }
     try {
       if (tg.isVersionAtLeast?.('7.0') && tg.SettingsButton) {

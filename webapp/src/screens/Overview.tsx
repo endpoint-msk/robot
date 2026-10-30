@@ -321,41 +321,6 @@ function DoorRow() {
   )
 }
 
-/** Строка входа в раздел взносов со своим статусом справа. */
-function DuesRow() {
-  const { data } = useStore()
-  const dues = data!.dues
-  if (!dues) return null
-  const status = !dues.enabled
-    ? { text: 'Выключены', color: 'var(--text-3)' }
-    : !dues.me.inRoster
-      ? { text: '', color: 'var(--text-3)' }
-      : dues.me.amount <= 0
-        ? { text: 'Не требуется', color: 'var(--text-3)' }
-        : dues.me.status === 'paid'
-          ? { text: 'Внесён', color: 'var(--green)' }
-          : dues.me.status === 'claimed'
-            ? { text: 'Ждёт сверки', color: 'var(--text-2)' }
-            : { text: 'Не внесён', color: 'var(--orange)' }
-  return (
-    <>
-      <button type="button" className="row tappable" onClick={() => push('dues')}>
-        <div className="row-icon" style={{ background: 'var(--green)' }}>
-          {icons.rub(17, '#fff')}
-        </div>
-        <span className="row-label">Взносы</span>
-        <div className="row-right">
-          <span className="dues-amount" style={{ color: status.color }}>
-            {status.text}
-          </span>
-          {icons.chevron()}
-        </div>
-      </button>
-      <Sep inset="icon" />
-    </>
-  )
-}
-
 export function Overview() {
   const { data } = useStore()
   const days = data!.days
@@ -387,28 +352,12 @@ export function Overview() {
       <div style={{ height: 22 }} />
       <div className="card">
         <DoorRow />
+        {/* Статистика, взносы и настройки - вкладки (components/TabBar.tsx). */}
         <button type="button" className="row tappable" onClick={() => push('archive')}>
           <div className="row-icon" style={{ background: 'var(--indigo)' }}>
             {icons.archiveBox()}
           </div>
           <span className="row-label">Архив</span>
-          <div className="row-right">{icons.chevron()}</div>
-        </button>
-        <Sep inset="icon" />
-        <button type="button" className="row tappable" onClick={() => push('stats')}>
-          <div className="row-icon" style={{ background: 'var(--blue)' }}>
-            {icons.chart()}
-          </div>
-          <span className="row-label">Статистика</span>
-          <div className="row-right">{icons.chevron()}</div>
-        </button>
-        <Sep inset="icon" />
-        <DuesRow />
-        <button type="button" className="row tappable" onClick={() => push('settings')}>
-          <div className="row-icon" style={{ background: 'var(--gray)' }}>
-            {icons.gear()}
-          </div>
-          <span className="row-label">Настройки</span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
       </div>

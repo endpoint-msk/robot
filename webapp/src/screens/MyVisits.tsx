@@ -2,11 +2,11 @@ import { Fragment } from 'react'
 import { fmtDayMonth, fmtShortDate, fmtWeekdayDate, plural, visitDayWord } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
-import { bump, push, startNewRequest, useStore } from '../store'
+import { bump, push, useStore } from '../store'
 import { accent, sec } from '../theme'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
-import { BottomBar, DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
+import { DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
 import { userLabel } from '../components/people'
 import { growIn } from '../dust'
 import { Screen } from '../components/Screen'
@@ -131,14 +131,14 @@ export function MyVisits() {
   const pending = my.filter((r) => r.status !== 'approved')
 
   return (
-    <Screen hasBottomBar>
+    <Screen>
       <Header title="Мои визиты" chip={<DevChips />} />
       <WriteAccessBanner />
       {my.length === 0 && past.length === 0 ? (
         <div className="card" ref={growIn} data-dust-empty="">
           <EmptyState
             title="Пока нет заявок"
-            text="Выберите день и время визита — резиденты увидят заявку и откликнутся."
+            text="Нажмите «+» внизу, выберите день и время: резиденты увидят заявку и откликнутся."
           />
         </div>
       ) : null}
@@ -165,46 +165,17 @@ export function MyVisits() {
           ) : null}
         </>
       ) : null}
-      {/* Разделы - плитками, а не строками со стрелками: под визитами такой список
-          выглядит экраном настроек, а это места, куда с главной уходят. */}
-      <div className="home-tiles">
-        <button type="button" className="home-tile" onClick={() => push('route')}>
-          <div className="row-icon" style={{ background: 'var(--blue)' }}>
-            {icons.pin(17, '#fff')}
-          </div>
-          <span className="home-tile-label">Как пройти</span>
-        </button>
-        <button type="button" className="home-tile" onClick={() => push('peek')}>
-          {/* Календарь и фиолетовый - те же, что у ивентов: за этой плиткой не только
-              список людей, но и то, что в спейсе происходит. */}
-          <div className="row-icon" style={{ background: 'var(--purple)' }}>
-            {icons.calendar(17, '#fff')}
-          </div>
-          <span className="home-tile-label">Активность</span>
-        </button>
-        <button type="button" className="home-tile" onClick={() => openUrl(SPACE_CHAT_URL)}>
+      {/* Как пройти, Активность и Настройки - вкладки (components/TabBar.tsx), заявка - «+»
+          рядом с ними. Чат - ссылка наружу, а не раздел, поэтому строкой. */}
+      <div className="card visits-chat">
+        <button type="button" className="row tappable" onClick={() => openUrl(SPACE_CHAT_URL)}>
           <div className="row-icon" style={{ background: 'var(--green)' }}>
             {icons.chat(17, '#fff')}
           </div>
-          <span className="home-tile-label">Чат спейса</span>
-        </button>
-        <button type="button" className="home-tile" onClick={() => push('settings')}>
-          <div className="row-icon" style={{ background: 'var(--gray)' }}>
-            {icons.gear()}
-          </div>
-          <span className="home-tile-label">Настройки</span>
+          <span className="row-label">Чат спейса</span>
+          <div className="row-right">{icons.external()}</div>
         </button>
       </div>
-      <BottomBar>
-        {/* Одна кнопка на весь путь заявки: в форме она меняет подпись на месте, после
-            отправки вырастает в карточку статуса визита (hero.ts, ключ cta). */}
-        <button className="primary-btn" data-hero="cta" data-hero-part="cta" onClick={() => startNewRequest()}>
-          <span className="cta-label" data-hero-part="cta-label">
-            {icons.plus()}
-            Новая заявка
-          </span>
-        </button>
-      </BottomBar>
     </Screen>
   )
 }

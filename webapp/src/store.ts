@@ -68,6 +68,8 @@ export type State = {
   perspective: Perspective
   theme: ThemeChoice
   stack: NavEntry[]
+  /** Стопки остальных вкладок по их корню: вернулись на вкладку, и она там, где её оставили. */
+  tabs: Partial<Record<ScreenName, NavEntry[]>>
   /** Растёт на каждую навигацию: ключ для ремаунта экрана (анимация + сброс скролла).
       На чистом обновлении данных (setData) не меняется — экран сохраняет state. */
   navId: number
@@ -79,6 +81,7 @@ let state: State = {
   perspective: 'guest',
   theme: loadTheme(),
   stack: [],
+  tabs: {},
   navId: 0,
   anim: null,
 }
@@ -132,7 +135,9 @@ function navigate(
 
 const commit = (patch: Partial<State>, anim: Anim): void => {
   const next = { ...patch, anim }
-  if (next.stack) pruneRemote(new Set(next.stack.map((e) => e.id)))
+  // Данные экранов живут, пока запись в какой-нибудь стопке: статистика, оставленная на
+  // своей вкладке, встаёт сразу, без каркаса.
+  if (next.stack) pruneRemote(new Set([...next.stack, ...Object.values(next.tabs ?? state.tabs).flatMap((t) => t ?? [])].map((e) => e.id)))
   setUnder(null)
   set(next)
 }
@@ -177,23 +182,73 @@ export function releaseHeld(id: number): void {
   set({ stack: [...state.stack.slice(0, -1), { ...top, own: false, snap: null }] })
 }
 
+// --- Вкладки ---
+
 /**
- * `hero` — ключ общей части (data-hero): главная кнопка гостя остаётся на месте, пока
- * экран въезжает справа. Без ключа или без View Transitions экран просто въезжает.
+ * Корни вкладок перспективы, в порядке панели (components/TabBar.tsx). Взносы - только
+ * когда сбор настроен: без него раздел пустой.
  */
-export function push(name: ScreenName, params: NavParams = {}, hero?: string): void {
+export const tabRoots = (perspective: Perspective, data: Bootstrap | null): ScreenName[] =>
+  perspective === 'resident'
+    ? ['overview', 'stats', ...(data?.dues ? (['dues'] as const) : []), 'settings']
+    : ['myVisits', 'peek', 'route', 'settings']
+
+const homeOf = (perspective: Perspective): ScreenName => (perspective === 'resident' ? 'overview' : 'myVisits')
+
+const isTabRoot = (name: ScreenName): boolean => tabRoots(state.perspective, state.data).includes(name)
+
+/**
+ * Другая вкладка: стопка текущей откладывается (с прокруткой верхнего экрана), стопка
+ * нужной встаёт там, где её оставили. Своя вкладка с глубины - обратно к её корню. Корень
+ * не вкладка (знакомство) - раздел открывается поверх, как раньше.
+ */
+export function switchTab(name: ScreenName): void {
   settleHero()
+  const root = state.stack[0]
+  if (!root) return
+  if (!isTabRoot(root.name)) {
+    pushEntry(name, {})
+    return
+  }
+  if (root.name === name) {
+    if (state.stack.length > 1) navigate({ stack: [root], navId: state.navId + 1, anim: 'in-back' }, undefined, 'pop')
+    return
+  }
+  const { [name]: next, ...rest } = state.tabs
+  navigate({ stack: next ?? [entry(name, {})], tabs: { ...rest, [root.name]: leaving() }, navId: state.navId + 1, anim: 'in-fade' })
+}
+
+const pushEntry = (name: ScreenName, params: NavParams, hero?: string): void => {
   const patch = { stack: [...leaving(), entry(name, params)], navId: state.navId + 1, anim: 'in-forward' as const }
   navigate(patch, hero ? { from: heroRow(hero), to: () => heroScreenOf(hero), kind: 'slide' } : undefined, 'push')
 }
 
-/** Экран с общей главной кнопкой гостя (data-hero-screen) уходит, оставляя её на месте. */
+/**
+ * `hero` — ключ общей части (data-hero): «+» гостя вырастает в кнопку формы на её месте,
+ * пока экран въезжает справа. Без ключа или без View Transitions экран просто въезжает.
+ * Раздел, который сам вкладка, с корня вкладки открывается вкладкой (плашка взноса).
+ */
+export function push(name: ScreenName, params: NavParams = {}, hero?: string): void {
+  settleHero()
+  const root = state.stack[0]
+  if (state.stack.length === 1 && root && !hero && Object.keys(params).length === 0 && name !== root.name && isTabRoot(root.name) && isTabRoot(name)) {
+    switchTab(name)
+    return
+  }
+  pushEntry(name, params, hero)
+}
+
+/**
+ * Экран с общей частью (data-hero-screen) уходит, и она сворачивается обратно в «+» гостя.
+ * Только кнопка формы у нижнего края: карточка статуса визита наверху экрана летела бы
+ * через весь экран в угол, поэтому она уезжает вместе с экраном.
+ */
 export function pop(): void {
   settleHero()
   if (state.stack.length <= 1) return
   const patch = { stack: state.stack.slice(0, -1), navId: state.navId + 1, anim: 'in-back' as const }
   const from = heroScreen()
-  const key = from?.dataset.heroScreen
+  const key = from?.closest('.bottom-bar') ? from.dataset.heroScreen : undefined
   navigate(patch, key ? { from, to: () => heroRow(key), kind: 'slide-back' } : undefined, 'pop')
 }
 
@@ -221,8 +276,7 @@ export function setTopParams(params: NavParams): void {
 
 export function resetRoot(): void {
   settleHero()
-  const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
-  navigate({ stack: [entry(root, {})], navId: state.navId + 1, anim: 'in-fade' })
+  navigate({ stack: [entry(homeOf(state.perspective), {})], tabs: {}, navId: state.navId + 1, anim: 'in-fade' })
 }
 
 /**
@@ -232,9 +286,10 @@ export function resetRoot(): void {
  */
 export function openAt(entries: { name: ScreenName; params?: NavParams }[]): void {
   settleHero()
-  const root: ScreenName = state.perspective === 'resident' ? 'overview' : 'myVisits'
-  const stack = [entry(root, {}), ...entries.map((e) => entry(e.name, e.params ?? {}))]
-  navigate({ stack, navId: state.navId + 1, anim: null })
+  // Адрес, который начинается с раздела-вкладки (взносы, активность гостя), встаёт в ней.
+  const own = entries[0] && isTabRoot(entries[0].name) ? [] : [entry(homeOf(state.perspective), {})]
+  const stack = [...own, ...entries.map((e) => entry(e.name, e.params ?? {}))]
+  navigate({ stack, tabs: {}, navId: state.navId + 1, anim: null })
 }
 
 /**
@@ -243,13 +298,13 @@ export function openAt(entries: { name: ScreenName; params?: NavParams }[]): voi
  */
 export function openOnboardingRoot(params: NavParams): void {
   settleHero()
-  navigate({ stack: [entry('onboarding', params)], navId: state.navId + 1, anim: 'in-fade' })
+  navigate({ stack: [entry('onboarding', params)], tabs: {}, navId: state.navId + 1, anim: 'in-fade' })
 }
 
 /**
  * Новая заявка. `params`: день и время, с которыми открыть форму (например, «Хочу прийти»
- * на ивенте). Главная кнопка гостя (data-hero="cta") остаётся на месте и меняет подпись на
- * кнопку формы. До первой заявки форма сама поднимает над собой лист правил.
+ * на ивенте). Круглая «+» гостя на панели вкладок (data-hero="cta") вырастает в кнопку
+ * формы на её месте. До первой заявки форма сама поднимает над собой лист правил.
  */
 export function startNewRequest(params?: NavParams): void {
   push('newRequest', params, 'cta')
