@@ -11,9 +11,8 @@ import { useRemote } from '../remote'
 import { mixc, palette } from '../motion'
 import { setTopParams, useParams } from '../store'
 import { haptic } from '../telegram'
-import { accent } from '../theme'
 import { ApiError, type DuesPerson as DuesPersonData, type DuesRateKind } from '../types'
-import { BackRow, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
+import { BackRow, ErrorState, Footnote, Header, RadioCheck, SectionTitle, Sep } from '../components/common'
 import { avatarTone, userLabel } from '../components/people'
 import { Pager } from '../components/Pager'
 import { Screen } from '../components/Screen'
@@ -226,7 +225,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
                             : 'Сумма по договорённости'}
                     </span>
                   </span>
-                  <div className="radio-check">{data.rate.kind === r.kind ? icons.check(16, accent(), 2.2) : null}</div>
+                  <RadioCheck on={data.rate.kind === r.kind} />
                 </button>
               </Fragment>
             ))}

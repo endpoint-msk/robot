@@ -208,7 +208,7 @@ button:where(.row, .back-row, .write-banner, .dpg-topic, .rule-row, .tl-row, .se
    Горизонтальный вылет везде не больше зазора до соседа, чтобы слой не воровал
    его тапы. Там, где элементы делят ряд (.seg), так нельзя: растёт сам элемент. */
 .note-flag, .host-btn, .search-clear, .remove-btn, .purpose-toggle,
-.link-btn, .mdr-copy, .ev-step, .dpg-dot, .build-link { position: relative; }
+.link-btn, .mdr-copy, .dpg-dot, .build-link { position: relative; }
 .note-flag::after,
 .host-btn::after,
 .search-clear::after,
@@ -216,7 +216,6 @@ button:where(.row, .back-row, .write-banner, .dpg-topic, .rule-row, .tl-row, .se
 .purpose-toggle::after,
 .link-btn::after,
 .mdr-copy::after,
-.ev-step::after,
 .dpg-dot::after,
 .build-link::after,
 .lightbox-close::after,
@@ -229,8 +228,6 @@ button:where(.row, .back-row, .write-banner, .dpg-topic, .rule-row, .tl-row, .se
 .purpose-toggle::after { inset: -13px -3px; }
 .link-btn::after { inset: -12px -4px; }
 .mdr-copy::after { inset: -12px -5px; }
-/* «−» и «+» времени ивента стоят через 12 px от числа: вбок слой растёт на половину. */
-.ev-step::after { inset: -6px; }
 /* Точки листалки стоят вплотную друг к другу: растут только по высоте. */
 .dpg-dot::after { inset: -11px 0; }
 .build-link::after { inset: -13px -4px; }
@@ -288,7 +285,6 @@ body {
 .day-chip,
 .time-input,
 .tp-wheels,
-.ev-time-value,
 .dues-figure,
 .dues-split,
 .dues-amount,
@@ -811,12 +807,19 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 /* Цель визита в истории гостя: одна строка с многоточием — там их десятки. */
 .guest-purpose { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Поле поиска — как в нативных списках iOS: серая плашка, лупа слева, крестик справа. */
+/* Поле поиска — как в нативных списках iOS: серая плашка, лупа слева, крестик справа,
+   в фокусе «Отмена» за плашкой. Отступы держит внешний блок, плашка внутри него. */
 .search-field {
     display: flex;
     align-items: center;
-    gap: 7px;
     margin-bottom: 18px;
+}
+.search-box {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
     padding: 0 12px;
     min-height: 40px;
     border-radius: 12px;
@@ -824,7 +827,31 @@ html.sheet-recede .bottom-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
        оставались одна лупа и подсказка. Заливка как у поиска iOS на сгруппированном фоне. */
     background: rgba(118, 118, 128, 0.12);
 }
-:root[data-theme="dark"] .search-field { background: var(--chip); }
+:root[data-theme="dark"] .search-box { background: var(--chip); }
+/* «Отмена» проступает раз на фокус: плашка сужается на её ширину, подпись открывается
+   вместе с ней. Ширина подписи (--cw) измерена в SearchField. */
+.search-cancel {
+    flex: none;
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 17px;
+    color: var(--blue);
+    white-space: nowrap;
+    text-align: left;
+    opacity: 0;
+    cursor: pointer;
+    transition: width 0.24s cubic-bezier(0.25, 1, 0.5, 1), padding 0.24s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s ease-out;
+}
+.search-field.focused .search-cancel { width: calc(var(--cw, 56px) + 12px); padding-left: 12px; opacity: 1; }
+.search-field.focused .search-cancel:active { opacity: 0.6; transition-duration: 0s; }
+.low-motion .search-cancel { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+    .search-cancel { transition: none; }
+}
 /* В «Позвать» поле стоит под карточкой «Из контактов Telegram». */
 .card + .search-field { margin-top: 22px; }
 .resp-search .search-field { margin-bottom: 0; }
@@ -974,6 +1001,29 @@ mark.found { background: none; color: var(--blue); }
 /* Счётчик одобренных стоит в строке людей, к которым он относится: тогда метка ивента
    или повестки над ней тянется до шеврона, а не обрывается на его месте. */
 .day-people .approved-count { margin-left: auto; }
+/* Пустой день ожил своим действием (DayRow, в том числе на «назад»): «Пока никого» тает на
+   месте, люди и подпись проявляются, как лицо в ряду «Придут» на экране дня, а день недели
+   и дата меняют цвет следом, а не кадром. */
+.day-main { position: relative; }
+.day-ghost {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    transform-origin: 0 50%;
+    pointer-events: none;
+    animation: day-out 0.2s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+.day-in .avatar-stack .avatar, .avatar-stack .avatar.face-in { animation: pill-in 0.34s cubic-bezier(0.25, 1, 0.5, 1) 0.12s both; }
+.day-in .day-count, .day-in .approved-count { animation: day-rise 0.28s cubic-bezier(0.25, 1, 0.5, 1) 0.16s both; }
+.day-in .ev-day-label, .day-in .agenda-day-label { transform-origin: 0 50%; animation: pill-in 0.34s cubic-bezier(0.25, 1, 0.5, 1) 0.06s both; }
+.row.day-fresh .dow, .row.day-fresh .date { transition: color 0.28s ease-out; }
+/* И обратно: своя последняя отметка снята, и «Пока никого» проступает на месте людей. */
+.day-none-in { transform-origin: 0 50%; animation: pill-in 0.34s cubic-bezier(0.25, 1, 0.5, 1) 0.06s both; }
+@keyframes day-out { to { opacity: 0; filter: blur(4px); transform: scale(0.88); } }
+@keyframes day-rise { from { opacity: 0; transform: translateY(7px); } }
 
 /* isolation держит z-index лиц (AvatarStack кладёт первое сверху) внутри стопки. */
 .avatar-stack { display: flex; align-items: center; flex-shrink: 0; isolation: isolate; }
@@ -1263,6 +1313,10 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
 .invite-btn { display: inline-flex; align-items: center; }
 /* Подписи прижаты вправо: «Позвал» уже, чем «Позвать», и метка встаёт к краю, как «Придёт». */
 .invite-btn .hb-labels { justify-items: end; }
+/* «Создать ивент» → «Ещё ивент» в строке дня: подпись у левого края, как у соседних строк.
+   Смена чужим ивентом встаёт без морфа. */
+.ev-new-labels { justify-items: start; }
+.hb-labels.still .hb-ch { transition: none; }
 button.invite-btn {
     transition: background-color 0.28s ease-out, color 0.28s ease-out, padding 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
         font-size 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1558,7 +1612,8 @@ button.dpg-topic:active { opacity: 0.6; }
 /* Своя тема проступает на месте по эталону «Захостить», пока строка растёт по высоте. */
 .dpg-topic.fresh { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
 .dpg-body { padding-top: 18px; }
-.dpg-events + .dpg-acts { margin-top: 12px; }
+/* Карточка ивентов вырастает в Collapse: отступ до действий внутри обёртки, и он растёт с ней. */
+.collapse > .dpg-events { margin-bottom: 12px; }
 .dpg-coming { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 14px 4px 0; }
 /* Каждый следующий в ряду лежит под предыдущим: z-index по убыванию ставит разметка,
    isolation не выпускает его за пределы ряда. */
@@ -2579,15 +2634,30 @@ span.collapse { display: block; }
     left: 2px;
     width: 27px;
     height: 27px;
-    border-radius: 50%;
+    border-radius: 999px;
     background: #fff;
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.06);
-    transition: transform 0.2s ease;
+    transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.14s cubic-bezier(0.25, 1, 0.5, 1);
 }
 .switch.on { background: var(--green); }
 .switch.on::after { transform: translateX(20px); }
+/* Прижатый тумблер, как системный в iOS: ползунок вытягивается в сторону хода (27 → 33),
+   правый край включённого стоит на месте, а после отпускания ползунок доезжает без
+   перелёта. Ширина идёт не на композиторе, но узел один и короткий. */
+.switch.pressed::after { width: 33px; }
+.switch.on.pressed::after { transform: translateX(14px); }
 
-.radio-check { margin-left: auto; flex-shrink: 0; width: 22px; display: flex; justify-content: center; }
+.radio-check { margin-left: auto; flex-shrink: 0; width: 22px; display: flex; justify-content: center; color: var(--blue); }
+/* Выбор дорисовывает галочку штрихом, как отметку анкеты (.ff-ck), прежняя гаснет целиком
+   и только потом стирается. На монтировании переход не играет: выбранная просто стоит. */
+.radio-check svg { opacity: 0; transition: opacity 0.12s ease-out; }
+.radio-check path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 0s linear 0.12s; }
+.radio-check.on svg { opacity: 1; transition: none; }
+.radio-check.on path { stroke-dashoffset: 0; transition: stroke-dashoffset 0.16s cubic-bezier(0.33, 1, 0.68, 1) 0.02s; }
+.low-motion .radio-check svg, .low-motion .radio-check path { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+    .radio-check svg, .radio-check path { transition: none !important; }
+}
 .rows-disabled { opacity: 0.45; pointer-events: none; }
 
 /* Баннер «нужно твоё действие» (взнос не отмечен, бот не может писать в личку) —
@@ -3186,36 +3256,6 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 }
 .ev-thumb-add:active { opacity: 0.6; }
 .ev-thumb-add input { display: none; }
-.ev-time { gap: 12px; }
-/* Строка с «−» и «+» 52 px, как остальные строки с элементом управления: кнопки 32. */
-.row.step-row { padding-top: 10px; padding-bottom: 10px; }
-.ev-step {
-    width: 32px;
-    height: 32px;
-    border: none;
-    border-radius: 50%;
-    background: var(--chip);
-    /* Иконки шага рисуются currentColor — без этого они наследуют цвет текста. */
-    color: var(--blue);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-}
-.ev-step:active { opacity: 0.6; }
-.ev-step:disabled { opacity: 0.35; cursor: default; }
-.ev-time-value {
-    min-width: 58px;
-    text-align: center;
-    padding: 6px 12px;
-    border-radius: 10px;
-    background: var(--chip);
-    font-size: 16px;
-    /* Высотой с кнопки «−» и «+» (32), иначе строка выходила 53 на одном шрифте и 51 на другом. */
-    line-height: 20px;
-    font-weight: 700;
-    color: var(--text);
-}
 
 /* Строка ивента на экране дня: сама афиша размером со значок, как картинка в списке чатов
    Telegram. Без фото рисованная афиша в миниатюре, тёмная с оранжевым кольцом, как .evv-poster. */
@@ -3292,10 +3332,12 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .agenda-day-label svg { flex-shrink: 0; }
 .agenda-day-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Повестка без людей под ней одна занимает строку дня, и ей отданы обе строчки: колонка
-   даты всё равно двухэтажная, так что строка от этого не растёт. */
-.day-main > .agenda-day-label:only-child { align-items: flex-start; line-height: 1.3; }
-.day-main > .agenda-day-label:only-child svg { margin-top: 2.5px; }
-.day-main > .agenda-day-label:only-child span {
+   даты всё равно двухэтажная, так что строка от этого не растёт. Части строки растут в
+   Collapse, поэтому «одна» - единственная обёртка; тающее «Пока никого» (span) в счёт не
+   идёт, иначе тема прыгала бы в конце проявления. */
+.day-main > .collapse:only-of-type > .agenda-day-label { align-items: flex-start; line-height: 1.3; }
+.day-main > .collapse:only-of-type > .agenda-day-label svg { margin-top: 2.5px; }
+.day-main > .collapse:only-of-type > .agenda-day-label span {
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -4408,6 +4450,12 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 }
 .dot { aspect-ratio: 1; border-radius: 5px; }
 .dot.zero { box-shadow: inset 0 0 0 1px var(--sep); }
+/* Клетка под пальцем (DotsCard) обведена, как выбранная на карте статистики, а день
+   недели её строки подсвечен. */
+.dot.picked { position: relative; z-index: 1; box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--text); }
+.dot.zero.picked { box-shadow: inset 0 0 0 1px var(--sep), 0 0 0 2px var(--card), 0 0 0 3.5px var(--text); }
+.dots-labels div { transition: color 0.15s ease; }
+.dots-labels div.on { color: var(--text); }
 /* Будущее не рисуется вовсе: ни заливки, ни контура. */
 .dot.future { background: none; box-shadow: none; }
 
@@ -5839,14 +5887,14 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .lightbox-close, .secondary-btn, .search-clear, .note-flag, .purpose-toggle, .linkified, .person-tap,
 .pill.mine, .host-btn, .link-btn, .accept-btn, .chip-btn, .attend-btn, .build-link, button.dpg-topic,
 .time-field, .tp-bar-btn, .dp-nav, .write-banner, .retry-btn, .ev-source, .ev-thumb-del, .ev-thumb-add,
-.ev-step, .route-door.tappable, .arrival-btn, .evv-cal {
+.route-door.tappable, .arrival-btn, .evv-cal {
     transition: opacity 0.3s ease-out;
 }
 .lightbox-close:active, .secondary-btn:active, .search-clear:active, .note-flag:active, .purpose-toggle:active,
 .linkified:active, .person-tap:active, .pill.mine:active, .host-btn:active, .link-btn:active, .accept-btn:active,
 .chip-btn:active, .attend-btn:active, .build-link:active, button.dpg-topic:active, .time-field:active,
 .tp-bar-btn:active, .dp-nav:active, .write-banner:active, .retry-btn:active, .ev-source:active,
-.ev-thumb-del:active, .ev-thumb-add:active, .ev-step:active, .route-door.tappable:active, .arrival-btn:active {
+.ev-thumb-del:active, .ev-thumb-add:active, .route-door.tappable:active, .arrival-btn:active {
     transition-duration: 0s;
 }
 .evv-cal:active { opacity: 0.6; transition-duration: 0s; }
@@ -5868,7 +5916,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 @media (hover: hover) and (pointer: fine) {
     .row.tappable:not(:disabled):hover, .write-banner:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.05); }
     .host-btn:not(:disabled):hover, .pill.mine:hover, .accept-btn:hover, .chip-btn:hover, .time-field:hover,
-    .ev-step:not(:disabled):hover, .tp-bar-btn:hover, .dp-nav:hover, .retry-btn:hover, .ev-thumb-add:hover {
+    .tp-bar-btn:hover, .dp-nav:hover, .retry-btn:hover, .ev-thumb-add:hover {
         box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07);
     }
     .secondary-btn:hover, .evv-cal:hover, .attend-btn:hover, .dpg-pill:hover, .destructive-btn:hover,

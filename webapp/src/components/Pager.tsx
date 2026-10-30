@@ -29,6 +29,7 @@ import {
   tracker,
 } from '../motion'
 import { UnderContext } from '../screenContext'
+import { scrubActive } from '../stats'
 import { canSwipeBack, registerPagerStart, swipingBack } from './useSwipeBack'
 import { getState, useStore } from '../store'
 import { haptic, setHeaderColor } from '../telegram'
@@ -204,8 +205,9 @@ export function Pager<T>({
     }
 
     // Чужие жесты: свайп строки, поля ввода и области, которые ведут пальцем сами
-    // (сетка «Когда приходит», графики). Решает первое касание.
-    const FREE = '.swipe-row, input, textarea, [data-scrub]'
+    // (графики). Решает первое касание. Сетка, которая ведёт только удержанием
+    // (data-scrub="hold"), листанию не мешает: после удержания оно уступает (scrubActive).
+    const FREE = '.swipe-row, input, textarea, [data-scrub=""]'
     let touch: { x: number; y: number; axis: 0 | 1 | 2 } | null = null
     const onTouchStart = (e: TouchEvent): void => {
       const t = e.touches[0]
@@ -244,7 +246,7 @@ export function Pager<T>({
       const dy = e.clientY - d.y0
       if (d.dir === 0) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
-        if (touch ? touch.axis === 2 : Math.abs(dy) >= Math.abs(dx)) {
+        if (scrubActive() || (touch ? touch.axis === 2 : Math.abs(dy) >= Math.abs(dx))) {
           S.drag = null
           return
         }

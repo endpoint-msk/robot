@@ -17,7 +17,7 @@ import {
 } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
-import { animate, clamp, markOwnTap, ownTapRecent, pr, reducedMotion, spring } from '../motion'
+import { clamp, markOwnTap, ownTapRecent, reducedMotion, spring } from '../motion'
 import { useRemote } from '../remote'
 import { push, useStore } from '../store'
 import {
@@ -42,6 +42,7 @@ import { Screen } from '../components/Screen'
 import { useNowMin } from './Visit'
 import { Swap } from '../components/Swap'
 import { SkBars, SkBlock, SkCard, SkFigure, SkGrid } from '../components/skeleton'
+import { useLoupe } from '../components/useLoupe'
 import type { PersonRef } from './StatsPerson'
 import { WrapRow } from './Wrap'
 
@@ -70,11 +71,6 @@ const HOUR_LABELS = Array.from({ length: BUCKETS }, (_, i) => (i % 2 === 0 ? Str
 
 const TOP_PREVIEW = 5
 
-/** Лупа стоит над пальцем: сам палец закрывает ту клетку, ради которой его поставили. */
-const LOUPE_LIFT = 34
-/** Сколько лупа гаснет после отпускания. */
-const LOUPE_OUT_MS = 160
-
 type HeatPick = { dow: number; bucket: number }
 
 const samePick = (a: HeatPick | null, b: HeatPick | null): boolean =>
@@ -94,20 +90,23 @@ function HeatCard({ data }: { data: StatsOverview }) {
     dow: (weekdayIdx(boot!.todayKey) + Math.floor(nowMin / 1440)) % 7,
     bucket: Math.floor((nowMin % 1440) / 120),
   }
-  // Палец на карте: строка над ней погашена, день недели под пальцем подсвечен.
-  const [scrub, setScrub] = useState(false)
-  // Лупа живёт дольше пальца: после отпускания она ещё гаснет.
-  const [loupe, setLoupe] = useState(false)
   const gridRef = useRef<HTMLDivElement>(null)
   const readoutRef = useRef<HTMLDivElement>(null)
-  const loupeRef = useRef<HTMLDivElement>(null)
-  const tailRef = useRef<HTMLElement>(null)
-  const finger = useRef({ x: 0, y: 0 })
-  const placed = useRef({ x: 0, y: 0 })
-  const bounds = useRef({ left: 0, right: 0 })
-  const cells = useRef<(HeatPick & { x: number; y: number })[]>([])
-  const hovered = useRef<HeatPick | null>(null)
-  const fading = useRef<(() => void) | null>(null)
+  // Палец на карте: строка над ней погашена, день недели под пальцем подсвечен. Отпустили:
+  // лупа гаснет на месте, а строка над картой проявляется уже с выбранной клеткой, как
+  // после тапа.
+  const { scrub, loupe, loupeRef, tailRef, place } = useLoupe<HeatPick>(gridRef, {
+    cells: '.heat-cell',
+    read: (el) => ({ dow: Number(el.dataset.dow), bucket: Number(el.dataset.bucket) }),
+    same: samePick,
+    onPick: setPicked,
+    onStart: () => {
+      if (readoutRef.current) readoutRef.current.style.opacity = '0'
+    },
+    onFade: (p) => {
+      if (readoutRef.current) readoutRef.current.style.opacity = p >= 1 ? '' : p.toFixed(3)
+    },
+  })
 
   const cellOf = (p: HeatPick | null): StatsHeatCell | undefined =>
     p ? data.heat.rows.find((r) => r.dow === p.dow)?.cells[p.bucket] : undefined
@@ -117,107 +116,12 @@ function HeatCard({ data }: { data: StatsOverview }) {
     haptic.tick()
   }
 
-  const place = (): void => {
-    const el = loupeRef.current
-    if (!el) return
-    const w = el.offsetWidth
-    const h = el.offsetHeight
-    const { x, y } = finger.current
-    const left = clamp(x - w / 2, bounds.current.left, bounds.current.right - w)
-    const top = Math.max(4, y - LOUPE_LIFT - h)
-    placed.current = { x: left, y: top }
-    el.style.opacity = '1'
-    el.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`
-    if (tailRef.current) tailRef.current.style.left = `${clamp(x - left, 18, w - 18).toFixed(1)}px`
-  }
-
   // С клеткой меняется подпись в лупе, а с ней ширина: лупу ставим заново, когда новая
   // подпись уже в DOM.
   useLayoutEffect(() => {
     if (scrub) place()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrub, picked])
-
-  useEffect(() => () => fading.current?.(), [])
-
-  const hover = (x: number, y: number, first: boolean): void => {
-    let best = cells.current[0]
-    let bd = Infinity
-    for (const c of cells.current) {
-      const d = (c.x - x) ** 2 + (c.y - y) ** 2
-      if (d < bd) {
-        bd = d
-        best = c
-      }
-    }
-    if (!best || (!first && samePick(hovered.current, best))) return
-    hovered.current = { dow: best.dow, bucket: best.bucket }
-    haptic.tick()
-    setPicked(hovered.current)
-  }
-
-  // Отпустили: лупа гаснет на месте, к своему хвостику, а строка над картой проявляется
-  // уже с выбранной клеткой, как после тапа. Перелёт лупы к строке тянул глаз через всю
-  // карту ради подписи, которая и так встаёт на своё место.
-  const fadeOut = (): void => {
-    const el = loupeRef.current
-    const ro = readoutRef.current
-    const done = (): void => {
-      fading.current = null
-      if (ro) ro.style.opacity = ''
-      setLoupe(false)
-    }
-    if (!el) {
-      done()
-      return
-    }
-    const { x, y } = placed.current
-    el.style.transformOrigin = `${tailRef.current?.style.left || '50%'} 100%`
-    fading.current = animate(
-      LOUPE_OUT_MS,
-      (t) => {
-        const p = pr(t, 0, LOUPE_OUT_MS)
-        el.style.opacity = (1 - p).toFixed(3)
-        el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(1 - 0.08 * p).toFixed(3)})`
-        if (ro) ro.style.opacity = p.toFixed(3)
-      },
-      done,
-    )
-  }
-
-  useScrub(gridRef, {
-    start(x, y) {
-      fading.current?.()
-      fading.current = null
-      const grid = gridRef.current
-      if (!grid) return
-      const card = (grid.closest('.stats-card') ?? grid).getBoundingClientRect()
-      bounds.current = { left: Math.max(8, card.left - 6), right: Math.min(window.innerWidth - 8, card.right + 6) }
-      cells.current = Array.from(grid.querySelectorAll<HTMLElement>('.heat-cell')).map((el) => {
-        const b = el.getBoundingClientRect()
-        return {
-          dow: Number(el.dataset.dow),
-          bucket: Number(el.dataset.bucket),
-          x: b.left + b.width / 2,
-          y: b.top + b.height / 2,
-        }
-      })
-      if (readoutRef.current) readoutRef.current.style.opacity = '0'
-      finger.current = { x, y }
-      hovered.current = null
-      setScrub(true)
-      setLoupe(true)
-      hover(x, y, true)
-    },
-    move(x, y) {
-      finger.current = { x, y }
-      hover(x, y, false)
-      place()
-    },
-    end() {
-      setScrub(false)
-      fadeOut()
-    },
-  })
 
   // Значение ячейки читается строкой над картой: hover в вебвью нет, нативный title
   // на тап не открывается, а строку под картой закрывала бы рука. Пока ничего не

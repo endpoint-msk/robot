@@ -17,6 +17,7 @@ import { hasProfile, openProfile } from '../telegram'
 import { sec } from '../theme'
 import type { GuestProfile, GuestRequestsResponse, HostingRequest, User, VisitOutcome, WalkIn } from '../types'
 import { EmptyState, ErrorState, BackRow, Sep, SectionTitle } from '../components/common'
+import { XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
 import { ProfileHead, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
@@ -241,7 +242,10 @@ export function GuestVisits() {
               <div className="row-icon" style={{ background: 'rgba(var(--sec), 0.12)' }}>
                 {icons.note(17, sec(0.6))}
               </div>
-              <span className="row-label">{note ? note.text : 'Заметки пока нет'}</span>
+              {/* Заметку правили своим тапом: на «назад» текст перетекает в новый. */}
+              <span className="row-label">
+                <XText text={note ? note.text : 'Заметки пока нет'} />
+              </span>
               <div className="row-right">{icons.chevron()}</div>
             </button>
           </div>

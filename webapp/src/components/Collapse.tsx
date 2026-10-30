@@ -2,7 +2,7 @@
 // как строка с ником на доске в знакомстве. Чужую смену показывает сразу: появился или
 // пропал без движения.
 
-import { createElement, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createElement, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { animate, clamp, E, ownTapRecent, pr, type Ease } from '../motion'
 
 /**
@@ -71,4 +71,20 @@ export function Collapse({
 
   if (!shown) return null
   return createElement(as, { className: 'collapse', ref }, open ? children : kept.current)
+}
+
+/**
+ * Ключи строк, вставших в список после своего действия: им вырастать из нуля (`appear`).
+ * Ключ держится, пока строка в списке, и обёртка у неё не меняется. `null` - список ещё
+ * не загружен: всё, что придёт первым ответом, стояло там и раньше.
+ */
+export function useArrivals(keys: string[] | null): ReadonlySet<string> {
+  const sig = keys ? keys.join('\u0001') : null
+  const [seen, setSeen] = useState(() => ({ sig, keys, fresh: [] as string[] }))
+  if (seen.sig !== sig) {
+    const before = new Set(seen.keys ?? [])
+    const added = keys && seen.keys && ownTapRecent() ? keys.filter((k) => !before.has(k)) : []
+    setSeen({ sig, keys, fresh: [...added, ...seen.fresh.filter((k) => keys?.includes(k))] })
+  }
+  return useMemo(() => new Set(seen.fresh), [seen.fresh])
 }

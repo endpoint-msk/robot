@@ -12,6 +12,7 @@ import { useEffect, type RefObject } from 'react'
 import { clamp, EDGE_ZONE, holdSelection, landing, project, springPlay, tracker, type Look, type SpringOpts, type Track } from '../motion'
 import { heroRunning } from '../hero'
 import { hasOverlay } from '../overlays'
+import { scrubActive } from '../stats'
 import { getState, popStill, setUnder, underMode } from '../store'
 import { haptic } from '../telegram'
 
@@ -23,7 +24,7 @@ const AWAY_SPRING: SpringOpts = { response: 0.3, damping: 1 }
 /** Тишина в событиях колеса, после которой жест трекпада считается законченным. */
 const WHEEL_IDLE_MS = 110
 
-const FREE = 'input, textarea, select, [contenteditable], .swipe-row, [data-scrub], .tp-wheels, [data-noback]'
+const FREE = 'input, textarea, select, [contenteditable], .swipe-row, [data-scrub=""], .tp-wheels, [data-noback]'
 
 /** Листалки сообщают, стоят ли на первой странице: только оттуда свайп вправо уводит назад. */
 const pagerStarts = new WeakMap<Element, () => boolean>()
@@ -190,7 +191,7 @@ export function useSwipeBack(screenRef: RefObject<HTMLElement | null>, enabled: 
         const dx = cx - g.x0
         const dy = cy - g.y0
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return false
-        if (dx <= Math.abs(dy) || underMode() !== null) {
+        if (dx <= Math.abs(dy) || underMode() !== null || scrubActive()) {
           g = null
           return false
         }

@@ -3,9 +3,11 @@
 // (push/pop/setData/setTheme) заменяют объект state целиком, что и триггерит
 // перерисовку подписчиков.
 
-import { useSyncExternalStore } from 'react'
+import { useContext, useSyncExternalStore } from 'react'
 import { heroRow, heroScreen, heroScreenOf, heroSwap, pageSwap, settleHero, themeSwap, type HeroKind } from './hero'
+import { markOwnTap } from './motion'
 import { pruneRemote } from './remote'
+import { SnapContext } from './screenContext'
 import { applyTheme, loadTheme, saveTheme } from './theme'
 import type { Bootstrap, Perspective, ThemeChoice } from './types'
 
@@ -54,6 +56,10 @@ export type NavEntry = {
   id: number
   /** Где был экран, когда с него ушли вперёд: «назад» возвращает его туда же. */
   scrollY?: number
+  /** Данные, с которыми с экрана ушли вперёд: с ними он встаёт на «назад», см. heldData. */
+  snap?: Bootstrap | null
+  /** Глубже было своё действие: смена данных доиграет на этом экране, когда он встанет. */
+  own?: boolean
 }
 export type Anim = 'in-forward' | 'in-back' | 'in-fade' | null
 
@@ -95,7 +101,12 @@ const set = (patch: Partial<State>): void => {
   emit()
 }
 
-export const useStore = (): State => useSyncExternalStore(subscribe, getState, getState)
+/** Экран, вставший на «назад» со снимком (App.tsx), видит снимок вместо свежих данных. */
+export const useStore = (): State => {
+  const s = useSyncExternalStore(subscribe, getState, getState)
+  const snap = useContext(SnapContext)
+  return snap ? { ...s, data: snap } : s
+}
 
 /** Параметры текущего (верхнего) экрана. */
 export const useParams = (): NavParams => {
@@ -126,10 +137,44 @@ const commit = (patch: Partial<State>, anim: Anim): void => {
   set(next)
 }
 
-/** Уходящий вперёд экран запоминает прокрутку. */
+/** Уходящий вперёд экран запоминает прокрутку и то, что показывал. */
 const leaving = (): NavEntry[] => {
   const top = state.stack[state.stack.length - 1]
-  return top ? [...state.stack.slice(0, -1), { ...top, scrollY: window.scrollY }] : []
+  return top ? [...state.stack.slice(0, -1), { ...top, scrollY: window.scrollY, snap: state.data, own: false }] : []
+}
+
+/**
+ * Экраны, которые показывают итог своего действия на глубоком экране, когда на них
+ * вернулись: умеют сыграть смену своих данных (лица, подписи, карточки). Остальные встают
+ * сразу свежими, иначе смена без движения выскочила бы уже после перехода.
+ */
+const HOLDS: ReadonlySet<ScreenName> = new Set<ScreenName>(['overview', 'day', 'event', 'guestVisits', 'visits'])
+
+/**
+ * Снимок, с которым встаёт экран записи: только после своего действия глубже. Чужое
+ * изменение без своего приходит, как везде, без движения.
+ */
+export const heldData = (e: NavEntry): Bootstrap | null => (e.own && e.snap && HOLDS.has(e.name) ? e.snap : null)
+
+/**
+ * Своё действие на верхнем экране: экраны под ним, когда на них вернутся, сыграют смену.
+ * Без emit: метку читает только навигация, а данные следом кладёт setData.
+ */
+export function markOwnChange(): void {
+  const n = state.stack.length
+  if (n < 2) return
+  state = { ...state, stack: state.stack.map((e, i) => (i < n - 1 && !e.own ? { ...e, own: true } : e)) }
+}
+
+/**
+ * Экран встал после «назад» со снимком: дальше он на свежих данных, и смена играет, как
+ * после касания на месте. Пока он вставал, могли уйти дальше: тогда метку не трогаем.
+ */
+export function releaseHeld(id: number): void {
+  const top = state.stack[state.stack.length - 1]
+  if (!top || top.id !== id || !top.own) return
+  markOwnTap()
+  set({ stack: [...state.stack.slice(0, -1), { ...top, own: false, snap: null }] })
 }
 
 /**

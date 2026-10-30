@@ -4,9 +4,10 @@
 import { useEffect, useLayoutEffect, useState, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { BarContext } from './barContext'
+import { afterHero } from './hero'
 import { ModalHost } from './modals'
-import { EntryContext, UnderContext } from './screenContext'
-import { useStore, useUnder, type NavEntry, type ScreenName, type UnderMode } from './store'
+import { EntryContext, SnapContext, UnderContext } from './screenContext'
+import { heldData, releaseHeld, useStore, useUnder, type NavEntry, type ScreenName, type UnderMode } from './store'
 import { tg } from './telegram'
 import { AnimContext } from './components/Screen'
 import { UndoToast } from './components/UndoToast'
@@ -45,6 +46,9 @@ import { ResidentProfile } from './screens/ResidentProfile'
 import { Announce } from './screens/Announce'
 import { Onboarding } from './screens/Onboarding'
 import { Wrap } from './screens/Wrap'
+
+/** Въезд `.screen.in-back` в app.css: без View Transitions смена ждёт его конца. */
+const BACK_IN_MS = 240
 
 const SCREENS: Record<ScreenName, ComponentType> = {
   overview: Overview,
@@ -109,7 +113,9 @@ function UnderScreen({ entry, mode }: { entry: NavEntry; mode: UnderMode }) {
           <BarContext.Provider value={bar}>
             <UnderContext.Provider value>
               <EntryContext.Provider value={entry.id}>
-                <Comp />
+                <SnapContext.Provider value={heldData(entry)}>
+                  <Comp />
+                </SnapContext.Provider>
               </EntryContext.Provider>
             </UnderContext.Provider>
           </BarContext.Provider>
@@ -149,13 +155,43 @@ export function App() {
   const top = stack[stack.length - 1]!
   const below = under ? stack[stack.length - 2] : undefined
   const ScreenComp = SCREENS[top.name]
+  const held = heldData(top)
+
+  // Вернулись на экран после своего действия глубже: он въехал таким, каким его оставили,
+  // а свежие данные берёт, когда встал, и смена играет на глазах. Конец перехода даёт
+  // afterHero, без View Transitions ждём въезд .in-back; после свайпа или жеста «вниз»
+  // экран уже стоит, и хватает кадра со снимком.
+  useEffect(() => {
+    if (!held) return
+    const id = top.id
+    let live = true
+    let timer = 0
+    let raf = 0
+    afterHero(() => {
+      if (!live) return
+      timer = window.setTimeout(
+        () => {
+          raf = requestAnimationFrame(() => releaseHeld(id))
+        },
+        anim === 'in-back' ? BACK_IN_MS : 0,
+      )
+    })
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+      cancelAnimationFrame(raf)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navId])
 
   return (
     <BarContext.Provider value={barNode}>
       {below && under ? <UnderScreen entry={below} mode={under} /> : null}
       <AnimContext.Provider value={anim}>
         <EntryContext.Provider value={top.id}>
-          <ScreenComp key={navId} />
+          <SnapContext.Provider value={held}>
+            <ScreenComp key={navId} />
+          </SnapContext.Provider>
         </EntryContext.Provider>
       </AnimContext.Provider>
       <div className="bar-portal" ref={setBarNode} />

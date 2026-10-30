@@ -21,6 +21,7 @@ import { getState, pop, push, setBusy, startNewRequest, useParams, useStore } fr
 import { applyTheme } from '../theme'
 import type { Attendee, ReviewerScope, SpaceEvent, User } from '../types'
 import { BackRow, Footnote, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
+import { Crossfade } from '../components/Crossfade'
 import { DateField } from '../components/DateField'
 import { eventTone, toneVars } from '../components/EventRow'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
@@ -29,6 +30,7 @@ import { ShareButton, ShareIconButton } from '../components/ShareButton'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
+import { TimeRow } from '../components/TimeField'
 import { useReorder } from '../components/useReorder'
 import { useDropImages, usePasteImages } from '../usePasteImages'
 import { ComingNames, ComingRow, useAttend } from './Day'
@@ -40,18 +42,6 @@ const MAX_DESCRIPTION = 4096
 const MAX_PHOTOS = 6
 /** Столько же держит сервер (EVENT_DAYS_AHEAD): дальше даты не выставить. */
 const MAX_DAYS_AHEAD = 365
-/** Шаг стрелок времени: получасовой, как в афишах («в 19:00», «в 19:30»). */
-const STEP_MINUTES = 30
-/** Последний слот суток: заворачивать стрелку через полночь нельзя — это сменило бы день. */
-const LAST_SLOT_MINUTES = 23 * 60 + 30
-
-const toMinutes = (time: string): number => {
-  const [h, m] = time.split(':')
-  return (Number(h) || 0) * 60 + (Number(m) || 0)
-}
-
-const fromMinutes = (total: number): string =>
-  `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 
 /**
  * Афиша: у ивента — по его id, у заготовки — по ключу владельца. Тап открывает её на
@@ -91,7 +81,12 @@ export function Event() {
   // Перспектива гостя (в т.ч. дев-превью) должна вести себя как гость: гостевая карточка
   // с подачей заявки, а не редактор — даже если человек на самом деле автор/дев.
   const asGuest = perspective === 'guest'
-  const existing = params.event as SpaceEvent | undefined
+  // Ивент в параметрах - снимок на момент перехода. Своя заявка на экране глубже меняет
+  // его в данных, и на «назад» экран берёт свежий, иначе показывал бы прошлое состояние.
+  const passed = params.event as SpaceEvent | undefined
+  const existing = passed
+    ? ([...days.flatMap((d) => d.events), ...(data!.laterEvents ?? [])].find((e) => e.id === passed.id) ?? passed)
+    : undefined
   // Заготовка из пересланного поста: текст уже вставлен, афиша лежит под ключом владельца.
   const draft = params.fromDraft ? data!.eventDraft || null : null
 
@@ -244,16 +239,6 @@ export function Event() {
     setDateKey(next)
     // Переключились на сегодня, а выбранное время уже прошло — подтягиваем ближайшее.
     if (guardPast && isPastForToday(next, time)) setTime(defaultTimeFor(next))
-  }
-
-  const canStep = (deltaSteps: number): boolean => {
-    const next = toMinutes(time) + deltaSteps * STEP_MINUTES
-    if (next < 0 || next > LAST_SLOT_MINUTES) return false
-    return !guardPast || !isPastForToday(dateKey, fromMinutes(next))
-  }
-
-  const step = (deltaSteps: number): void => {
-    if (canStep(deltaSteps)) setTime(fromMinutes(toMinutes(time) + deltaSteps * STEP_MINUTES))
   }
 
   const addPhotos = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -412,18 +397,14 @@ export function Event() {
           </div>
         </div>
         <Sep inset="text" />
-        <div className="row step-row">
-          <span className="row-label">Начало в</span>
-          <div className="row-right ev-time">
-            <button className="ev-step" aria-label="Раньше" disabled={!canStep(-1)} onClick={() => step(-1)}>
-              {icons.minus()}
-            </button>
-            <span className="ev-time-value">{time}</span>
-            <button className="ev-step" aria-label="Позже" disabled={!canStep(1)} onClick={() => step(1)}>
-              {icons.plusSmall()}
-            </button>
-          </div>
-        </div>
+        {/* Время колесом в карточке, как «Приду к» в форме заявки: любое время за один
+            жест. Новому ивенту на сегодня прошедшее недоступно, идущий правится свободно. */}
+        <TimeRow
+          label="Начало в"
+          value={time}
+          min={guardPast && dateKey === data!.todayKey ? data!.nowTime || '00:00' : undefined}
+          onChange={setTime}
+        />
         <Sep inset="text" />
         <SwitchRow
           on={residentsOnly}
@@ -705,7 +686,12 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
           ))}
         </div>
       ) : null}
-      {event.form ? <EventFormActions event={event} /> : null}
+      {/* Своя заявка на экране формы: на «назад» кнопка подачи перетекает в её статус. */}
+      {event.form ? (
+        <Crossfade id={event.myApplication?.status ?? 'none'}>
+          <EventFormActions event={event} />
+        </Crossfade>
+      ) : null}
       {mine ? (
         <div className="card evv-mine">
           <button type="button" className="row tappable" onClick={() => push('visit', { id: mine.id })}>

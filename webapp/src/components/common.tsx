@@ -1,7 +1,7 @@
 // Общие UI-атомы: шапка, карточки-строки, разделители, свитч, пустые состояния,
 // нижняя панель (в портал вне анимируемого экрана) и дев-чипы.
 
-import { useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BarContext } from '../barContext'
 import { cooldownSnapshot, subscribeCooldown } from '../cooldown'
@@ -61,17 +61,53 @@ export const searchNeedle = (query: string): string => query.trim().replace(/^@+
 /**
  * Поле поиска, как в списках iOS: серая плашка, лупа, крестик. Одно на все поиски, чтобы
  * архив, «Позвать», «Без заявки», резиденты и ответственные выглядели и вели себя одинаково.
+ * В фокусе справа проступает «Отмена»: одно касание сбрасывает запрос и убирает
+ * клавиатуру, крестик же только стирает набранное.
  */
 export function SearchField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const [focused, setFocused] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
+  // Кнопка растёт шириной от нуля до своей подписи: ширину подписи меряем один раз.
+  useLayoutEffect(() => {
+    const el = cancel.current
+    if (el) el.style.setProperty('--cw', `${el.scrollWidth}px`)
+  }, [])
   return (
-    <div className="search-field">
-      {icons.search()}
-      <input type="search" value={value} placeholder={placeholder} autoComplete="off" onChange={(e) => onChange(e.target.value)} />
-      {value ? (
-        <button type="button" className="search-clear" aria-label="Очистить" onClick={() => onChange('')}>
-          {icons.xmark(11, '#fff')}
-        </button>
-      ) : null}
+    <div className={'search-field' + (focused ? ' focused' : '')}>
+      <div className="search-box">
+        {icons.search()}
+        <input
+          ref={input}
+          type="search"
+          value={value}
+          placeholder={placeholder}
+          autoComplete="off"
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        {value ? (
+          <button type="button" className="search-clear" aria-label="Очистить" onClick={() => onChange('')}>
+            {icons.xmark(11, '#fff')}
+          </button>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className="search-cancel"
+        ref={cancel}
+        tabIndex={focused ? 0 : -1}
+        aria-hidden={!focused}
+        // Касание кнопки сняло бы фокус с поля раньше клика, и она уехала бы из-под пальца.
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onChange('')
+          input.current?.blur()
+        }}
+      >
+        Отмена
+      </button>
     </div>
   )
 }
@@ -173,6 +209,29 @@ export function NotifyIcon({ color, off }: { color: string; off: boolean }) {
 }
 
 /**
+ * Галочка выбранной строки в списке выбора (поток уведомлений, ставка взноса). Новая
+ * дорисовывается штрихом, как отметка анкеты (.ff-ck), прежняя гаснет; на первом показе
+ * она просто стоит.
+ */
+export function RadioCheck({ on }: { on: boolean }) {
+  return (
+    <div className={'radio-check' + (on ? ' on' : '')}>
+      <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true">
+        <path
+          d="M2.5 7.5l3 3L11.5 4"
+          pathLength={1}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  )
+}
+
+/**
  * Строка с тумблером целиком - один переключатель, как в Telegram для Android и Desktop:
  * касание по подписи переключает его же, а мышь в паре пикселей от тумблера больше не
  * проходит мимо. Сам тумблер нарисован внутри и кнопкой не является: кнопка в кнопке
@@ -203,6 +262,10 @@ export function SwitchRow({
   const [pending, setPending] = useState<boolean | null>(null)
   const shown = pending ?? on
   useEffect(() => setPending(null), [on])
+  // Палец на строке: ползунок вытягивается в сторону хода, как у системного тумблера.
+  // Отпустили или увели палец, и он возвращается, а тап доводит его на новое место.
+  const [pressed, setPressed] = useState(false)
+  const release = (): void => setPressed(false)
 
   return (
     <button
@@ -211,6 +274,12 @@ export function SwitchRow({
       role="switch"
       aria-checked={shown}
       disabled={disabled}
+      onPointerDown={(e) => {
+        if (e.button === 0) setPressed(true)
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onPointerLeave={release}
       onClick={async () => {
         haptic.impact(shown ? 'soft' : 'light')
         markOwnTap()
@@ -227,7 +296,7 @@ export function SwitchRow({
         {label}
         {sub ? <span className="row-sublabel">{sub}</span> : null}
       </span>
-      <span className={'switch' + (shown ? ' on' : '')} aria-hidden="true" />
+      <span className={'switch' + (shown ? ' on' : '') + (pressed ? ' pressed' : '')} aria-hidden="true" />
     </button>
   )
 }

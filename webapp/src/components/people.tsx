@@ -3,6 +3,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { avatarUrl } from '../links'
+import { ownTapRecent, reducedMotion } from '../motion'
 import { hasProfile, openProfile } from '../telegram'
 import type { User } from '../types'
 
@@ -85,14 +86,35 @@ export function Avatar({
  * Лица внахлёст: каждое следующее лежит под предыдущим. Порядок в стопке и есть
  * важность (резиденты, потом гости), а браузер по умолчанию кладёт поздний элемент
  * сверху, и последний в ряду перекрывал бы первого.
+ *
+ * Лицо, вставшее в стопку после своего действия, проявляется, как в ряду «Придут» на
+ * экране дня. Ключ - человек, а не место: новый первым не перерисовывает соседей, и их
+ * фото не мигают заново.
  */
 export function AvatarStack({ users, max = 3 }: { users: AvatarUser[]; max?: number }) {
   const shown = users.slice(0, max)
+  const sig = shown.map((u) => u.userId).join(',')
+  const [seen, setSeen] = useState(() => ({ sig, fresh: [] as number[] }))
+  if (seen.sig !== sig) {
+    const before = new Set(seen.sig ? seen.sig.split(',').map(Number) : [])
+    const added = ownTapRecent() && !reducedMotion() ? shown.filter((u) => !before.has(u.userId)).map((u) => u.userId) : []
+    setSeen({ sig, fresh: [...added, ...seen.fresh.filter((id) => shown.some((u) => u.userId === id))] })
+  }
+  const taken = new Map<number, number>()
   return (
     <div className="avatar-stack">
-      {shown.map((u, i) => (
-        <Avatar key={`${u.userId}-${i}`} user={u} style={{ zIndex: shown.length - i }} />
-      ))}
+      {shown.map((u, i) => {
+        const n = taken.get(u.userId) ?? 0
+        taken.set(u.userId, n + 1)
+        return (
+          <Avatar
+            key={n ? `${u.userId}-${n}` : u.userId}
+            user={u}
+            className={seen.fresh.includes(u.userId) ? 'face-in' : undefined}
+            style={{ zIndex: shown.length - i }}
+          />
+        )
+      })}
     </div>
   )
 }

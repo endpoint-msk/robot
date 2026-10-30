@@ -1,7 +1,8 @@
 // Карточка человека в журнале: сколько бывает, когда приходит, последние визиты.
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { action, api } from '../api'
 import {
   addDays,
@@ -12,6 +13,7 @@ import {
   MONTHS_NOM,
   monthIdx,
   plural,
+  weekdayIdx,
   WEEKDAYS_SHORT,
   yearOf,
 } from '../dates'
@@ -21,7 +23,7 @@ import { datePrompt } from '../modals'
 import { useRemote } from '../remote'
 import { mixc, palette } from '../motion'
 import { push, setTopParams, useParams, useStore } from '../store'
-import { fmtDuration, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
+import { fmtDuration, heatCell, heatLevel, hoursNum, hoursNumWord, statsAvatarUser } from '../stats'
 import { haptic, hasProfile, openProfile, openUrl } from '../telegram'
 import type { StatsPersonView } from '../types'
 import { BackRow, ErrorState, Footnote, Sep } from '../components/common'
@@ -31,6 +33,7 @@ import { ProfileHead, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkCard, SkGrid, SkProfile, SkQuad, SkRows } from '../components/skeleton'
+import { useLoupe } from '../components/useLoupe'
 
 const DOT_WEEKS = 12
 
@@ -61,6 +64,114 @@ function VisitStrip({ from, to }: { from: string; to: string }) {
         return <i key={i} style={level > 0 ? { background: `var(--heat-${level})` } : undefined} />
       })}
     </span>
+  )
+}
+
+/**
+ * «Когда приходит»: двенадцать недель по дням. Отвечает пальцу, как карта статистики:
+ * клетка обведена, день недели слева подсвечен, над пальцем лупа с датой и временем
+ * визита. Касание ничего не открывает, а будущие дни не берутся вовсе. На листаемой
+ * карточке (`paged`) лупа встаёт удержанием: свайп вбок по карте листает людей.
+ */
+function DotsCard({ dots, from, todayIndex, paged }: { dots: number[]; from: string; todayIndex: number; paged: boolean }) {
+  const [picked, setPicked] = useState<number | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const { scrub, loupe, loupeRef, tailRef, place } = useLoupe<number>(gridRef, {
+    cells: '.dot[data-i]',
+    read: (el) => Number(el.dataset.i),
+    same: (a, b) => a === b,
+    onPick: setPicked,
+    hold: paged,
+  })
+  // С клеткой меняется подпись в лупе, а с ней ширина: ставим лупу, когда подпись в DOM.
+  useLayoutEffect(() => {
+    if (scrub) place()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrub, picked])
+
+  const max = Math.max(...dots, 1)
+  // Столбец — неделя, строка — день недели: как в сетке дизайна (grid-auto-flow: column).
+  const cells = Array.from({ length: DOT_WEEKS * 7 }, (_, i) => dots[i] ?? 0)
+  // Подпись месяца над колонкой, в которой он начинается: без неё сетка показывает
+  // ритм, но не отвечает, когда это было. Берём середину недели — месяц, которому
+  // принадлежит большая её часть.
+  const monthLabels = (() => {
+    const seen = new Set<number>()
+    return Array.from({ length: DOT_WEEKS }, (_, w) => {
+      const month = monthIdx(addDays(from, w * 7 + 3))
+      if (seen.has(month)) return ''
+      seen.add(month)
+      // Именительный падеж: MONTHS_ABBR держит «мая» под плитку «5 мая», а на оси
+      // нужен «май».
+      return MONTHS_NOM[month]?.slice(0, 3).toLowerCase() ?? ''
+    })
+  })()
+  const dayText = (i: number): string => {
+    const key = addDays(from, i)
+    return `${WEEKDAYS_SHORT[weekdayIdx(key)]}, ${fmtDayMonth(key)}`
+  }
+  const spent = (v: number): string => (v > 0 ? fmtDuration(v) : 'без визита')
+  const lens = picked !== null ? heatCell(heatLevel(cells[picked] ?? 0, max)) : null
+
+  return (
+    <div className="card stats-card">
+      <div className="stats-card-title">Когда приходит</div>
+      <div className="dots-months">
+        {monthLabels.map((label, i) => (
+          <div key={i}>{label}</div>
+        ))}
+      </div>
+      <div className="dots" data-scrub={paged ? 'hold' : ''} ref={gridRef}>
+        <div className="dots-labels">
+          {WEEKDAYS_SHORT.map((d, r) => (
+            <div key={d} className={scrub && picked !== null && picked % 7 === r ? 'on' : undefined}>
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="dots-grid">
+          {cells.map((v, i) => {
+            // Дни после сегодняшнего в сетку не попадают: «ещё не наступило» и «не
+            // приходил» — разные вещи, а рисовались они одинаково пустой клеткой.
+            if (i > todayIndex) return <div key={i} className="dot future" />
+            const level = heatLevel(v, max)
+            return (
+              <div
+                key={i}
+                className={'dot' + (level === 0 ? ' zero' : '') + (scrub && picked === i ? ' picked' : '')}
+                style={level > 0 ? { background: `var(--heat-${level})` } : undefined}
+                data-i={i}
+                role="img"
+                aria-label={`${dayText(i)}: ${spent(v)}`}
+              />
+            )
+          })}
+        </div>
+      </div>
+      <div className="heat-legend">
+        <span>{nb('Последние 12 недель')}</span>
+        <div className="heat-scale">
+          <span>меньше</span>
+          {[1, 2, 3, 4, 5].map((level) => (
+            <i key={level} style={{ background: `var(--heat-${level})` }} />
+          ))}
+          <span>больше</span>
+        </div>
+      </div>
+      {loupe && picked !== null && lens
+        ? createPortal(
+            <div className="stats-loupe" ref={loupeRef} aria-hidden="true">
+              <i className={lens.className} style={lens.style} />
+              <div className="stats-loupe-text">
+                <b>{dayText(picked)}</b>
+                <span>{spent(cells[picked] ?? 0)}</span>
+              </div>
+              <i className="stats-tail" ref={tailRef} />
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
   )
 }
 
@@ -130,7 +241,7 @@ export function StatsPerson() {
         onCommit={(i) => setTopParams({ ...params, userId: people[i]!.userId })}
         tone={(p) => personTone(p.userId)}
         top={<BackRow />}
-        renderPage={(p) => <PersonPage userId={p.userId} known={p} />}
+        renderPage={(p) => <PersonPage userId={p.userId} known={p} paged />}
       />
     </Screen>
   )
@@ -145,11 +256,14 @@ export function PersonPage({
   known,
   profile,
   extra,
+  paged = false,
 }: {
   userId: number
   known: PersonRef | null
   profile?: { name: string; username: string | null }
   extra?: ReactNode
+  /** Карточка в листалке людей: вбок её листают. */
+  paged?: boolean
 }) {
   const { data: boot } = useStore()
   const { data, error, pending, reload } = useRemote(
@@ -226,26 +340,7 @@ export function PersonPage({
     if (picked) await setSince(picked)
   }
 
-  const dotMax = Math.max(...data.dots, 1)
-  // Столбец — неделя, строка — день недели: как в сетке дизайна (grid-auto-flow: column).
-  const dotCells = Array.from({ length: DOT_WEEKS * 7 }, (_, i) => data.dots[i] ?? 0)
-  // Дни после сегодняшнего в сетку не попадают: «ещё не наступило» и «не приходил» —
-  // разные вещи, а рисовались они одинаково пустой клеткой.
   const todayIndex = Math.round((keyToDate(boot!.todayKey).getTime() - keyToDate(data.dotsFrom).getTime()) / 86_400_000)
-  // Подпись месяца над колонкой, в которой он начинается: без неё сетка показывает
-  // ритм, но не отвечает, когда это было. Берём середину недели — месяц, которому
-  // принадлежит большая её часть.
-  const monthLabels = (() => {
-    const seen = new Set<number>()
-    return Array.from({ length: DOT_WEEKS }, (_, w) => {
-      const month = monthIdx(addDays(data.dotsFrom, w * 7 + 3))
-      if (seen.has(month)) return ''
-      seen.add(month)
-      // Именительный падеж: MONTHS_ABBR держит «мая» под плитку «5 мая», а на оси
-      // нужен «май».
-      return MONTHS_NOM[month]?.slice(0, 3).toLowerCase() ?? ''
-    })
-  })()
 
   return frame(
     <>
@@ -286,44 +381,7 @@ export function PersonPage({
         ) : null}
       </div>
 
-      <div className="card stats-card">
-        <div className="stats-card-title">Когда приходит</div>
-        <div className="dots-months">
-          {monthLabels.map((label, i) => (
-            <div key={i}>{label}</div>
-          ))}
-        </div>
-        <div className="dots">
-          <div className="dots-labels">
-            {WEEKDAYS_SHORT.map((d) => (
-              <div key={d}>{d}</div>
-            ))}
-          </div>
-          <div className="dots-grid">
-            {dotCells.map((v, i) => {
-              if (i > todayIndex) return <div key={i} className="dot future" />
-              const level = heatLevel(v, dotMax)
-              return (
-                <div
-                  key={i}
-                  className={'dot' + (level === 0 ? ' zero' : '')}
-                  style={level > 0 ? { background: `var(--heat-${level})` } : undefined}
-                />
-              )
-            })}
-          </div>
-        </div>
-        <div className="heat-legend">
-          <span>{nb('Последние 12 недель')}</span>
-          <div className="heat-scale">
-            <span>меньше</span>
-            {[1, 2, 3, 4, 5].map((level) => (
-              <i key={level} style={{ background: `var(--heat-${level})` }} />
-            ))}
-            <span>больше</span>
-          </div>
-        </div>
-      </div>
+      <DotsCard dots={data.dots} from={data.dotsFrom} todayIndex={todayIndex} paged={paged} />
 
       {data.lastVisits.length > 0 ? (
         <>

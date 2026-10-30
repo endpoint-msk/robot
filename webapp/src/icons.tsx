@@ -282,12 +282,6 @@ export const icons = {
       <circle cx="15" cy="14.5" r="4" fill="#fff" />
     </svg>
   ),
-  /** Минус в круглой кнопке шага времени — пара к `plusSmall`. */
-  minus: (): ReactElement => (
-    <svg width="14" height="14" viewBox="0 0 14 14">
-      <path d="M2 7h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  ),
   /** Календарь — метка ивента. Цвет задаётся вызывающим: у ивентов он фиолетовый. */
   calendar: (size: number, color: string): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 18 18">

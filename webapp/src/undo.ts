@@ -9,7 +9,7 @@ import { api } from './api'
 import { foldOut, reappear, vanish, type Dust } from './dust'
 import { heroRunning } from './hero'
 import { showAlert } from './modals'
-import { setData } from './store'
+import { markOwnChange, setData } from './store'
 import { haptic } from './telegram'
 import type { Bootstrap } from './types'
 
@@ -60,6 +60,7 @@ export async function takeBack(id: number): Promise<void> {
   haptic.impact('light')
   try {
     const data = await api<Bootstrap>('undo', { token: o.token })
+    markOwnChange()
     if (o.onBack) o.onBack(data)
     else setData(data)
   } catch (err) {

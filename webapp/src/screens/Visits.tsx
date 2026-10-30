@@ -17,7 +17,7 @@ import { haptic } from '../telegram'
 import { sec } from '../theme'
 import type { Bootstrap, HostingRequest, User, VisitOutcome, VisitsDay, WalkIn } from '../types'
 import { ActionButton, BackRow, EmptyState, ErrorState, Header, ReadonlyBadge, SectionTitle, Sep } from '../components/common'
-import { Collapse } from '../components/Collapse'
+import { Collapse, useArrivals } from '../components/Collapse'
 import { Flip } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
@@ -273,6 +273,8 @@ export function Visits() {
   const remote = useRemote(() => api<VisitsDay>('visits.day', { dateKey }), [dateKey])
   const [local, setLocal] = useState<VisitsDay | null>(null)
   const day = local ?? remote.data ?? preset
+  // Гость без заявки, добавленный своим тапом: на «назад» его строка вырастает в списке.
+  const arrived = useArrivals(day ? day.walkIns.map((w) => w.id) : null)
   const [pending, setPending] = useState<Record<string, boolean | null>>({})
   // Строки, по которым сейчас идёт «Все пришли». Для общей кнопки они уже отмечены:
   // иначе её счётчик убывал бы по одной строке и свернулась бы она с единицей.
@@ -418,12 +420,25 @@ export function Visits() {
           <>
             <SectionTitle>{day.walkIns.length > 0 ? `Без заявки · ${day.walkIns.length}` : 'Без заявки'}</SectionTitle>
             <div className="card">
-              {day.walkIns.map((w, i) => (
-                <Fragment key={w.id}>
-                  {i > 0 ? <Sep inset="avatar" /> : null}
-                  <WalkInRow w={w} editable={editable} onRemove={removeWalkIn} />
-                </Fragment>
-              ))}
+              {day.walkIns.map((w, i) => {
+                const row = (
+                  <>
+                    {i > 0 ? <Sep inset="avatar" /> : null}
+                    <WalkInRow w={w} editable={editable} onRemove={removeWalkIn} />
+                  </>
+                )
+                return (
+                  <Fragment key={w.id}>
+                    {arrived.has(w.id) ? (
+                      <Collapse open appear ms={320} ease={E.crisp}>
+                        {row}
+                      </Collapse>
+                    ) : (
+                      row
+                    )}
+                  </Fragment>
+                )
+              })}
               {editable ? (
                 <>
                   {day.walkIns.length > 0 ? <Sep inset="icon" /> : null}

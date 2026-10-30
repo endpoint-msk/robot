@@ -105,11 +105,21 @@ const SCRUB_CLICK_MS = 300
 export type ScrubHandlers = {
   /** Можно ли брать жест сейчас: пока график перестраивается, ведения нет. */
   can?: () => boolean
+  /**
+   * Ведение только удержанием: сдвиг до него отдаёт палец листалке и свайпу назад. Для
+   * сетки на листаемой карточке, где вбок листают людей. Область тогда `data-scrub="hold"`.
+   */
+  hold?: boolean
   /** Координаты экранные (clientX/clientY). */
   start: (x: number, y: number) => void
   move: (x: number, y: number) => void
   end: () => void
 }
+
+let scrubbing = false
+
+/** Палец ведёт по сетке: листалки и свайп назад в это время палец не берут. */
+export const scrubActive = (): boolean => scrubbing
 
 /**
  * Ведение пальцем по карте и графикам, как в «Здоровье» на iPhone. Направление решается
@@ -140,6 +150,7 @@ export function useScrub(ref: RefObject<HTMLElement | null>, handlers: ScrubHand
     const begin = (): void => {
       if (!g || g.on) return
       g.on = true
+      scrubbing = true
       window.clearTimeout(g.hold)
       try {
         el.setPointerCapture(g.id)
@@ -154,6 +165,7 @@ export function useScrub(ref: RefObject<HTMLElement | null>, handlers: ScrubHand
       const on = g.on
       g = null
       if (!on) return
+      scrubbing = false
       quietUntil = performance.now() + SCRUB_CLICK_MS
       live.current.end()
     }
@@ -176,7 +188,7 @@ export function useScrub(ref: RefObject<HTMLElement | null>, handlers: ScrubHand
       const dy = Math.abs(e.clientY - g.y0)
       if (dx < SCRUB_SLOP && dy < SCRUB_SLOP) return
       const down = touch && touch.axis !== 0 ? touch.axis === 2 : dy >= dx
-      if (!g.mouse && down) {
+      if ((!g.mouse && down) || live.current.hold) {
         window.clearTimeout(g.hold)
         g = null
         return
@@ -199,7 +211,7 @@ export function useScrub(ref: RefObject<HTMLElement | null>, handlers: ScrubHand
       }
       // Пока ведём, экран стоит, куда бы ни шёл палец: после удержания лупа ходит и по
       // вертикали. До решения гасим только сдвиг вбок, вертикаль остаётся прокрутке.
-      if ((g?.on || touch?.axis === 1) && e.cancelable) e.preventDefault()
+      if ((g?.on || (touch?.axis === 1 && !live.current.hold)) && e.cancelable) e.preventDefault()
     }
     const onClick = (e: MouseEvent): void => {
       if (performance.now() >= quietUntil) return
@@ -225,6 +237,7 @@ export function useScrub(ref: RefObject<HTMLElement | null>, handlers: ScrubHand
     el.addEventListener('dragstart', onDrag)
     return () => {
       if (g) window.clearTimeout(g.hold)
+      if (g?.on) scrubbing = false
       g = null
       el.removeEventListener('pointerdown', onDown)
       el.removeEventListener('pointermove', onMove)

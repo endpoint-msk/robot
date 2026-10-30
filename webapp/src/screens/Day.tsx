@@ -49,7 +49,7 @@ import { DayTopic, markOwnTopic } from '../components/DayTopic'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
-import { RequestRow } from '../components/RequestRow'
+import { MorphWord, RequestRow } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 import { attendTimeFor } from '../components/forms'
 import { TimeField } from '../components/TimeField'
@@ -93,7 +93,21 @@ function NewEventLabel({ more }: { more: boolean }) {
   useDrafts()
   const d = readDraft<EventDraft>(NEW_EVENT_DRAFT)
   const text = d ? d.title.trim() || d.description.trim().split('\n')[0]! : ''
-  if (!text) return <span className="row-label">{more ? 'Ещё ивент' : 'Создать ивент'}</span>
+  // Свой ивент встал в день: подпись меняется буквами, как «Захостить». Чужой - сразу:
+  // решение в рендере, чтобы переходы букв включались тем же кадром, что и смена.
+  const [seen, setSeen] = useState({ more, still: true })
+  if (seen.more !== more) setSeen({ more, still: !ownTapRecent() || reducedMotion() })
+  if (!text) {
+    return (
+      <span className="row-label">
+        <span className="vh">{more ? 'Ещё ивент' : 'Создать ивент'}</span>
+        <span className={'hb-labels ev-new-labels' + (seen.still ? ' still' : '')} aria-hidden="true">
+          <MorphWord text="Создать ивент" on={!more} />
+          <MorphWord text="Ещё ивент" on={more} />
+        </span>
+      </span>
+    )
+  }
   return (
     <span className="row-label">
       <span className="draft-mark">Черновик:</span> {text}
@@ -705,8 +719,9 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
             сдвигая всё, на что смотрят. */}
         <Collapse open={Boolean(day.lock)}>{day.lock ? <LockBanner lock={day.lock} /> : null}</Collapse>
         {/* Ивентов на день может быть сколько угодно, поэтому вход в редактор нужен и
-            тогда, когда список уже не пуст. */}
-        {events.length > 0 ? (
+            тогда, когда список уже не пуст. Первый ивент, опубликованный своим тапом,
+            вырастает карточкой, когда день встал после «назад» (App.tsx). */}
+        <Collapse open={events.length > 0} ms={320} ease={E.crisp}>
           <div className="card dpg-events">
             {events.map((ev, i) => (
               <Fragment key={ev.id}>
@@ -715,7 +730,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
               </Fragment>
             ))}
           </div>
-        ) : null}
+        </Collapse>
         <div className="card dpg-acts">
           <button type="button" className="row tappable" onClick={() => push('invite', { dateKey: day.dateKey })}>
             <div className="row-icon" style={{ background: 'var(--blue)' }}>
@@ -886,6 +901,11 @@ export function DayPager({
     heads: [] as number[],
     draggedAt: 0,
     raf: 0,
+    // Тон открытого дня сменился своим действием (ивент встал в день): полоса перетекает
+    // из прежнего цвета, а не перекрашивается кадром.
+    tint: null as { from: string; p: number; stop: () => void } | null,
+    stage: '',
+    shown: null as { key: string; tone: Tone } | null,
   }).current
   const go = useRef<(i: number) => void>(() => {})
   const sync = useRef<() => void>(() => {})
@@ -917,7 +937,9 @@ export function DayPager({
       const locked = (d: DayData): boolean => lockView.current[d.dateKey] ?? Boolean(d.lock)
       const tA = toneOf(A, today, locked(A))
       const tB = toneOf(B, today, locked(B))
-      const stage = mixc(stageTint(tA, C), stageTint(tB, C), f)
+      const base = mixc(stageTint(tA, C), stageTint(tB, C), f)
+      const stage = S.tint ? mixc(S.tint.from, base, S.tint.p) : base
+      S.stage = stage
       band.style.background = stage
       band.style.height = `${(mix(S.heads[i0] ?? 0, S.heads[i1] ?? 0, f) - S.bandTop).toFixed(1)}px`
       hatch.style.opacity = mix(locked(A) ? 1 : 0, locked(B) ? 1 : 0, f).toFixed(3)
@@ -1000,6 +1022,31 @@ export function DayPager({
       kick()
     }
     go.current = goTo
+    // Закрытие красит полосу своей штриховкой (roll), перетекание тона ему не нужно.
+    const retint = (): void => {
+      const { days: list, index: cur, todayKey: today } = live.current
+      const d = list[cur]
+      if (!d) return
+      const tone = toneOf(d, today, lockView.current[d.dateKey] ?? Boolean(d.lock))
+      const was = S.shown
+      S.shown = { key: d.dateKey, tone }
+      if (!was || was.key !== d.dateKey || was.tone === tone || was.tone === 'orange' || tone === 'orange') return
+      if (S.drag || S.anim || !S.stage || !ownTapRecent() || reducedMotion()) return
+      S.tint?.stop()
+      const tint = { from: S.stage, p: 0, stop: () => {} }
+      S.tint = tint
+      tint.stop = animate(
+        320,
+        (t) => {
+          tint.p = pr(t, 0, 320, E.crisp)
+          render()
+        },
+        () => {
+          if (S.tint === tint) S.tint = null
+          render()
+        },
+      )
+    }
     sync.current = () => {
       // Сервер догнал своё закрытие или открытие: полоса снова рисуется по данным.
       for (const d of live.current.days) {
@@ -1007,6 +1054,7 @@ export function DayPager({
         if (want !== undefined && want === Boolean(d.lock) && rolling.current?.key !== d.dateKey) delete lockView.current[d.dateKey]
       }
       if (!S.drag && !S.anim) S.p = live.current.index
+      retint()
       measure()
       render()
     }
@@ -1179,6 +1227,8 @@ export function DayPager({
     return () => {
       if (S.raf) cancelAnimationFrame(S.raf)
       S.raf = 0
+      S.tint?.stop()
+      S.tint = null
       unselect?.()
       unregister()
       ro.disconnect()

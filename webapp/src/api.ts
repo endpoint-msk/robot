@@ -4,7 +4,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { left as cooldownLeft, startCooldown } from './cooldown'
 import { backOnline, setNetState } from './net'
-import { push, setBusy, setData } from './store'
+import { markOwnChange, push, setBusy, setData } from './store'
 import { haptic, initData, openUrl } from './telegram'
 import { showAlert } from './modals'
 import { ApiError, type Bootstrap, type OnboardingPeople } from './types'
@@ -222,12 +222,16 @@ export async function mutate<T = Bootstrap>(method: string, params?: Record<stri
     return null
   }
   try {
-    return await api<T>(method, params)
+    const res = await api<T>(method, params)
+    markOwnChange()
+    return res
   } catch (err) {
     let e = err as ApiError
     if (e.code === 'network' && RETRY_SAFE.has(method)) {
       try {
-        return await retryUntilOnline<T>(method, params)
+        const res = await retryUntilOnline<T>(method, params)
+        markOwnChange()
+        return res
       } catch (again) {
         e = again as ApiError
       }

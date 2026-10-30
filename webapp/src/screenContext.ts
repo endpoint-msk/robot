@@ -1,4 +1,5 @@
 import { createContext } from 'react'
+import type { Bootstrap } from './types'
 
 /** Запись стека, которую рисует экран: по ней remote.ts держит данные экранов, ещё лежащих в стеке. */
 export const EntryContext = createContext(0)
@@ -8,3 +9,9 @@ export const EntryContext = createContext(0)
  * всё, что трогает клиент Telegram (цвет шапки, кнопка «Назад»), остаётся за верхним.
  */
 export const UnderContext = createContext(false)
+
+/**
+ * Данные, с которыми экран ушёл вперёд (store.ts, heldData): на «назад» после своего
+ * действия он встаёт таким, каким его оставили, и меняется уже на глазах.
+ */
+export const SnapContext = createContext<Bootstrap | null>(null)
