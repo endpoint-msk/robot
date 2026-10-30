@@ -27,6 +27,11 @@ const ITEM_H = 40
 /** Пауза без событий скролла = жест закончился (аналога scrollend в Safari нет). */
 const SETTLE_MS = 90
 /**
+ * Тишина в событиях колёсика, после которой следующее событие - новый жест: щелчок мыши
+ * или начало движения по трекпаду. Та же, что у колёсика на листалке и свайпе назад.
+ */
+const WHEEL_GAP_MS = 110
+/**
  * Барабан: соседние строки стоят на цилиндре через DRUM_STEP градусов, а радиус такой,
  * что грани высотой в строку смыкаются. Дальше DRUM_REACH строк от полосы грань почти
  * ребром к глазу, её не рисуем.
@@ -186,6 +191,49 @@ function Wheel({
     auto.current = false
   }
 
+  // Колёсико мыши в Desktop: щелчок поворачивает колесо ровно на одну строку. Список сам
+  // прокручивался на щелчок на 100 px, на две-три строки, и прилипание добирало остаток.
+  // Щелчок узнаётся по wheelDelta, кратному 120 (Chromium, WebView2 в Telegram Desktop),
+  // или по сдвигу в строках. Где мышь от трекпада не отличить (WebKit на macOS), щелчком
+  // считается первое событие после паузы, а дальше колесо идёт на строку за каждую высоту
+  // строки пути и не больше чем на строку за событие: так трекпад крутит его, как раньше.
+  const wheelGesture = useRef({ at: -Infinity, acc: 0 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.deltaY === 0) return
+      e.preventDefault()
+      takeOver()
+      if (drag.current) return
+      const g = wheelGesture.current
+      const fresh = e.timeStamp - g.at > WHEEL_GAP_MS
+      g.at = e.timeStamp
+      const ticks = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0
+      let dir = 0
+      if (fresh || e.deltaMode !== 0 || (ticks !== 0 && ticks % 120 === 0)) {
+        dir = Math.sign(e.deltaY)
+        g.acc = 0
+      } else {
+        g.acc += e.deltaY
+        if (Math.abs(g.acc) >= ITEM_H) {
+          dir = Math.sign(g.acc)
+          g.acc -= dir * ITEM_H
+        }
+      }
+      const to = clamp(target.current + dir, cb.current.minIndex, values.length - 1)
+      if (to === target.current) return
+      glide.current?.stop()
+      glide.current = null
+      el.style.scrollSnapType = ''
+      target.current = to
+      el.scrollTo({ top: to * ITEM_H, behavior: 'smooth' })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.length])
+
   // Прилипание к строкам на время протяжки снято: Chrome доводит до строки и
   // программную прокрутку, и колесо прыгало бы под курсором. Отпустили, и колесо
   // доезжает до строки с той скоростью, с какой его бросили.
@@ -279,7 +327,6 @@ function Wheel({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onWheel={takeOver}
         onClick={onClick}
         role="listbox"
         aria-label={label}
