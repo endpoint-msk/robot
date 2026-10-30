@@ -36,12 +36,12 @@ const days = svg(
 
 const ICONS: Partial<Record<ScreenName, ReactElement>> = {
   overview: days,
-  // Столбики вырастают от оси по очереди.
+  // Столбики вырастают по очереди. Между ними просвет: без него залитые столбики выбранной
+  // вкладки сливаются в одно пятно. Высоты не лесенкой: лесенка читается значком связи.
   stats: svg('ic-stats', [
-    <path key="a" d="M3.5 20.5h17" />,
-    <rect key="1" className="ic-bar" x="5.2" y="12.5" width="3.6" height="5.5" rx="1.4" />,
-    <rect key="2" className="ic-bar ic-bar2" x="10.2" y="5.5" width="3.6" height="12.5" rx="1.4" />,
-    <rect key="3" className="ic-bar ic-bar3" x="15.2" y="9" width="3.6" height="9" rx="1.4" />,
+    <rect key="1" className="ic-bar" x="3.4" y="9.9" width="3.6" height="10.2" rx="1.1" />,
+    <rect key="2" className="ic-bar ic-bar2" x="10.2" y="14.4" width="3.6" height="5.7" rx="1.1" />,
+    <rect key="3" className="ic-bar ic-bar3" x="17" y="4.9" width="3.6" height="15.2" rx="1.1" />,
   ]),
   // Монета переворачивается: знак проходит ребро и встаёт лицом.
   dues: svg(

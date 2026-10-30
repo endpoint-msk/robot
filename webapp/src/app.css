@@ -1696,9 +1696,11 @@ span.collapse { display: block; }
 
 /* --- Панель вкладок (components/TabBar.tsx) ------------------------------------------
    Только на корне вкладки, у нижнего края: капсула разделов на карточке, у гостя рядом
-   круглая «+». Под ней тот же край, что под нижней кнопкой: экран продолжается размытым.
-   Стекла у капсулы нет: полупрозрачное меню отклоняли. Капсула выбора стоит под вкладкой
-   по номеру (--i из --n) и переезжает переходом, а под пальцем идёт за ним (.dragging). */
+   круглая «+». Под ней экран гаснет в фон без размытия, в отличие от края нижней кнопки:
+   на корнях под капсулу уходят строки и аватарки, и размытие рисовало из них полосы и
+   цветные пятна, а на iPhone ещё тёмную полосу над капсулой. Стекла у капсулы нет: полупрозрачное меню отклоняли. Капсула выбора
+   стоит под вкладкой по номеру (--i из --n) и переезжает переходом, а под пальцем идёт
+   за ним (.dragging). */
 .tab-bar {
     position: fixed;
     left: 0;
@@ -1719,17 +1721,11 @@ span.collapse { display: block; }
     z-index: -1;
     left: 0;
     right: 0;
-    top: -30px;
+    top: -34px;
     bottom: 0;
-    -webkit-backdrop-filter: blur(9px) saturate(1.3);
-    backdrop-filter: blur(9px) saturate(1.3);
-    background: linear-gradient(to top, var(--bg-edge) 30%, var(--bg-0));
-    -webkit-mask-image: linear-gradient(to top, #000 50%, transparent);
-    mask-image: linear-gradient(to top, #000 50%, transparent);
+    background: linear-gradient(to bottom, var(--bg-0), var(--bg-edge) 20px, var(--bg-glass) 34px, var(--bg) 46px);
     pointer-events: none;
 }
-.low-motion .tab-bar { background: linear-gradient(to top, var(--bg) 65%, var(--bg-0)); }
-.low-motion .tab-bar::before { content: none; }
 /* Корень въехал без View Transitions: панель проявляется в такт с ним, как нижняя кнопка. */
 .tab-bar.in-forward, .tab-bar.in-back { animation: screen-fade-in 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
 .tab-bar.in-fade { animation: screen-in 0.18s ease; }
