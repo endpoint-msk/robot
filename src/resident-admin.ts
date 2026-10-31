@@ -141,7 +141,8 @@ export const readMemberState = async (
 /**
  * Выдать админку. `rank` сохраняем текущим тегом: `editAdminRights` всегда шлёт `rank`
  * (дефолт `''`), а в супергруппе тег и титул админа — одно поле, поэтому наивный промоут
- * затёр бы тег «resident». Тег остаётся источником правды для этой строки.
+ * затёр бы тег «resident». Тег остаётся источником правды для этой строки. Без тега в «чате»
+ * ставим «resident»: пустой титул Telegram подписывает безликим «админ».
  */
 export const grantAdmin = async (
     client: TelegramClient,
@@ -153,7 +154,7 @@ export const grantAdmin = async (
         chatId: target.chatId,
         userId,
         rights: rightsFor(target.kind),
-        rank: preserveTag ?? '',
+        rank: preserveTag || (target.canTag ? RESIDENT_TAG : ''),
     })
 }
 
