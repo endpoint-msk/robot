@@ -7,9 +7,10 @@
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { action, api, mutate, prefetchOnTouch } from '../api'
-import { fmtDayMonth, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { fmtDayMonth, visitsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
+import { confirmDialog } from '../modals'
 import { animate, E, markOwnTap, pr, pulse, reducedMotion } from '../motion'
 import { useRemote } from '../remote'
 import { push, setData, useParams, useStore } from '../store'
@@ -24,7 +25,7 @@ import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'
 import { minuteOfDay, useNowMin } from './Visit'
-import { dustRow, removeRow } from '../undo'
+import { dustRow, removeRow, sheetGone } from '../undo'
 
 const NO_OUTCOME: VisitOutcome = { status: null, source: null, by: null, at: null }
 
@@ -297,13 +298,23 @@ export function Visits() {
     })
   }
 
-  // Отметки встают сразу на тап, по строке за шаг, а запрос идёт параллельно. Отказ
-  // сервера снимает их обратно; при «уменьшении движения» строки отмечаются разом.
-  const markAll = (ids: string[]): void => {
+  // Общая кнопка ставит отметки разом, а снимать их пришлось бы по одной, поэтому
+  // сначала спрашиваем. Отметки встают по строке за шаг, когда лист уехал (под ним
+  // прохода не видно), а запрос идёт параллельно. Отказ сервера снимает их обратно; при
+  // «уменьшении движения» строки отмечаются разом.
+  const markAll = async (ids: string[]): Promise<void> => {
     if (ids.length === 0 || cascading.current) return
     cascading.current = true
+    const ok = await confirmDialog(`Отметить ${visitsWord(ids.length)}? Тех, кого уже отметили, это не коснётся.`, {
+      confirmLabel: 'Отметить',
+    })
+    if (!ok) {
+      cascading.current = false
+      return
+    }
     haptic.impact('medium')
     markOwnTap()
+    await sheetGone()
     setCascade(ids)
     const step = reducedMotion() ? 0 : STAGGER_MS
     const put = (id: string): void => setPending((p) => ({ ...p, [id]: true }))
@@ -312,25 +323,23 @@ export function Visits() {
       else timers.current.push(window.setTimeout(() => put(id), i * step))
     })
     const t0 = performance.now()
-    void (async () => {
-      const res = await action('visit.markAll', { dateKey }, { quiet: true })
-      if (res) {
-        // Ответ ложится после последней строки: пришедший раньше, он поставил бы её
-        // отметку сам, и строка встала бы без движения.
-        const wait = (ids.length - 1) * step + 50 - (performance.now() - t0)
-        if (wait > 0) await new Promise((done) => window.setTimeout(done, wait))
-        if (res.visitsDay) setLocal(res.visitsDay)
-      }
-      timers.current.forEach((id) => window.clearTimeout(id))
-      timers.current = []
-      setPending((p) => {
-        const next = { ...p }
-        for (const id of ids) if (next[id] === true) delete next[id]
-        return next
-      })
-      setCascade([])
-      cascading.current = false
-    })()
+    const res = await action('visit.markAll', { dateKey }, { quiet: true })
+    if (res) {
+      // Ответ ложится после последней строки: пришедший раньше, он поставил бы её
+      // отметку сам, и строка встала бы без движения.
+      const wait = (ids.length - 1) * step + 50 - (performance.now() - t0)
+      if (wait > 0) await new Promise((done) => window.setTimeout(done, wait))
+      if (res.visitsDay) setLocal(res.visitsDay)
+    }
+    timers.current.forEach((id) => window.clearTimeout(id))
+    timers.current = []
+    setPending((p) => {
+      const next = { ...p }
+      for (const id of ids) if (next[id] === true) delete next[id]
+      return next
+    })
+    setCascade([])
+    cascading.current = false
   }
 
   const removeWalkIn = async (w: WalkIn): Promise<void> => {
@@ -384,7 +393,8 @@ export function Visits() {
           <div className="visits-all">
             <Collapse open={rest.length > 0} delay={cascade.length > 0 ? (cascade.length - 1) * STAGGER_MS + 320 : 0}>
               <div className="card">
-                <ActionButton className="row tappable" onClick={() => markAll(rest)}>
+                {/* Промис не отдаём: ActionButton притушил бы подпись, пока висит вопрос. */}
+                <ActionButton className="row tappable" onClick={() => void markAll(rest)}>
                   <div className="row-icon" style={{ background: 'var(--green)' }}>
                     {icons.check(17, '#fff', 2.4)}
                   </div>
