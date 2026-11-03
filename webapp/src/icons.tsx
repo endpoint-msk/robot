@@ -142,6 +142,19 @@ export const icons = {
       <path d="M9.5 16.5h7M13 13v7" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   ),
+  /** «Афиша» в углу афиши редактора ивента. */
+  camera: (size = 15, color = '#fff'): ReactElement => (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden="true">
+      <path
+        d="M2.5 6.2a1.7 1.7 0 0 1 1.7-1.7h1.7l1.3-1.8h3.6l1.3 1.8h1.7a1.7 1.7 0 0 1 1.7 1.7v6.6a1.7 1.7 0 0 1-1.7 1.7H4.2a1.7 1.7 0 0 1-1.7-1.7z"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="9" cy="9.3" r="2.6" fill="none" stroke={color} strokeWidth="1.6" />
+    </svg>
+  ),
   /** «Переслать»: стрелка, как у пересылки сообщения в Telegram. */
   forward: (size = 19, color = accent()): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 24 24">

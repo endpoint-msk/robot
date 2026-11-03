@@ -43,12 +43,12 @@ import {
 import { getState, pop, push, setTopParams, useParams, useStore, type NavParams } from '../store'
 import { haptic, setHeaderColor } from '../telegram'
 import { accentTriple, applyTheme, sec } from '../theme'
-import type { Attendee, Day as DayData, DayAgenda, DayLock, HostingRequest, User } from '../types'
+import type { Attendee, Day as DayData, DayLock, HostingRequest, User } from '../types'
 import { BackRow, EmptyState, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { AttendeeRow } from '../components/attendees'
 import { CapBar } from '../components/CapBar'
 import { Collapse } from '../components/Collapse'
-import { DayTopic, markOwnTopic } from '../components/DayTopic'
+import { DayTopic, startTopicEdit, useTopicShown } from '../components/DayTopic'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
@@ -70,23 +70,6 @@ const askReason = (initial: string): Promise<string | null> =>
     maxLength: 120,
     confirmLabel: 'Готово',
   })
-
-/** Тему дня правят со строки в шапке и строкой в карточке «День»; пустой текст её снимает. */
-const editAgenda = async (dateKey: string, agenda: DayAgenda | null): Promise<void> => {
-  const current = agenda?.text ?? ''
-  const text = await textPrompt({
-    text: 'Что в этот день в спейсе?',
-    initial: current,
-    placeholder: 'Например: убираемся и сортируем вещи',
-    hint: 'Тему дня увидят и гости.',
-    maxLength: 200,
-    confirmLabel: 'Сохранить',
-  })
-  if (text === null || text === current) return
-  markOwnTap()
-  if (text) markOwnTopic(dateKey)
-  await action('day.agenda', { dateKey, text }, { quiet: true })
-}
 
 /**
  * Вход в редактор ивента. Недописанный ивент стоит в нём красным «Черновик:», как
@@ -230,7 +213,7 @@ function DayCard({ day }: { day: DayData }) {
       <div className="card ctl-card">
         {/* Сама тема стоит в шапке дня, здесь вход в правку и автор: текст в строке
             повторял бы шапку. */}
-        <button type="button" className="row tappable" onClick={() => editAgenda(dateKey, day.agenda)}>
+        <button type="button" className="row tappable" onClick={() => startTopicEdit(dateKey)}>
           <span className="row-label">
             Тема дня
             <Collapse open={Boolean(day.agenda?.by)} as="span" ms={320} ease={E.crisp}>
@@ -612,6 +595,7 @@ export type DayPageProps = {
 
 function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
   const { data } = useStore()
+  const topicShown = useTopicShown(day.dateKey, Boolean(day.agenda))
   const me = data!.me
   const meUser: User = { userId: me.id, name: me.name, username: me.username }
 
@@ -710,10 +694,8 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
         />
         {/* Поставили тему своим тапом: строка вырастает в шапке, полоса под шапкой растёт
             вместе с ней (её меряет ResizeObserver листалки). */}
-        <Collapse open={Boolean(day.agenda)} ms={320} ease={E.crisp}>
-          {day.agenda ? (
-            <DayTopic text={day.agenda.text} dateKey={day.dateKey} onEdit={() => editAgenda(day.dateKey, day.agenda)} />
-          ) : null}
+        <Collapse open={topicShown} ms={320} ease={E.crisp}>
+          {topicShown ? <DayTopic text={day.agenda?.text ?? ''} dateKey={day.dateKey} editable /> : null}
         </Collapse>
         <ComingRow attendees={attendees} coming={coming} onToggle={() => void toggle()} />
       </div>

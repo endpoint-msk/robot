@@ -145,6 +145,9 @@ function HeatCard({ data }: { data: StatsOverview }) {
   }
 
   const lens = cellOf(picked)
+  // Кто чаще бывает в этом часу: лица меняются с клеткой под пальцем, без движения - это
+  // ведение, а не смена данных.
+  const lensFaces = (lens?.top ?? []).flatMap((id) => data.top.filter((p) => p.userId === id))
   const lensCell = lens ? heatCell(heatLevel(lens.v, data.heat.max), lens.noData) : null
 
   return (
@@ -212,6 +215,16 @@ function HeatCard({ data }: { data: StatsOverview }) {
               <div className="stats-loupe-text">
                 <b>{`${WEEKDAYS_SHORT[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
                 <span>{heatText(lens)}</span>
+                {lensFaces.length > 0 ? (
+                  <span className="loupe-faces">
+                    <span className="loupe-stack">
+                      {lensFaces.map((p, i) => (
+                        <Avatar key={p.userId} user={statsAvatarUser(p)} style={{ zIndex: lensFaces.length - i }} />
+                      ))}
+                    </span>
+                    {lensFaces[0]!.label + (lensFaces.length > 1 ? nb(` и ещё ${lensFaces.length - 1}`) : '')}
+                  </span>
+                ) : null}
               </div>
               <i className="stats-tail" ref={tailRef} />
             </div>,

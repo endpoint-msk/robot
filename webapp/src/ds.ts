@@ -17,7 +17,6 @@ export {
   ReadonlyBadge,
   SwitchRow,
   BottomBar,
-  DevChips,
 } from './components/common'
 
 export { DayChips, PurposeInput, AnonRow, useDayTime, defaultTimeFor, isPastForToday } from './components/forms'
@@ -28,7 +27,7 @@ export type { SwipeAction } from './components/SwipeRow'
 export { DayRow } from './components/DayRow'
 export { RequestRow, RequestsCard } from './components/RequestRow'
 export { AttendeeRow, AttendeesCard } from './components/attendees'
-export { EventCard, EventPoster } from './screens/Event'
+export { EventPoster } from './screens/Event'
 export { MacSheet } from './components/MacSheet'
 export {
   CoverScene,
@@ -49,7 +48,7 @@ export type { SceneName } from './onboarding'
 
 export { ModalHost, showAlert, showImage, confirmDialog, timePrompt, reschedulePrompt, numberPrompt } from './modals'
 
-// RequestRow, DayRow и DevChips читают снимок бэкенда из стора, а не из пропсов:
+// RequestRow и DayRow читают снимок бэкенда из стора, а не из пропсов:
 // без посева они падают. Навигация и загрузка данных наружу не отдаются.
 export { setData, useStore, getState } from './store'
 

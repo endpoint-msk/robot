@@ -5,7 +5,7 @@ import { animate, clamp, pr, reducedMotion } from '../motion'
 import { push, useStore } from '../store'
 import { haptic } from '../telegram'
 import { resolvedTheme } from '../theme'
-import { DevChips, Header, Sep } from '../components/common'
+import { Header, Sep } from '../components/common'
 import { DayRow, TodayCard } from '../components/DayRow'
 import { LaterEvents } from '../components/EventRow'
 import { Screen } from '../components/Screen'
@@ -279,7 +279,7 @@ export function Overview() {
 
   return (
     <Screen>
-      <Header title="Ближайшие дни" subtitle={`${fmtRange(first, last)} · ${requestsWord(total)}`} chip={<DevChips />} />
+      <Header title="Ближайшие дни" subtitle={`${fmtRange(first, last)} · ${requestsWord(total)}`} />
       {today ? <TodayCard day={today} onOpen={() => push('day', { dateKey: today.dateKey })} /> : null}
       <div className="card">
         {week.map((day, i) => (

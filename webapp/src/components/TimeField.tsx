@@ -396,7 +396,7 @@ export function NumberWheel({
  * форма заявки показывает его сразу. И никогда не раньше min: прошедшее сегодня колесо
  * проезжает, но время за ним не тянется, а после жеста колесо откатывается.
  */
-function TimeWheels({
+export function TimeWheels({
   value,
   min,
   onChange,
@@ -621,7 +621,7 @@ function revealer(el: HTMLElement): (height: number) => void {
  * Рост по высоте, как у Collapse, но на пружине: встречный тап подхватывает движение
  * с той же высоты и скорости, а не начинает заново. Свёрнутое размонтируется.
  */
-function Unfold({ open, children }: { open: boolean; children: ReactNode }) {
+export function Unfold({ open, children }: { open: boolean; children: ReactNode }) {
   const [shown, setShown] = useState(open)
   if (open && !shown) setShown(true)
   const ref = useRef<HTMLDivElement>(null)

@@ -278,8 +278,11 @@ export type Settings = {
 
 export type StatsPeriod = 'month' | 'quarter' | 'all'
 
-/** Ячейка тепловой карты: среднее число людей внутри. noData — роутер молчал. */
-export type StatsHeatCell = { v: number; noData: boolean }
+/**
+ * Ячейка тепловой карты: среднее число людей внутри. noData — роутер молчал. `top` - до трёх
+ * userId, чаще всех бывавших в этом часу за период, первым самый частый.
+ */
+export type StatsHeatCell = { v: number; noData: boolean; top?: number[] }
 
 export type StatsTopPerson = {
   userId: number

@@ -224,8 +224,10 @@ export function useReorder(
       strip.removeEventListener('dragstart', onDragStart)
       strip.removeEventListener('contextmenu', onContext)
     }
+    // Лента может появиться позже экрана: в редакторе ивента её нет, пока нет ни одной
+    // афиши, и слушатели вешаются заново, когда она встаёт.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [ids.length > 0])
 }
 
 /** Плитка опускается в свой слот из сдвига `dx`: подъём снимается, когда она встала. */

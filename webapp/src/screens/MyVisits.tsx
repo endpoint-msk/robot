@@ -6,7 +6,7 @@ import { bump, push, useStore } from '../store'
 import { accent, sec } from '../theme'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { HostingRequest } from '../types'
-import { DevChips, EmptyState, Header, SectionTitle, Sep } from '../components/common'
+import { EmptyState, Header, SectionTitle, Sep } from '../components/common'
 import { userLabel } from '../components/people'
 import { growIn } from '../dust'
 import { Screen } from '../components/Screen'
@@ -132,7 +132,7 @@ export function MyVisits() {
 
   return (
     <Screen>
-      <Header title="Мои визиты" chip={<DevChips />} />
+      <Header title="Мои визиты" />
       <WriteAccessBanner />
       {my.length === 0 && past.length === 0 ? (
         <div className="card" ref={growIn} data-dust-empty="">

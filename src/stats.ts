@@ -10,6 +10,7 @@ import {
     BUCKETS_PER_DAY,
     BUCKET_MINUTES,
     computeDay,
+    isPresenceLogged,
     openSessionsNow,
     presenceLogTz,
     sessionsForDay,
@@ -37,7 +38,10 @@ const DAYS_LIMIT = 120
 
 export type StatsPeriod = 'month' | 'quarter' | 'all'
 
-export type StatsHeatCell = { v: number; noData: boolean }
+/** `top` - до трёх userId, чаще всех бывавших в этой клетке за окно, первым самый частый. */
+export type StatsHeatCell = { v: number; noData: boolean; top?: number[] }
+/** Сколько лиц показывает лупа карты. */
+const HEAT_FACES = 3
 export type StatsTopPerson = { userId: number; label: string; username: string | null; minutes: number; visits: number }
 
 /** Столбик графика часов: дни `from`–`to` включительно и сколько спейс был открыт за них. */
@@ -332,14 +336,44 @@ export const buildStatsOverview = async (
             counts[dow]![b] = (counts[dow]![b] ?? 0) + 1
         }
     }
+    // Кто чаще бывает в клетке: минуты каждого по сырым визитам окна, без сегодня, как и
+    // среднее. В дневных итогах разбивки по людям внутри интервала нет.
+    const visits = toVisits(await sessionsInRange(storage, from, to))
+    const cellUsers = new Map<number, Map<number, number>>()
+    const tz = presenceLogTz()
+    for (const v of visits) {
+        if (!isPresenceLogged(storage, v.userId)) continue
+        for (let key = dayKeyOf(new Date(v.from), tz); key <= to; key = addDaysToKey(key, 1)) {
+            const start = Date.parse(`${key}T00:00:00Z`) - tz * 60_000
+            if (start >= v.to) break
+            if (key < from || key >= today) continue
+            const dow = weekdayOfKey(key)
+            for (let b = 0; b < BUCKETS_PER_DAY; b++) {
+                const bFrom = start + b * BUCKET_MINUTES * 60_000
+                const overlap = Math.min(v.to, bFrom + BUCKET_MINUTES * 60_000) - Math.max(v.from, bFrom)
+                if (overlap <= 0) continue
+                const cell = dow * BUCKETS_PER_DAY + b
+                let users = cellUsers.get(cell)
+                if (!users) cellUsers.set(cell, (users = new Map()))
+                users.set(v.userId, (users.get(v.userId) ?? 0) + overlap)
+            }
+        }
+    }
+    const facesOf = (dow: number, b: number): number[] =>
+        [...(cellUsers.get(dow * BUCKETS_PER_DAY + b) ?? new Map<number, number>()).entries()]
+            .sort((x, y) => y[1] - x[1])
+            .slice(0, HEAT_FACES)
+            .map(([userId]) => userId)
+
     let max = 0
     const rows = sums.map((row, dow) => ({
         dow,
-        cells: row.map((sum, b) => {
+        cells: row.map((sum, b): StatsHeatCell => {
             const n = counts[dow]![b] ?? 0
             const v = n > 0 ? sum / n : 0
             if (v > max) max = v
-            return { v: Math.round(v * 100) / 100, noData: n === 0 }
+            const top = facesOf(dow, b)
+            return { v: Math.round(v * 100) / 100, noData: n === 0, ...(top.length > 0 ? { top } : {}) }
         }),
     }))
 
@@ -350,7 +384,6 @@ export const buildStatsOverview = async (
     )
 
     // Ники берём из сырых сессий окна: в агрегате дня только userId и минуты.
-    const visits = toVisits(await sessionsInRange(storage, from, to))
     const labels = labelsFromVisits([...visits, ...toVisits(openSessionsNow(storage))])
     const visitCount = new Map<number, number>()
     for (const v of visits) visitCount.set(v.userId, (visitCount.get(v.userId) ?? 0) + 1)

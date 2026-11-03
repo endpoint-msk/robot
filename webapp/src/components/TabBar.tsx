@@ -4,11 +4,13 @@
 // движение (app.css, .tab-ic.play): по ключу он ремаунтится, и анимация начинается заново.
 // Красная точка на вкладке - там ждёт ваше дело, как непрочитанное в Telegram.
 
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement } from 'react'
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement } from 'react'
+import { dayNum } from '../dates'
 import { icons } from '../icons'
 import type { Bootstrap } from '../types'
 import { clamp, EDGE_ZONE, markOwnTap, ownTapRecent, reducedMotion } from '../motion'
-import { startNewRequest, switchTab, useStore, type Anim, type ScreenName } from '../store'
+import { pushOverlay } from '../overlays'
+import { getState, push, setPerspective, startNewRequest, switchTab, useStore, type Anim, type ScreenName } from '../store'
 import { haptic } from '../telegram'
 
 const svg = (cls: string, children: ReactElement | ReactElement[]): ReactElement => (
@@ -27,17 +29,19 @@ const calendar = (inner: ReactElement[]): ReactElement[] => [
   ...inner,
 ]
 
-const days = svg(
-  'ic-days',
-  calendar([
-    <circle key="d1" className="ic-dot" cx="8.4" cy="14.6" r="1.2" />,
-    <circle key="d2" className="ic-dot ic-dot2" cx="12" cy="14.6" r="1.2" />,
-    <circle key="d3" className="ic-dot ic-dot3" cx="15.6" cy="14.6" r="1.2" />,
-  ]),
-)
+// Сегодняшнее число вместо точек, как значок «Календаря» в iOS. Меняется в полночь по поясу
+// спейса вместе с todayKey, без движения.
+const days = (n: number): ReactElement =>
+  svg(
+    'ic-days',
+    calendar([
+      <text key="n" className="ic-date" x="12" y="18.3" textAnchor="middle">
+        {n}
+      </text>,
+    ]),
+  )
 
 const ICONS: Partial<Record<ScreenName, ReactElement>> = {
-  overview: days,
   // Столбики вырастают по очереди. Между ними просвет: без него залитые столбики выбранной
   // вкладки сливаются в одно пятно. Высоты не лесенкой: лесенка читается значком связи.
   stats: svg('ic-stats', [
@@ -64,8 +68,6 @@ const ICONS: Partial<Record<ScreenName, ReactElement>> = {
     <path key="t" className="ic-ticket" d="M5 6h14a2 2 0 0 1 2 2v2.2a1.8 1.8 0 0 0 0 3.6V16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2.2a1.8 1.8 0 0 0 0-3.6V8a2 2 0 0 1 2-2z" />,
     <path key="c" className="ic-check" d="M9.2 12.3l2 2 3.8-4.1" pathLength={1} />,
   ]),
-  // Активность гостя - та же неделя, что «Дни» у резидента, и значок тот же.
-  peek: days,
   // Как пройти: метка опускается на место, тень под ней проступает.
   route: svg('ic-route', [
     <ellipse key="s" className="ic-shadow" cx="12" cy="21.2" rx="3.4" ry="0.9" />,
@@ -75,6 +77,10 @@ const ICONS: Partial<Record<ScreenName, ReactElement>> = {
     </g>,
   ]),
 }
+
+const iconOf = (name: ScreenName, today: number): ReactElement | undefined =>
+  // Активность гостя - та же неделя, что «Дни» у резидента, и значок тот же.
+  name === 'overview' || name === 'peek' ? days(today) : ICONS[name]
 
 const LABELS: Partial<Record<ScreenName, string>> = {
   overview: 'Дни',
@@ -122,6 +128,45 @@ function TabDot({ on }: { on: boolean }) {
 
 /** Палец ведёт капсулу, только сдвинувшись на столько: короче это касание вкладки. */
 const DRAG_SLOP = 6
+/** Столько держат «Настройки» дева, чтобы поднялось меню перспективы. */
+const HOLD_MS = 420
+
+type DevPick = 'resident' | 'guest' | 'dev'
+const DEV_ITEMS: { value: DevPick; label: string }[] = [
+  { value: 'resident', label: 'Как резидент' },
+  { value: 'guest', label: 'Как гость' },
+  { value: 'dev', label: 'Dev' },
+]
+
+/**
+ * Меню дева над «Настройками», как смена аккаунта в Telegram: удержание вкладки поднимает
+ * его, палец ведёт по пунктам и отпускает на нужном. Отпустили мимо пунктов - меню стоит,
+ * пункт выбирается касанием. В Desktop его открывает правый клик по вкладке.
+ */
+function DevMenu({ open, hot, onPick }: { open: boolean; hot: DevPick | null; onPick: (v: DevPick) => void }) {
+  const { perspective } = useStore()
+  return (
+    <div className={'ob-menu up dev-menu' + (open ? ' open' : '')} role="menu">
+      {DEV_ITEMS.map((it) => (
+        <Fragment key={it.value}>
+          {it.value === 'dev' ? <div className="ob-menu-gap" /> : null}
+          <button
+            type="button"
+            role={it.value === 'dev' ? 'menuitem' : 'menuitemradio'}
+            aria-checked={it.value === 'dev' ? undefined : perspective === it.value}
+            data-pick={it.value}
+            className={hot === it.value ? 'hot' : undefined}
+            tabIndex={open ? undefined : -1}
+            onClick={() => onPick(it.value)}
+          >
+            <span className="ob-mk">{icons.check(14, 'currentColor', 2.2)}</span>
+            {it.label}
+          </button>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
 
 type Drag = { id: number; x0: number; on: boolean; hot: number }
 
@@ -132,12 +177,47 @@ type Drag = { id: number; x0: number; on: boolean; hot: number }
 export function TabBar({ tabs, active, anim = null, still = false }: { tabs: ScreenName[]; active: ScreenName; anim?: Anim; still?: boolean }) {
   const { data } = useStore()
   const dots = dotsOf(data)
+  const today = data ? dayNum(data.todayKey) : new Date().getDate()
   const guest = tabs[0] === 'myVisits'
   const index = Math.max(0, tabs.indexOf(active))
   const capsRef = useRef<HTMLDivElement>(null)
   const selRef = useRef<HTMLElement>(null)
   const drag = useRef<Drag | null>(null)
   const dragged = useRef(false)
+  const isDev = Boolean(data?.me.isDev) && !still
+  const devTab = tabs.indexOf('settings')
+  const hold = useRef<number | null>(null)
+  // Меню поднято; `held` - палец ещё на стекле с удержания и ведёт по пунктам.
+  const [menu, setMenu] = useState<{ held: boolean; hot: DevPick | null } | null>(null)
+  const menuOpen = menu !== null
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: globalThis.PointerEvent): void => {
+      if (!(e.target as Element).closest('.dev-menu')) setMenu(null)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    const un = pushOverlay(() => setMenu(null))
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true)
+      un()
+    }
+  }, [menuOpen])
+  const cancelHold = (): void => {
+    if (hold.current !== null) window.clearTimeout(hold.current)
+    hold.current = null
+  }
+  useEffect(() => cancelHold, [])
+  const pickDev = (v: DevPick): void => {
+    haptic.tick()
+    markOwnTap()
+    setMenu(null)
+    if (v === 'dev') push('dev')
+    else if (v !== getState().perspective) setPerspective(v)
+  }
+  const hotUnder = (x: number, y: number): DevPick | null => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.dev-menu [data-pick]')
+    return (el?.dataset.pick as DevPick | undefined) ?? null
+  }
   // Класс въезда берётся один раз: панель живёт между вкладками, и новый класс на смене
   // вкладки проявил бы её заново.
   const [enter] = useState(anim)
@@ -194,14 +274,42 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
     // Левый край забирает свайп Telegram iOS: оттуда только касание, без ведения.
     if (still || e.button !== 0 || e.clientX < EDGE_ZONE) return
     drag.current = { id: e.pointerId, x0: e.clientX, on: false, hot: index }
+    if (!isDev || devTab < 0 || menuOpen) return
+    const { left, w } = slot()
+    if (Math.floor((e.clientX - left - 4) / w) !== devTab) return
+    const id = e.pointerId
+    const caps = capsRef.current
+    hold.current = window.setTimeout(() => {
+      hold.current = null
+      drag.current = null
+      // Клик после удержания, если клиент его пришлёт, вкладку не выбирает.
+      dragged.current = true
+      try {
+        caps?.setPointerCapture(id)
+      } catch {
+        /* палец уже ушёл */
+      }
+      haptic.impact('medium')
+      markOwnTap()
+      setMenu({ held: true, hot: null })
+    }, HOLD_MS)
   }
   const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
+    if (menu?.held) {
+      const hot = hotUnder(e.clientX, e.clientY)
+      if (hot !== menu.hot) {
+        if (hot) haptic.tick()
+        setMenu({ held: true, hot })
+      }
+      return
+    }
     const d = drag.current
     const caps = capsRef.current
     const sel = selRef.current
     if (!d || d.id !== e.pointerId || !caps || !sel) return
     if (!d.on) {
       if (Math.abs(e.clientX - d.x0) < DRAG_SLOP) return
+      cancelHold()
       d.on = true
       caps.setPointerCapture(e.pointerId)
       caps.classList.add('dragging')
@@ -226,8 +334,21 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
         style={caps}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={() => stop(true)}
-        onPointerCancel={() => stop(false)}
+        onPointerUp={(e) => {
+          cancelHold()
+          if (menu?.held) {
+            const hot = hotUnder(e.clientX, e.clientY)
+            if (hot) pickDev(hot)
+            else setMenu({ held: false, hot: null })
+            return
+          }
+          stop(true)
+        }}
+        onPointerCancel={() => {
+          cancelHold()
+          if (menu?.held) setMenu({ held: false, hot: null })
+          stop(false)
+        }}
       >
         <i className="tab-sel" ref={selRef} aria-hidden="true" />
         {tabs.map((name, k) => (
@@ -238,22 +359,36 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
             aria-current={name === active ? 'page' : undefined}
             tabIndex={still ? -1 : undefined}
             onClick={() => {
-              // Ведение уже выбрало вкладку на отпускании.
+              // Ведение уже выбрало вкладку на отпускании, удержание подняло меню.
               if (dragged.current) {
                 dragged.current = false
                 return
               }
               select(k)
             }}
+            onContextMenu={
+              isDev && name === 'settings'
+                ? (e) => {
+                    // Android шлёт contextmenu и на долгое касание, уже после открывшего меню
+                    // удержания: только открываем, закрывают касание мимо и «Назад».
+                    e.preventDefault()
+                    cancelHold()
+                    if (menuOpen) return
+                    markOwnTap()
+                    setMenu({ held: false, hot: null })
+                  }
+                : undefined
+            }
           >
             <span className={'tab-ic' + (play?.name === name ? ' play' : '')} key={play?.name === name ? play.n : 0}>
-              {ICONS[name]}
+              {iconOf(name, today)}
             </span>
             <span className="tab-label">{LABELS[name]}</span>
             <TabDot on={dots.includes(name)} />
           </button>
         ))}
       </div>
+      {isDev ? <DevMenu open={menuOpen} hot={menu?.hot ?? null} onPick={pickDev} /> : null}
       {guest ? (
         <button
           type="button"

@@ -284,7 +284,7 @@ body {
 /* --- Переносы ------------------------------------------------------------------
    text-wrap заодно задаёт text-wrap-mode, как и white-space. Поэтому блок стоит выше
    правил компонентов: nowrap компонента должен перебивать его, а не наоборот. */
-.title, .ob-title, .ev-title, .stats-card-title, .status-card-title, .wb-title, .lb-title,
+.title, .ob-title, .stats-card-title, .status-card-title, .wb-title, .lb-title,
 .es-title, .es-text, .be-title, .be-text, .modal-text, .modal-num-hint, .bar-hint, .build-sign {
     text-wrap: balance;
 }
@@ -498,7 +498,6 @@ html[data-vt="slide"]::view-transition-image-pair(h-cta), html[data-vt="slide-ba
 .header { margin: 10px 4px 18px; }
 .back-row + .header { margin-top: 0; }
 /* Строка с дев-чипом — над заголовком, чтобы крупный тайтл не переносился. */
-.header-chip-row { display: flex; justify-content: flex-end; margin-bottom: 4px; }
 .title {
     font-size: 34px;
     font-weight: 800;
@@ -544,23 +543,6 @@ html.sheet-recede .float-month { top: calc(var(--sheet-vt, 0px) + 10px); }
 .fm-label.in { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
 .low-motion .float-month { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--card); }
 /* Дев-переключатель перспективы (только для DEV_USER_IDS) */
-.dev-chips { display: flex; gap: 6px; }
-.dev-chip {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: none;
-    font-family: inherit;
-    padding: 6px 11px;
-    border-radius: 999px;
-    background: var(--blue-soft);
-    color: var(--blue);
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    user-select: none;
-}
 
 /* --- Модалки (вместо нативных window.alert/confirm) ---
    Все вопросы открываются одним листом снизу (modals.tsx). Положение листа и
@@ -1600,7 +1582,7 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 .dpg-head { padding-bottom: 16px; user-select: none; -webkit-user-select: none; }
 .dpg-head .header { margin-bottom: 0; }
 /* Тема дня строкой шапки, под датой: кегль темы в карточке «Сегодня» (.tc-ag). Длинная
-   в две строки, целиком она в листе правки. */
+   в две строки, целиком она в поле правки. */
 .dpg-topic { display: block; margin: 0 4px; padding-top: 10px; transform-origin: 0 50%; }
 .dpg-topic-t {
     display: -webkit-box;
@@ -1615,8 +1597,14 @@ html.no-select, html.no-select * { -webkit-user-select: none; user-select: none;
 }
 button.dpg-topic { width: calc(100% - 8px); cursor: pointer; }
 button.dpg-topic:active { opacity: 0.6; }
-/* Своя тема проступает на месте по эталону «Захостить», пока строка растёт по высоте. */
-.dpg-topic.fresh { animation: pill-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
+/* Тема пишется на месте: поле тем же кеглем, без рамки, в две строки не режется. */
+.dpg-topic.editing { padding-top: 10px; }
+.dpg-topic-in {
+    display: block; width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; color: var(--text);
+    resize: none; outline: none; -webkit-line-clamp: none; overflow: hidden;
+    -webkit-user-select: text; user-select: text; caret-color: var(--blue);
+}
+.dpg-topic-in::placeholder { color: rgba(var(--sec), 0.4); opacity: 1; }
 .dpg-body { padding-top: 18px; }
 /* Карточка ивентов вырастает в Collapse: отступ до действий внутри обёртки, и он растёт с ней. */
 .collapse > .dpg-events { margin-bottom: 12px; }
@@ -1752,6 +1740,8 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    /* Удержание «Настройки» у дева поднимает своё меню, а не системную выноску iOS. */
+    -webkit-touch-callout: none;
 }
 .tab-sel {
     position: absolute;
@@ -1850,7 +1840,8 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .tab-svg * { transform-box: fill-box; }
 .tab-svg .ic-head { fill: currentColor; stroke: none; opacity: 0; transition: opacity 0.2s ease; }
 .tab.on .ic-head { opacity: 1; }
-.tab-svg .ic-dot { fill: currentColor; stroke: none; }
+/* Число календаря: тело значка не заливается, поэтому у выбранной вкладки цифры не тонут. */
+.tab-svg .ic-date { fill: currentColor; stroke: none; font-size: 8.6px; font-weight: 700; letter-spacing: -0.2px; font-variant-numeric: tabular-nums; }
 .tab.on .ic-bar, .tab.on .ic-coin circle, .tab.on .ic-knob, .tab.on .ic-pin path { fill: currentColor; }
 .tab-svg .ic-knob { fill: var(--card); }
 .tab.on .ic-rub { stroke: var(--card); }
@@ -1862,9 +1853,7 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .tab.on .ic-visits .ic-check { stroke: var(--card); }
 .tab-ic.play .ic-ring { animation: ic-dip 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .tab-ic.play .ic-ring2 { animation-delay: 0.05s; }
-.tab-ic.play .ic-dot { animation: ic-pop 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; transform-origin: 50% 50%; }
-.tab-ic.play .ic-dot2 { animation-delay: 0.12s; }
-.tab-ic.play .ic-dot3 { animation-delay: 0.18s; }
+.tab-ic.play .ic-date { animation: ic-pop 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; transform-origin: 50% 50%; }
 .tab-ic.play .ic-bar { animation: ic-grow 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: 50% 100%; }
 .tab-ic.play .ic-bar2 { animation-delay: 0.06s; }
 .tab-ic.play .ic-bar3 { animation-delay: 0.12s; }
@@ -3246,20 +3235,6 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .share-btn.sent { color: var(--green); }
 .share-row-labels { justify-items: start; }
 
-.event-card {
-    background: var(--ev-soft, var(--ev-bg));
-    border-radius: var(--radius-card);
-    padding: 18px var(--row-x) 16px;
-    margin-bottom: 18px;
-}
-.ev-head { display: flex; align-items: center; gap: 7px; color: var(--ev-soft-accent, var(--purple)); }
-.ev-kicker {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ev-soft-accent, var(--purple));
-}
 .ev-chip {
     flex-shrink: 0;
     margin-left: auto;
@@ -3270,42 +3245,6 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     font-size: 11px;
     font-weight: 700;
 }
-.ev-title {
-    font-size: 20px;
-    font-weight: 800;
-    letter-spacing: -0.3px;
-    line-height: 1.2;
-    margin-top: 12px;
-    color: var(--text);
-    overflow-wrap: anywhere;
-}
-/* Плейсхолдер названия в превью: видно, что это подсказка, а не введённый текст. */
-.ev-title.dim { color: var(--text-3); }
-.ev-desc {
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--text-2);
-    margin-top: 5px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-}
-.ev-source {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 12px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    font-family: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ev-soft-accent, var(--purple));
-    cursor: pointer;
-}
-.ev-source:active { opacity: 0.6; }
-.ev-host { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text-2); }
-.ev-responsibles { margin-top: 10px; font-size: 13px; line-height: 1.4; color: var(--text-2); }
 .ev-poster {
     display: block;
     width: 100%;
@@ -3332,22 +3271,6 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     scroll-snap-align: center;
 }
 
-/* Редактор */
-.ev-field { padding: 11px var(--row-x); }
-.ev-title-input, .ev-desc-input {
-    width: 100%;
-    box-sizing: border-box;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-family: inherit;
-    color: var(--text);
-    padding: 0;
-}
-.ev-title-input { font-size: 17px; font-weight: 600; }
-/* Описание растёт по тексту (Event.tsx), прокрутки внутри поля нет: заготовка из канала
-   приносит сразу весь пост. */
-.ev-desc-input { font-size: 16px; line-height: 1.4; resize: none; min-height: 132px; overflow: hidden; }
 /* Лента афиш в редакторе: квадратные плитки, последняя — «добавить». */
 .ev-photos {
     display: flex;
@@ -3372,11 +3295,6 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
 .ev-photos { transition: background-color 0.2s ease-out, box-shadow 0.2s ease-out; }
 .ev-photos.drop-on { background: var(--blue-soft); box-shadow: inset 0 0 0 2px var(--blue); }
 .ev-thumb.fresh { animation: vt-blur-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
-/* Первой встала другая афиша своим касанием: превью перетекает в её тон, а не
-   перекрашивается в следующем кадре. */
-.event-card.tone-shift { transition: background-color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.event-card.tone-shift :is(.ev-head, .ev-kicker, .ev-source) { transition: color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.event-card.tone-shift .ev-poster { transition: background-color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @media (prefers-reduced-motion: reduce) {
     .ev-photos.reordering .ev-thumb:not(.lifted), .ev-thumb.dropping { transition: none; }
 }
@@ -3416,8 +3334,40 @@ body.busy #busy-overlay { display: flex; animation: busy-in 0.2s ease 0.32s both
     box-sizing: border-box;
     cursor: pointer;
 }
+.ev-thumb-add { padding: 0; background: none; font: inherit; }
 .ev-thumb-add:active { opacity: 0.6; }
-.ev-thumb-add input { display: none; }
+
+/* Ивент правится на самом себе (Event.tsx): разметка вида ивента, поля встают на место
+   текста тем же кеглем, без рамок. */
+.evv-pt-in, .evv-desc-in {
+    display: block; width: 100%; margin: 0; border: 0; border-radius: 0; background: none; color: inherit;
+    resize: none; outline: none; overflow: hidden; -webkit-user-select: text; user-select: text;
+}
+.evv-pt-in { -webkit-line-clamp: none; max-width: 270px; min-height: 1.02em; padding: 0; pointer-events: auto; caret-color: #fff; }
+.evv-pt-in::placeholder { color: #fff; opacity: 0.42; }
+.evv-desc-in { min-height: 5.2em; font-family: inherit; caret-color: var(--ev-accent, var(--purple)); }
+.evv-desc-in::placeholder { color: var(--text-2); opacity: 1; }
+.evv-edit .evv-poster:not(.photo) { cursor: pointer; }
+.evv-poster.drop-on { box-shadow: inset 0 0 0 2px var(--blue), 0 14px 34px -16px rgba(0, 0, 0, 0.35); }
+.evv-addph {
+    position: absolute; right: 14px; bottom: 14px; z-index: 2;
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px;
+    border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.18); color: #fff;
+    font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.evv-addph:active { opacity: 0.6; }
+button.evv-when {
+    width: calc(100% - 8px); padding: 0; border: 0; background: none; color: inherit;
+    font-family: inherit; text-align: left; cursor: pointer;
+}
+button.evv-when:active .evv-when-text { opacity: 0.6; }
+.evv-when-text { flex: 1; }
+.evv-when-chev { display: flex; flex-shrink: 0; margin-right: 6px; transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.evv-when-chev.open { transform: rotate(90deg); }
+.evv-when-card { margin-top: 14px; }
+.evv-strip { margin-bottom: 12px; }
+.evv-apps { width: 100%; margin-top: 12px; }
+.evv-set { margin-top: 12px; }
 
 /* Строка ивента на экране дня: сама афиша размером со значок, как картинка в списке чатов
    Telegram. Без фото рисованная афиша в миниатюре, тёмная с оранжевым кольцом, как .evv-poster. */
@@ -4294,6 +4244,12 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     font-variant-numeric: tabular-nums;
 }
 .stats-loupe-text b { color: var(--text); font-size: 15px; font-weight: 700; }
+/* Лица тех, кто чаще бывает в этом часу: стопка 22 px и подпись, как ряд «Придут». */
+.loupe-faces { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--text); font-weight: 600; }
+.loupe-stack { display: flex; isolation: isolate; }
+.loupe-stack .avatar { position: relative; width: 22px; height: 22px; font-size: 10px; box-shadow: 0 0 0 1.5px var(--card); }
+.loupe-stack .avatar + .avatar { margin-left: -6px; }
+:root[data-theme="dark"] .loupe-stack .avatar { box-shadow: 0 0 0 1.5px var(--chip); }
 
 /* График часов с шагом периода: месяц по дням, 3 месяца по неделям, всё время по
    месяцам. Ось и сетка обязательны: без них прочитать можно только выбранный
@@ -5493,6 +5449,10 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .ob-menu button + button { border-top: 0.5px solid var(--sep); }
 .ob-menu button:active { background: rgba(var(--sec), 0.08); }
 .ob-menu-gap { height: 7px; background: rgba(var(--sec), 0.08); }
+/* Меню перспективы дева над «Настройками» (TabBar.tsx): пункт под пальцем подсвечен, пока
+   палец ведёт с удержания. */
+.dev-menu { right: 16px; bottom: calc(100% - 4px); }
+.ob-menu button.hot { background: rgba(var(--sec), 0.08); }
 .ob-mk { width: 16px; flex-shrink: 0; display: flex; justify-content: center; visibility: hidden; }
 .ob-menu button[aria-checked="true"] .ob-mk { visibility: visible; }
 
@@ -6025,14 +5985,14 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
    у каждого компонента. */
 .lightbox-close, .secondary-btn, .search-clear, .note-flag, .purpose-toggle, .linkified, .person-tap,
 .pill.mine, .host-btn, .link-btn, .accept-btn, .chip-btn, .attend-btn, .build-link, button.dpg-topic,
-.time-field, .tp-bar-btn, .dp-nav, .write-banner, .retry-btn, .ev-source, .ev-thumb-del, .ev-thumb-add,
+.time-field, .tp-bar-btn, .dp-nav, .write-banner, .retry-btn, .ev-thumb-del, .ev-thumb-add,
 .route-door.tappable, .arrival-btn, .evv-cal {
     transition: opacity 0.3s ease-out;
 }
 .lightbox-close:active, .secondary-btn:active, .search-clear:active, .note-flag:active, .purpose-toggle:active,
 .linkified:active, .person-tap:active, .pill.mine:active, .host-btn:active, .link-btn:active, .accept-btn:active,
 .chip-btn:active, .attend-btn:active, .build-link:active, button.dpg-topic:active, .time-field:active,
-.tp-bar-btn:active, .dp-nav:active, .write-banner:active, .retry-btn:active, .ev-source:active,
+.tp-bar-btn:active, .dp-nav:active, .write-banner:active, .retry-btn:active,
 .ev-thumb-del:active, .ev-thumb-add:active, .route-door.tappable:active, .arrival-btn:active {
     transition-duration: 0s;
 }
@@ -6068,7 +6028,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
     .primary-btn:not(:disabled):hover { box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.1); }
     .modal-btn:hover, .ob-menu button:not(:disabled):hover, .ctx-item:hover { background: rgba(var(--sec), 0.05); }
     .swipe-action:hover { filter: brightness(1.08); }
-    .link-btn:hover, .linkified:hover, .purpose-toggle:hover, .build-link:hover, .ev-source:hover,
+    .link-btn:hover, .linkified:hover, .purpose-toggle:hover, .build-link:hover,
     .ob-popup:not(:disabled):hover, .visit-who:hover, .mdr-copy:hover, button.dpg-topic:hover { opacity: 0.75; }
 }
 

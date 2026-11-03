@@ -1,6 +1,7 @@
-// Редактор ивента: что будет, когда, для кого + живое превью карточки.
-// Вход двойной — «Создать ивент» на экране дня и заготовка из пересланного в личку
-// поста канала (тогда поля уже заполнены, см. params.draft).
+// Ивент. Автор и дев правят его на нём самом: тот же вид, что увидят все, поля на месте
+// текста. Остальным он на чтение (EventView). Вход в создание двойной: «Создать ивент» на
+// экране дня и заготовка из пересланного в личку поста канала (тогда поля уже заполнены,
+// см. params.draft).
 
 import { Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
@@ -12,15 +13,16 @@ import { compressImage, imageToneAt } from '../image'
 import { linkedText } from '../linkify'
 import { confirmDialog, showAlert, showImage } from '../modals'
 import { eventPhotoUrl, useIcsLink } from '../links'
-import { growField, markOwnTap, ownTapRecent, reducedMotion, stageTint, toHex, toneColors } from '../motion'
+import { E, growField, markOwnTap, reducedMotion, stageTint, toHex, toneColors } from '../motion'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
 import { usePullDismiss } from '../components/usePullDismiss'
-import { haptic, openUrl, setHeaderColor } from '../telegram'
+import { haptic, openUrl, setClosingConfirmation, setHeaderColor } from '../telegram'
 import { getState, pop, push, setBusy, startNewRequest, useParams, useStore } from '../store'
 import { applyTheme } from '../theme'
 import type { Attendee, ReviewerScope, SpaceEvent, User } from '../types'
-import { BackRow, Footnote, Header, SectionTitle, Sep, SwitchRow } from '../components/common'
+import { BackRow, Sep, SwitchRow } from '../components/common'
+import { Collapse } from '../components/Collapse'
 import { Crossfade } from '../components/Crossfade'
 import { DateField } from '../components/DateField'
 import { eventTone, toneVars } from '../components/EventRow'
@@ -30,7 +32,7 @@ import { ShareButton, ShareIconButton } from '../components/ShareButton'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Avatar, Profile, userLabel } from '../components/people'
 import { Screen } from '../components/Screen'
-import { TimeRow } from '../components/TimeField'
+import { TimeWheels, Unfold } from '../components/TimeField'
 import { useReorder } from '../components/useReorder'
 import { useDropImages, usePasteImages } from '../usePasteImages'
 import { ComingNames, ComingRow, useAttend } from './Day'
@@ -228,6 +230,47 @@ export function Event() {
     descTyped.current = false
   }, [description, readOnly])
 
+  // Несохранённая правка опубликованного ивента: «Сохранить» горит только при ней, и
+  // Telegram переспрашивает перед закрытием. Новому ивенту хватает черновика.
+  const snapshot = JSON.stringify([
+    title,
+    description,
+    dateKey,
+    time,
+    residentsOnly,
+    photos,
+    responsibles.map((u) => u.userId),
+    formOn ? form : null,
+  ])
+  const [baseline] = useState(snapshot)
+  const dirty = snapshot !== baseline
+  const confirmClose = !readOnly && Boolean(existing) && dirty
+  useEffect(() => {
+    setClosingConfirmation(confirmClose)
+  }, [confirmClose])
+  useEffect(() => () => setClosingConfirmation(false), [])
+
+  // Шапка Telegram в тон полосы, как на виде ивента; на выходе возвращаем тему.
+  const tone = first ? (firstTone ?? null) : null
+  const header = tone ? toneColors(tone).band : toHex(stageTint('purple'))
+  useEffect(() => {
+    if (!readOnly) afterHero(() => setHeaderColor(header))
+  }, [header, readOnly])
+  useEffect(
+    () => () => {
+      if (!readOnly) afterHero(() => applyTheme(getState().theme))
+    },
+    [readOnly],
+  )
+
+  const [whenOpen, setWhenOpen] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = titleRef.current
+    if (el) growField(el, { still: true })
+  }, [title, readOnly])
+
   if (readOnly) return <EventView event={existing!} asGuest={asGuest} />
 
   // Прошедший слот запрещаем только новому ивенту: идущий всё ещё нужно уметь поправить
@@ -247,6 +290,7 @@ export function Event() {
     e.target.value = ''
     void addFiles(picked)
   }
+  const pickPhotos = (): void => fileRef.current?.click()
 
   const save = async (): Promise<void> => {
     if (!canSave) return
@@ -278,6 +322,7 @@ export function Event() {
       : await action('event.create', { ...payload, fromDraft: Boolean(draft) })
     if (done) {
       eventDraft.clear()
+      setClosingConfirmation(false)
       haptic.notify('success')
       pop()
     }
@@ -295,31 +340,168 @@ export function Event() {
     if (done) pop()
   }
 
+  const host = existing?.host ?? { userId: data!.me.id, username: data!.me.username, name: data!.me.name }
+  const tv = toneVars(tone)
+
+  // Экран тот же, что увидят все (EventView): название набирается на афише её кеглем,
+  // описание в карточке ведущего, строка даты раскрывает календарь и колесо. Ниже одной
+  // карточкой то, чего на виде нет. Превью не нужно: экран и есть превью.
   return (
     <Screen>
-      <BackRow />
-      <Header
-        title={existing ? 'Ивент' : 'Новый ивент'}
-        subtitle={residentsOnly ? 'Увидят только резиденты' : 'Гости увидят его в «Активности»'}
-      />
-
-      <SectionTitle>Что будет</SectionTitle>
-      <div className="card">
-        <div className="ev-field">
-          <input
-            className="ev-title-input"
-            placeholder="Название ивента"
-            maxLength={MAX_TITLE}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
+      <div className="evv evv-edit">
+        <div className="evv-top" style={tv}>
+          <div className="evv-band" aria-hidden="true" />
+          <BackRow />
+          {/* Без фото касание афиши вне названия выбирает фото; с фото оно открывает
+              снимок, а выбирает «Афиша» в углу. */}
+          <div
+            className={'evv-poster' + (photos.length > 0 ? ' photo' : '') + (dropping ? ' drop-on' : '')}
+            onClick={(e) => {
+              if (photos.length > 0 || e.target === titleRef.current) return
+              pickPhotos()
+            }}
+          >
+            {first ? <EventPoster photoId={first} className="evv-photo" /> : null}
+            <textarea
+              ref={titleRef}
+              className="evv-pt evv-pt-in"
+              rows={1}
+              placeholder="Название"
+              aria-label="Название ивента"
+              maxLength={MAX_TITLE}
+              enterKeyHint="next"
+              value={title}
+              onChange={(e) => {
+                const raw = e.target.value
+                // Название одной строкой смысла: перенос («Далее» на клавиатуре Android
+                // приходит им же) уводит в описание.
+                if (raw.includes('\n')) {
+                  setTitle(raw.replace(/\s*\n\s*/g, ' ').trimEnd())
+                  descRef.current?.focus()
+                  return
+                }
+                setTitle(raw)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  descRef.current?.focus()
+                }
+              }}
+            />
+            <div className="evv-ps">{posterWhen(dateKey, time)}</div>
+            {photos.length < MAX_PHOTOS ? (
+              <button
+                type="button"
+                className="evv-addph"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  pickPhotos()
+                }}
+              >
+                {icons.camera(15, 'currentColor')}
+                Афиша
+              </button>
+            ) : null}
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden aria-label="Добавить фото" onChange={addPhotos} />
+          </div>
+          <button
+            type="button"
+            className="evv-when tappable"
+            aria-expanded={whenOpen}
+            onClick={() => {
+              haptic.impact('light')
+              setWhenOpen(!whenOpen)
+            }}
+          >
+            <DateTile dateKey={dateKey} />
+            <div className="evv-when-text">
+              <div className="evv-wt">
+                {`${WEEKDAYS_FULL[weekdayIdx(dateKey)]}, ${fmtDayMonth(dateKey)}`}
+                {residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
+              </div>
+              <div className="evv-ws">{`в ${time} · ${untilWord(data!.todayKey, dateKey)}`}</div>
+            </div>
+            <span className={'evv-when-chev' + (whenOpen ? ' open' : '')}>{icons.chevron()}</span>
+          </button>
+          <Unfold open={whenOpen}>
+            <div className="card evv-when-card">
+              <div className="row time-row">
+                <span className="row-label">Дата</span>
+                <div className="row-right">
+                  <DateField
+                    value={dateKey}
+                    min={data!.todayKey}
+                    max={addDays(data!.todayKey, MAX_DAYS_AHEAD - 1)}
+                    onChange={selectDay}
+                  />
+                </div>
+              </div>
+              <Sep inset="text" />
+              {/* Новому ивенту на сегодня прошедшее недоступно, идущий правится свободно. */}
+              <TimeWheels
+                value={time}
+                min={guardPast && dateKey === data!.todayKey ? data!.nowTime || '00:00' : undefined}
+                onChange={setTime}
+              />
+            </div>
+          </Unfold>
         </div>
-        <Sep inset="text" />
-        <div className="ev-field">
+
+        {/* Афиши лентой: порядок в ней и есть порядок показа, первая встаёт на афишу. */}
+        <Collapse open={photos.length > 0} ms={320} ease={E.crisp}>
+          <div className="card evv-strip">
+            <div className={'ev-photos' + (dropping ? ' drop-on' : '')} ref={stripRef}>
+              {photos.map((id) => (
+                <div
+                  className={'ev-thumb' + (fresh.current.has(id) ? ' fresh' : '')}
+                  key={id}
+                  data-photo={id}
+                  onAnimationEnd={(e) => {
+                    // Проявилась: перестановка двигает узел, и анимация запустилась бы заново.
+                    if (e.target !== e.currentTarget) return
+                    fresh.current.delete(id)
+                    e.currentTarget.classList.remove('fresh')
+                  }}
+                >
+                  <EventPoster photoId={id} className="ev-thumb-img" />
+                  <button
+                    className="ev-thumb-del"
+                    aria-label="Убрать фото"
+                    onClick={(e) => {
+                      // Клик по крестику не должен ещё и открывать просмотр под ним.
+                      e.stopPropagation()
+                      markOwnTap()
+                      setPhotos((prev) => prev.filter((p) => p !== id))
+                    }}
+                  >
+                    {icons.xmark(11, '#fff')}
+                  </button>
+                </div>
+              ))}
+              {photos.length < MAX_PHOTOS ? (
+                <button type="button" className="ev-thumb ev-thumb-add" title="Добавить фото" aria-label="Добавить фото" onClick={pickPhotos}>
+                  {icons.plusSmall()}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </Collapse>
+
+        <div className="card evv-card">
+          <div className="row">
+            <Avatar user={host} className="req-avatar" />
+            <span className="row-label">
+              {host.name}
+              <span className="row-sublabel">{(host.username ? '@' + host.username + ' · ' : '') + 'ведёт'}</span>
+            </span>
+          </div>
+          <Sep inset="text" />
           <textarea
             ref={descRef}
-            className="ev-desc-input"
-            placeholder="Описание: что будет, кому интересно, что взять с собой"
+            className="evv-desc evv-desc-in"
+            placeholder="Что будет, кому интересно, что взять с собой"
+            aria-label="Описание"
             rows={3}
             maxLength={MAX_DESCRIPTION}
             value={description}
@@ -329,184 +511,72 @@ export function Event() {
             }}
           />
         </div>
-        <Sep inset="text" />
-        {/* Афиши: лента миниатюр, последняя плитка — «добавить». Порядок в ленте
-            и есть порядок показа в карточке, плитки переставляются перетаскиванием. */}
-        <div className={'ev-photos' + (dropping ? ' drop-on' : '')} ref={stripRef}>
-          {photos.map((id) => (
-            <div
-              className={'ev-thumb' + (fresh.current.has(id) ? ' fresh' : '')}
-              key={id}
-              data-photo={id}
-              onAnimationEnd={(e) => {
-                // Проявилась: перестановка двигает узел, и анимация запустилась бы заново.
-                if (e.target !== e.currentTarget) return
-                fresh.current.delete(id)
-                e.currentTarget.classList.remove('fresh')
-              }}
-            >
-              <EventPoster photoId={id} className="ev-thumb-img" />
-              <button
-                className="ev-thumb-del"
-                aria-label="Убрать фото"
-                onClick={(e) => {
-                  // Клик по крестику не должен ещё и открывать просмотр под ним.
-                  e.stopPropagation()
-                  markOwnTap()
-                  setPhotos((prev) => prev.filter((p) => p !== id))
-                }}
-              >
-                {icons.xmark(11, '#fff')}
-              </button>
+
+        {existing?.canReview && existing.form ? (
+          <button className="card row tappable evv-apps" onClick={() => push('eventApps', { event: existing, backLabel: 'Ивент' })}>
+            <span className="row-label">Разобрать заявки</span>
+            <div className="row-right">
+              {existing.applicationsPending ? <span className="ev-count">{existing.applicationsPending}</span> : null}
+              {icons.chevron()}
             </div>
-          ))}
-          {photos.length < MAX_PHOTOS ? (
-            <label className="ev-thumb ev-thumb-add" title="Добавить фото">
-              {icons.plusSmall()}
-              <input type="file" accept="image/*" multiple aria-label="Добавить фото" onChange={addPhotos} />
-            </label>
-          ) : null}
-        </div>
-      </div>
-
-      <SectionTitle>Когда</SectionTitle>
-      {/* Чипы — быстрый выбор ближайшей недели, всё остальное берётся в календаре
-          строкой ниже. Дальний день не подсвечивает ни один чип: дату видно в строке. */}
-      <div className="day-chips">
-        {days.map((d) => (
-          <button
-            key={d.dateKey}
-            className={'day-chip' + (d.dateKey === dateKey ? ' selected' : '')}
-            onClick={() => selectDay(d.dateKey)}
-          >
-            <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
-            <span className="dc-num">{String(dayNum(d.dateKey))}</span>
           </button>
-        ))}
-      </div>
-      <div className="card" style={{ marginTop: 10 }}>
-        <div className="row time-row">
-          <span className="row-label">Дата</span>
-          <div className="row-right">
-            <DateField
-              value={dateKey}
-              min={data!.todayKey}
-              max={addDays(data!.todayKey, MAX_DAYS_AHEAD - 1)}
-              onChange={selectDay}
-            />
-          </div>
+        ) : null}
+        <div className="card ctl-card evv-set">
+          <SwitchRow
+            on={residentsOnly}
+            onToggle={() => setResidentsOnly(!residentsOnly)}
+            label="Только резидентам"
+            sub="Гости не увидят ивент в «Активности»"
+          />
+          <Sep inset="text" />
+          <button type="button" className="row tappable" onClick={() => setPickOpen(true)}>
+            <span className="row-label">
+              Ответственные
+              <span className="row-sublabel">
+                {responsibles.length
+                  ? responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')
+                  : 'Резиденты или гости — видят только резиденты'}
+              </span>
+            </span>
+            <div className="row-right">{icons.chevron()}</div>
+          </button>
+          <Sep inset="text" />
+          <SwitchRow
+            on={formOn}
+            onToggle={() => setFormOn(!formOn)}
+            label="Принимать заявки по форме"
+            sub="Гость попадёт на ивент только через заявку"
+          />
         </div>
-        <Sep inset="text" />
-        {/* Время колесом в карточке, как «Приду к» в форме заявки: любое время за один
-            жест. Новому ивенту на сегодня прошедшее недоступно, идущий правится свободно. */}
-        <TimeRow
-          label="Начало в"
-          value={time}
-          min={guardPast && dateKey === data!.todayKey ? data!.nowTime || '00:00' : undefined}
-          onChange={setTime}
-        />
-        <Sep inset="text" />
-        <SwitchRow
-          on={residentsOnly}
-          onToggle={() => setResidentsOnly(!residentsOnly)}
-          label="Только резидентам"
-          sub="Гости не увидят ивент в «Активности»"
-        />
-      </div>
-      {guardPast && dateKey === data!.todayKey ? (
-        <Footnote>{`Сегодня ивент можно поставить не раньше ${data!.nowTime}: анонсировать то, что уже началось, некому.`}</Footnote>
-      ) : null}
-      {/* Дальний ивент никуда не пропадает, но живёт до своей недели отдельным списком:
-          доска и дни показывают только ближайшие семь дней. */}
-      {!days.some((d) => d.dateKey === dateKey) ? (
-        <Footnote>
-          Эта дата дальше ближайшей недели: до неё ивент будет виден в разделе «Позже», а на доску в чате и в дни
-          обзора выйдет за неделю до начала.
-        </Footnote>
-      ) : null}
+        {pickOpen ? (
+          <ResponsibleSheet selected={responsibles} onChange={setResponsibles} onClose={() => setPickOpen(false)} />
+        ) : null}
+        {formOn ? <FormBuilder value={form} onChange={setForm} /> : null}
 
-      <SectionTitle>Ответственные</SectionTitle>
-      <button className="card row tappable" style={{ width: '100%' }} onClick={() => setPickOpen(true)}>
-        <span className="row-label">
-          Кто отвечает за ивент
-          <span className="row-sublabel">
-            {responsibles.length
-              ? responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')
-              : 'Резиденты или гости — видят только резиденты'}
-          </span>
-        </span>
-        <div className="row-right">{icons.chevron()}</div>
-      </button>
-      {pickOpen ? (
-        <ResponsibleSheet selected={responsibles} onChange={setResponsibles} onClose={() => setPickOpen(false)} />
-      ) : null}
-
-      <SectionTitle>Заявки на ивент</SectionTitle>
-      {existing?.canReview && existing.form ? (
+        {existing ? (
+          <button className="destructive-btn" style={{ marginTop: 22 }} onClick={remove}>
+            Удалить ивент
+          </button>
+        ) : null}
         <button
-          className="card row tappable"
-          style={{ width: '100%', marginBottom: 10 }}
-          onClick={() => push('eventApps', { event: existing, backLabel: 'Ивент' })}
+          className="primary-btn"
+          style={{ marginTop: 16 }}
+          disabled={!canSave || (guardPast && pastSlot) || (Boolean(existing) && !dirty)}
+          onClick={save}
         >
-          <span className="row-label">Разобрать заявки</span>
-          <div className="row-right">
-            {existing.applicationsPending ? <span className="ev-count">{existing.applicationsPending}</span> : null}
-            {icons.chevron()}
-          </div>
+          {existing ? 'Сохранить' : 'Опубликовать'}
         </button>
-      ) : null}
-      <div className="card">
-        <SwitchRow
-          on={formOn}
-          onToggle={() => setFormOn(!formOn)}
-          label="Принимать заявки по форме"
-          sub="Гость попадёт на ивент только через заявку"
-        />
       </div>
-      {formOn ? <FormBuilder value={form} onChange={setForm} /> : null}
-
-      <SectionTitle>{`Превью · ${residentsOnly ? 'резиденты' : 'все'}`}</SectionTitle>
-      <EventCard
-        event={{
-          id: existing?.id ?? 'preview',
-          dateKey,
-          time,
-          title: title.trim() || 'Название ивента',
-          description,
-          residentsOnly,
-          photos,
-          tone: firstTone ?? undefined,
-          host: existing?.host ?? { userId: data!.me.id, username: data!.me.username, name: data!.me.name },
-          responsibles,
-          createdAt: '',
-        }}
-        dimTitle={title.trim().length === 0}
-        toneShift={ownTapRecent()}
-      />
-
-      {existing ? (
-        <button className="destructive-btn" style={{ marginTop: 22 }} onClick={remove}>
-          Удалить ивент
-        </button>
-      ) : null}
-      <button
-        className="primary-btn"
-        style={{ marginTop: 22 }}
-        disabled={!canSave || (guardPast && pastSlot)}
-        onClick={save}
-      >
-        {existing ? 'Сохранить' : 'Опубликовать'}
-      </button>
     </Screen>
   )
 }
 
 /** «вт 01.12, 12:00»: подпись на афише, как у поста в сцене ивентов знакомства. */
-const posterWhen = (ev: SpaceEvent): string => {
-  const d = keyToDate(ev.dateKey)
+const posterWhen = (dateKey: string, time: string): string => {
+  const d = keyToDate(dateKey)
   const dd = String(d.getUTCDate()).padStart(2, '0')
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${WEEKDAYS_SHORT[weekdayIdx(ev.dateKey)]!.toLowerCase()} ${dd}.${mm}, ${ev.time}`
+  return `${WEEKDAYS_SHORT[weekdayIdx(dateKey)]!.toLowerCase()} ${dd}.${mm}, ${time}`
 }
 
 /** «сегодня», «завтра», «через 41 день». */
@@ -597,7 +667,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
     <div className={'evv-poster' + (photos.length > 0 ? ' photo' : '')} ref={posterRef}>
       {photos.length > 0 ? <EventPoster photoId={photos[0]!} className="evv-photo" /> : null}
       <div className="evv-pt">{event.title}</div>
-      <div className="evv-ps">{posterWhen(event)}</div>
+      <div className="evv-ps">{posterWhen(event.dateKey, event.time)}</div>
     </div>
   )
 
@@ -732,16 +802,6 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
   )
 }
 
-/**
- * Карточка ивента — одна и та же в превью редактора и в «Активности»,
- * чтобы резидент видел ровно то, что увидят остальные.
- */
-/**
- * Карточка ивента.
- *
- * `calendar` - показать «В календарь». В превью редактора её нет: там ивента ещё не
- * существует, и ссылка вела бы в никуда.
- */
 /** Блок заявок в карточке: «кто придёт», кнопка рецензента «Заявки · N» или подача гостя. */
 function EventFormActions({ event }: { event: SpaceEvent }) {
   const { perspective } = useStore()
@@ -775,71 +835,6 @@ function EventFormActions({ event }: { event: SpaceEvent }) {
           Оставить заявку
         </button>
       )}
-    </div>
-  )
-}
-
-export function EventCard({
-  event,
-  dimTitle = false,
-  calendar = false,
-  actions = false,
-  toneShift = false,
-}: {
-  event: SpaceEvent
-  dimTitle?: boolean
-  calendar?: boolean
-  /** Показывать блок заявок (подача/разбор/«кто придёт»). В превью редактора не нужен. */
-  actions?: boolean
-  /** Афиши переставили своим касанием: тон перетекает, а не перекрашивается в следующем кадре. */
-  toneShift?: boolean
-}) {
-  const photos = event.photos ?? []
-  const openIcs = useIcsLink('event', event.id, calendar)
-  return (
-    <div className={'event-card' + (toneShift ? ' tone-shift' : '')} style={toneVars(eventTone(event))}>
-      <div className="ev-head">
-        {icons.calendar(14, 'currentColor')}
-        <span className="ev-kicker">Ивент · в {event.time}</span>
-        {event.residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
-      </div>
-      <div className={'ev-title' + (dimTitle ? ' dim' : '')}>{event.title}</div>
-      {/* Описание часто приезжает из поста канала — там ссылки на регистрацию и подробности. */}
-      {event.description ? <div className="ev-desc">{linkedText(event.description)}</div> : null}
-      {/* Одна афиша — просто картинка, несколько — лента с прокруткой по снапу:
-          карусель со стрелками в вебвью только мешает жестам. */}
-      {photos.length === 1 ? <EventPoster photoId={photos[0]!} className="ev-poster" /> : null}
-      {photos.length > 1 ? (
-        <div className="ev-gallery">
-          {photos.map((id) => (
-            <EventPoster key={id} photoId={id} className="ev-poster ev-gallery-item" />
-          ))}
-        </div>
-      ) : null}
-      {/* Ивент из пересланного поста: в канале лежит полный анонс — с версткой и обсуждением. */}
-      {event.sourceUrl ? (
-        <button className="ev-source" onClick={() => openUrl(event.sourceUrl!)}>
-          {icons.external('currentColor')}
-          Пост в канале
-        </button>
-      ) : null}
-      {/* .ics отдаёт сервер (GET /event.ics) - разовая ссылка, как у визита. */}
-      {calendar ? (
-        <button className="ev-source" onClick={() => void openIcs()}>
-          {icons.calendarPlus(15, 'currentColor')}
-          В календарь
-        </button>
-      ) : null}
-      {actions && event.form ? <EventFormActions event={event} /> : null}
-      {/* Ответственные приходят только резидентам (сервер режет поле гостю) — блок сам скрыт для гостя. */}
-      {event.responsibles && event.responsibles.length ? (
-        <div className="ev-responsibles">
-          Отвечают: {event.responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')}
-        </div>
-      ) : null}
-      <div className="ev-host">
-        <span>создал {event.host.username ? `@${event.host.username}` : event.host.name}</span>
-      </div>
     </div>
   )
 }

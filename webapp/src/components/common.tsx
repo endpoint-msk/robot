@@ -9,7 +9,7 @@ import { nb } from '../format'
 import { icons } from '../icons'
 import { markOwnTap } from '../motion'
 import { netLabel, useNetState } from '../net'
-import { pop, push, setPerspective, useStore } from '../store'
+import { pop, useStore } from '../store'
 import { haptic, nativeBack } from '../telegram'
 import { screenTitle } from '../titles'
 import { AnimContext } from './Screen'
@@ -121,12 +121,11 @@ export function SearchField({ value, onChange, placeholder }: { value: string; o
   )
 }
 
-export function Header({ title, subtitle, chip }: { title: ReactNode; subtitle?: ReactNode; chip?: ReactNode }) {
+export function Header({ title, subtitle }: { title: ReactNode; subtitle?: ReactNode }) {
   // Пока своё действие ждёт сети, подзаголовок говорит об этом, как шапка Telegram.
   const net = netLabel(useNetState())
   return (
     <div className="header">
-      {chip ? <div className="header-chip-row">{chip}</div> : null}
       <div className="title">{title}</div>
       {net ? <div className="subtitle net-wait">{net}</div> : subtitle ? <div className="subtitle">{subtitle}</div> : null}
     </div>
@@ -414,24 +413,4 @@ export function BottomBar({ children }: { children: ReactNode }) {
   // Экран под верхним на время жеста «вниз» получает свой узел в картинке (App.tsx).
   if (!node) return null
   return createPortal(<div className={'bottom-bar' + (anim ? ' ' + anim : '')}>{children}</div>, node)
-}
-
-/** Дев-панель в шапке: переключатель перспективы «резидент ↔ гость» + вход в dev-меню.
-    Видна только аккаунтам из DEV_USER_IDS (сервер проверяет это сам). */
-export function DevChips() {
-  const { data, perspective } = useStore()
-  if (!data?.me.isDev) return null
-  const other = perspective === 'resident' ? 'guest' : 'resident'
-  return (
-    <div className="dev-chips">
-      <button type="button" className="dev-chip" onClick={() => setPerspective(other)}>
-        {icons.eye()}
-        {other === 'guest' ? 'Как гость' : 'Как резидент'}
-      </button>
-      <button type="button" className="dev-chip" onClick={() => push('dev')}>
-        {'🛠'}
-        {'Dev'}
-      </button>
-    </div>
-  )
 }

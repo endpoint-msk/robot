@@ -13,6 +13,9 @@ interface TelegramWebApp {
   expand(): void
   disableVerticalSwipes?(): void
   setHeaderColor(color: string): void
+  /** Bot API 6.2: вопрос Telegram перед закрытием миниаппа. */
+  enableClosingConfirmation?(): void
+  disableClosingConfirmation?(): void
   setBackgroundColor(color: string): void
   setBottomBarColor?(color: string): void
   openLink(url: string): void
@@ -177,6 +180,16 @@ export function shareMessage(id: string): Promise<boolean | null> {
 export function setBottomBarColor(hex: string): void {
   try {
     if (tg?.isVersionAtLeast?.('7.10')) tg.setBottomBarColor?.(hex)
+  } catch {
+    /* старый клиент */
+  }
+}
+
+/** Telegram переспросит перед закрытием миниаппа: на экране несохранённая правка. */
+export function setClosingConfirmation(on: boolean): void {
+  try {
+    if (on) tg?.enableClosingConfirmation?.()
+    else tg?.disableClosingConfirmation?.()
   } catch {
     /* старый клиент */
   }
