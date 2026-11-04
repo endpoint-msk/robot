@@ -106,8 +106,18 @@ const sendAlert = async (
             console.warn('[camera] кадр не скачался, шлю без него:', err)
         }
     }
-    if (photo) await client.sendMedia(chatId, InputMedia.photo(photo, { caption }), { replyMarkup })
-    else await client.sendText(chatId, caption, { replyMarkup })
+    if (photo) {
+        try {
+            // Голые байты mtcute заливает без имени, и Telegram отвечает PHOTO_EXT_INVALID.
+            const media = InputMedia.photo(photo, { caption, fileName: 'motion.jpg', fileMime: 'image/jpeg' })
+            await client.sendMedia(chatId, media, { replyMarkup })
+            return
+        } catch (err) {
+            // Кадр - приятное дополнение: без него оповещение всё равно должно дойти.
+            console.error('[camera] кадр не принят, шлю оповещение текстом:', err)
+        }
+    }
+    await client.sendText(chatId, caption, { replyMarkup })
 }
 
 export const startCameraMotionAlerts = (
@@ -150,7 +160,7 @@ export const cameraMotionTick = async (
                 alerted = true
             } catch (err) {
                 // Курсор всё равно двигаем: иначе недоставленное событие слалось бы каждую минуту.
-                console.warn('[camera] не смог отправить оповещение:', err)
+                console.error(`[camera] не смог отправить оповещение в чат ${chatId}:`, err)
             }
         }
         await storage.update((s) => {
