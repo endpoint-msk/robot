@@ -895,8 +895,8 @@ export const showImage = (src: string, alt = ''): void => {
   void open<boolean>({ kind: 'image', src, alt })
 }
 
-export const showAlert = (message: string): void => {
-  void open<boolean>({ kind: 'confirm', text: message, confirmLabel: 'OK', cancelLabel: null, destructive: false })
+export const showAlert = (message: string, confirmLabel = 'OK'): void => {
+  void open<boolean>({ kind: 'confirm', text: message, confirmLabel, cancelLabel: null, destructive: false })
 }
 
 export const confirmDialog = (

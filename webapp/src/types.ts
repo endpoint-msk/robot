@@ -530,6 +530,8 @@ export type Bootstrap = {
   onboarding?: OnboardingInfo
   /** Код домофона. Только резидентам и dev; null: не задан. */
   door?: DoorCode | null
+  /** Умный замок двери. Только резидентам и dev и только с подключённым Home Assistant. */
+  lock?: { state: LockState }
   /** Итоги прошлого месяца. Только резидентам; null: итогов нет. */
   wrap?: WrapInfo | null
   /** Кабинет аккаунта спейса в Authentik. Только резидентам и только с подключённым Authentik. */
@@ -556,6 +558,9 @@ export type OnboardingPeople = {
   /** Сколько сейчас внутри всего, вместе с отметками «без ника». */
   insideTotal: number
 }
+
+/** Состояние замка как его отдаёт Home Assistant; unavailable/unknown - нет связи. */
+export type LockState = 'locked' | 'unlocked' | 'locking' | 'unlocking' | 'open' | 'opening' | 'jammed' | 'unavailable' | 'unknown'
 
 /** Код домофона и подсказка к нему (подъезд, панель). */
 export type DoorCode = { code: string; note: string }

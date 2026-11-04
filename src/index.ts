@@ -18,6 +18,7 @@ import {
     startPrinterCompletionWatcher,
 } from './printer.js'
 import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
+import { LockClient, parseLockConfig } from './lock.js'
 import { parseCameraMotionConfig, startCameraMotionAlerts } from './camera-motion.js'
 import { createTelegramResidentDirectory } from './residents.js'
 import {
@@ -114,6 +115,13 @@ const main = async () => {
     const outlineConfig = parseOutlineConfig({ url: process.env.OUTLINE_URL, token: process.env.OUTLINE_TOKEN })
     const outline = outlineConfig ? new OutlineClient(outlineConfig) : null
     const printerUrl = normalizePrinterUrl(process.env.PRINTER_URL)
+    const lockConfig = parseLockConfig({
+        url: process.env.HASS_URL,
+        token: process.env.HASS_TOKEN,
+        entity: process.env.HASS_LOCK_ENTITY,
+    })
+    const lock = lockConfig !== null ? new LockClient(lockConfig) : null
+    if (lockConfig !== null) console.log(`[lock] ${lockConfig.entityId} через ${lockConfig.baseUrl}`)
     const printerAuth = parsePrinterAuth(process.env.PRINTER_AUTH)
     const keeneticConfig = parseKeeneticConfig({
         url: process.env.KEENETIC_URL,
@@ -289,6 +297,7 @@ const main = async () => {
             authentik,
             outline,
             hasPrinter: printerUrl !== null,
+            lock,
             bot: { username: self.username ?? null, name: self.displayName },
         })
         if (self.username) {

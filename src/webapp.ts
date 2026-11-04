@@ -201,6 +201,7 @@ import {
     normalizeDoorCode,
     setDoorCode,
 } from './door.js'
+import type { LockClient } from './lock.js'
 import { markOnboardingDone, onboardingOf, shouldShowOnboarding } from './onboarding.js'
 import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, isMacOnline, removePresence } from './presence.js'
@@ -476,6 +477,9 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'event.apps': 'read',
     'onboarding.done': 'write',
     'door.set': 'write',
+    // Поход в Home Assistant, а за ним радио до замка.
+    'lock.open': 'heavy',
+    'lock.close': 'heavy',
 
     'rules.accept': 'write',
     'event.apply.edit': 'write',
@@ -725,6 +729,8 @@ export type WebappDeps = {
     adminTargets: AdminTarget[]
     /** Подключён ли принтер (PRINTER_URL): без него знакомство не зовёт в /printer. */
     hasPrinter: boolean
+    /** Умный замок через Home Assistant (HASS_*). null - строки замка нет. */
+    lock: LockClient | null
     /** Аккаунты резидентов (AUTHENTIK_*). null - раздел «Аккаунт» и кабинет скрыты. */
     authentik: AuthentikClient | null
     /** Вики (OUTLINE_*): возвращаемому резиденту снимается отключение. */
@@ -1302,6 +1308,9 @@ const buildBootstrap = (ctx: ApiContext) => {
         // Код домофона - ключ от подъезда: только резидентам и дев-аккаунтам, которые
         // его правят. Гостю не уходит никогда.
         ...(resident || isDevUser(ctx) ? { door: doorView(ctx) } : {}),
+        // Замок - как домофон: только резидентам и dev. Состояние из памяти: bootstrap
+        // синхронный, освежает его ручка `bootstrap`.
+        ...(ctx.lock && (resident || isDevUser(ctx)) ? { lock: { state: ctx.lock.known } } : {}),
         // Кабинет в Authentik. Есть ли там аккаунт, не спрашиваем: bootstrap собирается
         // на каждую мутацию, а без аккаунта кабинет просто попросит войти через Telegram.
         ...(resident && ctx.authentik ? { accountUrl: ctx.authentik.accountUrl } : {}),
@@ -1334,7 +1343,7 @@ const AUDITED = new Set([
     'announce.send', 'stats.residentSince',
     'admin.grant', 'admin.revoke', 'admin.tag', 'account.create', 'account.delete',
     'dev.seed', 'dev.update', 'dev.delete',
-    'onboarding.done', 'door.set', 'undo',
+    'onboarding.done', 'door.set', 'lock.open', 'lock.close', 'undo',
 ])
 
 /** Снимок объектов, которых после вызова может уже не быть либо они изменятся. */
@@ -1560,6 +1569,10 @@ const describeAudit = (ctx: ApiContext, method: string, before: AuditBefore): st
         // Сам код в журнал не пишем: ключ от подъезда не должен оседать в файлах на сервере.
         case 'door.set':
             return strOf(body.code).trim() ? 'поменял код домофона' : 'убрал код домофона'
+        case 'lock.open':
+            return 'открыл замок'
+        case 'lock.close':
+            return 'закрыл замок'
         // Сам токен ничего не скажет: что вернули, знает только снимок до вызова.
         case 'undo':
             return before.undo ? `вернул: ${before.undo}` : 'нажал «Вернуть»'
@@ -1646,6 +1659,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Плашка итогов месяца читает кэш журнала, а сам bootstrap синхронный: кэш
             // освежаем здесь, где подождать чтение файла не страшно.
             if (resident) await refreshWrapCache(storage, tzOffsetMinutes)
+            if (ctx.lock && (resident || isDevUser(ctx))) await ctx.lock.refresh()
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }
@@ -3126,6 +3140,30 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             await setDoorCode(storage, code, note, user)
+            sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        // Замок двери: открыть и закрыть может любой резидент (и dev, как с домофоном).
+        // Кто нажал, остаётся в журнале действий.
+        case 'lock.open':
+        case 'lock.close': {
+            if (!ctx.lock) {
+                sendError(res, 404, 'no_lock', 'Замок не подключён.')
+                return
+            }
+            if (!resident && !isDevUser(ctx)) {
+                requireResident()
+                return
+            }
+            try {
+                await ctx.lock.set(method === 'lock.open' ? 'unlocked' : 'locked')
+            } catch (err) {
+                console.warn('[lock] Home Assistant не выполнил команду:', err instanceof Error ? err.message : err)
+                sendError(res, 502, 'lock_failed', 'Замок не ответил. Попробуйте ещё раз.')
+                return
+            }
+            console.log(`[lock] ${method === 'lock.open' ? 'открыл' : 'закрыл'} ${user.userId}`)
             sendJson(res, 200, buildBootstrap(ctx))
             return
         }

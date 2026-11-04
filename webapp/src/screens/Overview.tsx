@@ -2,10 +2,13 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Ref, type 
 import { fmtRange, requestsWord } from '../dates'
 import { icons } from '../icons'
 import { animate, clamp, pr, reducedMotion } from '../motion'
+import { action } from '../api'
+import { showAlert } from '../modals'
 import { push, useStore } from '../store'
+import type { LockState } from '../types'
 import { haptic } from '../telegram'
 import { resolvedTheme } from '../theme'
-import { Header, Sep } from '../components/common'
+import { ActionButton, Header, Sep } from '../components/common'
 import { DayRow, TodayCard } from '../components/DayRow'
 import { LaterEvents } from '../components/EventRow'
 import { Screen } from '../components/Screen'
@@ -268,6 +271,58 @@ function DoorRow() {
   )
 }
 
+/** Замок считается открытым и в пути: «Закрыть» нужнее, чем второе «Открыть». */
+const lockIsOpen = (state: LockState): boolean =>
+  state === 'unlocked' || state === 'unlocking' || state === 'open' || state === 'opening'
+
+const LOCK_CHIP: Record<LockState, { text: string; tone: 'green' | 'warn' | 'gray' }> = {
+  locked: { text: 'закрыт', tone: 'green' },
+  locking: { text: 'закрывается', tone: 'gray' },
+  unlocked: { text: 'открыт', tone: 'warn' },
+  unlocking: { text: 'открывается', tone: 'gray' },
+  open: { text: 'открыт', tone: 'warn' },
+  opening: { text: 'открывается', tone: 'gray' },
+  jammed: { text: 'заклинило', tone: 'warn' },
+  unavailable: { text: 'нет связи', tone: 'gray' },
+  unknown: { text: 'нет связи', tone: 'gray' },
+}
+
+/**
+ * Замок двери (Home Assistant). Открывает не вся строка, а кнопка: случайный тап по
+ * главной не должен открывать спейс. После открытия - напоминание закрыть.
+ */
+function LockRow() {
+  const { data } = useStore()
+  const lock = data!.lock
+  if (!lock) return null
+  const open = lockIsOpen(lock.state)
+  const chip = LOCK_CHIP[lock.state]
+  return (
+    <>
+      <div className="row">
+        <div className="row-icon" style={{ background: 'var(--green)' }}>
+          {icons.lockFilled(17, '#fff')}
+        </div>
+        <span className="row-label">Замок</span>
+        <div className="row-right">
+          <span className={'ob-tag ' + chip.tone}>{chip.text}</span>
+          <ActionButton
+            className="host-btn"
+            onClick={async () => {
+              haptic.impact('light')
+              const res = await action(open ? 'lock.close' : 'lock.open', {}, { quiet: true })
+              if (res && !open) showAlert('Замок открыт. Не забудьте закрыть его за собой.', 'Понятно')
+            }}
+          >
+            {open ? 'Закрыть' : 'Открыть'}
+          </ActionButton>
+        </div>
+      </div>
+      <Sep inset="icon" />
+    </>
+  )
+}
+
 export function Overview() {
   const { data } = useStore()
   const days = data!.days
@@ -295,7 +350,9 @@ export function Overview() {
       </div>
       <LaterEvents backLabel="Ближайшие дни" />
       <div style={{ height: 22 }} />
-      <div className="card">
+      {/* Кнопка замка делает строку 52 px, соседние текстовые встают так же (ctl-card). */}
+      <div className={data!.lock ? 'card ctl-card' : 'card'}>
+        <LockRow />
         <DoorRow />
         {/* Статистика, взносы и настройки - вкладки (components/TabBar.tsx). */}
         <button type="button" className="row tappable" onClick={() => push('archive')}>

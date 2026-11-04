@@ -30,6 +30,7 @@ src/menu.ts           - /start и /menu в личке; `/start <раздел>` �
 src/deeplink.ts       - адрес места в миниаппе для кнопок бота (day-, req-, new-, event-, apps-, dues); разбор в webapp/src/deeplink.ts
 src/onboarding.ts     - знакомство нового резидента
 src/door.ts           - код домофона
+src/lock.ts           - умный замок двери через Home Assistant (REST, long-lived токен)
 src/presence.ts       - callback presence:*, пинги, поллер MAC
 src/presence-log.ts   - журнал присутствия (ndjson), склейка визитов, дневные итоги, провалы роутера
 src/stats.ts          - витрины журнала для миниаппа
@@ -277,6 +278,10 @@ webapp/               - React + Vite + TS. main.tsx → Root → App; экран
 
 Код в стейте (репо публичный), правит dev, в журнал только факт. Наружу только резидентам и dev: `bootstrap.door` и кнопка в `/menu` (всплывающим окном, не сообщением). На главной миниаппа - под пеленой-спойлером, под которой болванка, а не код; сама закрывается через минуту.
 
+### Замок (`src/lock.ts`)
+
+Сущность `lock.*` в Home Assistant, `lock.unlock`/`lock.lock` через REST. Строка «Замок» на главной миниаппа - резидентам и dev, как домофон; открывает кнопка, а не вся строка (случайный тап не открывает спейс), после открытия - лист «не забудьте закрыть». Состояние в памяти процесса: ручка `bootstrap` освежает его не чаще 15 с и ждёт Home Assistant не дольше 1,5 с, остальные bootstrap берут из памяти. Кто открыл и закрыл - в журнал действий. Нет связи - строка «нет связи», кнопка всё равно пробует.
+
 ### Поток журнала действий (`src/audit.ts`)
 
 - Нужен, потому что отменяющие действия стирают поле, где лежал бы актор (`unapprove`, `close`, `cancel`, `decline`, `dues.clear`).
@@ -313,7 +318,7 @@ npm --prefix webapp run typecheck
 
 После любых правок - `npm run typecheck`.
 
-`.env`: обязательны `API_ID`, `API_HASH`, `BOT_TOKEN`, `ALLOWED_CHATS`. Опционально: `DATA_FILE` (`./data.json`), `SESSION_FILE` (`./bot.session`), `PRINTER_URL` + `PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD` (все три) + `KEENETIC_RCI_PATH` (дефолт `show/ip/hotspot`), `WEBAPP_URL` + `WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `GITHUB_REPO` (дефолт `endpoint-msk/robot`), `RESIDENTS_CHAT_ID`, `DEV_USER_IDS`, `FORWARD_FROM_CHAT`/`FORWARD_TO_CHAT` (оба), `LIVE_CHAT_ID` (гард), `MAIN_CHAT_ID` (цель выдачи админки и тега, бот - админ с правом добавлять админов и менять теги), `LIVE_CHANNEL_ID` (лайв-канал, не путать с `LIVE_CHAT_ID`), `AUTHENTIK_URL` + `AUTHENTIK_TOKEN` (+ `AUTHENTIK_GROUP`, дефолт `Residents`, `AUTHENTIK_EMAIL_DOMAIN`, дефолт `endpoint.moscow`), `OUTLINE_URL` + `OUTLINE_TOKEN` (API-ключ админа вики), `CAMERA_MOTION_URL` + `CAMERA_MOTION_AUTH` + `CAMERA_VIEW_URL` (оповещения о движении, нужен `RESIDENTS_CHAT_ID`). **В Docker `DATA_FILE` и `SESSION_FILE` - внутри примонтированного тома** (задаются в `docker-compose.yaml`).
+`.env`: обязательны `API_ID`, `API_HASH`, `BOT_TOKEN`, `ALLOWED_CHATS`. Опционально: `DATA_FILE` (`./data.json`), `SESSION_FILE` (`./bot.session`), `PRINTER_URL` + `PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD` (все три) + `KEENETIC_RCI_PATH` (дефолт `show/ip/hotspot`), `WEBAPP_URL` + `WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `GITHUB_REPO` (дефолт `endpoint-msk/robot`), `RESIDENTS_CHAT_ID`, `DEV_USER_IDS`, `FORWARD_FROM_CHAT`/`FORWARD_TO_CHAT` (оба), `LIVE_CHAT_ID` (гард), `MAIN_CHAT_ID` (цель выдачи админки и тега, бот - админ с правом добавлять админов и менять теги), `LIVE_CHANNEL_ID` (лайв-канал, не путать с `LIVE_CHAT_ID`), `AUTHENTIK_URL` + `AUTHENTIK_TOKEN` (+ `AUTHENTIK_GROUP`, дефолт `Residents`, `AUTHENTIK_EMAIL_DOMAIN`, дефолт `endpoint.moscow`), `OUTLINE_URL` + `OUTLINE_TOKEN` (API-ключ админа вики), `CAMERA_MOTION_URL` + `CAMERA_MOTION_AUTH` + `CAMERA_VIEW_URL` (оповещения о движении, нужен `RESIDENTS_CHAT_ID`), `HASS_URL` + `HASS_TOKEN` + `HASS_LOCK_ENTITY` (замок, все три). **В Docker `DATA_FILE` и `SESSION_FILE` - внутри примонтированного тома** (задаются в `docker-compose.yaml`).
 
 ## Что НЕ делать
 
