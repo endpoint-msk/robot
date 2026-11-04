@@ -535,7 +535,7 @@ export function Event() {
               <span className="row-sublabel">
                 {responsibles.length
                   ? responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')
-                  : 'Резиденты или гости — видят только резиденты'}
+                  : 'Резиденты или гости'}
               </span>
             </span>
             <div className="row-right">{icons.chevron()}</div>
