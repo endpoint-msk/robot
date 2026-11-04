@@ -50,6 +50,8 @@ export type State = {
     presenceInvisible: Record<string, true>
     /** userId, попросивших уведомить в личку по окончании текущей печати. Чистится после уведомления. */
     printerSubscribers: Record<string, true>
+    /** Оповещения о движении на камере спейса (`camera-motion.ts`). */
+    cameraMotion: CameraMotionState
     /** MAC-адреса резидентов для авто-отметок. Ключ — userId. */
     macBindings: Record<string, ResidentMacs>
     /** День месяца (1..29), в который сбрасывается сбор. По умолчанию 1 = календарный месяц UTC. */
@@ -844,6 +846,16 @@ export type MacEntry = {
     label: string
 }
 
+export type CameraMotionState = {
+    /**
+     * Начало последнего разобранного события ленты (ISO). null - лента ещё не читалась:
+     * на первом чтении всё, что в ней лежит, считается прошлым и не рассылается.
+     */
+    cursor: string | null
+    /** Конец серии движения, о которой уже сообщили (ISO): движение рядом с ней - та же серия. */
+    seriesEnd: string | null
+}
+
 /** Отметка резидента, что он сейчас внутри хакерспейса. */
 export type ResidentPresence = {
     userId: number
@@ -889,6 +901,7 @@ export const emptyState = (): State => ({
     presence: {},
     presenceInvisible: {},
     printerSubscribers: {},
+    cameraMotion: { cursor: null, seriesEnd: null },
     macBindings: {},
     resetDay: 1,
     goalsMuted: {},

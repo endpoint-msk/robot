@@ -18,6 +18,7 @@ import {
     startPrinterCompletionWatcher,
 } from './printer.js'
 import { KeeneticClient, parseKeeneticConfig } from './keenetic.js'
+import { parseCameraMotionConfig, startCameraMotionAlerts } from './camera-motion.js'
 import { createTelegramResidentDirectory } from './residents.js'
 import {
     dropMacPresence,
@@ -428,6 +429,18 @@ const main = async () => {
             ? startAccessReconciler({ client: tg, residents, adminTargets, authentik, outline })
             : null
     const printerWatcher = printerUrl !== null ? startPrinterCompletionWatcher(tg, storage, printerUrl, printerAuth) : null
+    const cameraMotionConfig = parseCameraMotionConfig({
+        url: process.env.CAMERA_MOTION_URL,
+        auth: process.env.CAMERA_MOTION_AUTH,
+        viewUrl: process.env.CAMERA_VIEW_URL,
+    })
+    let cameraMotion: { stop: () => void } | null = null
+    if (cameraMotionConfig !== null && residentsChatId !== null) {
+        cameraMotion = startCameraMotionAlerts(tg, storage, residentsChatId, cameraMotionConfig)
+        console.log(`[camera] motion alerts from ${cameraMotionConfig.feedUrl} to ${residentsChatId}`)
+    } else if (cameraMotionConfig !== null) {
+        console.warn('[warn] CAMERA_MOTION_URL задан, но RESIDENTS_CHAT_ID нет — оповещениям о движении некуда писать.')
+    }
     let macPoller: { stop: () => void; triggerNow: () => Promise<void> } | null = null
     if (keeneticConfig !== null) {
         macPoller = startMacPresencePoller(tg, storage, residents, new KeeneticClient(keeneticConfig))
@@ -547,6 +560,7 @@ const main = async () => {
         onboardingSeeder?.stop()
         accessReconciler?.stop()
         printerWatcher?.stop()
+        cameraMotion?.stop()
         macPoller?.stop()
         webappServer?.stop()
         // Записи в Storage поставлены в очередь и могут быть ещё в полёте: без ожидания

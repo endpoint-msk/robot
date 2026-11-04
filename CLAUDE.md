@@ -8,7 +8,7 @@
 
 ## Что делает бот
 
-Девять подсистем с общим стейтом:
+Десять подсистем с общим стейтом:
 
 1. **Сборы донатов** (`fundraiser.ts`, `handlers.ts`, `scheduler.ts`) - один сбор на период, `/goals`, `/donate`, `/remove`, `/setgoal`, `/settitle`, `/history`. Лидерборд по нику (lower-case), топ-3 с медалями, `PAGE_SIZE = 10`. Цель, тема и описание «липкие»: новый период копирует настройки прошлого (`ensureCurrentFundraiser`), сбрасываются только донаты. Сообщение `/history` не попадает в `lastMessages`, иначе шедулер перерисовал бы его в текущий сбор.
 2. **Присутствие резидентов** (`presence.ts`, `menu.ts`, `keenetic.ts`) - `/start`/`/menu` в личке (меню резидента, владелец команд `menu.ts`), чек-ин с ником или без. Пинг раз в 3 ч, без ответа 15 мин отметка снимается. «Кто внутри» показывает доска (`hosting-board.ts`) через `setPresenceChangeHook`; `/inside` постит разовый снимок, в личке только для `residents.isMember`. **Авто-отметка по MAC**: `/bindmac`, поллер Keenetic RCI ставит `source: 'mac'`, снимает через `MAC_ABSENCE_GRACE_MS` (10 мин). Онлайн-MAC держатся в памяти процесса (`isMacOnline`). Потолок mac-отметки `MAC_MAX_PRESENCE_MS` (14 ч), дальше обычный пинг. «Уйти» ставит подавление (`suppressedAt`), снимается уходом устройства из сети, не таймером. «Невидимка» (`presenceInvisible`) выключает авто-отметку. Роутер молчит дольше `MAC_STALE_MS` (30 мин) - все mac-отметки снимаются разом; ошибка роутера только в журнал (`/errors`), не чаще `MAC_REPORT_COOLDOWN_MS` (6 ч), кулдаун переживает восстановление.
@@ -19,6 +19,7 @@
 7. **Резидентские взносы** (`dues.ts`) - ежемесячный платёж, одна настройка на спейс. Только личка и миниапп, **в общий чат ничего**. Две стадии: `claimed` (резидент) → `paid` (dev). Зачтён только `paid`.
 8. **Журнал присутствия** (`presence-log.ts`, `stats.ts`) - история визитов и статистика в миниаппе, раздел резидентский, отказ через `presenceNoLog`.
 9. **Аккаунты резидентов** (`authentik.ts`, `outline.ts`, `resident-access.ts`) - вступил в `RESIDENTS_CHAT_ID`: аккаунт Authentik с логином-ником из Telegram в группе `AUTHENTIK_GROUP`. Вышел: аккаунт выключен, отключён в вики, группа снята, админка и тег в чатах сняты. Кабинет в своём профиле, у дева «Создать»/«Удалить» в карточке резидента. Подробно - «Поток аккаунтов».
+10. **Движение на камере** (`camera-motion.ts`) - кадр в чат резидентов, когда camera-view видит движение, а внутри никого из резидентов. Подробно - «Поток оповещений о движении».
 
 ## Архитектура
 
@@ -43,6 +44,7 @@ src/audit.ts          - журнал действий (audit/*.ndjson)
 src/undo.ts           - «Вернуть»: отложенные DM в памяти процесса, flushUndo на выключении
 src/health.ts         - пульс подсистем: GET /healthz и /status
 src/printer.ts        - /printer, Moonraker, поллер окончания печати
+src/camera-motion.ts  - лента движения camera-view → кадр в чат резидентов, если внутри пусто
 src/keenetic.ts       - RCI-клиент Keenetic
 src/residents.ts      - ResidentDirectory: единый источник «кто резидент/админ» (точка замены под Authentik)
 src/resident-admin.ts - выдача резиденту админки и тега «resident» в MAIN_CHAT_ID/каналах (dev)
@@ -99,6 +101,15 @@ webapp/               - React + Vite + TS. main.tsx → Root → App; экран
 ### Поток printer
 
 `/printer` → `fetchPrinterStatus`; при печати превью gcode + кнопки `printer:view:preview|camera` (`ctx.editMessage({ media })`, повтор ловит `MESSAGE_NOT_MODIFIED`). `printer:notify` пишет в `printerSubscribers`; поллер на терминальном статусе шлёт и **чистит весь список** (подписка на текущую печать). Превью требует миниатюр в gcode; снимок - `snapshot_url` первой камеры, фолбэк `/webcam/?action=snapshot`.
+
+### Поток оповещений о движении (`src/camera-motion.ts`)
+
+- Источник - `events.json` camera-view (adler, `/etc/nixos/services/camera-view`): `{ start, end, snapshot }` с абсолютным временем, кадр - самый подвижный момент. Клип разбирается, когда дописан, поэтому событие приходит через 1-6 мин после движения.
+- Тик 60 с (`camera` в пульсе). `cameraMotion.cursor` - начало последнего разобранного события; **на первом чтении (cursor null) вся лента считается прошлым**, рассылки нет. Курсор по началу отсекает и старые события, которые после пересчёта camera-view приходят заново.
+- Событие моложе `SETTLE_MS` (3 мин) ждёт: телефон вошедшего ещё мог не поймать Wi-Fi.
+- **Молчим, если кто-то из резидентов отмечен сейчас** (даже пришедший после движения: движение и было его приходом) **или ушёл меньше `RECENT_PRESENCE_MS` (15 мин) до движения** (журнал присутствия). «Невидимка» и `presenceNoLog` не видны - отметившийся вручную в счёт.
+- Серия: движение ближе `SERIES_GAP_MS` (15 мин) к концу прошлого оповещённого (`seriesEnd`) - второе сообщение не шлём, серию продлеваем.
+- Сообщение - кадр (без него текст) и кнопка «Открыть запись» на `CAMERA_VIEW_URL#t=<мс>` (плеер за authentik). Недоставленное не повторяем: курсор двигается всё равно.
 
 ### Поток хостинга
 
@@ -279,7 +290,7 @@ webapp/               - React + Vite + TS. main.tsx → Root → App; экран
 - **TS strict + `noUncheckedIndexedAccess`**.
 - **ESM + NodeNext**: импорты с `.js` даже для `.ts`.
 - **Бэкенд без билда** (`tsx`). **Миниапп со сборкой** (Vite → `webapp/dist`), свой `package.json`/`tsconfig.json`, тайпчек фронта отдельным шагом CI.
-- Только `console.*`, префиксы `[warn]`, `[presence]`, `[scheduler]`, `[printer]`, `[keenetic]`.
+- Только `console.*`, префиксы `[warn]`, `[presence]`, `[scheduler]`, `[printer]`, `[keenetic]`, `[camera]`.
 - Тексты пользователю на русском, в тон существующим.
 - **Число и слово не разрываются**: неразрывный пробел («5 заявок», «к 18:30»), разряды сумм узким. Хелперы `dates.ts`/`format.ts` делают это сами; строку, собранную из частей, оборачивать в `nb()` из `format.ts`.
 - **`html()` схлопывает `\n`** - переносы только `<br>` (`lines.join('<br>')`).
@@ -302,7 +313,7 @@ npm --prefix webapp run typecheck
 
 После любых правок - `npm run typecheck`.
 
-`.env`: обязательны `API_ID`, `API_HASH`, `BOT_TOKEN`, `ALLOWED_CHATS`. Опционально: `DATA_FILE` (`./data.json`), `SESSION_FILE` (`./bot.session`), `PRINTER_URL` + `PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD` (все три) + `KEENETIC_RCI_PATH` (дефолт `show/ip/hotspot`), `WEBAPP_URL` + `WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `GITHUB_REPO` (дефолт `endpoint-msk/robot`), `RESIDENTS_CHAT_ID`, `DEV_USER_IDS`, `FORWARD_FROM_CHAT`/`FORWARD_TO_CHAT` (оба), `LIVE_CHAT_ID` (гард), `MAIN_CHAT_ID` (цель выдачи админки и тега, бот - админ с правом добавлять админов и менять теги), `LIVE_CHANNEL_ID` (лайв-канал, не путать с `LIVE_CHAT_ID`), `AUTHENTIK_URL` + `AUTHENTIK_TOKEN` (+ `AUTHENTIK_GROUP`, дефолт `Residents`, `AUTHENTIK_EMAIL_DOMAIN`, дефолт `endpoint.moscow`), `OUTLINE_URL` + `OUTLINE_TOKEN` (API-ключ админа вики). **В Docker `DATA_FILE` и `SESSION_FILE` - внутри примонтированного тома** (задаются в `docker-compose.yaml`).
+`.env`: обязательны `API_ID`, `API_HASH`, `BOT_TOKEN`, `ALLOWED_CHATS`. Опционально: `DATA_FILE` (`./data.json`), `SESSION_FILE` (`./bot.session`), `PRINTER_URL` + `PRINTER_AUTH`, `KEENETIC_URL`/`KEENETIC_LOGIN`/`KEENETIC_PASSWORD` (все три) + `KEENETIC_RCI_PATH` (дефолт `show/ip/hotspot`), `WEBAPP_URL` + `WEBAPP_HOST`/`WEBAPP_PORT`/`HOSTING_TZ_OFFSET_MINUTES`, `ANNOUNCE_CHANNEL_ID`, `GITHUB_REPO` (дефолт `endpoint-msk/robot`), `RESIDENTS_CHAT_ID`, `DEV_USER_IDS`, `FORWARD_FROM_CHAT`/`FORWARD_TO_CHAT` (оба), `LIVE_CHAT_ID` (гард), `MAIN_CHAT_ID` (цель выдачи админки и тега, бот - админ с правом добавлять админов и менять теги), `LIVE_CHANNEL_ID` (лайв-канал, не путать с `LIVE_CHAT_ID`), `AUTHENTIK_URL` + `AUTHENTIK_TOKEN` (+ `AUTHENTIK_GROUP`, дефолт `Residents`, `AUTHENTIK_EMAIL_DOMAIN`, дефолт `endpoint.moscow`), `OUTLINE_URL` + `OUTLINE_TOKEN` (API-ключ админа вики), `CAMERA_MOTION_URL` + `CAMERA_MOTION_AUTH` + `CAMERA_VIEW_URL` (оповещения о движении, нужен `RESIDENTS_CHAT_ID`). **В Docker `DATA_FILE` и `SESSION_FILE` - внутри примонтированного тома** (задаются в `docker-compose.yaml`).
 
 ## Что НЕ делать
 

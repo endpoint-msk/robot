@@ -112,6 +112,10 @@ export class Storage {
             presence: parsed.presence ?? {},
             presenceInvisible: parsed.presenceInvisible ?? {},
             printerSubscribers: parsed.printerSubscribers ?? {},
+            cameraMotion: {
+                cursor: typeof parsed.cameraMotion?.cursor === 'string' ? parsed.cameraMotion.cursor : null,
+                seriesEnd: typeof parsed.cameraMotion?.seriesEnd === 'string' ? parsed.cameraMotion.seriesEnd : null,
+            },
             macBindings: normalizeMacBindings(parsed.macBindings),
             resetDay: typeof parsed.resetDay === 'number' ? clampResetDay(parsed.resetDay) : 1,
             goalsMuted: parsed.goalsMuted ?? {},
