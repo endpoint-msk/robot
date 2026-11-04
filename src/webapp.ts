@@ -3157,7 +3157,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 return
             }
             try {
-                await ctx.lock.set(method === 'lock.open' ? 'unlocked' : 'locked')
+                await ctx.lock.set(method === 'lock.open' ? 'unlocked' : 'locked', user)
             } catch (err) {
                 console.warn('[lock] Home Assistant не выполнил команду:', err instanceof Error ? err.message : err)
                 sendError(res, 502, 'lock_failed', 'Замок не ответил. Попробуйте ещё раз.')

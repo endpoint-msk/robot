@@ -105,7 +105,7 @@ export class LockClient {
      * состояний; замок по радио доходит не сразу, и в ответе бывает `unlocking` или
      * ещё прежнее состояние - тогда ставим ожидаемое, следующий bootstrap поправит.
      */
-    async set(target: 'unlocked' | 'locked'): Promise<LockState> {
+    async set(target: 'unlocked' | 'locked', by: { name: string; username: string | null }): Promise<LockState> {
         const service = target === 'unlocked' ? 'unlock' : 'lock'
         const res = await this.request(`/api/services/lock/${service}`, { entity_id: this.config.entityId })
         let state: LockState = target
@@ -120,6 +120,23 @@ export class LockClient {
             // тело не JSON - сам вызов прошёл, этого достаточно
         }
         this.cached = { state, at: Date.now() }
+        void this.note(by, target === 'unlocked' ? 'открыл замок из миниаппа' : 'закрыл замок из миниаппа')
         return state
+    }
+
+    /**
+     * Запись в журнал Home Assistant рядом с замком: сам HA пишет действие на владельца
+     * токена (сервисную учётку), а кто нажал кнопку, знает только бот.
+     */
+    private async note(by: { name: string; username: string | null }, message: string): Promise<void> {
+        try {
+            await this.request('/api/services/logbook/log', {
+                name: by.username ? `${by.name} (@${by.username})` : by.name,
+                message,
+                entity_id: this.config.entityId,
+            })
+        } catch (err) {
+            console.warn('[lock] не удалось записать в журнал Home Assistant:', err instanceof Error ? err.message : err)
+        }
     }
 }
