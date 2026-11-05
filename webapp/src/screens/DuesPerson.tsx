@@ -1,24 +1,25 @@
 // Карточка резидента по взносам: просрочка, ставка и вся история по месяцам.
 // Читают все резиденты, меняют ставку и закрывают месяцы только dev.
 
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay } from '../dates'
 import { money } from '../format'
-import { icons } from '../icons'
 import { numberPrompt } from '../modals'
 import { useRemote } from '../remote'
-import { mixc, palette } from '../motion'
+import { markOwnTap, mixc, palette } from '../motion'
 import { setTopParams, useParams } from '../store'
 import { haptic } from '../telegram'
 import { ApiError, type DuesPerson as DuesPersonData, type DuesRateKind } from '../types'
-import { BackRow, ErrorState, Footnote, Header, RadioCheck, SectionTitle, Sep } from '../components/common'
+import { ActionButton, BackRow, ErrorState, Footnote, Header, RadioCheck, SectionTitle, Sep } from '../components/common'
+import { Collapse } from '../components/Collapse'
 import { avatarTone, userLabel } from '../components/people'
 import { Pager } from '../components/Pager'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
+import { SwipeRow, swipeIcons } from '../components/SwipeRow'
 import { SkBlock, SkRows } from '../components/skeleton'
-import { debtWord, type DuesRef } from './Dues'
+import { DebtBadge, type DuesRef } from './Dues'
 
 const RATE_ROWS: { kind: DuesRateKind; label: string }[] = [
   { kind: 'common', label: 'Общая' },
@@ -91,6 +92,9 @@ export function DuesPerson() {
 }
 
 function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) {
+  // Месяц, отмеченный своим касанием: капсула «внесён» встаёт сразу и держится, пока
+  // перечитанная карточка не скажет то же самое.
+  const [marked, setMarked] = useState<string | null>(null)
   const { data, error, loading, pending, reload } = useRemote<DuesPersonData | null>(async () => {
     try {
       return await api<DuesPersonData>('dues.person', { userId })
@@ -148,35 +152,55 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
     if (done) reload()
   }
 
-  const toggleMonth = async (periodKey: string, paid: boolean) => {
+  const confirm = async (periodKey: string) => {
     haptic.impact('light')
-    const done = await action(paid ? 'dues.clear' : 'dues.confirm', { periodKey, userId: data.user.userId }, { quiet: true })
+    markOwnTap()
+    setMarked(periodKey)
+    const done = await action('dues.confirm', { periodKey, userId: data.user.userId }, { quiet: true })
+    if (!done) setMarked(null)
+    else reload()
+  }
+  const clear = async (periodKey: string) => {
+    haptic.impact('light')
+    setMarked(null)
+    const done = await action('dues.clear', { periodKey, userId: data.user.userId }, { quiet: true })
     if (done) reload()
+  }
+  const isPaid = (m: { periodKey: string; status: string }): boolean => m.status === 'paid' || marked === m.periodKey
+
+  // Статус месяца: у дева неотмеченный месяц - кнопка, своё касание перетекает в «внесён».
+  const status = (m: (typeof data.months)[number], cta: boolean) => {
+    const paid = isPaid(m)
+    const tag =
+      m.status === 'claimed' && !paid ? (
+        <span className="ob-tag gray">ждёт сверки</span>
+      ) : (
+        <span className="ob-tag warn">не внесён</span>
+      )
+    return (
+      <span className={'dues-st' + (marked === m.periodKey ? ' own' : '')}>
+        {data.canEdit && cta ? (
+          <ActionButton className={'host-btn' + (paid ? ' gone' : '')} onClick={() => confirm(m.periodKey)}>
+            {m.status === 'claimed' ? 'Подтвердить' : 'Отметить'}
+          </ActionButton>
+        ) : (
+          <span className={paid ? 'gone' : undefined}>{tag}</span>
+        )}
+        <span className={'ob-tag green' + (paid ? '' : ' gone')}>внесён</span>
+      </span>
+    )
   }
 
   return frame(
     data.user.name,
     data.user.username ? `@${data.user.username}` : 'без ника',
     <>
-      {data.missed > 0 && data.rate.amount > 0 ? (
-        <div className={'status-card debt-card ' + (data.missed >= 2 ? 'crit' : 'warn')}>
-          <div className="status-card-head">
-            <div className="status-card-icon">
-              {data.missed >= 2 ? icons.stopSign(15, '#fff') : icons.warnTriangle(15, '#fff')}
-            </div>
-            <div className="status-card-title">{`${debtWord(data.missed)} без взноса`}</div>
-          </div>
-          <div className="status-card-note">
-            {data.missed >= 2
-              ? 'Два месяца это крайний срок неуплаты, дальше вопрос разбирается лично.'
-              : 'Прошлый месяц так и не закрыт.'}
-          </div>
-        </div>
-      ) : null}
-
       {current ? (
         <>
-          <SectionTitle>{current.label}</SectionTitle>
+          <div className="section-title dues-sec">
+            <span>{current.label}</span>
+            {data.rate.amount > 0 ? <DebtBadge missed={data.missed} /> : null}
+          </div>
           <div className="card dues-kv">
             <div className="row kv-block">
               <span className="kv-key">Ставка</span>
@@ -184,23 +208,23 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
             </div>
             <Sep inset="text" />
             <div className="row kv-block">
-              <span className="kv-key">Статус</span>
-              <span
-                className="kv-val"
-                style={{ color: current.status === 'paid' ? 'var(--green)' : current.status === 'claimed' ? 'var(--text-2)' : 'var(--orange)' }}
-              >
-                {current.status === 'paid' ? 'Внесён' : current.status === 'claimed' ? 'Ждёт сверки' : 'Не внесён'}
+              <span className="kv-key">
+                Статус
+                {current.status === 'paid' && current.at ? (
+                  <span className="kv-sub">
+                    {`${fmtIsoDay(current.at)}${current.by ? ` · подтвердил ${userLabel(current.by)}` : ''}`}
+                  </span>
+                ) : null}
               </span>
+              {status(current, true)}
             </div>
-            {data.debt > 0 ? (
-              <>
-                <Sep inset="text" />
-                <div className="row kv-block">
-                  <span className="kv-key">Долг с учётом прошлых</span>
-                  <span className="kv-val">{money(data.debt, data.currency)}</span>
-                </div>
-              </>
-            ) : null}
+            <Collapse open={data.debt > 0}>
+              <Sep inset="text" />
+              <div className="row kv-block">
+                <span className="kv-key">Долг с учётом прошлых</span>
+                <span className="kv-val">{money(data.debt, data.currency)}</span>
+              </div>
+            </Collapse>
           </div>
         </>
       ) : null}
@@ -237,8 +261,9 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
       <SectionTitle>История</SectionTitle>
       <div className="card">
         {data.months.map((m, i) => {
-          const inner = (
-            <>
+          const paid = isPaid(m)
+          const row = (
+            <div className="row">
               <span className="row-label">
                 {m.label}
                 {m.at ? (
@@ -248,40 +273,32 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
                 ) : null}
               </span>
               <div className="row-right">
-                {m.status === 'paid' ? (
+                {/* Отмеченный своим касанием остаётся капсулой, в которую перетёк; сумма у прежних. */}
+                {paid && marked !== m.periodKey ? (
                   <span className="dues-amount paid">{money(m.amount, data.currency)}</span>
-                ) : m.status === 'claimed' ? (
-                  <span className="dues-amount muted">ждёт сверки</span>
                 ) : (
-                  <span className="debt-badge warn">
-                    {icons.warnTriangle(12, '#ff9500')}
-                    не внесён
-                  </span>
+                  status(m, true)
                 )}
               </div>
-            </>
+            </div>
           )
           return (
             <Fragment key={m.periodKey}>
               {i > 0 ? <Sep inset="text" /> : null}
-              {/* Строка кликабельна только у dev — остальным это справка, и кнопка
-                  обещала бы действие, которого нет. */}
-              {data.canEdit ? (
-                <button
-                  type="button"
-                  className="row tappable"
-                  onClick={() => void toggleMonth(m.periodKey, m.status === 'paid')}
+              {/* Снять отметку можно только свайпом: случайный тап молча её снимал. */}
+              {data.canEdit && m.status === 'paid' ? (
+                <SwipeRow
+                  actions={[{ key: 'undo', label: 'Снять отметку', icon: swipeIcons.undo(), tone: 'red', onSelect: () => void clear(m.periodKey) }]}
                 >
-                  {inner}
-                </button>
+                  {row}
+                </SwipeRow>
               ) : (
-                <div className="row">{inner}</div>
+                row
               )}
             </Fragment>
           )
         })}
       </div>
-      {data.canEdit ? <Footnote>Тап по месяцу закрывает его задним числом: деньги нередко доносят позже.</Footnote> : null}
     </>,
   )
 }

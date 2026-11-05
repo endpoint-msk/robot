@@ -338,6 +338,7 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
     let idle: ReturnType<typeof setTimeout> | undefined
 
     const onWheel = (e: WheelEvent): void => {
+      if ((e.target as HTMLElement).closest('textarea, input')) return
       // Вертикальный жест — обычный скролл страницы, не трогаем.
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
       // Строка закрыта, а жест ведёт вправо — открывать нечего, отдаём событие дальше.
@@ -394,6 +395,8 @@ export function SwipeRow({ actions, children }: { actions: SwipeAction[]; childr
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     pointerTypeRef.current = e.pointerType
     if (e.button !== 0) return
+    // Палец в поле (заметка в строке) ставит курсор и выделяет текст, а не тянет строку.
+    if ((e.target as HTMLElement).closest('textarea, input')) return
     draggedRef.current = false
     dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, base: offsetRef.current, axis: 'none' }
     vt.start(-e.clientX, e.timeStamp)

@@ -33,9 +33,7 @@ import { MyVisits } from './screens/MyVisits'
 import { Peek } from './screens/Peek'
 import { PeekDay } from './screens/PeekDay'
 import { Visit } from './screens/Visit'
-import { GuestNote } from './screens/GuestNote'
 import { NewRequest } from './screens/NewRequest'
-import { EditRequest } from './screens/EditRequest'
 import { Event } from './screens/Event'
 import { EventApply } from './screens/EventApply'
 import { EventApps } from './screens/EventApps'
@@ -73,9 +71,7 @@ const SCREENS: Record<ScreenName, ComponentType> = {
   peek: Peek,
   peekDay: PeekDay,
   visit: Visit,
-  guestNote: GuestNote,
   newRequest: NewRequest,
-  editRequest: EditRequest,
   event: Event,
   eventApply: EventApply,
   eventApps: EventApps,

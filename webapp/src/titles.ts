@@ -41,10 +41,6 @@ export function screenTitle(entry: NavEntry, data: Bootstrap | null): string {
       return 'Позвать в спейс'
     case 'newRequest':
       return 'Хочу прийти'
-    case 'editRequest':
-      return 'Изменить заявку'
-    case 'guestNote':
-      return 'Заметка'
     case 'walkIn':
       return 'Без заявки'
     case 'eventApps':

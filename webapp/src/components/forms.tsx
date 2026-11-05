@@ -5,11 +5,10 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
-import { clamp, E, growField, spring } from '../motion'
+import { clamp, growField, spring } from '../motion'
 import { getState } from '../store'
 import { sec } from '../theme'
 import type { Attendee, Day, ReminderChoice } from '../types'
-import { Collapse } from './Collapse'
 import { Sep, SwitchRow } from './common'
 import { AvatarStack, userLabel } from './people'
 
@@ -397,9 +396,6 @@ export const REMINDER_LABELS: Record<ReminderChoice, string> = {
 /** Порядок в карточке — от ближнего срока к дальнему, как в макете. */
 export const REMINDER_ORDER: ReminderChoice[] = ['m30', 'h1', 'h2', 'morning', 'evening']
 
-/** Что предлагаем при включении: за два часа, а если не успевает — ближайший подходящий. */
-const REMINDER_PREFERENCE: ReminderChoice[] = ['h2', 'h1', 'm30', 'morning', 'evening']
-
 const MORNING_TIME = '09:00'
 const EVENING_TIME = '20:00'
 
@@ -458,91 +454,6 @@ export function reminderWhen(dateKey: string, time: string, choice: ReminderChoi
   if (at.dateKey === d.todayKey) return `сегодня в\u00a0${at.time}`
   if (at.dateKey === addDays(d.todayKey, 1)) return `завтра в\u00a0${at.time}`
   return `в\u00a0${fmtShortDate(at.dateKey)} в\u00a0${at.time}`
-}
-
-/**
- * Карточка «Напомнить о визите»: свитч + чипы сроков + подпись реальным временем.
- * Общая для формы заявки, её правки и экрана визита — в последнем `sentAt` уже
- * проставлен, и трогать настройку поздно.
- */
-export function RemindCard({
-  dateKey,
-  time,
-  choice,
-  onChange,
-  sentAt,
-}: {
-  dateKey: string
-  time: string
-  choice: ReminderChoice | null
-  onChange: (choice: ReminderChoice | null) => void
-  sentAt?: string | null
-}) {
-  const sent = Boolean(sentAt)
-  const available = REMINDER_ORDER.filter((c) => reminderAvailable(dateKey, time, c))
-  // Выбранный срок мог перестать подходить (гость сдвинул слот) — тогда карточка
-  // выключена, а на сервер уедет null (см. reminderFor).
-  const active = !sent && choice !== null && available.includes(choice)
-  const locked = sent || available.length === 0
-
-  const toggle = (): void => {
-    if (locked) return
-    onChange(active ? null : REMINDER_PREFERENCE.find((c) => available.includes(c)) ?? null)
-  }
-
-  const caption = sent
-    ? 'Напоминание уже отправлено.'
-    : available.length === 0
-      ? 'До визита осталось слишком мало времени — напоминание не придёт.'
-      : active
-        ? `Напомним ${reminderWhen(dateKey, time, choice!)}.`
-        : ''
-
-  return (
-    <div>
-      <div className={'card' + (locked ? ' remind-locked' : '')}>
-        {/* Когда напоминание включено, срок виден на чипах, а момент — в подписи
-            под карточкой: третий раз повторять его в подзаголовке незачем. */}
-        <SwitchRow
-          on={active}
-          onToggle={toggle}
-          disabled={locked}
-          label={
-            <>
-              Напомнить о визите
-              <Collapse open={!active && !sent} as="span" ms={280} ease={E.crisp}>
-                <span className="row-sublabel">Бот напишет в личку перед визитом</span>
-              </Collapse>
-            </>
-          }
-        />
-        {/* Чипы и подпись раскрываются вместе с тумблером, а не встают за кадр: строки
-            визита ниже уезжали на всю их высоту одним рывком. */}
-        <Collapse open={active} ms={280} ease={E.crisp}>
-          <Sep inset="text" />
-          <div className="remind-chips">
-            {REMINDER_ORDER.map((c) => {
-              const off = !available.includes(c)
-              return (
-                <button
-                  key={c}
-                  className={'remind-chip' + (c === choice ? ' selected' : '') + (off ? ' off' : '')}
-                  data-label={REMINDER_LABELS[c]}
-                  disabled={off}
-                  onClick={() => onChange(c)}
-                >
-                  {REMINDER_LABELS[c]}
-                </button>
-              )
-            })}
-          </div>
-        </Collapse>
-      </div>
-      <Collapse open={Boolean(caption)} ms={280} ease={E.crisp}>
-        <div className="remind-caption">{caption}</div>
-      </Collapse>
-    </div>
-  )
 }
 
 /** Ряд «Прийти анонимно» — общий для новой заявки и правки. */

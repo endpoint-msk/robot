@@ -288,7 +288,7 @@ body {
 .es-title, .es-text, .be-title, .be-text, .modal-text, .modal-num-hint, .bar-hint, .build-sign {
     text-wrap: balance;
 }
-.ob-lead, .rule-text, .rules-wiki, .footnote, .hint-text, .remind-caption,
+.ob-lead, .rule-text, .rules-wiki, .footnote, .hint-text,
 .status-card-note, .my-dues-sub, .stats-note, .dues-note, .dpg-topic-t, .lb-sub {
     text-wrap: pretty;
 }
@@ -1066,6 +1066,18 @@ mark.found { background: none; color: var(--blue); }
     cursor: pointer;
 }
 .note-flag:active { opacity: 0.5; }
+.note-flag.on svg [style] { stroke: var(--blue) !important; }
+/* Заметка о госте на месте (GuestNoteText): под целью визита в строке дня и строкой в
+   профиле гостя. Текст и подпись, касание ставит курсор в текст. */
+.gnote { display: block; width: 100%; min-width: 0; padding: 4px 0 2px; border: none; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.gnote-t { display: block; font-size: 15px; line-height: 1.35; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gnote-in { font-size: 15px; line-height: 1.35; }
+.gnote-t.gnote-empty { color: var(--blue); }
+.gnote-by { display: block; margin-top: 2px; font-size: 13px; color: var(--text-2); }
+.note-row .gnote { flex: 1; padding: 0; }
+/* Как у цели визита: длинная заметка не раздвигает строку и не сжимает пилл хоста. */
+.req-main > .collapse { contain: inline-size; }
+.note-row { min-height: 52px; }
 .req-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 /* Подпись из ника и времени: многоточие достаётся нику, время видно всегда
    (общий ellipsis на всю строку съедал время у длинных ников). */
@@ -1284,6 +1296,15 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
    Смена чужим ивентом встаёт без морфа. */
 .ev-new-labels { justify-items: start; }
 .hb-labels.still .hb-ch { transition: none; }
+/* Замок на главной (Overview.tsx): открытый поднимает дужку и красит плитку значка. Движение
+   только у своего касания (.own), чужое открытие встаёт сразу. */
+.lock-ic { background: var(--green); }
+.lock-ic.open { background: var(--orange); }
+.lock-ic .lk-shackle { transform-box: fill-box; transform-origin: 100% 100%; }
+.lock-ic.open .lk-shackle { transform: translateY(-1.6px) rotate(-28deg); }
+.lock-row.own .lock-ic, .lock-row.own .ob-tag { transition: background-color 0.22s ease-out, color 0.22s ease-out; }
+.lock-row.own .lk-shackle { transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.lock-row .ob-tag .hb-labels { justify-items: center; }
 button.invite-btn {
     transition: background-color 0.28s ease-out, color 0.28s ease-out, padding 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
         font-size 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1973,6 +1994,20 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .kv-block { padding: 11px var(--row-x); }
 .kv-block .kv-cap { font-size: 13px; color: rgba(var(--sec), 0.5); margin-bottom: 3px; }
 .kv-block .kv-text { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+.kv-tap { display: block; width: 100%; border: none; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.kv-block .kv-text.kv-empty { color: var(--blue); }
+/* Поле на месте текста (InPlaceField): тот же кегль, без рамки, растёт за набором. */
+.kv-in, .gnote-in {
+    display: block; width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; color: var(--text);
+    font-family: inherit; resize: none; outline: none; overflow: hidden;
+    -webkit-user-select: text; user-select: text; caret-color: var(--blue);
+}
+.kv-in::placeholder, .gnote-in::placeholder { color: rgba(var(--sec), 0.4); opacity: 1; }
+/* Визит гостя: «Когда» раскрывает дни и колесо под собой, капсула отправляет новый слот. */
+.visit-when { padding: 2px var(--row-x) 14px; }
+.visit-when .day-chip { background-color: var(--bg); }
+.visit-when-send { display: flex; justify-content: center; padding-top: 10px; }
+.visit-when-send .host-btn { margin: 0; }
 
 .footnote {
     display: flex;
@@ -3673,17 +3708,16 @@ button.evv-when:active .evv-when-text { opacity: 0.6; }
    дробной позиции он перекрывал волосяную линию над следующей строкой. */
 .dues-list .sep { position: relative; z-index: 1; }
 
-/* Плашка просрочки в карточке человека. В тёмной теме подложка своя (у оранжевой это
-   --warn-bg): десятая доля тона на чёрном фоне давала почти чёрную плашку. */
-.debt-card.warn { background: var(--warn-bg); }
-.debt-card.crit { background: rgba(255, 59, 48, 0.1); }
-:root[data-theme="dark"] .debt-card.crit { background: #4a1c19; }
-.debt-card.warn .status-card-icon { background: var(--orange); }
-.debt-card.crit .status-card-icon { background: var(--red); }
-.debt-card.warn .status-card-title { color: var(--orange); }
-.debt-card.crit .status-card-title { color: var(--red); }
-/* Пояснение вторым планом, как у остальных карточек статуса: заголовок уже сказал главное. */
-.debt-card .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+/* Карточка человека во взносах (DuesPerson.tsx): просрочка капсулой у заголовка месяца,
+   плашки нет. Статус месяца у дева - «Отметить», своё касание перетекает в «внесён» на
+   том же месте, как «Захостить». */
+.dues-sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dues-sec .debt-badge { text-transform: none; letter-spacing: 0; }
+.dues-st { display: grid; justify-items: end; align-items: center; margin-left: auto; }
+.dues-st > * { grid-area: 1 / 1; }
+.dues-st .host-btn { margin: 0; }
+.dues-st.own > * { transition: opacity 0.2s ease-out, filter 0.24s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.dues-st .gone { opacity: 0; filter: blur(4px); transform: scale(0.88); pointer-events: none; }
 .dues-kv .kv-val { font-variant-numeric: tabular-nums; }
 
 /* Плашка своего взноса: единственное место, где обычный резидент действует сам. */
@@ -3966,40 +4000,6 @@ button.evv-when:active .evv-when-text { opacity: 0.6; }
 }
 .hint-icon { flex-shrink: 0; display: flex; align-items: center; }
 .hint-text { font-size: 13px; line-height: 1.45; color: var(--text-2); }
-
-/* --- Напоминание о визите --- */
-
-/* Настройка недоступна: срок уже не успевает либо напоминание отправлено. */
-.card.remind-locked { opacity: 0.5; }
-
-.remind-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px var(--row-x) 13px; }
-.remind-chip {
-    min-height: 38px;
-    padding: 0 14px;
-    border-radius: 999px;
-    border: none;
-    background: var(--chip);
-    font-family: inherit;
-    font-size: 14px;
-    color: var(--text);
-    cursor: pointer;
-}
-.remind-chip.selected { background: var(--blue); color: #fff; font-weight: 700; }
-/* Невидимая жирная копия подписи держит ширину чипа: без неё выбранный шире прочих, и ряд
-   перестраивается под пальцем («утром» перескакивает между строками). */
-.remind-chip::after {
-    content: attr(data-label);
-    display: block;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-    font-weight: 700;
-}
-/* Неподходящий срок не прячем, а зачёркиваем: иначе набор чипов молча меняется
-   при каждом сдвиге времени, и непонятно, куда делся вариант. */
-.remind-chip.off { color: var(--text-3); text-decoration: line-through; cursor: default; }
-
-.remind-caption { font-size: 13px; line-height: 1.45; color: var(--text-2); margin: 8px var(--row-x) 0; }
 
 /* --- Журнал присутствия: статистика --- */
 

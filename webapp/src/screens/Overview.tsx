@@ -10,6 +10,7 @@ import { haptic } from '../telegram'
 import { resolvedTheme } from '../theme'
 import { ActionButton, Header, Sep } from '../components/common'
 import { DayRow, TodayCard } from '../components/DayRow'
+import { MorphWord } from '../components/RequestRow'
 import { LaterEvents } from '../components/EventRow'
 import { Screen } from '../components/Screen'
 
@@ -287,34 +288,83 @@ const LOCK_CHIP: Record<LockState, { text: string; tone: 'green' | 'warn' | 'gra
   unknown: { text: 'нет связи', tone: 'gray' },
 }
 
+/** Сколько держится движение после своего касания: промежуточные «открывается» и
+ * «закрывается» приходят опросом Home Assistant и бывают позже окна ownTapRecent. */
+const LOCK_OWN_MS = 15_000
+
+/**
+ * Слово капсулы перетекает буквами, как «Захостить»: прежнее тает, новое проступает на
+ * том же месте. Новое слово сначала встаёт погашенным слоем и включается следующим кадром,
+ * иначе его буквы появились бы без перехода. Без своего касания смена встаёт сразу.
+ */
+function LockWord({ text, play }: { text: string; play: boolean }) {
+  const [layers, setLayers] = useState<{ a: string; b: string; on: 'a' | 'b' }>({ a: text, b: '', on: 'a' })
+  const shown = layers.on === 'a' ? layers.a : layers.b
+  useLayoutEffect(() => {
+    if (text === shown) return
+    if (!play || reducedMotion()) {
+      setLayers({ a: text, b: '', on: 'a' })
+      return
+    }
+    const next = layers.on === 'a' ? { ...layers, b: text } : { ...layers, a: text }
+    setLayers(next)
+    const raf = requestAnimationFrame(() => setLayers({ ...next, on: next.on === 'a' ? 'b' : 'a' }))
+    // Погашенный слой держал бы ширину капсулы по прежнему слову: «открывается» → «открыт».
+    const timer = window.setTimeout(() => setLayers(next.on === 'a' ? { a: '', b: text, on: 'b' } : { a: text, b: '', on: 'a' }), 420)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+    }
+    // Смена слова задаётся текстом; слои меняет сам эффект.
+  }, [text])
+  return (
+    <span className={'hb-labels' + (play ? '' : ' still')}>
+      <MorphWord text={layers.a} on={layers.on === 'a'} />
+      <MorphWord text={layers.b} on={layers.on === 'b'} />
+    </span>
+  )
+}
+
 /**
  * Замок двери (Home Assistant). Открывает не вся строка, а кнопка: случайный тап по
- * главной не должен открывать спейс. После открытия - напоминание закрыть.
+ * главной не должен открывать спейс. После открытия - напоминание закрыть. Открытый
+ * замок поднимает дужку; своё касание ведёт дужку, капсулу и кнопку движением, чужое
+ * открытие встаёт без него.
  */
 function LockRow() {
   const { data } = useStore()
   const lock = data!.lock
+  const [own, setOwn] = useState(false)
+  useEffect(() => {
+    if (!own) return
+    const timer = window.setTimeout(() => setOwn(false), LOCK_OWN_MS)
+    return () => window.clearTimeout(timer)
+  }, [own])
   if (!lock) return null
   const open = lockIsOpen(lock.state)
   const chip = LOCK_CHIP[lock.state]
   return (
     <>
-      <div className="row">
-        <div className="row-icon" style={{ background: 'var(--green)' }}>
-          {icons.lockFilled(17, '#fff')}
-        </div>
+      <div className={'row lock-row' + (own ? ' own' : '')}>
+        <div className={'row-icon lock-ic' + (open ? ' open' : '')}>{icons.lockFilled(17, '#fff')}</div>
         <span className="row-label">Замок</span>
         <div className="row-right">
-          <span className={'ob-tag ' + chip.tone}>{chip.text}</span>
+          <span className={'ob-tag ' + chip.tone}>
+            <LockWord text={chip.text} play={own} />
+          </span>
           <ActionButton
             className="host-btn"
             onClick={async () => {
               haptic.impact('light')
+              setOwn(true)
               const res = await action(open ? 'lock.close' : 'lock.open', {}, { quiet: true })
               if (res && !open) showAlert('Замок открыт. Не забудьте закрыть его за собой.', 'Понятно')
             }}
           >
-            {open ? 'Закрыть' : 'Открыть'}
+            <span className={'hb-labels' + (own ? '' : ' still')}>
+              <MorphWord text="Открыть" on={!open} />
+              <MorphWord text="Закрыть" on={open} />
+            </span>
           </ActionButton>
         </div>
       </div>

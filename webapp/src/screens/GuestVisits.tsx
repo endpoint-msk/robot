@@ -12,12 +12,12 @@ import { fmtDayMonth, fmtShortDate, plural, yearOf } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
-import { push, useParams, useStore } from '../store'
+import { useParams, useStore } from '../store'
 import { hasProfile, openProfile } from '../telegram'
 import { sec } from '../theme'
 import type { GuestProfile, GuestRequestsResponse, HostingRequest, User, VisitOutcome, WalkIn } from '../types'
 import { EmptyState, ErrorState, BackRow, Sep, SectionTitle } from '../components/common'
-import { XText } from '../components/Flip'
+import { GuestNoteText, startNoteEdit } from '../components/GuestNoteText'
 import { Avatar, userLabel } from '../components/people'
 import { ProfileHead, type ProfileAction } from '../components/ProfileHead'
 import { Screen } from '../components/Screen'
@@ -209,7 +209,7 @@ export function GuestVisits() {
           key: 'note',
           label: 'Заметка',
           icon: icons.note(22, 'currentColor'),
-          onClick: () => push('guestNote', { guest: user, backLabel: 'Гость' }),
+          onClick: () => startNoteEdit('guest-' + user.userId),
         },
         ...(hasProfile(user)
           ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(user) }]
@@ -233,21 +233,15 @@ export function GuestVisits() {
       {/* Заметка — общая память резидентов о человеке; она известна сразу, из bootstrap. */}
       {user ? (
         <>
+          {/* Заметка пишется прямо здесь: касание текста или кнопки «Заметка» в шапке
+              ставит в неё курсор. */}
           <div className="card" style={{ marginBottom: 18 }}>
-            <button
-              type="button"
-              className="row tappable"
-              onClick={() => push('guestNote', { guest: user, backLabel: 'Гость' })}
-            >
+            <div className="row note-row">
               <div className="row-icon" style={{ background: 'rgba(var(--sec), 0.12)' }}>
                 {icons.note(17, sec(0.6))}
               </div>
-              {/* Заметку правили своим тапом: на «назад» текст перетекает в новый. */}
-              <span className="row-label">
-                <XText text={note ? note.text : 'Заметки пока нет'} />
-              </span>
-              <div className="row-right">{icons.chevron()}</div>
-            </button>
+              <GuestNoteText place={'guest-' + user.userId} guest={user} note={note} empty="Добавить заметку" />
+            </div>
           </div>
         </>
       ) : null}

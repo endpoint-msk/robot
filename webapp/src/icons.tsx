@@ -71,7 +71,8 @@ export const icons = {
   /** Заливной замок для плашки «день закрыт»: контурный на мелком размере мылится. */
   lockFilled: (size = 17, color = '#fff'): ReactElement => (
     <svg width={size} height={size} viewBox="0 0 20 20">
-      <path d="M6.7 8.8V6.7a3.3 3.3 0 0 1 6.6 0v2.1" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
+      {/* Дужка отдельным путём: у строки «Замок» на главной открытый замок её поднимает. */}
+      <path className="lk-shackle" d="M6.7 8.8V6.7a3.3 3.3 0 0 1 6.6 0v2.1" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" />
       <rect x="4.3" y="8.6" width="11.4" height="8.2" rx="2.6" fill={color} />
     </svg>
   ),

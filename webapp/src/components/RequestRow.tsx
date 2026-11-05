@@ -16,6 +16,7 @@ import { Avatar, Profile, userLabel } from './people'
 import { CapBar } from './CapBar'
 import { ActionButton, Sep } from './common'
 import { Collapse } from './Collapse'
+import { GuestNoteText, startNoteEdit, useNoteEdit } from './GuestNoteText'
 import { XText } from './Flip'
 import { markOwnTap, ownTapRecent, reducedMotion } from '../motion'
 import { SwipeRow, swipeIcons, type SwipeAction } from './SwipeRow'
@@ -322,8 +323,13 @@ export function RequestRow({
   const p = r.proposal
   // Заметки приходят только резидентам (см. bootstrap) — гостю тут всегда пусто.
   const guestNote = (data.notes || []).find((n) => n.userId === r.guest.userId) || null
-  // Строка заявки живёт только на экране дня (живого или архивного) — туда и возвращаемся.
-  const openNote = (): void => push('guestNote', { guest: r.guest, backLabel: 'День' })
+  // Заметка читается под целью визита по касанию значка и пишется там же: свайп «Заметка»
+  // раскрывает её с курсором, даже если её ещё нет.
+  const [noteOpen, setNoteOpen] = useState(false)
+  const notePlace = 'req-' + r.id
+  const noteEdit = useNoteEdit(notePlace, r.guest.userId)
+  const noteShown = noteEdit.editing || (noteOpen && Boolean(noteEdit.pending ?? guestNote?.text))
+  const openNote = (): void => startNoteEdit(notePlace, () => setNoteOpen(true))
   // «Впервые» в шапке листа по тому же счёту, что и значок у имени гостя ниже.
   const firstVisit = me.isResident && !archive && (data.guestStats?.[String(r.guest.userId)]?.past ?? 0) === 0
   const subject = sheetSubject(r, hostedByMe ? 'хостите вы' : firstVisit ? 'впервые' : '')
@@ -642,11 +648,13 @@ export function RequestRow({
           {visitStats}
           {guestNote ? (
             <button
-              className="note-flag"
+              className={'note-flag' + (noteShown ? ' on' : '')}
               aria-label="Заметка о госте"
+              aria-expanded={noteShown}
               onClick={(e) => {
                 e.stopPropagation()
-                openNote()
+                markOwnTap()
+                setNoteOpen(!noteShown)
               }}
             >
               {icons.note(13, sec(0.45))}
@@ -663,6 +671,11 @@ export function RequestRow({
           </span>
         </div>
         {r.purpose ? <PurposeBlock text={r.purpose} /> : null}
+        {me.isResident ? (
+          <Collapse open={noteShown} ms={320}>
+            <GuestNoteText place={notePlace} guest={r.guest} note={guestNote} />
+          </Collapse>
+        ) : null}
       </div>
       {right}
     </div>

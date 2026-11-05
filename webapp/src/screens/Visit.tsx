@@ -4,22 +4,26 @@ import { fmtDayMonth, fmtShortDate, visitDayWord } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
-import { reschedulePrompt } from '../modals'
+import { showAlert } from '../modals'
 import { getDataAt, pop, push, setData, setTopParams, useParams, useStore } from '../store'
 import { bringBack, dustRow, offerUndo, removeRow, screenSettled, topScreen, type Undoable } from '../undo'
 import { sec } from '../theme'
 import { useIcsLink } from '../links'
 import { haptic } from '../telegram'
-import { ActionButton, BackRow, Header, Sep, SectionTitle } from '../components/common'
+import type { HostingRequest } from '../types'
+import { ActionButton, BackRow, Header, Sep, SectionTitle, SwitchRow } from '../components/common'
 import { Collapse } from '../components/Collapse'
 import { XText } from '../components/Flip'
 import { markOwnTap } from '../motion'
-import { RemindCard } from '../components/forms'
+import { DayChips, isPastForToday, reminderFor } from '../components/forms'
+import { focusInPlace, InPlaceField } from '../components/InPlaceField'
 import { Avatar, Profile } from '../components/people'
 import { Screen } from '../components/Screen'
+import { TimeWheels, Unfold } from '../components/TimeField'
 import { usePullDismiss } from '../components/usePullDismiss'
 import { heroRunning } from '../hero'
 import { UnderContext } from '../screenContext'
+import { useRemind } from './NewRequest'
 import { ADDRESS, ENTRANCE } from './Route'
 
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
@@ -110,6 +114,75 @@ function ArrivalButton({ id, arrivedAt }: { id: string; arrivedAt?: string | nul
   )
 }
 
+/** Полный набор полей `edit`: сервер переписывает заявку целиком, а не по одному полю. */
+const editBody = (r: HostingRequest, patch: { dateKey?: string; time?: string; purpose?: string; anon?: boolean }) => {
+  const dateKey = patch.dateKey ?? r.dateKey
+  const time = patch.time ?? r.time
+  return {
+    id: r.id,
+    dateKey,
+    time,
+    purpose: patch.purpose ?? r.purpose,
+    anon: patch.anon ?? r.anon,
+    remind: reminderFor(dateKey, time, r.remind?.choice ?? null),
+  }
+}
+
+/**
+ * Цель визита правится на месте, как тема дня: касание ставит курсор в текст, «Готово»
+ * сохраняет, уход из поля отменяет. Набранное держится до ответа сервера.
+ */
+function VisitPurpose({ r, editable }: { r: HostingRequest; editable: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [pending, setPending] = useState<string | null>(null)
+  const field = useRef<HTMLTextAreaElement | null>(null)
+  const shown = pending ?? r.purpose
+  if (!editable && !shown) return null
+  const start = (): void => focusInPlace(() => setEditing(true), () => field.current)
+  const done = async (text: string): Promise<void> => {
+    setEditing(false)
+    if (text === r.purpose) return
+    markOwnTap()
+    setPending(text)
+    await action('edit', editBody(r, { purpose: text }), { quiet: true })
+    setPending(null)
+  }
+  return (
+    <>
+      <Sep inset="text" />
+      {editing ? (
+        <div className="kv-block">
+          <div className="kv-cap">Цель визита</div>
+          <InPlaceField
+            initial={shown}
+            maxLength={300}
+            placeholder="Зачем придёте"
+            label="Цель визита"
+            className="kv-text kv-in"
+            fieldRef={(el) => {
+              field.current = el
+            }}
+            onDone={(v) => void done(v)}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      ) : editable ? (
+        <button type="button" className="kv-block kv-tap" onClick={start}>
+          <div className="kv-cap">Цель визита</div>
+          <div className={'kv-text' + (shown ? '' : ' kv-empty')}>{shown || 'Добавить'}</div>
+        </button>
+      ) : (
+        <div className="kv-block">
+          <div className="kv-cap">Цель визита</div>
+          <div className="kv-text">{linkedText(shown)}</div>
+        </div>
+      )}
+    </>
+  )
+}
+
+type Slot = { day: string; time: string }
+
 export function Visit() {
   const params = useParams()
   const { data, stack } = useStore()
@@ -141,10 +214,62 @@ export function Visit() {
     const timer = window.setTimeout(() => setTopParams({ ...params, fresh: undefined }), 1200)
     return () => window.clearTimeout(timer)
   }, [fresh])
+  // Строка «Когда» раскрывает дни и колесо прямо в визите. Черновик слота живёт здесь:
+  // шапка и строка показывают его, пока он отличается от заявки, а уходит он капсулой.
+  const [whenOpen, setWhenOpen] = useState(false)
+  const [draft, setDraft] = useState<Slot | null>(null)
+  // Колесо берёт значение только при монтировании: каждое раскрытие - новое колесо.
+  const [wheelKey, setWheelKey] = useState(0)
+  const remindUi = useRemind(
+    r?.dateKey ?? data!.todayKey,
+    r?.time ?? '12:00',
+    r?.remind?.choice ?? null,
+    (choice) => {
+      if (!r) return
+      haptic.tick()
+      void action('remind.set', { id: r.id, choice: choice ?? 'off' }, { quiet: true })
+    },
+    Boolean(r?.remind?.sentAt),
+  )
   if (!r) return <Screen />
 
   const approved = r.status === 'approved' && !!r.approvedBy
   const p = r.proposal
+  // Ждущая правится (`edit`), подтверждённая и любая с висящим переносом только просит:
+  // `edit` снял бы переговоры и написал бы их автору.
+  const proposing = approved || Boolean(p)
+  // От чего считается правка: своё висящее предложение, иначе слот заявки.
+  const base: Slot = p && p.by === 'guest' ? { day: p.dateKey, time: p.time } : { day: r.dateKey, time: r.time }
+  const changed =
+    whenOpen &&
+    draft !== null &&
+    (draft.day !== base.day || draft.time !== base.time) &&
+    !(proposing && draft.day === r.dateKey && draft.time === r.time)
+  const shown: Slot = changed ? draft! : { day: r.dateKey, time: r.time }
+  const openWhen = (slot?: Slot): void => {
+    markOwnTap()
+    setDraft(slot ?? base)
+    setWheelKey((k) => k + 1)
+    setWhenOpen(true)
+  }
+  const sendSlot = async (): Promise<void> => {
+    if (!draft) return
+    if (isPastForToday(draft.day, draft.time)) {
+      showAlert('Это время уже прошло, выберите время позже текущего.')
+      return
+    }
+    haptic.impact('medium')
+    markOwnTap()
+    const done = proposing
+      ? await action('propose', { id: r.id, dateKey: draft.day, time: draft.time }, { quiet: true })
+      : await action('edit', editBody(r, { dateKey: draft.day, time: draft.time }), { quiet: true })
+    if (done) {
+      haptic.notify('success')
+      setWhenOpen(false)
+    }
+  }
+  const slotText = (s: Slot): string => nb(`${fmtShortDate(s.day)} · ${s.time}`)
+  const sendLabel = !proposing ? `Перенести на ${slotText(draft ?? base)}` : `Попросить ${slotText(draft ?? base)}`
   // Слот с днём, если предложенный день отличается от текущего дня заявки; иначе только время.
   const slotLabel = (dateKey: string, time: string): string =>
     p && p.dateKey !== r.dateKey ? `${fmtShortDate(dateKey)} · ${time}` : time
@@ -199,20 +324,7 @@ export function Visit() {
           >
             Принять
           </ActionButton>
-          <button
-            className="chip-btn"
-            onClick={async () => {
-              const slot = await reschedulePrompt({
-                text: 'Предложить свой день или время визита?',
-                initialDay: p.dateKey,
-                initialTime: p.time,
-              })
-              if (!slot) return
-              markOwnTap()
-              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
-              if (done) haptic.notify('success')
-            }}
-          >
+          <button className="chip-btn" onClick={() => openWhen({ day: p.dateKey, time: p.time })}>
             Своё
           </button>
         </div>
@@ -242,21 +354,7 @@ export function Visit() {
         </div>
         <div className="status-card-note">Вы предложили этот вариант. Резидент примет его или предложит другой.</div>
         <div className="propose-actions">
-          <button
-            className="chip-btn"
-            onClick={async () => {
-              const slot = await reschedulePrompt({
-                text: 'Изменить предложенный вариант?',
-                initialDay: p.dateKey,
-                initialTime: p.time,
-                confirmLabel: 'Обновить',
-              })
-              if (!slot) return
-              markOwnTap()
-              const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
-              if (done) haptic.notify('success')
-            }}
-          >
+          <button className="chip-btn" onClick={() => openWhen()}>
             Изменить
           </button>
           <ActionButton
@@ -306,20 +404,6 @@ export function Visit() {
   const arrivalOpen =
     approved && !isPast && r.dateKey === data!.todayKey && nowMin >= slotMin - 30 && nowMin <= slotMin + 60
 
-  const askReschedule = async (): Promise<void> => {
-    const slot = await reschedulePrompt({
-      text: 'Попросить перенести визит на другой день или время?',
-      initialDay: r.dateKey,
-      initialTime: r.time,
-      confirmLabel: 'Попросить',
-    })
-    // Оставили слот как есть: переносить нечего (сервер тоже это гасит).
-    if (!slot || (slot.dateKey === r.dateKey && slot.time === r.time)) return
-    markOwnTap()
-    const done = await action('propose', { id: r.id, dateKey: slot.dateKey, time: slot.time }, { quiet: true })
-    if (done) haptic.notify('success')
-  }
-
   // Без вопроса: отмена обратима. Экран сразу уходит к визитам, и строка визита рассыпается
   // уже там, а внизу пять секунд висит «Вернуть». Хосту сервер пишет по концу отсчёта.
   const cancelVisit = async (): Promise<void> => {
@@ -343,11 +427,11 @@ export function Visit() {
       <div className={rise ? 'visit-rise' : undefined} ref={rootRef}>
       <Header
         title={
-          <XText text={visitDayWord(r.dateKey, data!.todayKey)} />
+          <XText text={visitDayWord(shown.day, data!.todayKey)} />
         }
         subtitle={
           <>
-            <XText text={nb(`${fmtDayMonth(r.dateKey)} · к ${r.time}`)} delay={120} />
+            <XText text={nb(`${fmtDayMonth(shown.day)} · к ${shown.time}`)} delay={120} />
             {/* Минута меняется без движения: это часы, а не ответ на тап. */}
             {left > 0 ? nb(` · через ${untilText(left)}`) : null}
           </>
@@ -357,18 +441,79 @@ export function Visit() {
       {isPast ? null : statusCard}
       <Collapse open={!isPast && Boolean(proposalCard)}>{proposalCard}</Collapse>
       <SectionTitle>Детали</SectionTitle>
+      <div className="nt-host" ref={remindUi.hostRef}>
       <div className="card">
-        <div className="row">
-          <span className="kv-key">Когда</span>
-          <span className="kv-val">
-            <XText text={`${fmtShortDate(r.dateKey)} · ${r.time}`} delay={120} />
-          </span>
-        </div>
+        {isPast ? (
+          <div className="row">
+            <span className="kv-key">Когда</span>
+            <span className="kv-val">{`${fmtShortDate(r.dateKey)} · ${r.time}`}</span>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="row tappable"
+              aria-expanded={whenOpen}
+              onClick={() => (whenOpen ? setWhenOpen(false) : openWhen())}
+            >
+              <span className="kv-key">Когда</span>
+              <div className="row-right">
+                <span className="kv-val" style={{ marginLeft: 0 }}>
+                  <XText text={slotText(shown)} delay={120} />
+                </span>
+                <span className={'evv-when-chev' + (whenOpen ? ' open' : '')}>{icons.chevron()}</span>
+              </div>
+            </button>
+            <Unfold open={whenOpen}>
+              {draft ? (
+                <div className="visit-when">
+                  <DayChips
+                    days={data!.days}
+                    selected={draft.day}
+                    onSelect={(k) => {
+                      if (k !== draft.day) haptic.tick()
+                      markOwnTap()
+                      setDraft({ ...draft, day: k })
+                    }}
+                  />
+                  <TimeWheels
+                    key={wheelKey}
+                    value={draft.time}
+                    min={draft.day === data!.todayKey ? data!.nowTime || '00:00' : undefined}
+                    onChange={(time) => setDraft((d) => (d ? { ...d, time } : d))}
+                  />
+                  <Collapse open={changed}>
+                    <div className="visit-when-send">
+                      <ActionButton className="host-btn armed" onClick={sendSlot}>
+                        {sendLabel}
+                      </ActionButton>
+                    </div>
+                  </Collapse>
+                </div>
+              ) : null}
+            </Unfold>
+          </>
+        )}
         <Sep inset="text" />
-        <div className="row">
-          <span className="kv-key">Видимость</span>
-          <span className="kv-val">{r.anon ? 'Анонимно' : 'Обычная'}</span>
-        </div>
+        {!isPast && !proposing ? (
+          <SwitchRow
+            on={r.anon}
+            onToggle={() => action('edit', editBody(r, { anon: !r.anon }), { quiet: true })}
+            label="Не показывать другим гостям"
+          />
+        ) : (
+          <div className="row">
+            <span className="kv-key">Видимость</span>
+            <span className="kv-val">{r.anon ? 'Анонимно' : 'Обычная'}</span>
+          </div>
+        )}
+        {/* Напоминание правится и у подтверждённого визита, где сама заявка уже не правится. */}
+        {isPast ? null : (
+          <>
+            <Sep inset="text" />
+            {remindUi.row}
+          </>
+        )}
         {/* Куда идти — тот же вопрос, что «когда»: у двери карточка визита это
             первое, что открывают, а адрес до сих пор жил только в «Моих визитах». */}
         {!isPast ? (
@@ -386,49 +531,14 @@ export function Visit() {
             </button>
           </>
         ) : null}
-        {r.purpose ? <Sep inset="text" /> : null}
-        {r.purpose ? (
-          <div className="kv-block">
-            <div className="kv-cap">Цель визита</div>
-            <div className="kv-text">{linkedText(r.purpose)}</div>
-          </div>
-        ) : null}
+        <VisitPurpose r={r} editable={!isPast && !proposing} />
       </div>
-      {/* Напоминание правится и после создания заявки — в том числе у подтверждённого
-          визита, где сама заявка уже не редактируется. */}
-      {isPast ? null : (
-        <div style={{ marginTop: 22 }}>
-          <RemindCard
-            dateKey={r.dateKey}
-            time={r.time}
-            choice={r.remind?.choice ?? null}
-            sentAt={r.remind?.sentAt}
-            onChange={async (choice) => {
-              // Чип отвечает щелчком; у тумблера свой удар, и щелчок рядом с ним гасится.
-              haptic.tick()
-              await action('remind.set', { id: r.id, choice: choice ?? 'off' }, { quiet: true })
-            }}
-          />
-        </div>
-      )}
-      {/* Перенос, календарь и отмена строками одной карточки, а не тремя карточками
-          по кнопке: экран визита кончается одним блоком действий, как в настройках iOS. */}
+      {isPast ? null : remindUi.items}
+      </div>
+      {/* Календарь и отмена строками одной карточки, а не карточками по кнопке: экран
+          визита кончается одним блоком действий, как в настройках iOS. */}
       {isPast ? null : (
         <div className="card visit-acts">
-          {/* Правка доступна, пока визит не одобрен: сервер тоже это проверяет. У
-              подтверждённого вместо неё просьба перенести день или время. */}
-          {!approved ? (
-            <button type="button" className="row tappable" onClick={() => push('editRequest', { id: r.id })}>
-              <span className="act-ico">{icons.pencil()}</span>
-              <span className="add-row-label">Изменить день или время</span>
-            </button>
-          ) : !p ? (
-            <button type="button" className="row tappable" onClick={() => void askReschedule()}>
-              <span className="act-ico">{icons.clock(18, 'currentColor')}</span>
-              <span className="add-row-label">Попросить перенести</span>
-            </button>
-          ) : null}
-          {!approved || !p ? <Sep inset={22} /> : null}
           {/* .ics отдаёт сервер (см. /visit.ics): разовая ссылка, которую открывает
               системный браузер, а оттуда файл уходит в календарь. */}
           <button type="button" className="row tappable" onClick={() => void openIcs()}>
