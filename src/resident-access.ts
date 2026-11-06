@@ -243,6 +243,9 @@ export const registerResidentAccessHandlers = (dp: Dispatcher, deps: AccessDeps 
                 if (failure !== null) console.error(`[access] ${who} вступил в чат резидентов, но аккаунт не выдан: ${failure}`)
                 return
             }
+            // Бан того, кого в чате не было, mtcute тоже называет `kicked`, а blockUser банит гостя
+            // во всех allowlist-чатах. Снимать с него нечего.
+            if (!upd.oldMember) return
             const failures = await revokeAccess(deps, user.id)
             audit({
                 action: 'access.revoke',
