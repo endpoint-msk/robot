@@ -1,18 +1,16 @@
 // Поле даты вместо <input type="date">: довод тот же, что у TimeField — нативный
 // пикер рисуется локалью системы (порядок полей, первый день недели, названия
-// месяцев), а задать ему это нечем. Тап по «таблетке» открывает шторку с сеткой
+// месяцев), а задать ему это нечем. Тап по «таблетке» открывает лист вопроса с сеткой
 // месяца, неделя начинается с понедельника, как везде в миниаппе. Месяцы листаются
 // пальцем, мышью и трекпадом, стрелки в шапке тоже.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
 import { icons } from '../icons'
+import { Actions, Question, sheetPrompt } from '../modals'
 import { clamp, holdSelection, landing, PAGE_SPRING, pageTarget, reducedMotion, rubber, springAt, tracker } from '../motion'
-import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
 import { accent } from '../theme'
-import { useSheetDrag } from './useSheetDrag'
 
 const monthStart = (key: string): string => key.slice(0, 8) + '01'
 
@@ -77,39 +75,25 @@ function MonthGrid({
 
 type Drag = { x0: number; y0: number; p0: number; id: number; dir: 0 | 1; mouse: boolean }
 
+/**
+ * Сетка месяца листом вопроса, как остальные листы со значением: вопрос сверху, «Готово»
+ * и «Отмена» снизу. Лист смахивается вниз откуда угодно, а вбок палец листает месяцы.
+ */
 function DateSheet({
+  question,
   initial,
   min,
   max,
-  onClose,
+  done,
 }: {
+  question: string
   initial: string
   min: string
   max: string
-  onClose: (value: string | null) => void
+  done: (value: string | null) => void
 }) {
-  const [shown, setShown] = useState(false)
-  const done = useRef(false)
   const [month, setMonth] = useState(monthStart(initial))
   const [value, setValue] = useState(initial)
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setShown(true))
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  const close = (next: string | null): void => {
-    if (done.current) return
-    done.current = true
-    setShown(false)
-    setTimeout(() => onClose(next), 220)
-  }
-  // Системная «Назад» закрывает шторку, а не уводит из редактора под ней.
-  useEffect(() => pushOverlay(() => close(null)), [])
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const sheetRef = useRef<HTMLDivElement>(null)
-  // Смахивается за шапку: по сетке палец листает месяцы.
-  useSheetDrag(sheetRef, overlayRef, () => close(null), '.tp-bar, .dp-head')
 
   // Месяцы листаются, как дни (screens/Day.tsx): дробная позиция p от открытого месяца,
   // пружина без перелёта, ось по первым 8 px, щелчок в момент решения. Смонтированы
@@ -377,24 +361,10 @@ function DateSheet({
     setValue(key)
   }
 
-  return createPortal(
-    <div
-      ref={overlayRef}
-      className={'tp-overlay' + (shown ? ' shown' : '')}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close(null)
-      }}
-    >
-      <div className="tp-sheet" ref={sheetRef}>
-        <div className="tp-bar">
-          <button className="tp-bar-btn" onClick={() => close(null)}>
-            Отмена
-          </button>
-          <span className="tp-bar-title">Дата</span>
-          <button className="tp-bar-btn primary" onClick={() => close(value)}>
-            Готово
-          </button>
-        </div>
+  return (
+    <>
+      <Question text={question} />
+      <div className="card dp-card">
         <div className="dp-head">
           <button className="dp-nav" aria-label="Предыдущий месяц" disabled={!has(-1)} onClick={() => shift.current(-1)}>
             <span className="dp-nav-back">{icons.chevron(accent())}</span>
@@ -428,8 +398,8 @@ function DateSheet({
           ))}
         </div>
       </div>
-    </div>,
-    document.body,
+      <Actions label="Готово" onConfirm={() => done(value)} cancel="Отмена" onCancel={() => done(null)} />
+    </>
   )
 }
 
@@ -438,6 +408,7 @@ export function DateField({
   onChange,
   min,
   max,
+  question = 'Дата',
 }: {
   value: string
   onChange: (value: string) => void
@@ -445,30 +416,19 @@ export function DateField({
   min: string
   /** Верхняя граница: у ивентов это год вперёд (EVENT_DAYS_AHEAD). */
   max: string
+  /** Вопрос листа с сеткой. */
+  question?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const pick = async (): Promise<void> => {
+    const next = await sheetPrompt<string | null>(({ done }) => (
+      <DateSheet question={question} initial={value} min={min} max={max} done={done} />
+    ))
+    if (next) onChange(next)
+  }
 
   return (
-    <>
-      <button
-        type="button"
-        className="time-input time-field dp-field"
-        aria-label={'Дата: ' + label(value, min)}
-        onClick={() => setOpen(true)}
-      >
-        {label(value, min)}
-      </button>
-      {open ? (
-        <DateSheet
-          initial={value}
-          min={min}
-          max={max}
-          onClose={(next) => {
-            setOpen(false)
-            if (next) onChange(next)
-          }}
-        />
-      ) : null}
-    </>
+    <button type="button" className="time-input time-field dp-field" aria-label={'Дата: ' + label(value, min)} onClick={() => void pick()}>
+      {label(value, min)}
+    </button>
   )
 }

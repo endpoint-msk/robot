@@ -52,7 +52,8 @@ import { DayTopic, startTopicEdit, useTopicShown } from '../components/DayTopic'
 import { EventRow } from '../components/EventRow'
 import { Flip, XText } from '../components/Flip'
 import { Avatar, userLabel } from '../components/people'
-import { MorphWord, RequestRow } from '../components/RequestRow'
+import { MorphWord } from '../components/MorphWord'
+import { RequestRow } from '../components/RequestRow'
 import { Screen } from '../components/Screen'
 import { attendTimeFor } from '../components/forms'
 import { TimeField } from '../components/TimeField'
@@ -674,6 +675,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
       className="attend-time"
       value={myTime ?? ''}
       placeholder="Ко скольки?"
+      question="Ко скольки придёте?"
       prefix="к"
       fallback={attendTimeFor(day.dateKey)}
       min={isToday ? data!.nowTime : undefined}

@@ -16,7 +16,7 @@ import type { EventAnswer, EventApplication, EventAppsResponse, SpaceEvent } fro
 import { BackRow, EmptyState, ErrorState, Header, SectionTitle } from '../components/common'
 import { Flip } from '../components/Flip'
 import { Avatar, Profile } from '../components/people'
-import { MorphWord } from '../components/RequestRow'
+import { MorphWord } from '../components/MorphWord'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkRows } from '../components/skeleton'

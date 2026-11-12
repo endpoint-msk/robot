@@ -213,7 +213,9 @@ export function switchTab(name: ScreenName): void {
     return
   }
   const { [name]: next, ...rest } = state.tabs
-  navigate({ stack: next ?? [entry(name, {})], tabs: { ...rest, [root.name]: leaving() }, navId: state.navId + 1, anim: 'in-fade' })
+  // Без проявления: стопка вкладки, её прокрутка и данные уже в памяти, а ответ на касание
+  // дают капсула и значок панели. Экран, встающий с 35%, мигал бы, будто грузится заново.
+  navigate({ stack: next ?? [entry(name, {})], tabs: { ...rest, [root.name]: leaving() }, navId: state.navId + 1, anim: null })
 }
 
 const pushEntry = (name: ScreenName, params: NavParams, hero?: string): void => {

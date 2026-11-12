@@ -14,7 +14,7 @@ import type { AccountResponse, AccountStatus, AdminStatus } from '../types'
 import { icons } from '../icons'
 import { BackRow, ErrorState, SectionTitle, Sep, SpinnerCenter } from '../components/common'
 import { ProfileHead } from '../components/ProfileHead'
-import { MorphWord } from '../components/RequestRow'
+import { MorphWord } from '../components/MorphWord'
 import { Screen } from '../components/Screen'
 import { PersonPage } from './StatsPerson'
 

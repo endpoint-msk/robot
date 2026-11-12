@@ -3,6 +3,7 @@
 
 import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { icons } from '../icons'
+import { markOwnTap } from '../motion'
 import { pushOverlay } from '../overlays'
 import { haptic } from '../telegram'
 
@@ -75,7 +76,11 @@ export function MenuItems<V extends string>({
             role="menuitemradio"
             aria-checked={value === it.value}
             disabled={it.off}
-            onClick={(e) => onPick(it.value, e)}
+            onClick={(e) => {
+              // Значение, выбранное здесь, садится на место морфом (MorphValue): это своё касание.
+              markOwnTap()
+              onPick(it.value, e)
+            }}
           >
             <span className="ob-mk">{icons.check(14, 'currentColor', 2.2)}</span>
             {it.label}

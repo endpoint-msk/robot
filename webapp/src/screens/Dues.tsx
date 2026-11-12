@@ -26,11 +26,11 @@ import { SwipeRow, swipeIcons, type SwipeAction } from '../components/SwipeRow'
 /** «месяц» / «2 месяца»: подпись к просрочке. */
 export const debtWord = (missed: number): string => (missed >= 2 ? monthsWord(missed) : 'месяц')
 
-export function DebtBadge({ missed }: { missed: number }) {
+export function DebtBadge({ missed, out = false, onGone }: { missed: number; out?: boolean; onGone?: () => void }) {
   if (missed <= 0) return null
   const crit = missed >= 2
   return (
-    <span className={'debt-badge ' + (crit ? 'crit' : 'warn')}>
+    <span className={'debt-badge ' + (crit ? 'crit' : 'warn') + (out ? ' out' : '')} onAnimationEnd={out ? onGone : undefined}>
       {crit ? icons.stopSign(12, '#ff3b30') : icons.warnTriangle(12, '#ff9500')}
       {debtWord(missed)}
     </span>

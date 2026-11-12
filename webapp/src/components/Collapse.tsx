@@ -47,7 +47,14 @@ export function Collapse({
       if (!open) setShown(false)
       return
     }
-    const h = el.scrollHeight
+    // Высота по содержимому, а не scrollHeight: в него попадает невидимая зона касания
+    // кнопки внутри (.host-btn::after выходит за неё на 7 px), и блок дорастал бы до неё,
+    // а в последнем кадре садился на свою высоту. Инлайновую высоту прерванного хода на
+    // замер снимаем, иначе вернулась бы она.
+    const held = el.style.height
+    el.style.height = ''
+    const h = el.offsetHeight
+    el.style.height = held
     return animate(
       delay + ms,
       (t) => {

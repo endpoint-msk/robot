@@ -29,6 +29,7 @@ import {
   type SceneName,
   type Tone,
 } from '../onboarding'
+import { sheetsGone } from '../modals'
 import { reducedMotion } from '../motion'
 import { CHOICE_LABEL, choiceOf, DEMO_EVENT, nextSaturday, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
 import { pushOverlay } from '../overlays'
@@ -39,7 +40,7 @@ import { haptic, openBotSection, setBottomBarColor, setHeaderColor, switchInline
 import type { Bootstrap, NotifyPrefs, OnboardingPerson, User } from '../types'
 import { NotifyIcon, Sep, SwitchRow } from '../components/common'
 import { AnimContext } from '../components/Screen'
-import { MacSheet } from '../components/MacSheet'
+import { bindPhone } from '../components/MacSheet'
 import {
   BotScene,
   CoverScene,
@@ -559,6 +560,13 @@ export function Onboarding() {
   const [steps] = useState(() => buildSteps(d))
   const [step, setStep] = useState(0)
   const [sheet, setSheet] = useState(false)
+  // Пока лист привязки открыт и уезжает, сцена знакомства стоит: жесты и клавиши шагов ждут.
+  const openSheet = async (): Promise<void> => {
+    setSheet(true)
+    await bindPhone()
+    await sheetsGone()
+    setSheet(false)
+  }
   const [menuFor, setMenuFor] = useState<'req' | 'ev' | null>(null)
   // Чья строка в меню: закрытое меню ещё гаснет, и отметка в нём не должна перескакивать
   // на значение соседней строки (useRowMenu, shownFor).
@@ -706,7 +714,7 @@ export function Onboarding() {
     const s = steps[i]
     if (!s) return
     if (s.id === 'mac' && !bound) {
-      setSheet(true)
+      void openSheet()
       return
     }
     if (s.id === 'done') {
@@ -823,7 +831,7 @@ export function Onboarding() {
           </Fragment>
         ))}
         <Sep inset="text" />
-        <button type="button" className="row tappable" onClick={() => setSheet(true)}>
+        <button type="button" className="row tappable" onClick={() => void openSheet()}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
           <span className="add-row-label">Добавить устройство</span>
         </button>
@@ -1107,7 +1115,7 @@ export function Onboarding() {
                       label="Телефон"
                       sub="Не привязан"
                       right={
-                        <button type="button" className="small-btn blue" onClick={() => setSheet(true)}>
+                        <button type="button" className="small-btn blue" onClick={() => void openSheet()}>
                           Привязать
                         </button>
                       }
@@ -1203,7 +1211,6 @@ export function Onboarding() {
           </button>
         </div>
       </div>
-      {sheet ? <MacSheet onClose={() => setSheet(false)} /> : null}
     </div>
   )
 }

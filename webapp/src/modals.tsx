@@ -284,7 +284,7 @@ function SheetHead({ subject }: { subject: SheetSubject }) {
 
 const headKey = (s: SheetSubject | undefined): string => (s ? `${s.user.userId}|${s.line ?? ''}` : '')
 
-const Question = ({ text }: { text?: string }) => (text ? <div className="modal-text">{text}</div> : null)
+export const Question = ({ text }: { text?: string }) => (text ? <div className="modal-text">{text}</div> : null)
 
 /** Отмена — отдельной строкой внизу, как в системном меню iOS. */
 function CancelRow({ label, onCancel }: { label: string; onCancel: () => void }) {
@@ -297,12 +297,16 @@ function CancelRow({ label, onCancel }: { label: string; onCancel: () => void })
   )
 }
 
-/** Главное действие строкой во всю ширину. Необратимое — красное и с жёстким откликом. */
-function Actions({
+/**
+ * Главное действие строкой во всю ширину. Необратимое — красное и с жёстким откликом.
+ * `also` - второе решение строкой под главным в той же карточке («Без времени» у колёс).
+ */
+export function Actions({
   label,
   destructive = false,
   disabled = false,
   onConfirm,
+  also,
   cancel,
   onCancel,
 }: {
@@ -310,6 +314,7 @@ function Actions({
   destructive?: boolean
   disabled?: boolean
   onConfirm: () => void
+  also?: { label: string; onSelect: () => void }
   cancel: string | null
   onCancel: () => void
 }) {
@@ -330,6 +335,11 @@ function Actions({
         >
           {label}
         </button>
+        {also ? (
+          <button type="button" className="modal-btn destructive" onClick={also.onSelect}>
+            {also.label}
+          </button>
+        ) : null}
       </div>
       {cancel ? <CancelRow label={cancel} onCancel={onCancel} /> : null}
     </>
@@ -676,7 +686,7 @@ function ModalSheet({ list }: { list: Modal[] }) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const swapRef = useRef<HTMLDivElement>(null)
   const closing = useRef(false)
-  const control = useSheetDrag(sheetRef, dimRef, dismissTop, undefined, { onProgress: stage.set, under: stage.under })
+  const control = useSheetDrag(sheetRef, dimRef, dismissTop, { onProgress: stage.set, under: stage.under })
 
   const finish = (): void => {
     stage.end()
@@ -1028,6 +1038,16 @@ export const sheetsGone = (): Promise<void> =>
       resolve()
     })
   })
+
+/** Сколько лист уезжает на глаз: дальше хвост пружины уже не виден, а экран под ним встал. */
+const AWAY_MS = 300
+
+/**
+ * Лист уехал на глаз. Значение, выбранное в нём, садится на экран отсюда, и морф виден
+ * целиком, а не после хвоста пружины, как у sheetsGone: там оно ждало бы лишние 0,2 с.
+ */
+export const sheetsAway = (): Promise<void> =>
+  Promise.race([sheetsGone(), new Promise<void>((resolve) => window.setTimeout(resolve, AWAY_MS))])
 
 /** Выбор даты ('YYYY-MM-DD'). null — отмена. */
 export const datePrompt = (opts: {

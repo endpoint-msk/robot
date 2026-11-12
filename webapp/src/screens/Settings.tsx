@@ -7,7 +7,8 @@ import { push, setData, setThemeFrom, useStore } from '../store'
 import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Header, NotifyIcon, RadioCheck, SectionTitle, Sep, SwitchRow } from '../components/common'
-import { MacSheet } from '../components/MacSheet'
+import { bindPhone } from '../components/MacSheet'
+import { MorphValue } from '../components/MorphWord'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Notification } from '../components/OnboardingScenes'
 import { Screen } from '../components/Screen'
@@ -37,7 +38,7 @@ function ThemeSection() {
               aria-expanded={menu.openFor === 'theme'}
               onClick={(e) => menu.open('theme', e.currentTarget)}
             >
-              {THEMES.find((t) => t.value === theme)?.label}
+              <MorphValue text={THEMES.find((t) => t.value === theme)?.label ?? ''} align="end" />
               {icons.updown()}
             </button>
           </div>
@@ -175,7 +176,7 @@ function NotifySection({ s }: { s: SettingsData }) {
         aria-expanded={menu.openFor === key}
         onClick={(e) => menu.open(key, e.currentTarget)}
       >
-        {CHOICE_LABEL[choiceOf(prefs)]}
+        <MorphValue text={CHOICE_LABEL[choiceOf(prefs)]} align="end" />
         {icons.updown()}
       </button>
     </div>
@@ -187,7 +188,7 @@ function NotifySection({ s }: { s: SettingsData }) {
       <div className="nt-host" ref={menu.hostRef}>
         <div className="nt-stage" aria-hidden="true">
           {notifyBanners(s, data!.todayKey).map((b) => (
-            <Notification key={b.key} botName={botName} time={b.time} text={b.text} className={'ob-nb' + (b.off ? ' off' : '')} />
+            <Notification key={b.key} botName={botName} time={b.time} text={b.text} className={'ob-nb' + (b.off ? ' off' : '')} flow />
           ))}
         </div>
         <div className="card">
@@ -280,7 +281,6 @@ function BuildSign() {
  * ника и журнал. Печатать MAC руками больше не нужно.
  */
 function PresenceCard({ s }: { s: SettingsData }) {
-  const [sheet, setSheet] = useState(false)
   // Без вопроса: отвязка обратима. Строка рассыпается, внизу пять секунд «Вернуть».
   const removeMac = async (mac: string): Promise<void> => {
     markOwnTap()
@@ -316,7 +316,7 @@ function PresenceCard({ s }: { s: SettingsData }) {
             <Sep inset="text" />
           </Fragment>
         ))}
-        <button type="button" className="row tappable" onClick={() => setSheet(true)}>
+        <button type="button" className="row tappable" onClick={() => void bindPhone()}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
           <span className="add-row-label">Добавить устройство</span>
         </button>
@@ -337,7 +337,6 @@ function PresenceCard({ s }: { s: SettingsData }) {
           onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
         />
       </div>
-      {sheet ? <MacSheet onClose={() => setSheet(false)} /> : null}
     </>
   )
 }

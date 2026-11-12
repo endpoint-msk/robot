@@ -230,6 +230,7 @@ export function Visit() {
       void action('remind.set', { id: r.id, choice: choice ?? 'off' }, { quiet: true })
     },
     Boolean(r?.remind?.sentAt),
+    true,
   )
   if (!r) return <Screen />
 

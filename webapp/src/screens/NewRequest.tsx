@@ -26,6 +26,7 @@ import {
   useDayTime,
 } from '../components/forms'
 import { XText } from '../components/Flip'
+import { MorphValue } from '../components/MorphWord'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { TimeRow } from '../components/TimeField'
 
@@ -66,8 +67,8 @@ type RemindValue = ReminderChoice | 'off'
  * Напоминание строкой с меню, как «Новые заявки» в настройках: срок справа, момент,
  * когда напишет бот, под названием. Тумблер и пять чипов говорили то же самое. Меню
  * лежит над карточкой, а не в ней: карточка обрезает всё, что выходит за её край.
- * `flow`: время поставила смена дня, и подпись перетекает вслед за ним, а под колесом
- * меняется без движения.
+ * `flow`: подпись перетекает за своей сменой слота: в форме, когда время поставила смена
+ * дня (под колесом она меняется без движения), в визите всегда, там слот не под пальцем.
  */
 export function useRemind(
   dateKey: string,
@@ -78,6 +79,13 @@ export function useRemind(
   flow = false,
 ) {
   const menu = useRowMenu<'remind'>()
+  // Срок выбран в меню своим касанием: подпись и значение перетекают. Сменился слот (колесо
+  // под пальцем, другой день) - встают сразу, иначе морф играл бы на каждом щелчке колеса.
+  const slot = `${dateKey} ${time}`
+  const [pickedFor, setPickedFor] = useState<string | null>(null)
+  // Слот ушёл - выбор забыт: колесо, вернувшееся на тот же слот, тоже идёт без движения.
+  if (pickedFor !== null && pickedFor !== slot) setPickedFor(null)
+  const picked = pickedFor === slot
   const available = REMINDER_ORDER.filter((c) => reminderAvailable(dateKey, time, c))
   // Срок мог перестать успевать, когда гость сдвинул слот: тогда на сервер уйдёт null.
   const active = !sent && choice !== null && available.includes(choice) ? choice : null
@@ -88,7 +96,7 @@ export function useRemind(
         Напомнить
         <span className="row-sublabel">
           <XText
-            still={!flow}
+            still={!flow && !picked}
             delay={120}
             text={
               sent
@@ -110,7 +118,7 @@ export function useRemind(
         disabled={none || sent}
         onClick={(e) => menu.open('remind', e.currentTarget)}
       >
-        {active ? REMINDER_LABELS[active] : 'Нет'}
+        <MorphValue text={active ? REMINDER_LABELS[active] : 'Нет'} align="end" still={!picked} />
         {icons.updown()}
       </button>
     </div>
@@ -127,6 +135,7 @@ export function useRemind(
       gapBefore="off"
       onPick={(v) => {
         menu.close()
+        setPickedFor(slot)
         onChange(v === 'off' ? null : v)
       }}
     />

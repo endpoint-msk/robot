@@ -1,14 +1,12 @@
-// Выбор ответственных за ивент (резиденты или гости) — нижний лист через портал, а не
-// экран в стеке: редактор ивента остаётся смонтированным, и черновик правки не теряется.
-// Выбор применяется сразу по тапу (родитель хранит полные объекты — они же идут в превью,
-// на сервер уходят id).
+// Выбор ответственных за ивент (резиденты или гости) — лист вопроса, а не экран в стеке:
+// редактор ивента остаётся смонтированным, и черновик правки не теряется. Выбор
+// применяется сразу по тапу (родитель хранит полные объекты — они же идут в превью, на
+// сервер уходят id), поэтому решение у листа одно, «Готово».
 
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
-import { pushOverlay } from '../overlays'
-import { useSheetDrag } from './useSheetDrag'
+import { Actions, Question, sheetPrompt } from '../modals'
 import { useRemote } from '../remote'
 import type { EventPeopleResponse, ResponsibleCandidate, User } from '../types'
 import { Found, SearchField, searchNeedle, Sep } from './common'
@@ -62,37 +60,20 @@ function Group({
   )
 }
 
-export function ResponsibleSheet({
-  selected,
-  onChange,
-  onClose,
-}: {
-  selected: User[]
-  onChange: (next: User[]) => void
-  onClose: () => void
-}) {
-  const [shown, setShown] = useState(false)
+/**
+ * Лист рисует ModalHost вне редактора, и новые пропсы до него не доходят: выбор лист
+ * держит сам и на каждом тапе отдаёт его редактору целиком.
+ */
+function ResponsibleSheet({ initial, onChange, done }: { initial: User[]; onChange: (next: User[]) => void; done: () => void }) {
+  const [selected, setSelected] = useState(initial)
   const [query, setQuery] = useState('')
   const { data, error, loading } = useRemote(async () => (await api<EventPeopleResponse>('event.people')).people, [])
 
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setShown(true))
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  const close = (): void => {
-    setShown(false)
-    setTimeout(onClose, 220)
-  }
-  // Системная «Назад» закрывает лист, а не экран под ним.
-  useEffect(() => pushOverlay(close), [])
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const sheetRef = useRef<HTMLDivElement>(null)
-  useSheetDrag(sheetRef, overlayRef, close)
-
   const ids = selected.map((u) => u.userId)
   const toggle = (u: User): void => {
-    onChange(ids.includes(u.userId) ? selected.filter((x) => x.userId !== u.userId) : [...selected, u])
+    const next = ids.includes(u.userId) ? selected.filter((x) => x.userId !== u.userId) : [...selected, u]
+    setSelected(next)
+    onChange(next)
   }
 
   const q = searchNeedle(query)
@@ -101,43 +82,34 @@ export function ResponsibleSheet({
   const residents = (data ?? []).filter((u) => u.resident && match(u))
   const guests = (data ?? []).filter((u) => !u.resident && match(u))
 
-  return createPortal(
-    <div
-      ref={overlayRef}
-      className={'tp-overlay' + (shown ? ' shown' : '')}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close()
-      }}
-    >
-      <div className="resp-sheet" ref={sheetRef}>
-        <div className="tp-bar">
-          <span className="tp-bar-btn" style={{ visibility: 'hidden' }}>
-            Готово
-          </span>
-          <span className="tp-bar-title">Ответственные</span>
-          <button className="tp-bar-btn primary" onClick={close}>
-            Готово
-          </button>
-        </div>
-        <div className="resp-search">
-          <SearchField value={query} onChange={setQuery} placeholder="Поиск по имени или нику" />
-        </div>
-        <div className="resp-body">
-          {loading ? (
-            <div className="fb-hint">Загружаем людей…</div>
-          ) : error || !data ? (
-            <div className="fb-hint">Не удалось загрузить список.</div>
-          ) : residents.length === 0 && guests.length === 0 ? (
-            <div className="fb-hint">Никого не нашлось.</div>
-          ) : (
-            <>
-              <Group title="Резиденты" people={residents} query={q} selected={ids} onToggle={toggle} />
-              <Group title="Гости" people={guests} query={q} selected={ids} onToggle={toggle} />
-            </>
-          )}
-        </div>
+  return (
+    <>
+      <Question text="Ответственные" />
+      <div className="resp-search">
+        <SearchField value={query} onChange={setQuery} placeholder="Поиск по имени или нику" />
       </div>
-    </div>,
-    document.body,
+      {/* Список прокручивается сам, а «Готово» стоит под ним: внизу длинного списка её
+          пришлось бы искать. */}
+      <div className="resp-body">
+        {loading ? (
+          <div className="fb-hint">Загружаем людей…</div>
+        ) : error || !data ? (
+          <div className="fb-hint">Не удалось загрузить список.</div>
+        ) : residents.length === 0 && guests.length === 0 ? (
+          <div className="fb-hint">Никого не нашлось.</div>
+        ) : (
+          <>
+            <Group title="Резиденты" people={residents} query={q} selected={ids} onToggle={toggle} />
+            <Group title="Гости" people={guests} query={q} selected={ids} onToggle={toggle} />
+          </>
+        )}
+      </div>
+      <Actions label="Готово" onConfirm={done} cancel={null} onCancel={done} />
+    </>
   )
+}
+
+/** Выбор ответственных листом: изменения уходят в `onChange` сразу, лист их только показывает. */
+export const pickResponsibles = async (selected: User[], onChange: (next: User[]) => void): Promise<void> => {
+  await sheetPrompt<true>(({ done }) => <ResponsibleSheet initial={selected} onChange={onChange} done={() => done(true)} />)
 }

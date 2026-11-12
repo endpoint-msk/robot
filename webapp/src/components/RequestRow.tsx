@@ -18,6 +18,7 @@ import { ActionButton, Sep } from './common'
 import { Collapse } from './Collapse'
 import { GuestNoteText, startNoteEdit, useNoteEdit } from './GuestNoteText'
 import { XText } from './Flip'
+import { MorphWord } from './MorphWord'
 import { markOwnTap, ownTapRecent, reducedMotion } from '../motion'
 import { SwipeRow, swipeIcons, type SwipeAction } from './SwipeRow'
 import { dustRow, offerUndo, removeRow, sheetGone, type Undoable } from '../undo'
@@ -166,23 +167,6 @@ async function hostMenu(r: HostingRequest, subject: SheetSubject): Promise<void>
   markOwnTap()
   const res = (await action('unapprove', { id: r.id }, { quiet: true })) as Undoable | null
   if (res) offerUndo('Хостинг снят', res.undo)
-}
-
-/**
- * Слово подписи «Захостить», разложенное на буквы: при смене слова буквы старого тают
- * волной, а нового на том же месте проявляются следом (см. .hb-ch). Морф идёт по
- * буквам, а не словом целиком: слово, сменившееся разом, читалось как мигание.
- */
-export function MorphWord({ text, on }: { text: string; on: boolean }) {
-  return (
-    <span className={'hb-l' + (on ? ' on' : '')}>
-      {Array.from(text).map((ch, i) => (
-        <span key={i} className="hb-ch" style={{ '--i': i } as CSSProperties}>
-          {ch === ' ' ? ' ' : ch}
-        </span>
-      ))}
-    </span>
-  )
 }
 
 /**

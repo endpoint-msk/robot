@@ -24,9 +24,9 @@ export type SheetControl = {
 }
 
 /**
- * `handle`: за что тянуть. У колеса времени только за шапку (колёса крутятся сами),
- * у остальных за всю шторку, но лишь пока её содержимое прокручено к началу: иначе
- * жест вниз это прокрутка списка. `dismiss` закрывает шторку так же, как кнопка.
+ * Тянуть можно за всю шторку, но лишь пока её содержимое прокручено к началу: иначе
+ * жест вниз это прокрутка списка. Колёса и поля жест не берут, вбок он уходит
+ * содержимому (месяцы календаря). `dismiss` закрывает шторку так же, как кнопка.
  * `onProgress` получает долю открытия (1 открыта, 0 за краем) на каждом кадре жеста и
  * пружин: за ней едет то, что лежит под шторкой. `under` даёт то же самое пружинам
  * треком (элемент и его вид при доле открытия): их кадры ведёт система.
@@ -35,7 +35,6 @@ export function useSheetDrag(
   sheetRef: RefObject<HTMLElement | null>,
   overlayRef: RefObject<HTMLElement | null>,
   dismiss: () => void,
-  handle?: string,
   opts?: { onProgress?: (p: number) => void; under?: () => Track | null },
 ): RefObject<SheetControl | null> {
   const control = useRef<SheetControl | null>(null)
@@ -138,7 +137,7 @@ export function useSheetDrag(
       if (e.button > 0 || drag) return
       dragged = false
       const t = e.target as Element
-      if (handle ? !t.closest(handle) : scrolledInside(t)) return
+      if (scrolledInside(t)) return
       // Колесо крутится само: жест вниз по нему это прокрутка, а не смахивание.
       if (t.closest('input, textarea, .tp-wheel')) return
       settle?.stop()

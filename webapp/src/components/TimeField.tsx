@@ -1,7 +1,7 @@
 // Поле времени вместо <input type="time">. Нативный инпут рисует am/pm, когда
 // локаль браузера/системы английская, а формат ему не задать ничем: он берётся
 // из локали, а не из lang/атрибутов. Спейс живёт в 24-часовом времени, поэтому
-// пикер свой: тап по «таблетке» открывает шторку с колесом часов и минут — то
+// пикер свой: тап по «таблетке» открывает лист вопроса с колесом часов и минут — то
 // же движение, что у системного пикера iOS, но подписи наши и всегда 00–23.
 // В форме заявки гостя то же колесо раскрывается прямо в карточке (TimeRow).
 
@@ -15,12 +15,11 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import { createPortal } from 'react-dom'
-import { clamp, landing, project, spring, tracker, type SpringOpts } from '../motion'
-import { pushOverlay } from '../overlays'
+import { Actions, Question, sheetPrompt, sheetsAway } from '../modals'
+import { clamp, landing, markOwnTap, project, spring, tracker, type SpringOpts } from '../motion'
 import { haptic } from '../telegram'
 import { Flip } from './Flip'
-import { useSheetDrag } from './useSheetDrag'
+import { MorphValue } from './MorphWord'
 
 /** Высота строки колеса; должна совпадать с --tp-item-h в app.css. */
 const ITEM_H = 40
@@ -466,76 +465,48 @@ export function TimeWheels({
   )
 }
 
+type TimeAnswer = { time: string } | 'clear'
+
+/**
+ * Колёса листом вопроса, как вместимость и остальные листы со значением: вопрос сверху,
+ * «Готово» и «Отмена» снизу, экран под листом уходит вглубь. Из листа переноса колёса
+ * встают в нём вторым вопросом, а ответ возвращает к переносу с тем же днём.
+ */
 function TimeSheet({
+  question,
   initial,
   min,
-  onClose,
-  onClear,
+  clearable,
+  active,
+  done,
 }: {
+  question: string
   initial: string
   min: string | undefined
-  onClose: (value: string | null) => void
-  onClear?: () => void
+  clearable: boolean
+  active: boolean
+  done: (answer: TimeAnswer | null) => void
 }) {
-  const [shown, setShown] = useState(false)
-  const done = useRef(false)
   // Сохранённое время могло уйти в прошлое, пока экран был открыт: колесо встаёт на
   // первое разрешённое, иначе «Готово» вернуло бы то, что сервер отобьёт.
   const [draft, setDraft] = useState(() => clampMin(initial, min))
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setShown(true))
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  const close = (value: string | null): void => {
-    if (done.current) return
-    done.current = true
-    setShown(false)
-    setTimeout(() => onClose(value), 220)
-  }
-
-  // Системная «Назад» должна закрывать шторку, а не экран под ней. Регистрируем
-  // после close: эффект зовёт именно его, со всей защитой от повторного закрытия.
-  useEffect(() => pushOverlay(() => close(null)), [])
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const sheetRef = useRef<HTMLDivElement>(null)
-  useSheetDrag(sheetRef, overlayRef, () => close(null), '.tp-bar')
-
-  return createPortal(
-    <div
-      ref={overlayRef}
-      className={'tp-overlay' + (shown ? ' shown' : '')}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close(null)
-      }}
-    >
-      <div className="tp-sheet" ref={sheetRef}>
-        <div className="tp-bar">
-          <button className="tp-bar-btn" onClick={() => close(null)}>
-            Отмена
-          </button>
-          <span className="tp-bar-title">Время</span>
-          <button className="tp-bar-btn primary" onClick={() => close(draft)}>
-            Готово
-          </button>
-        </div>
-        <TimeWheels value={draft} min={min} onChange={setDraft} />
-        {onClear ? (
-          <button
-            type="button"
-            className="tp-clear"
-            onClick={() => {
-              close(null)
-              onClear()
-            }}
-          >
-            Без времени
-          </button>
-        ) : null}
-      </div>
-    </div>,
-    document.body,
+  // Колесо встаёт на значение прокруткой при монтировании, а вторым вопросом (из листа
+  // переноса) лист первый кадр держит скрытым, и прокрутка не встала бы: колёса
+  // монтируются, когда вопрос виден, до того на их месте пустое место той же высоты.
+  const [shown, setShown] = useState(active)
+  if (active && !shown) setShown(true)
+  return (
+    <>
+      <Question text={question} />
+      {shown ? <TimeWheels value={draft} min={min} onChange={setDraft} /> : <div className="tp-wheels" />}
+      <Actions
+        label="Готово"
+        onConfirm={() => done({ time: draft })}
+        also={clearable ? { label: 'Без времени', onSelect: () => done('clear') } : undefined}
+        cancel="Отмена"
+        onCancel={() => done(null)}
+      />
+    </>
   )
 }
 
@@ -548,6 +519,7 @@ export function TimeField({
   fallback,
   onClear,
   prefix,
+  question = 'Время',
 }: {
   value: string
   onChange: (value: string) => void
@@ -558,37 +530,43 @@ export function TimeField({
   placeholder?: string
   /** На каком времени открыть колесо, когда значения нет. */
   fallback?: string
-  /** «Без времени» в шторке: у необязательного поля значение надо уметь и снять. */
+  /** «Без времени» в листе: у необязательного поля значение надо уметь и снять. */
   onClear?: () => void
   /** Слово перед временем («к 18:00»), когда поле стоит в строке без подписи. */
   prefix?: string
+  /** Вопрос листа с колёсами. */
+  question?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLButtonElement>(null)
   const empty = value === '' && placeholder !== undefined
   const [hour, minute] = split(empty && fallback ? fallback : value)
 
+  const pick = async (): Promise<void> => {
+    const inSheet = Boolean(ref.current?.closest('.modal-sheet'))
+    const initial = hour + ':' + minute
+    const clearable = value !== '' && onClear !== undefined
+    const answer = await sheetPrompt<TimeAnswer | null>(({ done, active }) => (
+      <TimeSheet question={question} initial={initial} min={min} clearable={clearable} active={active} done={done} />
+    ))
+    if (!answer) return
+    // Значение садится морфом на глазах: с экрана - когда лист уехал и экран встал на
+    // место, а в листе переноса сразу, лист там остаётся.
+    markOwnTap()
+    if (!inSheet) await sheetsAway()
+    if (answer === 'clear') onClear?.()
+    else onChange(answer.time)
+  }
+
   return (
-    <>
-      <button
-        type="button"
-        className={'time-input time-field' + (empty ? ' empty' : '') + (className ? ' ' + className : '')}
-        aria-label={empty ? placeholder : 'Время: ' + hour + ':' + minute}
-        onClick={() => setOpen(true)}
-      >
-        {empty ? placeholder : (prefix ? prefix + ' ' : '') + hour + ':' + minute}
-      </button>
-      {open ? (
-        <TimeSheet
-          initial={hour + ':' + minute}
-          min={min}
-          onClose={(next) => {
-            setOpen(false)
-            if (next) onChange(next)
-          }}
-          onClear={value !== '' ? onClear : undefined}
-        />
-      ) : null}
-    </>
+    <button
+      ref={ref}
+      type="button"
+      className={'time-input time-field' + (empty ? ' empty' : '') + (className ? ' ' + className : '')}
+      aria-label={empty ? placeholder : 'Время: ' + hour + ':' + minute}
+      onClick={() => void pick()}
+    >
+      <MorphValue text={empty ? (placeholder ?? '') : (prefix ? prefix + ' ' : '') + hour + ':' + minute} align="center" />
+    </button>
   )
 }
 
@@ -663,9 +641,9 @@ export function Unfold({ open, children }: { open: boolean; children: ReactNode 
 /**
  * Строка времени в форме заявки гостя: тап по времени раскрывает колесо прямо в
  * карточке, повторный сворачивает. Время уходит в форму на каждой смене строки, так что
- * значение в строке и подпись напоминания меняются, пока колесо крутится. Шторка с
- * «Готово» здесь лишняя: у формы своя кнопка отправки. В узких местах (строка «Ко
- * скольки?» на экране дня, модалка переноса) колесо остаётся шторкой, это TimeField.
+ * значение в строке и подпись напоминания меняются, пока колесо крутится. Лист с
+ * «Готово» здесь лишний: у формы своя кнопка отправки. В узких местах (строка «Ко
+ * скольки?» на экране дня, лист переноса) колесо остаётся листом, это TimeField.
  * Время, которое поставила смена дня, перещёлкивается; под пальцем на колесе нет.
  */
 export function TimeRow({

@@ -11,7 +11,7 @@ import { markOwnTap } from '../motion'
 import { useStore } from '../store'
 import { haptic, shareMessage, shareSupported } from '../telegram'
 import { useCopyFeedback } from './CopyFeedback'
-import { MorphWord } from './RequestRow'
+import { MorphWord } from './MorphWord'
 
 export type ShareTarget = { kind: 'event'; id: string } | { kind: 'day'; dateKey: string }
 

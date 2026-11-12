@@ -1296,6 +1296,15 @@ button.host-btn { transition: background-color 0.28s ease-out, color 0.28s ease-
    Смена чужим ивентом встаёт без морфа. */
 .ev-new-labels { justify-items: start; }
 .hb-labels.still .hb-ch { transition: none; }
+/* Значение, выбранное своим касанием (MorphValue в MorphWord.tsx): время из листа, пункт
+   меню. Слова слоями, как у «Захостить», а ширина едет от прежнего слова к новому той же
+   кривой: капсула и значок рядом не прыгают. Копии слов без разбивки на буквы лежат вне
+   потока, по ним меряется ширина до и после. */
+.vm { position: relative; display: inline-grid; vertical-align: top; transition: width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.vm.start { justify-items: start; }
+.vm.center { justify-items: center; }
+.vm.end { justify-items: end; }
+.vm-w { position: absolute; left: 0; top: 0; visibility: hidden; white-space: nowrap; }
 /* Замок на главной (Overview.tsx): открытый поднимает дужку и красит плитку значка. Движение
    только у своего касания (.own), чужое открытие встаёт сразу. */
 .lock-ic { background: var(--green); }
@@ -1684,6 +1693,9 @@ button.dpg-topic:active { opacity: 0.6; }
 /* Подпись, перетекающая после своего тапа (XText в components/Flip.tsx). */
 .xtext { display: inline-grid; vertical-align: top; }
 .xtext > * { grid-area: 1 / 1; }
+/* Ширину ведёт XText (glide): слои по своей ширине и в одну строку, иначе замер дал бы ячейку. */
+.xtext.glide { justify-items: start; }
+.xtext.glide > * { white-space: nowrap; }
 /* Блок, вырастающий по высоте (components/Collapse.tsx). Отступ заголовка внутри
    него и заголовка сразу после него тот же, что у соседних секций. */
 .collapse { overflow: hidden; }
@@ -1945,33 +1957,17 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .status-card.proposal .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .note-warn { display: inline-block; margin-top: 6px; color: var(--text); font-weight: 600; }
 
-/* Парит и прилипает, как .modal-sheet. Спрятан целиком: вместе с отступом снизу. */
-.resp-sheet {
-    display: flex;
-    flex-direction: column;
-    width: calc(100% - 16px);
-    max-width: 504px;
-    margin: 0 auto var(--sheet-gap);
-    max-height: 85vh;
-    background: var(--bg);
-    border-radius: var(--radius-sheet);
-    padding-bottom: 8px;
-    transform: translateY(calc(100% + var(--sheet-gap) + 40px));
-    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease;
-    will-change: transform;
+/* «Ответственные» листом вопроса (ResponsiblePicker.tsx): список прокручивается сам, а
+   «Готово» стоит под ним. Высота от видимой области: с клавиатурой поиска лист ужимается
+   вместе с ней. Остальное в листе занимает 170 px и ещё 35 сверху у .modal-scroll; ниже
+   трёх строк список не сжимается, дальше прокручивается весь лист. */
+.resp-search { padding: 0 0 4px; }
+.resp-body {
+    max-height: max(150px, calc(var(--modal-vh, 100vh) - 220px - var(--tg-content-safe-area-inset-top, 0px)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
-.resp-sheet.attached {
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    border-radius: 20px 20px 0 0;
-    padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
-}
-.tp-overlay.shown .resp-sheet { transform: none; }
-.resp-sheet .tp-bar { background: var(--bg); border-radius: var(--radius-sheet) var(--radius-sheet) 0 0; transition: border-radius 0.2s ease; }
-.resp-sheet.attached .tp-bar { border-radius: 20px 20px 0 0; }
-.resp-search { padding: 10px 16px 4px; }
-.resp-body { overflow-y: auto; padding: 4px 16px 16px; -webkit-overflow-scrolling: touch; }
 .resp-group-title {
     margin: 16px 4px 8px;
     font-size: 13px;
@@ -1981,9 +1977,6 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     letter-spacing: 0.02em;
 }
 .resp-body .resp-group-title:first-child { margin-top: 6px; }
-@media (prefers-reduced-motion: reduce) {
-    .resp-sheet { transition: none; transform: none; }
-}
 .note-warn svg { vertical-align: -2px; margin-right: 4px; }
 
 /* --- Детальные строки «ключ — значение» --- */
@@ -2274,83 +2267,9 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
     font-size: 14px;
 }
 .time-field.attend-time::after { content: ""; position: absolute; inset: -8px -6px; }
-/* «Без времени» под колёсами: снять значение необязательного поля. */
-.tp-clear {
-    display: block;
-    width: 100%;
-    padding: 12px;
-    border: none;
-    background: none;
-    font-family: inherit;
-    font-size: 16px;
-    color: var(--red);
-    cursor: pointer;
-}
-.tp-clear:active { opacity: 0.6; }
-
-/* Шторка пикера времени. z-index выше модалок (100) и лайтбокса (110): пикер
-   вызывается в том числе из модалки переноса и должен лечь поверх неё. */
-.tp-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 120;
-    display: flex;
-    align-items: flex-end;
-    background: var(--overlay);
-    opacity: 0;
-    transition: opacity 0.22s ease;
-    /* Шторку и затемнение под ней ведёт палец (useSheetDrag): без своих слоёв каждый
-       кадр жеста перерисовывает и то и другое. */
-    will-change: opacity;
-}
-.tp-overlay.shown { opacity: 1; }
-
-/* Парит и прилипает, как .modal-sheet. Спрятан целиком: вместе с отступом снизу. */
-.tp-sheet {
-    width: calc(100% - 16px);
-    max-width: 504px;
-    margin: 0 auto var(--sheet-gap);
-    background: var(--card);
-    border-radius: var(--radius-sheet);
-    padding-bottom: 8px;
-    transform: translateY(calc(100% + var(--sheet-gap) + 40px));
-    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease;
-    will-change: transform;
-}
-.tp-sheet.attached {
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    border-radius: 20px 20px 0 0;
-    /* Единственное место, где отступ считался через env(): в вебвью Telegram он
-       отдаёт ноль, и низ шторки упирался в домашний индикатор. */
-    padding-bottom: calc(8px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
-}
-.tp-overlay.shown .tp-sheet { transform: none; }
-
-.tp-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 48px;
-    padding: 0 6px;
-    border-bottom: 0.5px solid var(--sep);
-}
-.tp-bar-title { font-size: 15px; font-weight: 600; color: var(--text); }
-.tp-bar-btn {
-    min-width: 84px;
-    padding: 10px;
-    border: none;
-    background: none;
-    font-family: inherit;
-    font-size: 17px;
-    color: var(--blue);
-    text-align: left;
-    cursor: pointer;
-}
-.tp-bar-btn.primary { font-weight: 600; text-align: right; }
-.tp-bar-btn:active { opacity: 0.6; }
-
+/* Цвет «Ко скольки?» и выбранного времени переливается вместе с буквами (MorphValue).
+   Весом выше общего слоя нажатий: тот задаёт .time-field только opacity. */
+.time-field.attend-time { transition: opacity 0.3s ease-out, color 0.24s ease-out; }
 /* Колёса: --tp-item-h должна совпадать с ITEM_H в TimeField.tsx. */
 .tp-wheels {
     --tp-item-h: 40px;
@@ -2445,11 +2364,7 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
    ниже съезжает вместе с ней. */
 .tp-unfold { overflow: hidden; }
 
-@media (prefers-reduced-motion: reduce) {
-    .tp-sheet { transition: none; transform: none; }
-}
-
-/* Календарь месяца в той же шторке, что и колесо времени (components/DateField.tsx). */
+/* Календарь месяца карточкой в листе вопроса (components/DateField.tsx). */
 .dp-field { font-weight: 600; }
 .dp-head {
     display: flex;
@@ -2488,7 +2403,7 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .dp-pager {
     position: relative;
     height: calc(38px * 6 + 4px * 5);
-    margin-bottom: max(14px, env(safe-area-inset-bottom));
+    margin-bottom: 12px;
     overflow: hidden;
     touch-action: pan-y;
     user-select: none;
@@ -3645,7 +3560,7 @@ button.evv-when:active .evv-when-text { opacity: 0.6; }
 /* Счётчик, перещёлкнувшийся после своего тапа (components/Flip.tsx). Обрезка через
    clip-path, а не overflow: inline-block со скрытым переполнением теряет базовую
    линию, и число в строке съезжает вниз. */
-.flip { position: relative; display: inline-block; clip-path: inset(0 -1em); }
+.flip { position: relative; display: inline-block; white-space: nowrap; clip-path: inset(0 -1em); }
 .flip-sp { visibility: hidden; }
 .flip-a, .flip-b { position: absolute; left: 0; top: 0; white-space: nowrap; }
 /* Своя строка, только что переехавшая в другой список: подсветка гаснет на месте. Красится
@@ -3686,6 +3601,9 @@ button.evv-when:active .evv-when-text { opacity: 0.6; }
 }
 .debt-badge.warn { background: rgba(255, 149, 0, 0.14); color: var(--warn-fg); }
 .debt-badge.crit { background: rgba(255, 59, 48, 0.14); color: var(--red); }
+/* Просрочка, погашенная своим «Отметить» (DuesPerson.tsx, FadingDebt): тает, как «Отметить» в «внесён». */
+.debt-badge.out { animation: debt-out 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes debt-out { to { opacity: 0; filter: blur(4px); transform: scale(0.88); } }
 /* Ставка это не статус, а свойство человека: нейтральный чип, не спорит с меткой просрочки.
    Высота та же, что у метки просрочки: в одной строке разные пилюли читались сбоем. */
 .rate-chip { padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--text-2); font-size: 11px; font-weight: 700; line-height: 16px; flex-shrink: 0; }
@@ -5765,61 +5683,9 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .ob-cmd-row .ob-cmd { flex-shrink: 0; }
 .ob-cmd-what { flex: 1; min-width: 0; text-align: right; font-size: 15px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Шторка привязки телефона. Ниже busy-оверлея (50): спиннер отправки ложится поверх. */
-.ob-sheet-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    background: var(--overlay);
-    opacity: 0;
-    transition: opacity 0.24s ease;
-    /* Слои под жест, как у .tp-overlay. */
-    will-change: opacity;
-}
-.ob-sheet-overlay.shown { opacity: 1; }
-/* Парит и прилипает, как .modal-sheet. Спрятан целиком: вместе с отступом снизу. */
-.ob-sheet {
-    width: calc(100% - 16px);
-    max-width: 504px;
-    margin-bottom: var(--sheet-gap);
-    max-height: calc(100% - 24px - var(--tg-content-safe-area-inset-top, 0px) - var(--sheet-gap));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border-radius: var(--radius-sheet);
-    background: var(--bg);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16);
-    padding-bottom: 16px;
-    transform: translateY(calc(100% + var(--sheet-gap) + 40px));
-    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease;
-    will-change: transform;
-}
-.ob-sheet.attached {
-    width: 100%;
-    max-width: 520px;
-    margin-bottom: 0;
-    max-height: calc(100% - 24px - var(--tg-content-safe-area-inset-top, 0px));
-    border-radius: 22px 22px 0 0;
-    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.12);
-    padding-bottom: calc(16px + var(--tg-safe-area-inset-bottom, 0px));
-}
-.ob-sheet-overlay.shown .ob-sheet { transform: none; }
 .ob-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(var(--sec), 0.28); margin: 6px auto 0; }
-.ob-sheet-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 46px; padding: 0 16px; }
-.ob-sheet-cancel {
-    justify-self: start;
-    padding: 8px 0;
-    border: none;
-    background: none;
-    font-family: inherit;
-    font-size: 17px;
-    color: var(--blue);
-    cursor: pointer;
-}
-.ob-sheet-title { font-size: 17px; font-weight: 600; }
-.ob-sheet-body { padding: 4px 16px 0; display: flex; flex-direction: column; }
+/* Привязка телефона листом вопроса (MacSheet.tsx). */
+.mac-body { display: flex; flex-direction: column; }
 .segmented.ob-seg4 { margin: 0; }
 .ob-seg4 .seg-thumb { width: calc((100% - 4px) / 4); }
 .ob-seg4 .seg { border: none; background: none; font-family: inherit; padding: 11px 0; }
@@ -5850,7 +5716,6 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 .ob-field-msg { min-height: 36px; padding: 8px 18px 0; font-size: 13px; line-height: 1.35; color: var(--text-2); }
 .ob-field-msg.err { color: var(--red); }
 .ob-field-msg.warn { color: var(--ob-warn-ink); }
-.ob-sheet-body > .primary-btn { margin-top: 8px; }
 
 /* Настройки: уведомления одной карточкой, как шаг «Что присылать» (screens/Settings.tsx).
    Баннеры над строками показывают, что придёт в личку; выключенный поток гаснет. */
@@ -5869,7 +5734,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 
 @media (prefers-reduced-motion: reduce) {
     .ob.ob-in { animation: none; }
-    .ob-tip, .ob-menu, .ob-sheet, .ob-sheet-overlay { transition-duration: 0.01s; }
+    .ob-tip, .ob-menu { transition-duration: 0.01s; }
     .row-flash .req-row { animation: none; }
     .my-dues.md-moving .md-s, .my-dues.md-moving .md-req, .dues-summary.ds-moving .dues-bar > i { transition: none; }
 }
@@ -5985,14 +5850,14 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
    у каждого компонента. */
 .lightbox-close, .secondary-btn, .search-clear, .note-flag, .purpose-toggle, .linkified, .person-tap,
 .pill.mine, .host-btn, .link-btn, .accept-btn, .chip-btn, .attend-btn, .build-link, button.dpg-topic,
-.time-field, .tp-bar-btn, .dp-nav, .write-banner, .retry-btn, .ev-thumb-del, .ev-thumb-add,
+.time-field, .dp-nav, .write-banner, .retry-btn, .ev-thumb-del, .ev-thumb-add,
 .route-door.tappable, .arrival-btn, .evv-cal {
     transition: opacity 0.3s ease-out;
 }
 .lightbox-close:active, .secondary-btn:active, .search-clear:active, .note-flag:active, .purpose-toggle:active,
 .linkified:active, .person-tap:active, .pill.mine:active, .host-btn:active, .link-btn:active, .accept-btn:active,
 .chip-btn:active, .attend-btn:active, .build-link:active, button.dpg-topic:active, .time-field:active,
-.tp-bar-btn:active, .dp-nav:active, .write-banner:active, .retry-btn:active,
+.dp-nav:active, .write-banner:active, .retry-btn:active,
 .ev-thumb-del:active, .ev-thumb-add:active, .route-door.tappable:active, .arrival-btn:active {
     transition-duration: 0s;
 }
@@ -6015,7 +5880,7 @@ button.heat-cell.now.zero:not(.picked), button.heat-cell.now.nodata:not(.picked)
 @media (hover: hover) and (pointer: fine) {
     .row.tappable:not(:disabled):hover, .write-banner:hover { box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.05); }
     .host-btn:not(:disabled):hover, .pill.mine:hover, .accept-btn:hover, .chip-btn:hover, .time-field:hover,
-    .tp-bar-btn:hover, .dp-nav:hover, .retry-btn:hover, .ev-thumb-add:hover {
+    .dp-nav:hover, .retry-btn:hover, .ev-thumb-add:hover {
         box-shadow: inset 0 0 0 100vmax rgba(var(--sec), 0.07);
     }
     .secondary-btn:hover, .evv-cal:hover, .attend-btn:hover, .dpg-pill:hover, .destructive-btn:hover,

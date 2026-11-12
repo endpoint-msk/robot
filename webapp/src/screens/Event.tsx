@@ -27,7 +27,7 @@ import { Crossfade } from '../components/Crossfade'
 import { DateField } from '../components/DateField'
 import { eventTone, toneVars } from '../components/EventRow'
 import { FormBuilder, emptyForm, type BuilderForm } from '../components/FormBuilder'
-import { ResponsibleSheet } from '../components/ResponsiblePicker'
+import { pickResponsibles } from '../components/ResponsiblePicker'
 import { ShareButton, ShareIconButton } from '../components/ShareButton'
 import { defaultTimeFor, isPastForToday } from '../components/forms'
 import { Avatar, Profile, userLabel } from '../components/people'
@@ -107,7 +107,6 @@ export function Event() {
   // Ответственные — резиденты или гости; храним полными объектами (нужны для превью),
   // на сервер уходят id. Пикер разворачиваем по кнопке, чтобы не дёргать список на каждый вход.
   const [responsibles, setResponsibles] = useState<User[]>(existing?.responsibles ?? [])
-  const [pickOpen, setPickOpen] = useState(false)
 
   // Форма-заявка: включена, если у ивента она уже есть. reviewers приходит только автору
   // (canReview), поэтому для чужого ивента редактор всё равно недоступен.
@@ -529,7 +528,7 @@ export function Event() {
             sub="Гости не увидят ивент в «Активности»"
           />
           <Sep inset="text" />
-          <button type="button" className="row tappable" onClick={() => setPickOpen(true)}>
+          <button type="button" className="row tappable" onClick={() => void pickResponsibles(responsibles, setResponsibles)}>
             <span className="row-label">
               Ответственные
               <span className="row-sublabel">
@@ -548,9 +547,6 @@ export function Event() {
             sub="Гость попадёт на ивент только через заявку"
           />
         </div>
-        {pickOpen ? (
-          <ResponsibleSheet selected={responsibles} onChange={setResponsibles} onClose={() => setPickOpen(false)} />
-        ) : null}
         {formOn ? <FormBuilder value={form} onChange={setForm} /> : null}
 
         {existing ? (

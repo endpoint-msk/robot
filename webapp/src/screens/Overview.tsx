@@ -10,7 +10,7 @@ import { haptic } from '../telegram'
 import { resolvedTheme } from '../theme'
 import { ActionButton, Header, Sep } from '../components/common'
 import { DayRow, TodayCard } from '../components/DayRow'
-import { MorphWord } from '../components/RequestRow'
+import { MorphWord } from '../components/MorphWord'
 import { LaterEvents } from '../components/EventRow'
 import { Screen } from '../components/Screen'
 

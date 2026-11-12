@@ -1,14 +1,12 @@
-// Шторка привязки телефона для авто-отметки: где найти MAC на своей платформе и
-// поле для него. Открывается из знакомства и из настроек.
+// Лист привязки телефона для авто-отметки: где найти MAC на своей платформе и поле для
+// него. Открывается из знакомства и из настроек.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { action } from '../api'
 import { icons } from '../icons'
-import { pushOverlay } from '../overlays'
+import { Actions, Question, sheetPrompt } from '../modals'
 import { haptic, tg } from '../telegram'
 import { Sep } from './common'
-import { useSheetDrag } from './useSheetDrag'
 
 type Os = 'ios' | 'android' | 'mac' | 'win'
 
@@ -130,9 +128,12 @@ const checkMac = (raw: string, os: Os): Check => {
 
 const canPaste = (): boolean => typeof navigator.clipboard?.readText === 'function'
 
-export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: () => void }) {
-  const [shown, setShown] = useState(false)
-  const done = useRef(false)
+/**
+ * Лист вопроса, как у остальных листов со значением: вопрос сверху, «Привязать» кнопкой
+ * листа, под ней «Отмена». Отказ сервера встаёт вопросом в том же листе, а введённое под
+ * ним остаётся.
+ */
+function MacBody({ done }: { done: (bound: boolean | null) => void }) {
   const [os, setOs] = useState<Os>(defaultOs)
   const [mac, setMac] = useState('')
   const [label, setLabel] = useState(() => HOW[defaultOs()].label)
@@ -141,27 +142,6 @@ export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: 
   const macRef = useRef<HTMLInputElement>(null)
   const check = checkMac(mac, os)
   const how = HOW[os]
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setShown(true))
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  const close = (after?: () => void): void => {
-    if (done.current) return
-    done.current = true
-    setShown(false)
-    setTimeout(() => {
-      onClose()
-      after?.()
-    }, 260)
-  }
-
-  // Системная «Назад» закрывает шторку, а не шаг под ней.
-  useEffect(() => pushOverlay(() => close()), [])
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const sheetRef = useRef<HTMLDivElement>(null)
-  useSheetDrag(sheetRef, overlayRef, () => close())
 
   const pickOs = (next: Os): void => {
     setOs(next)
@@ -181,105 +161,106 @@ export function MacSheet({ onClose, onBound }: { onClose: () => void; onBound?: 
   const submit = async (): Promise<void> => {
     if (!check.ok || sending) return
     setSending(true)
-    const res = await action('mac.add', { mac: mac.trim(), label: label.trim() })
+    // Тихо: затемнение со спиннером лежит под листом. Пока ответа нет, кнопка погашена.
+    const res = await action('mac.add', { mac: mac.trim(), label: label.trim() }, { quiet: true })
     setSending(false)
     if (!res) return
     haptic.notify('success')
-    close(onBound)
+    done(true)
   }
 
-  return createPortal(
-    <div
-      ref={overlayRef}
-      className={'ob-sheet-overlay' + (shown ? ' shown' : '')}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close()
-      }}
-    >
-      <div className="ob-sheet" role="dialog" aria-label="Привязка телефона" ref={sheetRef}>
-        <div className="ob-grabber" />
-        <div className="ob-sheet-nav">
-          <button type="button" className="ob-sheet-cancel" onClick={() => close()}>
-            Отмена
-          </button>
-          <span className="ob-sheet-title">Привязка телефона</span>
-          <span />
+  return (
+    <>
+      <Question text="Привязка телефона" />
+      <div className="mac-body">
+        <div className="segmented ob-seg4" role="tablist" aria-label="Платформа">
+          <i className="seg-thumb" style={{ transform: `translateX(${OS_ORDER.indexOf(os) * 100}%)` }} />
+          {OS_ORDER.map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={os === key}
+              className={'seg' + (os === key ? ' on' : '')}
+              onClick={() => pickOs(key)}
+            >
+              {HOW[key].tab}
+            </button>
+          ))}
         </div>
-        <div className="ob-sheet-body">
-          <div className="segmented ob-seg4" role="tablist" aria-label="Платформа">
-            <i className="seg-thumb" style={{ transform: `translateX(${OS_ORDER.indexOf(os) * 100}%)` }} />
-            {OS_ORDER.map((key) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={os === key}
-                className={'seg' + (os === key ? ' on' : '')}
-                onClick={() => pickOs(key)}
-              >
-                {HOW[key].tab}
-              </button>
-            ))}
-          </div>
-          <div className="ob-how">
-            <div className="ob-how-path">{how.path}</div>
-            <div className="ob-replica">
-              <div className="ob-rr">
-                <span>{how.k1}</span>
-                <span className="ob-rv">
-                  {how.v1}
-                  {icons.chevron()}
-                </span>
-              </div>
-              <div className="ob-rr hit">
-                <span>{how.k2}</span>
-                <span className="ob-rv">{how.v2}</span>
-              </div>
+        <div className="ob-how">
+          <div className="ob-how-path">{how.path}</div>
+          <div className="ob-replica">
+            <div className="ob-rr">
+              <span>{how.k1}</span>
+              <span className="ob-rv">
+                {how.v1}
+                {icons.chevron()}
+              </span>
             </div>
-            <div className="ob-how-note">{how.note}</div>
+            <div className="ob-rr hit">
+              <span>{how.k2}</span>
+              <span className="ob-rv">{how.v2}</span>
+            </div>
           </div>
-          <div className="card ob-field-card">
-            <label className="ob-field">
-              <span className="vh">MAC-адрес</span>
-              <input
-                ref={macRef}
-                className="text-input mono"
-                placeholder="AA:BB:CC:DD:EE:FF"
-                autoCapitalize="characters"
-                autoComplete="off"
-                spellCheck={false}
-                value={mac}
-                onChange={(e) => setMac(e.target.value)}
-              />
-              {canPaste() ? (
-                <button type="button" className="ob-paste" onClick={() => void paste()}>
-                  Вставить
-                </button>
-              ) : null}
-            </label>
-            <Sep inset="text" />
-            <label className="ob-field">
-              <span className="vh">Название</span>
-              <input
-                className="text-input"
-                placeholder="Название, например iPhone"
-                autoComplete="off"
-                maxLength={50}
-                value={label}
-                onChange={(e) => {
-                  labelTouched.current = true
-                  setLabel(e.target.value)
-                }}
-              />
-            </label>
-          </div>
-          <div className={'ob-field-msg' + (check.tone ? ' ' + check.tone : '')}>{check.msg}</div>
-          <button type="button" className="primary-btn" disabled={!check.ok || sending} onClick={() => void submit()}>
-            Привязать
-          </button>
+          <div className="ob-how-note">{how.note}</div>
         </div>
+        <div className="card ob-field-card">
+          <label className="ob-field">
+            <span className="vh">MAC-адрес</span>
+            <input
+              ref={macRef}
+              className="text-input mono"
+              placeholder="AA:BB:CC:DD:EE:FF"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              value={mac}
+              onChange={(e) => setMac(e.target.value)}
+            />
+            {canPaste() ? (
+              <button type="button" className="ob-paste" onClick={() => void paste()}>
+                Вставить
+              </button>
+            ) : null}
+          </label>
+          <Sep inset="text" />
+          <label className="ob-field">
+            <span className="vh">Название</span>
+            <input
+              className="text-input"
+              placeholder="Название, например iPhone"
+              autoComplete="off"
+              maxLength={50}
+              value={label}
+              onChange={(e) => {
+                labelTouched.current = true
+                setLabel(e.target.value)
+              }}
+            />
+          </label>
+        </div>
+        <div className={'ob-field-msg' + (check.tone ? ' ' + check.tone : '')}>{check.msg}</div>
       </div>
-    </div>,
-    document.body,
+      <Actions label="Привязать" disabled={!check.ok || sending} onConfirm={() => void submit()} cancel="Отмена" onCancel={() => done(null)} />
+    </>
   )
+}
+
+/** Лист привязки телефона. true - телефон привязан, null - лист закрыли. */
+export const bindPhone = (): Promise<boolean | null> => sheetPrompt<boolean | null>(({ done }) => <MacBody done={done} />)
+
+/**
+ * Тот же лист компонентом, для дизайн-системы (ds.ts): открывается при монтировании,
+ * `onClose` зовётся, когда его закрыли. Рисует его ModalHost, он должен стоять рядом.
+ */
+export function MacSheet({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    void (async () => {
+      await bindPhone()
+      onClose()
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return null
 }

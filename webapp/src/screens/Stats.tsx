@@ -881,13 +881,17 @@ export function Stats() {
             <div className="sp-num">
               <Flip value={hoursNum(shown.manMinutes)} delay={60} />
             </div>
-            <div className="sp-label">{`человеко${hoursNumWord(shown.manMinutes)}`}</div>
+            <div className="sp-label">
+              <XText text={`человеко${hoursNumWord(shown.manMinutes)}`} delay={60} glide />
+            </div>
           </div>
           <div>
             <div className="sp-num">
               <Flip value={avgShown} delay={120} />
             </div>
-            <div className="sp-label">{`${avgWord} в среднем внутри`}</div>
+            <div className="sp-label">
+              <XText text={`${avgWord} в среднем внутри`} delay={120} glide />
+            </div>
           </div>
         </div>
       </div>

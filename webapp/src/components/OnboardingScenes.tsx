@@ -8,6 +8,7 @@ import { icons } from '../icons'
 import { clamp, mix, reducedMotion } from '../motion'
 import { tg } from '../telegram'
 import type { User } from '../types'
+import { XText } from './Flip'
 import { Avatar } from './people'
 
 /** Круглая аватарка бота: своего фото у бота в миниаппе нет, как и у канала. */
@@ -306,7 +307,8 @@ export function MacScene({ board }: { board: BoardData }) {
 
 export type Banner = { key: string; time: string; text: string; off: boolean }
 
-export function Notification({ botName, time, text, className }: { botName: string; time: string; text: string; className: string }) {
+/** `flow` - текст меняется своим выбором (превью в настройках) и перетекает, как подпись. */
+export function Notification({ botName, time, text, className, flow = false }: { botName: string; time: string; text: string; className: string; flow?: boolean }) {
   return (
     <div className={className}>
       <span className="ob-nb-av">
@@ -318,7 +320,7 @@ export function Notification({ botName, time, text, className }: { botName: stri
           {botName}
           <span className="ob-nb-time">{time}</span>
         </span>
-        <span className="ob-nb-msg">{text}</span>
+        {flow ? <XText text={text} layer="ob-nb-msg" /> : <span className="ob-nb-msg">{text}</span>}
       </span>
     </div>
   )

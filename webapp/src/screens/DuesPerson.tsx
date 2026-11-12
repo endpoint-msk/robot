@@ -1,13 +1,13 @@
 // Карточка резидента по взносам: просрочка, ставка и вся история по месяцам.
 // Читают все резиденты, меняют ставку и закрывают месяцы только dev.
 
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useState, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay } from '../dates'
 import { money } from '../format'
 import { numberPrompt } from '../modals'
 import { useRemote } from '../remote'
-import { markOwnTap, mixc, palette } from '../motion'
+import { markOwnTap, mixc, ownTapRecent, palette, reducedMotion } from '../motion'
 import { setTopParams, useParams } from '../store'
 import { haptic } from '../telegram'
 import { ApiError, type DuesPerson as DuesPersonData, type DuesRateKind } from '../types'
@@ -54,6 +54,24 @@ function PersonSkeleton() {
       <SkRows count={6} tail />
     </div>
   )
+}
+
+/**
+ * Просрочка у заголовка месяца. Погашенная своим касанием тает по эталону, как «Отметить»
+ * в «внесён», а не пропадает за кадр; чужое погашение и уменьшенное движение снимают её сразу.
+ */
+function FadingDebt({ missed }: { missed: number }) {
+  const [kept, setKept] = useState(missed)
+  const [out, setOut] = useState(false)
+  useLayoutEffect(() => {
+    if (missed > 0) {
+      setKept(missed)
+      setOut(false)
+    } else if (kept > 0 && ownTapRecent() && !reducedMotion()) setOut(true)
+    else setKept(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missed])
+  return <DebtBadge missed={missed > 0 ? missed : kept} out={out && missed <= 0} onGone={() => setKept(0)} />
 }
 
 /**
@@ -199,7 +217,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
         <>
           <div className="section-title dues-sec">
             <span>{current.label}</span>
-            {data.rate.amount > 0 ? <DebtBadge missed={data.missed} /> : null}
+            {data.rate.amount > 0 ? <FadingDebt missed={data.missed} /> : null}
           </div>
           <div className="card dues-kv">
             <div className="row kv-block">
@@ -210,11 +228,15 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
             <div className="row kv-block">
               <span className="kv-key">
                 Статус
-                {current.status === 'paid' && current.at ? (
-                  <span className="kv-sub">
-                    {`${fmtIsoDay(current.at)}${current.by ? ` · подтвердил ${userLabel(current.by)}` : ''}`}
-                  </span>
-                ) : null}
+                {/* Своё «Отметить»: подпись вырастает, как сворачивается строка долга ниже,
+                    а не сдвигает карточку за кадр. */}
+                <Collapse open={current.status === 'paid' && Boolean(current.at)} as="span">
+                  {current.at ? (
+                    <span className="kv-sub">
+                      {`${fmtIsoDay(current.at)}${current.by ? ` · подтвердил ${userLabel(current.by)}` : ''}`}
+                    </span>
+                  ) : null}
+                </Collapse>
               </span>
               {status(current, true)}
             </div>

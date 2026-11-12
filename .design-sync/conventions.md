@@ -101,8 +101,9 @@ useLayoutEffect(() => { SCENES.presence.render(ref.current, Infinity, createHive
 кадре показывает `total + 1`: вы встали в список. Подложка шага — 12% тона поверх
 `--bg` (`color-mix(in srgb, var(--bg) 88%, var(--green))`).
 
-`MacSheet` — шторка привязки MAC, сама рендерится порталом в `body` поверх всего
-экрана (`.ob-sheet-overlay`); проп `onClose` обязателен.
+`MacSheet` — лист привязки MAC: при монтировании открывает лист вопроса, его рисует
+`ModalHost` порталом в `body` поверх всего экрана, поэтому `ModalHost` ставится рядом;
+проп `onClose` обязателен.
 
 ## Пример
 
