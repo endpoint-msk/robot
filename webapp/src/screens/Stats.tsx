@@ -1,6 +1,7 @@
 // Статистика присутствия: сколько спейс работал, когда здесь людно, кто его держит
 // открытым. Раздел резидентский целиком — сервер проверяет это на каждой ручке.
 
+import { plural, tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { api, prefetchOnTouch } from '../api'
@@ -9,10 +10,9 @@ import {
   fmtDayMonth,
   fmtRange,
   monthIdx,
-  MONTHS_NOM,
-  plural,
+  monthsNom,
   weekdayIdx,
-  WEEKDAYS_SHORT,
+  weekdaysShort,
   yearOf,
 } from '../dates'
 import { nb } from '../format'
@@ -44,10 +44,10 @@ import { useLoupe } from '../components/useLoupe'
 import type { PersonRef } from './StatsPerson'
 import { WrapRow } from './Wrap'
 
-const PERIODS: { key: StatsPeriod; label: string }[] = [
-  { key: 'month', label: 'Месяц' },
-  { key: 'quarter', label: nb('3 месяца') },
-  { key: 'all', label: 'Всё время' },
+const periods = (): { key: StatsPeriod; label: string }[] => [
+  { key: 'month', label: tr('Месяц', 'Month') },
+  { key: 'quarter', label: nb(tr('3 месяца', '3 months')) },
+  { key: 'all', label: tr('Всё время', 'All time') },
 ]
 
 /** Без перелёта: бегунок должен доехать, а не подпрыгнуть. */
@@ -76,7 +76,7 @@ const samePick = (a: HeatPick | null, b: HeatPick | null): boolean =>
 
 /** Значение клетки словами: строка над картой и лупа говорят одно и то же. */
 const heatText = (cell: StatsHeatCell): string =>
-  cell.noData ? 'данных нет, роутер не отвечал' : cell.v <= 0 ? 'никого не было' : `в среднем ${heatValue(cell.v)}`
+  cell.noData ? tr('данных нет, роутер не отвечал', 'no data · router unavailable') : cell.v <= 0 ? tr('никого не было', 'nobody was there') : tr(`в среднем ${heatValue(cell.v)}`, `average ${heatValue(cell.v)}`)
 
 function HeatCard({ data }: { data: StatsOverview }) {
   const [picked, setPicked] = useState<HeatPick | null>(null)
@@ -129,16 +129,16 @@ function HeatCard({ data }: { data: StatsOverview }) {
     if (picked && cell) {
       return (
         <>
-          <b>{`${WEEKDAYS_SHORT[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
+          <b>{`${weekdaysShort()[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
           {` · ${heatText(cell)}`}
         </>
       )
     }
     const cur = cellOf(now)
-    if (!cur) return 'Среднее число людей внутри'
+    if (!cur) return tr('Среднее число людей внутри', 'Average number of people in the space')
     return (
       <>
-        <b>{`Сейчас, ${WEEKDAYS_SHORT[now.dow]!.toLowerCase()} ${heatSlot(now.bucket)}`}</b>
+        <b>{tr(`Сейчас, ${weekdaysShort()[now.dow]!.toLowerCase()} ${heatSlot(now.bucket)}`, `Now, ${weekdaysShort()[now.dow]!.toLowerCase()} ${heatSlot(now.bucket)}`)}</b>
         {` · ${heatText(cur)}`}
       </>
     )
@@ -153,7 +153,7 @@ function HeatCard({ data }: { data: StatsOverview }) {
   return (
     <div className="card stats-card">
       <div className="heat-head">
-        <div className="stats-card-title">Когда здесь людно</div>
+        <div className="stats-card-title">{tr('Когда здесь людно', 'When the space is busiest')}</div>
         <div className="heat-readout" ref={readoutRef}>
           {readout()}
         </div>
@@ -162,7 +162,7 @@ function HeatCard({ data }: { data: StatsOverview }) {
         {data.heat.rows.map((row) => (
           <div className="heat-row" key={row.dow}>
             <div className={'heat-dow' + (scrub && picked?.dow === row.dow ? ' on' : '')}>
-              {WEEKDAYS_SHORT[row.dow]}
+              {weekdaysShort()[row.dow]}
             </div>
             {row.cells.map((cell, i) => {
               const on = picked !== null && picked.dow === row.dow && picked.bucket === i
@@ -176,7 +176,7 @@ function HeatCard({ data }: { data: StatsOverview }) {
                   style={style}
                   data-dow={row.dow}
                   data-bucket={i}
-                  aria-label={`${WEEKDAYS_SHORT[row.dow]} ${heatSlot(i)}`}
+                  aria-label={`${weekdaysShort()[row.dow]} ${heatSlot(i)}`}
                   aria-pressed={on}
                   onClick={() => pick(row.dow, i)}
                 />
@@ -195,25 +195,25 @@ function HeatCard({ data }: { data: StatsOverview }) {
       </div>
       <div className="heat-legend">
         <div className="heat-scale">
-          <span>меньше</span>
+          <span>{tr('меньше', 'fewer')}</span>
           {[1, 2, 3, 4, 5].map((level) => (
             <i key={level} style={{ background: `var(--heat-${level})` }} />
           ))}
-          <span>больше</span>
+          <span>{tr('больше', 'more')}</span>
         </div>
       </div>
       <div className="heat-legend">
         <i className="heat-swatch zero" />
-        <span>никого не было</span>
+        <span>{tr('никого не было', 'nobody was there')}</span>
         <i className="heat-swatch nodata" style={{ marginLeft: 8 }} />
-        <span>роутер был недоступен</span>
+        <span>{tr('роутер был недоступен', 'router unavailable')}</span>
       </div>
       {loupe && picked && lens && lensCell
         ? createPortal(
             <div className="stats-loupe" ref={loupeRef} aria-hidden="true">
               <i className={lensCell.className} style={lensCell.style} />
               <div className="stats-loupe-text">
-                <b>{`${WEEKDAYS_SHORT[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
+                <b>{`${weekdaysShort()[picked.dow]}, ${heatSlot(picked.bucket)}`}</b>
                 <span>{heatText(lens)}</span>
                 {lensFaces.length > 0 ? (
                   <span className="loupe-faces">
@@ -222,7 +222,7 @@ function HeatCard({ data }: { data: StatsOverview }) {
                         <Avatar key={p.userId} user={statsAvatarUser(p)} style={{ zIndex: lensFaces.length - i }} />
                       ))}
                     </span>
-                    {lensFaces[0]!.label + (lensFaces.length > 1 ? nb(` и ещё ${lensFaces.length - 1}`) : '')}
+                    {lensFaces[0]!.label + (lensFaces.length > 1 ? nb(tr(` и ещё ${lensFaces.length - 1}`, ` and ${lensFaces.length - 1} more`)) : '')}
                   </span>
                 ) : null}
               </div>
@@ -246,11 +246,11 @@ const axisOf = (maxHours: number): { top: number; ticks: number[] } => {
 
 type Step = StatsChart['step']
 
-const STEP_TITLE: Record<Step, string> = {
-  day: 'Часы по дням',
-  week: 'Часы по неделям',
-  month: 'Часы по месяцам',
-}
+const stepTitles = (): Record<Step, string> => ({
+  day: tr('Часы по дням', 'Hours by day'),
+  week: tr('Часы по неделям', 'Hours by week'),
+  month: tr('Часы по месяцам', 'Hours by month'),
+})
 
 const PERIOD_STEP: Record<StatsPeriod, Step> = { month: 'day', quarter: 'week', all: 'month' }
 
@@ -319,7 +319,7 @@ const slotWidth = (m: ChartModel): string => `${100 / m.slots}%`
 const slotCenter = (m: ChartModel, i: number): string => `${((m.offset + i + 0.5) * 100) / m.slots}%`
 
 /** «май», а не «мая»: MONTHS_ABBR в dates.ts держит родительный падеж под плитку даты. */
-const monthAbbr = (key: string): string => (MONTHS_NOM[monthIdx(key)] ?? '').slice(0, 3).toLowerCase()
+const monthAbbr = (key: string): string => (monthsNom()[monthIdx(key)] ?? '').slice(0, 3).toLowerCase()
 
 type BarLabel = { i: number; text: string; now: boolean }
 
@@ -365,13 +365,13 @@ const barLabels = (m: ChartModel, todayKey: string, picked: number | null): BarL
 
 /** Пилюля над столбиком говорит языком шага: «пт, 23 октября», «неделя 12–18 октября», «сентябрь». */
 const barTitle = (step: Step, b: StatsBar, todayKey: string): string => {
-  if (step === 'day') return `${(WEEKDAYS_SHORT[weekdayIdx(b.from)] ?? '').toLowerCase()}, ${fmtDayMonth(b.from)}`
-  if (step === 'week') return `неделя ${fmtRange(b.from, b.to)}`
-  const month = (MONTHS_NOM[monthIdx(b.from)] ?? '').toLowerCase()
+  if (step === 'day') return `${(weekdaysShort()[weekdayIdx(b.from)] ?? '').toLowerCase()}, ${fmtDayMonth(b.from)}`
+  if (step === 'week') return tr(`неделя ${fmtRange(b.from, b.to)}`, `week of ${fmtRange(b.from, b.to)}`)
+  const month = (monthsNom()[monthIdx(b.from)] ?? '').toLowerCase()
   return yearOf(b.from) === yearOf(todayKey) ? month : `${month} ${yearOf(b.from)}`
 }
 
-const hoursText = (minutes: number): string => `${hoursNum(minutes)} ч`
+const hoursText = (minutes: number): string => tr(`${hoursNum(minutes)} ч`, `${hoursNum(minutes)} h`)
 
 const axisMarks = (axis: { top: number; ticks: number[] }): ReactNode =>
   axis.ticks.map((t) => {
@@ -523,7 +523,7 @@ function HoursChart({ chart, todayKey }: { chart: StatsChart; todayKey: string }
   return (
     <div className="card stats-card chart-card" ref={cardRef}>
       <div className="stats-card-title">
-        <XText text={STEP_TITLE[m.step]} />
+        <XText text={stepTitles()[m.step]} />
       </div>
       <div className="bars-plot" data-scrub="" ref={plotRef}>
         {morph ? <div className="bars-grid bars-leave">{axisMarks(morph.from.axis)}</div> : null}
@@ -630,7 +630,7 @@ const SK_BARS: Record<StatsPeriod, number> = { month: 31, quarter: 13, all: 12 }
  */
 function StatsSkeleton({ period }: { period: StatsPeriod }) {
   return (
-    <div aria-busy="true" aria-label="Загружаем статистику">
+    <div aria-busy="true" aria-label={tr('Загружаем статистику', 'Loading statistics')}>
       <div className="card stats-card">
         <SkFigure />
         <SkBlock h={6} style={{ display: 'block', marginTop: 16 }} />
@@ -649,14 +649,14 @@ function StatsSkeleton({ period }: { period: StatsPeriod }) {
       </div>
       <div className="card stats-card">
         <div className="heat-head">
-          <div className="stats-card-title">Когда здесь людно</div>
+          <div className="stats-card-title">{tr('Когда здесь людно', 'When the space is busiest')}</div>
           <div className="heat-readout">
             <SkBlock w="56%" h={13} style={{ verticalAlign: 'middle' }} />
           </div>
         </div>
         <SkGrid rows={7} cols={BUCKETS} gutter />
       </div>
-      <SkCard title={STEP_TITLE[PERIOD_STEP[period]]}>
+      <SkCard title={stepTitles()[PERIOD_STEP[period]]}>
         <SkBars count={SK_BARS[period]} />
       </SkCard>
     </div>
@@ -689,7 +689,8 @@ export function Stats() {
 
   // Бегунок едет пружиной и подхватывает скорость, если по сегментам стучат подряд.
   // На открытии экрана он сразу стоит на своём месте.
-  const index = PERIODS.findIndex((p) => p.key === period)
+  const options = periods()
+  const index = options.findIndex((p) => p.key === period)
   const thumb = useRef<HTMLElement>(null)
   const thumbAt = useRef(index)
   const thumbRun = useRef<ReturnType<typeof spring> | null>(null)
@@ -745,7 +746,7 @@ export function Stats() {
   const segmented = (
     <div className="segmented stats-seg">
       <i className="seg-thumb" ref={thumb} />
-      {PERIODS.map((p) => (
+      {options.map((p) => (
         <button
           type="button"
           key={p.key}
@@ -770,8 +771,8 @@ export function Stats() {
   // может прогрузиться.
   const chrome = (subtitle: string) => (
     <>
-      <BackRow label="Ближайшие дни" />
-      <Header title="Статистика" subtitle={subtitle} />
+      <BackRow label={tr('Ближайшие дни', 'Upcoming days')} />
+      <Header title={tr('Статистика', 'Statistics')} subtitle={subtitle} />
       <div className="stats-seg-mark" ref={markRef} />
       <div className="stats-seg-bar" ref={barRef}>
         {segmented}
@@ -790,16 +791,16 @@ export function Stats() {
     </Screen>
   )
 
-  if (error) return frame('Журнал присутствия', <ErrorState onRetry={reload} />)
-  if (!shown) return frame('Журнал присутствия', null)
+  if (error) return frame(tr('Журнал присутствия', 'Check-in log'), <ErrorState onRetry={reload} />)
+  if (!shown) return frame(tr('Журнал присутствия', 'Check-in log'), null)
 
   if (!shown.hasData) {
     return frame(
-      'Журнал присутствия',
+      tr('Журнал присутствия', 'Check-in log'),
       <div className="card">
         <EmptyState
-          title="Пока нечего показать"
-          text="Журнал наполняется, когда резиденты отмечаются в спейсе. За выбранный период отметок не было."
+          title={tr('Пока нечего показать', 'No check-ins yet')}
+          text={tr('Журнал наполняется, когда резиденты отмечаются в спейсе. За выбранный период отметок не было.', 'The log fills up when residents check in. There were no check-ins during this period.')}
         />
       </div>,
     )
@@ -812,19 +813,19 @@ export function Stats() {
     prev === null
       ? ''
       : Math.abs(deltaMinutes) < 30
-        ? 'как раньше'
+        ? tr('как раньше', 'unchanged')
         : nb(
-            `${deltaMinutes > 0 ? '+' : '\u2212'}${hoursNum(Math.abs(deltaMinutes))} ч` +
+            tr(`${deltaMinutes > 0 ? '+' : '\u2212'}${hoursNum(Math.abs(deltaMinutes))} ч`, `${deltaMinutes > 0 ? '+' : '\u2212'}${hoursNum(Math.abs(deltaMinutes))} h`) +
               (prev > 0 ? ` (${Math.round((Math.abs(deltaMinutes) / prev) * 100)}%)` : ''),
           )
   const top = shown.top.slice(0, TOP_PREVIEW)
   const rest = shown.top.slice(TOP_PREVIEW)
   const topMax = shown.top[0]?.minutes ?? 1
 
-  const avgShown = String(shown.avgInside).replace('.', ',')
+  const avgShown = tr(String(shown.avgInside).replace('.', ','), String(shown.avgInside))
   const avgWord = Number.isInteger(shown.avgInside)
-    ? plural(shown.avgInside, 'человек', 'человека', 'человек')
-    : 'человека'
+    ? plural(shown.avgInside, ['человек', 'человека', 'человек'], ['person', 'people'])
+    : tr('человека', 'people')
 
   // Карточки листаются в порядке этого списка: он уезжает в параметры в момент открытия,
   // и смена периода его под пальцем не тасует.
@@ -836,13 +837,13 @@ export function Stats() {
         type="button"
         className="row tappable"
         {...prefetchOnTouch('stats.person', { userId: p.userId, period: 'quarter' })}
-        onClick={() => push('statsPerson', { userId: p.userId, people, backLabel: 'Статистика' })}
+        onClick={() => push('statsPerson', { userId: p.userId, people, backLabel: tr('Статистика', 'Statistics') })}
       >
         <Avatar user={statsAvatarUser(p)} className="stat-avatar" />
         <div className="person-cell">
           <div className="person-top">
             <span className="person-name">{p.label}</span>
-            <span className="person-hours">{hoursNum(p.minutes)} ч</span>
+            <span className="person-hours">{hoursNum(p.minutes)}{tr(' ч', ' h')}</span>
           </div>
           <div className="share-bar">
             <i style={{ width: `${(p.minutes / max) * 100}%` }} />
@@ -854,7 +855,7 @@ export function Stats() {
   )
 
   return frame(
-    `${shown.periodLabel} · журнал присутствия`,
+    tr(`${shown.periodLabel} · журнал присутствия`, `${shown.periodLabel} · check-in log`),
     // Тело не пересоздаётся при смене окна: карточки остаются на месте, числа
     // перещёлкиваются, клетки карты перекрашиваются, график складывается в новый шаг,
     // список людей перетекает.
@@ -866,13 +867,13 @@ export function Stats() {
         <div className="stats-figure">
           <span className="sf-main">
             <Flip value={hoursNum(shown.openMinutes)} />
-            <span className="num-unit">{'\u00a0ч'}</span>
+            <span className="num-unit">{tr('\u00a0ч', ' h')}</span>
           </span>
           <span className={'sf-delta' + (prev === null || Math.abs(deltaMinutes) < 30 ? '' : deltaMinutes > 0 ? ' up' : ' down')}>
             <XText text={deltaText} />
           </span>
         </div>
-        <div className="sf-of sf-under">спейс был открыт</div>
+        <div className="sf-of sf-under">{tr('спейс был открыт', 'the space was open')}</div>
         <Sep />
         {/* Человекочасы отдельной цифрой со своей подписью, как пара на экране дня: их
             постоянно путают с часами работы спейса из крупной цифры выше. */}
@@ -882,7 +883,7 @@ export function Stats() {
               <Flip value={hoursNum(shown.manMinutes)} delay={60} />
             </div>
             <div className="sp-label">
-              <XText text={`человеко${hoursNumWord(shown.manMinutes)}`} delay={60} glide />
+              <XText text={tr(`человеко${hoursNumWord(shown.manMinutes)}`, `person-${hoursNumWord(shown.manMinutes)}`)} delay={60} glide />
             </div>
           </div>
           <div>
@@ -890,7 +891,7 @@ export function Stats() {
               <Flip value={avgShown} delay={120} />
             </div>
             <div className="sp-label">
-              <XText text={`${avgWord} в среднем внутри`} delay={120} glide />
+              <XText text={tr(`${avgWord} в среднем внутри`, `${avgWord} on average`)} delay={120} glide />
             </div>
           </div>
         </div>
@@ -899,7 +900,7 @@ export function Stats() {
       <HeatCard data={shown} />
       <HoursChart chart={shown.chart} todayKey={boot!.todayKey} />
 
-      <SectionTitle>Кто держит спейс открытым</SectionTitle>
+      <SectionTitle>{tr('Кто держит спейс открытым', 'Who keeps the space open')}</SectionTitle>
       <div className="card">
         <Crossfade id={shown.period}>
           {top.map((p, i) => personRow(p, i, topMax))}
@@ -916,7 +917,7 @@ export function Stats() {
               <Sep inset="text" />
               <button type="button" className="row tappable" onClick={() => setAllPeople(true)}>
                 <span className="row-label" style={{ color: 'var(--blue)' }}>
-                  {`Показать всех (${shown.top.length})`}
+                  {tr(`Показать всех (${shown.top.length})`, `Show all (${shown.top.length})`)}
                 </span>
                 <div className="row-right">{icons.chevron()}</div>
               </button>
@@ -931,7 +932,7 @@ export function Stats() {
           <div className="row-icon" style={{ background: 'var(--indigo)' }}>
             {icons.calendar(16, '#fff')}
           </div>
-          <span className="row-label">История по дням</span>
+          <span className="row-label">{tr('История по дням', 'Daily history')}</span>
           <div className="row-right">
             <span className="dues-amount stat-count" style={{ color: 'var(--text-3)' }}>
               <Flip value={shown.daysCount} />
@@ -947,18 +948,18 @@ export function Stats() {
           onClick={() => {
             // Из «Моих визитов» вы первым, дальше тот же список.
             const me: PersonRef = { userId: boot!.me.id, label: boot!.me.username ? `@${boot!.me.username}` : boot!.me.name, username: boot!.me.username }
-            push('statsPerson', { userId: me.userId, people: [me, ...people.filter((x) => x.userId !== me.userId)], backLabel: 'Статистика' })
+            push('statsPerson', { userId: me.userId, people: [me, ...people.filter((x) => x.userId !== me.userId)], backLabel: tr('Статистика', 'Statistics') })
           }}
         >
           <div className="row-icon" style={{ background: 'var(--blue)' }}>
             {icons.people()}
           </div>
-          <span className="row-label">Мои визиты</span>
+          <span className="row-label">{tr('Мои визиты', 'My visits')}</span>
           <div className="row-right">
             <span className="dues-amount stat-count" style={{ color: 'var(--text-3)' }}>
               {shown.myMinutes > 0 ? (
                 <>
-                  <Flip value={hoursNum(shown.myMinutes)} /> ч
+                  <Flip value={hoursNum(shown.myMinutes)} />{tr(' ч', ' h')}
                 </>
               ) : null}
             </span>

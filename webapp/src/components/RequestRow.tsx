@@ -2,9 +2,10 @@
 // или «Захостить». Перенос и блокировка гостя — свайпом влево (см. SwipeRow),
 // передача визита другому резиденту — тапом по своему пиллу хоста.
 
+import { plural, tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { action, mutate, prefetchOnTouch } from '../api'
-import { fmtShortDate, plural } from '../dates'
+import { fmtShortDate, visitsWord } from '../dates'
 import { icons } from '../icons'
 import { linkedText } from '../linkify'
 import { choiceDialog, confirmDialog, reschedulePrompt, showAlert, textPrompt, type SheetSubject } from '../modals'
@@ -51,7 +52,7 @@ function PurposeBlock({ text }: { text: string }) {
             setExpanded((v) => !v)
           }}
         >
-          {expanded ? 'свернуть' : 'ещё'}
+          {expanded ? tr('свернуть', 'show less') : tr('ещё', 'more')}
         </button>
       ) : null}
     </div>
@@ -63,14 +64,14 @@ function PurposeBlock({ text }: { text: string }) {
  * Имя стоит над вопросом, и вопрос обходится без него: склонять имя гостя не получается.
  */
 function sheetSubject(r: HostingRequest, status: string): SheetSubject {
-  return { user: r.guest, line: `${fmtShortDate(r.dateKey)} к\u00a0${r.time}` + (status ? ` · ${status}` : '') }
+  return { user: r.guest, line: tr(`${fmtShortDate(r.dateKey)} к\u00a0${r.time}`, `${fmtShortDate(r.dateKey)} at ${r.time}`) + (status ? ` · ${status}` : '') }
 }
 
 /** Предложить гостю перенос дня/времени (резидент): лист с выбором → API `propose`. */
 async function proposeRescheduleFor(r: HostingRequest, subject: SheetSubject): Promise<void> {
   const p = r.proposal
   const slot = await reschedulePrompt({
-    text: 'Предложить перенести визит на другой день или время?',
+    text: tr('Предложить перенести визит на другой день или время?', 'Suggest a different day or time for this visit?'),
     initialDay: (p && p.dateKey) || r.dateKey,
     initialTime: (p && p.time) || r.time,
     subject,
@@ -93,14 +94,14 @@ async function closeRequest(r: HostingRequest, subject: SheetSubject): Promise<v
   const comment = await textPrompt({
     text:
       r.status === 'approved'
-        ? 'Подтверждённый визит отменится. Гостю придёт сообщение, и он сможет выбрать другой день.'
-        : 'Гостю придёт сообщение, и он сможет выбрать другой день.',
-    placeholder: 'Комментарий гостю, по желанию',
+        ? tr('Подтверждённый визит отменится. Гостю придёт сообщение, и он сможет выбрать другой день.', 'The confirmed visit will be canceled. The guest will get a message and can choose another day.')
+        : tr('Гостю придёт сообщение, и он сможет выбрать другой день.', 'The guest will get a message and can choose another day.'),
+    placeholder: tr('Комментарий гостю, по желанию', 'Message to the guest (optional)'),
     maxLength: 500,
     multiline: true,
     destructive: true,
-    confirmLabel: 'Закрыть заявку',
-    cancelLabel: 'Оставить',
+    confirmLabel: tr('Закрыть заявку', 'Close request'),
+    cancelLabel: tr('Оставить', 'Keep'),
     subject,
   })
   if (comment === null) return
@@ -113,15 +114,15 @@ async function closeRequest(r: HostingRequest, subject: SheetSubject): Promise<v
   // Без комментария молчать можно: заявка у гостя и так пропадёт. С ним резидент
   // ждёт, что его прочитают, и должен знать, что письмо не ушло.
   if (comment && res.data.delivered === false) {
-    showAlert(`Заявку закрыли, но комментарий не дошёл: ${r.guest.name} не открывал чат с ботом.`)
+    showAlert(tr(`Заявку закрыли, но комментарий не дошёл: ${r.guest.name} не открывал чат с ботом.`, `The request was closed. The bot couldn’t deliver the message because ${r.guest.name} hasn’t opened its chat.`))
   }
 }
 
 /** Заблокировать гостя (любой резидент): бан во всех чатах + чистка заявок + отказ в миниаппе. */
 async function blockGuest(r: HostingRequest, subject: SheetSubject): Promise<void> {
   const ok = await confirmDialog(
-    'Бот забанит гостя во всех чатах, удалит его заявки и закроет ему миниапп. Снять блокировку сможет только дев.',
-    { confirmLabel: 'Заблокировать', cancelLabel: 'Оставить доступ', destructive: true, subject },
+    tr('Бот забанит гостя во всех чатах, удалит его заявки и закроет ему миниапп. Снять блокировку сможет только дев.', 'The bot will ban this guest from all chats, delete their requests, and revoke mini app access. Only a developer can lift the ban.'),
+    { confirmLabel: tr('Заблокировать', 'Ban'), cancelLabel: tr('Оставить доступ', 'Keep access'), destructive: true, subject },
   )
   if (!ok) return
   markOwnTap()
@@ -142,12 +143,12 @@ async function hostMenu(r: HostingRequest, subject: SheetSubject): Promise<void>
   // поэтому в меню на этом месте её отзыв.
   const pending = r.transfer ?? null
   const choice = await choiceDialog(
-    pending ? `Передаёте визит ${userLabel(pending.to)}, ждём ответа.` : '',
+    pending ? tr(`Передаёте визит ${userLabel(pending.to)}, ждём ответа.`, `You asked ${userLabel(pending.to)} to take over this visit. Waiting for a reply.`) : '',
     [
       pending
-        ? { key: 'withdraw', label: 'Отозвать передачу' }
-        : { key: 'transfer', label: 'Передать другому резиденту' },
-      { key: 'unapprove', label: 'Отменить хостинг', destructive: true },
+        ? { key: 'withdraw', label: tr('Отозвать передачу', 'Withdraw transfer') }
+        : { key: 'transfer', label: tr('Передать другому резиденту', 'Transfer to another resident') },
+      { key: 'unapprove', label: tr('Отменить хостинг', 'Cancel hosting'), destructive: true },
     ],
     { subject },
   )
@@ -166,7 +167,7 @@ async function hostMenu(r: HostingRequest, subject: SheetSubject): Promise<void>
   // пишет только по концу отсчёта.
   markOwnTap()
   const res = (await action('unapprove', { id: r.id }, { quiet: true })) as Undoable | null
-  if (res) offerUndo('Хостинг снят', res.undo)
+  if (res) offerUndo(tr('Хостинг снят', 'Hosting canceled'), res.undo)
 }
 
 /**
@@ -316,7 +317,7 @@ export function RequestRow({
   const openNote = (): void => startNoteEdit(notePlace, () => setNoteOpen(true))
   // «Впервые» в шапке листа по тому же счёту, что и значок у имени гостя ниже.
   const firstVisit = me.isResident && !archive && (data.guestStats?.[String(r.guest.userId)]?.past ?? 0) === 0
-  const subject = sheetSubject(r, hostedByMe ? 'хостите вы' : firstVisit ? 'впервые' : '')
+  const subject = sheetSubject(r, hostedByMe ? tr('хостите вы', 'you’re hosting') : firstVisit ? tr('впервые', 'first visit') : '')
 
   // Переговоры о переносе адресные: пока висит предложение, работать с ним вправе
   // только его автор и адресат (тот же гейт стоит на сервере, см. proposalSides).
@@ -345,14 +346,14 @@ export function RequestRow({
         ) : (
           <Avatar user={r.approvedBy} />
         )}
-        <span className="pill-ok" role="img" aria-label="хостит">
+        <span className="pill-ok" role="img" aria-label={tr('хостит', 'hosting')}>
           {icons.check(8, '#fff', 3.2)}
         </span>
       </span>
     )
     const pill = mine ? (
       // Многоточие, а не крестик: за пиллом теперь два действия — передать и снять с себя.
-      <button type="button" className="pill mine" aria-label="Вы хостите. Действия с хостингом" onClick={() => hostMenu(r, subject)}>
+      <button type="button" className="pill mine" aria-label={tr('Вы хостите. Действия с хостингом', 'You’re hosting. Hosting options')} onClick={() => hostMenu(r, subject)}>
         {host}
         <span className="pill-name">
           {handoff ? <HandoffName from={userLabel(handoff.from)} to={userLabel(r.approvedBy)} on={handoff.on} /> : userLabel(r.approvedBy)}
@@ -391,7 +392,7 @@ export function RequestRow({
     // Подтверждённый визит двигает только его хост.
     canReschedule = mine && iAmParty
   } else if (archive) {
-    right = <span className="waiting-label">Без ответа</span>
+    right = <span className="waiting-label">{tr('Без ответа', 'No reply')}</span>
   } else {
     right = (
       // Подтверждение - сама кнопка, а не диалог: диалог закрывал строку, ради которой
@@ -402,7 +403,7 @@ export function RequestRow({
         ref={hostRef}
         type="button"
         className={'host-btn' + (armed ? ' armed' : '') + (armed && over ? ' over' : '')}
-        aria-label={armed ? (over ? 'Захостить сверх вместимости' : 'Подтвердить хостинг') : 'Захостить'}
+        aria-label={armed ? (over ? tr('Захостить сверх вместимости', 'Host beyond capacity') : tr('Подтвердить хостинг', 'Confirm hosting')) : tr('Захостить', 'Host')}
         onClick={async () => {
           if (!armed) {
             markOwnTap()
@@ -414,7 +415,7 @@ export function RequestRow({
           const el = hostRef.current
           if (el) {
             const box = el.getBoundingClientRect()
-            setMorph({ w: box.width, h: box.height, bg: getComputedStyle(el).backgroundColor, label: over ? 'Всё равно' : 'Подтвердить' })
+            setMorph({ w: box.width, h: box.height, bg: getComputedStyle(el).backgroundColor, label: over ? tr('Всё равно', 'Host anyway') : tr('Подтвердить', 'Confirm') })
           }
           setArmed(false)
           if (onHost) return onHost(r)
@@ -423,9 +424,9 @@ export function RequestRow({
         }}
       >
         <span className="hb-labels" aria-hidden="true">
-          <MorphWord text="Захостить" on={!armed} />
-          <MorphWord text="Подтвердить" on={armed && !over} />
-          <MorphWord text="Всё равно" on={armed && over} />
+          <MorphWord text={tr('Захостить', 'Host')} on={!armed} />
+          <MorphWord text={tr('Подтвердить', 'Confirm')} on={armed && !over} />
+          <MorphWord text={tr('Всё равно', 'Host anyway')} on={armed && over} />
         </span>
       </button>
     )
@@ -445,8 +446,7 @@ export function RequestRow({
             await action('proposal.accept', { id: r.id }, { quiet: true })
           }}
         >
-          {icons.check(14, '#34c759', 2.4)}
-          Принять {proposalSlot(r, p)}
+          {icons.check(14, '#34c759', 2.4)}{tr('Принять ', 'Accept ')}{proposalSlot(r, p)}
         </ActionButton>
         {/* Отказ — половина переговоров, и сервер его разрешает (proposalSides:
             снять вправе адресат). Без него предложение можно было только принять. */}
@@ -457,8 +457,7 @@ export function RequestRow({
             markOwnTap()
             await action('proposal.decline', { id: r.id }, { quiet: true })
           }}
-        >
-          Оставить {r.time}
+        >{tr('Оставить ', 'Keep ')}{r.time}
         </ActionButton>
       </div>
     ) : null
@@ -482,9 +481,7 @@ export function RequestRow({
             await action('transfer.accept', { id: r.id }, { quiet: true })
           }}
         >
-          {icons.check(14, '#34c759', 2.4)}
-          Взять визит
-        </ActionButton>
+          {icons.check(14, '#34c759', 2.4)}{tr('Взять визит', 'Take over')}</ActionButton>
         <ActionButton
           className="link-btn"
           onClick={async () => {
@@ -492,9 +489,7 @@ export function RequestRow({
             markOwnTap()
             await action('transfer.decline', { id: r.id }, { quiet: true })
           }}
-        >
-          Не смогу
-        </ActionButton>
+        >{tr('Не смогу', 'I can’t')}</ActionButton>
       </div>
     ) : null
 
@@ -503,26 +498,21 @@ export function RequestRow({
       {icons.handoff(14, sec(0.5))}
       {iAmTransferTo ? (
         <span>
-          <span className="pn-time">{userLabel(t.by)}</span> просит подхватить визит
-        </span>
+          <span className="pn-time">{userLabel(t.by)}</span>{tr(' просит подхватить визит', ' wants you to take over')}</span>
       ) : iAmTransferBy ? (
-        <span>
-          передаёте <span className="pn-time">{userLabel(t.to)}</span> · ждём ответа
-          <ActionButton
+        <span>{tr('передаёте ', 'you’re transferring to ')}<span className="pn-time">{userLabel(t.to)}</span>{tr(' · ждём ответа', ' · waiting for a reply')}<ActionButton
             className="link-btn pn-undo"
             onClick={async () => {
               haptic.impact('light')
               markOwnTap()
               await action('transfer.decline', { id: r.id }, { quiet: true })
             }}
-          >
-            Отозвать
-          </ActionButton>
+          >{tr('Отозвать', 'Withdraw')}</ActionButton>
         </span>
       ) : (
         // Чужие переговоры: показываем, чтобы второй раз никого не звали на тот же визит.
         <span>
-          {userLabel(t.by)} передаёт визит <span className="pn-time">{userLabel(t.to)}</span>
+          {userLabel(t.by)}{tr(' передаёт визит ', ' is transferring the visit ')}<span className="pn-time">{userLabel(t.to)}</span>
         </span>
       )}
     </div>
@@ -533,12 +523,12 @@ export function RequestRow({
   // Заметка о госте — общая память резидентов; в архиве тоже доступна: заметка живёт
   // отдельно от заявки, и дописать её после визита осмысленно.
   if (me.isResident) {
-    swipeActions.push({ key: 'note', label: 'Заметка', icon: swipeIcons.note(), tone: 'neutral', onSelect: openNote })
+    swipeActions.push({ key: 'note', label: tr('Заметка', 'Note'), icon: swipeIcons.note(), tone: 'neutral', onSelect: openNote })
   }
   if (canReschedule) {
     swipeActions.push({
       key: 'reschedule',
-      label: 'Перенести',
+      label: tr('Перенести', 'Reschedule'),
       icon: swipeIcons.clock(),
       onSelect: () => proposeRescheduleFor(r, subject),
     })
@@ -548,7 +538,7 @@ export function RequestRow({
   if (me.isResident && !archive && (!r.approvedBy || r.approvedBy.userId === me.id)) {
     swipeActions.push({
       key: 'close',
-      label: 'Закрыть заявку',
+      label: tr('Закрыть заявку', 'Close request'),
       icon: swipeIcons.close(),
       tone: 'orange',
       onSelect: () => closeRequest(r, subject),
@@ -556,7 +546,7 @@ export function RequestRow({
   }
   // Блокировать гостя вправе любой резидент, но не в архиве (там только чтение).
   if (me.isResident && !archive) {
-    swipeActions.push({ key: 'block', label: 'Заблокировать', icon: swipeIcons.ban(), tone: 'red', onSelect: () => blockGuest(r, subject) })
+    swipeActions.push({ key: 'block', label: tr('Заблокировать', 'Ban'), icon: swipeIcons.ban(), tone: 'red', onSelect: () => blockGuest(r, subject) })
   }
 
   // Кто перед резидентом: новичок (встретить, объяснить про дверь), завсегдатай или
@@ -576,8 +566,8 @@ export function RequestRow({
     push('guestVisits', { userId: r.guest.userId, user: r.guest })
   }
   const statsLabel = [
-    past === 0 ? 'впервые' : `${past} ${plural(past, 'визит', 'визита', 'визитов')}`,
-    missed > 0 ? `${missed} ${plural(missed, 'неявка', 'неявки', 'неявок')}` : '',
+    past === 0 ? tr('впервые', 'first visit') : visitsWord(past),
+    missed > 0 ? `${missed} ${plural(missed, ['неявка', 'неявки', 'неявок'], ['no-show', 'no-shows'])}` : '',
   ]
     .filter(Boolean)
     .join(', ')
@@ -587,11 +577,11 @@ export function RequestRow({
       className="visit-stats"
       {...prefetchOnTouch('guest.requests', { userId: r.guest.userId })}
       onClick={openGuest}
-      aria-label={`Профиль гостя: ${statsLabel}`}
+      aria-label={tr(`Профиль гостя: ${statsLabel}`, `Guest profile: ${statsLabel}`)}
       title={statsLabel}
     >
       {past === 0 ? (
-        <span className="visit-chip first">впервые</span>
+        <span className="visit-chip first">{tr('впервые', 'first visit')}</span>
       ) : (
         <span className="vs-item">
           {icons.door(13, sec(0.45))}
@@ -633,7 +623,7 @@ export function RequestRow({
           {guestNote ? (
             <button
               className={'note-flag' + (noteShown ? ' on' : '')}
-              aria-label="Заметка о госте"
+              aria-label={tr('Заметка о госте', 'Guest note')}
               aria-expanded={noteShown}
               onClick={(e) => {
                 e.stopPropagation()
@@ -650,8 +640,8 @@ export function RequestRow({
           {r.guest.username ? <span className="req-sub-nick">@{r.guest.username}</span> : null}
           <span className="req-sub-fixed">
             {r.guest.username ? ' · ' : ''}
-            <XText text={'к ' + r.time} />
-            {r.anon ? ' · анонимно' : ''}
+            <XText text={tr('к ', 'at ') + r.time} />
+            {r.anon ? tr(' · анонимно', ' · anonymous') : ''}
           </span>
         </div>
         {r.purpose ? <PurposeBlock text={r.purpose} /> : null}
@@ -671,17 +661,15 @@ export function RequestRow({
       <div className={'proposal-note' + (p.by === 'resident' ? ' mine' : '')}>
         {icons.clock(14, sec(0.5), p.time)}
         {p.by === 'guest' ? (
-          <span>
-            гость предлагает <span className="pn-time">{proposalSlot(r, p)}</span>
+          <span>{tr('гость предлагает ', 'the guest suggests ')}<span className="pn-time">{proposalSlot(r, p)}</span>
             {/* Отвечает адресат — иначе непонятно, почему кнопки «Принять» нет. */}
-            {!iAmParty && p.to ? ` · ответит ${p.to.name}` : ''}
+            {!iAmParty && p.to ? tr(` · ответит ${p.to.name}`, ` · ${p.to.name} will reply`) : ''}
           </span>
         ) : (
           // Предложить мог и другой резидент — «вы» только автору предложения.
           <span>
-            {p.user.userId === me.id ? 'вы предложили' : 'предложено'}{' '}
-            <span className="pn-time">{proposalSlot(r, p)}</span> · ждём гостя
-            {/* Своё предложение висело до ответа гостя, отозвать его было нечем. */}
+            {p.user.userId === me.id ? tr('вы предложили', 'you suggested') : tr('предложено', 'suggested')}{' '}
+            <span className="pn-time">{proposalSlot(r, p)}</span>{tr(' · ждём гостя', ' · waiting for the guest')}{/* Своё предложение висело до ответа гостя, отозвать его было нечем. */}
             {p.user.userId === me.id && canReschedule ? (
               <ActionButton
                 className="link-btn pn-undo"
@@ -690,9 +678,7 @@ export function RequestRow({
                   markOwnTap()
                   await action('proposal.decline', { id: r.id }, { quiet: true })
                 }}
-              >
-                Отозвать
-              </ActionButton>
+              >{tr('Отозвать', 'Withdraw')}</ActionButton>
             ) : null}
           </span>
         )}
@@ -707,10 +693,10 @@ export function RequestRow({
       <div
         className="proposal-note cap-note"
         role="note"
-        aria-label={`В этот день уже ${dayCapacity.occupied} из ${dayCapacity.cap}, визит сверх вместимости`}
+        aria-label={tr(`В этот день уже ${dayCapacity.occupied} из ${dayCapacity.cap}, визит сверх вместимости`, `There are already ${dayCapacity.occupied} of ${dayCapacity.cap} places filled that day. This visit will exceed capacity.`)}
       >
         <CapBar occupied={dayCapacity.occupied} pending={0} cap={dayCapacity.cap} add={1} />
-        <span className="pn-time" aria-hidden="true">{`${dayCapacity.occupied + 1}\u00a0из\u00a0${dayCapacity.cap}`}</span>
+        <span className="pn-time" aria-hidden="true">{tr(`${dayCapacity.occupied + 1}\u00a0из\u00a0${dayCapacity.cap}`, `${dayCapacity.occupied + 1} of ${dayCapacity.cap}`)}</span>
       </div>
     ) : null
 

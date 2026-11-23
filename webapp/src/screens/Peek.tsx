@@ -1,5 +1,6 @@
+import { tr } from '../i18n'
 import { Fragment } from 'react'
-import { fmtDayMonth, peopleWord, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { fmtDayMonth, peopleWord, weekdayIdx, weekdaysShort } from '../dates'
 import { icons } from '../icons'
 import { push, useStore } from '../store'
 import { sec } from '../theme'
@@ -31,15 +32,15 @@ function PeekDayRow({ day }: { day: Day }) {
     (lock ? ' day-locked' : '')
   const dayCol = (
     <div className="day-col">
-      <div className="dow">{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</div>
-      <div className="date">{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</div>
+      <div className="dow">{weekdaysShort()[weekdayIdx(day.dateKey)]}</div>
+      <div className="date">{isToday ? tr('Сегодня', 'Today') : fmtDayMonth(day.dateKey)}</div>
     </div>
   )
   if (empty) {
     return (
-      <div className={cls} title={lock ? 'Закрыт для заявок' : undefined}>
+      <div className={cls} title={lock ? tr('Закрыт для заявок', 'Closed to requests') : undefined}>
         {dayCol}
-        <span className="day-none">{lock ? lock.reason || 'Спейс закрыт' : 'Пока никого'}</span>
+        <span className="day-none">{lock ? lock.reason || tr('Спейс закрыт', 'The space is closed') : tr('Пока никого', 'No one yet')}</span>
       </div>
     )
   }
@@ -49,7 +50,7 @@ function PeekDayRow({ day }: { day: Day }) {
     <button
       type="button"
       className={cls + ((first || agendaText) && att.length > 0 ? ' day-stack' : '')}
-      title={lock ? 'Закрыт для заявок' : undefined}
+      title={lock ? tr('Закрыт для заявок', 'Closed to requests') : undefined}
       onClick={() => push('peekDay', { dateKey: day.dateKey })}
     >
       {dayCol}
@@ -87,8 +88,8 @@ export function Peek() {
   const week = card ? rest : data!.days
   return (
     <Screen>
-      <BackRow label="Мои визиты" />
-      <Header title="Активность" subtitle="Ивенты и кто придёт" />
+      <BackRow label={tr('Мои визиты', 'My visits')} />
+      <Header title={tr('Активность', 'Activity')} subtitle={tr('Ивенты и кто придёт', 'Events and who’s coming')} />
       {card ? <TodayCard day={card} guest onOpen={() => push('peekDay', { dateKey: card.dateKey })} /> : null}
       <div className="card">
         {week.map((day, i) => (
@@ -98,7 +99,7 @@ export function Peek() {
           </Fragment>
         ))}
       </div>
-      <LaterEvents backLabel="Активность" />
+      <LaterEvents backLabel={tr('Активность', 'Activity')} />
     </Screen>
   )
 }

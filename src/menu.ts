@@ -22,6 +22,8 @@ import {
     type PrinterStatus,
 } from './printer.js'
 import type { Storage } from './storage.js'
+import { languageChoiceOf, setUserLanguage, tr, userLocale, withLocale } from './i18n.js'
+import { LANGUAGE_MENU_CALLBACK as CB_LANGUAGE, languageButton, syncPrivateLanguageCommands } from './bot-language-commands.js'
 
 const CB_ROOT = 'menu:root'
 const CB_INSIDE = 'menu:inside'
@@ -35,8 +37,35 @@ const CB_PRINTER = 'menu:printer'
 const CB_PRINTER_PREVIEW = 'menu:printer:preview'
 const CB_PRINTER_CAMERA = 'menu:printer:camera'
 const CB_DOOR = 'menu:door'
+const LANGUAGE_CHOICES = ['auto', 'ru', 'en'] as const
 
-const BACK_ROW = [BotKeyboard.callback('⬅️ Назад', CB_ROOT)]
+const backRow = () => [BotKeyboard.callback(tr('⬅️ Назад', "⬅️ Back"), CB_ROOT)]
+const languageRow = () => [languageButton()]
+
+const languageScreen = (storage: Storage, userId: number) => {
+    const choice = languageChoiceOf(storage, userId)
+    const labels = { auto: tr('Язык Telegram', 'Telegram language'), ru: 'Русский', en: 'English' }
+    return {
+        kind: 'text' as const,
+        text: tr('Выбери язык бота и миниаппа.', 'Choose the language for the bot and mini app.'),
+        keyboard: BotKeyboard.inline([
+            ...LANGUAGE_CHOICES.map((language) => [
+                BotKeyboard.callback(`${choice === language ? '✓ ' : ''}${labels[language]}`, `${CB_LANGUAGE}:${language}`),
+            ]),
+            backRow(),
+        ]),
+    }
+}
+
+const guestScreen = (webappUrl: string | null) => ({
+    kind: 'text' as const,
+    text: webappUrl
+        ? tr('Привет! Это бот хакспейса. Хотите зайти в гости — оставьте заявку на визит, резиденты увидят её и откликнутся.', "Hi! I'm the hackerspace bot. If you'd like to stop by, request a visit and a resident can offer to host you.")
+        : tr('Этот бот доступен только резидентам (участникам чата резидентов).', "This bot is available to members of the residents' chat."),
+    keyboard: BotKeyboard.inline(webappUrl
+        ? [[BotKeyboard.webView(tr('🚪 Оставить заявку на визит', "🚪 Request a visit"), webappAt(webappUrl, newRequestTarget()))], languageRow()]
+        : [languageRow()]),
+})
 
 /**
  * Корневое меню. Галочка у «Отметиться» отражает, отмечен ли резидент. Принтер - только
@@ -45,18 +74,19 @@ const BACK_ROW = [BotKeyboard.callback('⬅️ Назад', CB_ROOT)]
 const rootKeyboard = (storage: Storage, userId: number, hasPrinter: boolean, webappUrl: string | null) => {
     const present = storage.get().presence[String(userId)] !== undefined
     const rows: Parameters<typeof BotKeyboard.inline>[0] = [
-        [BotKeyboard.callback('Кто в спейсе', CB_INSIDE)],
-        [BotKeyboard.callback(`${present ? '✅' : '☐'} Отметиться`, CB_PRESENCE)],
-        [BotKeyboard.callback('Авто-отметка по MAC', CB_MAC)],
+        [BotKeyboard.callback(tr('Кто в спейсе', "Who's at the space"), CB_INSIDE)],
+        [BotKeyboard.callback(tr(`${present ? '✅' : '☐'} Отметиться`, `${present ? '✅' : '☐'} Check in`), CB_PRESENCE)],
+        [BotKeyboard.callback(tr('Авто-отметка по MAC', "Automatic check-in by MAC address"), CB_MAC)],
     ]
-    if (hasPrinter) rows.push([BotKeyboard.callback('3D-принтер', CB_PRINTER)])
-    if (doorCodeOf(storage)) rows.push([BotKeyboard.callback('Домофон', CB_DOOR)])
+    if (hasPrinter) rows.push([BotKeyboard.callback(tr('3D-принтер', "3D printer"), CB_PRINTER)])
+    if (doorCodeOf(storage)) rows.push([BotKeyboard.callback(tr('Домофон', "Intercom"), CB_DOOR)])
     // web_app-кнопка (в личке разрешена): миниапп с заявками гостей на визит.
-    if (webappUrl) rows.push([BotKeyboard.webView('🚪 Хостинг гостей', webappUrl)])
+    if (webappUrl) rows.push([BotKeyboard.webView(tr('🚪 Хостинг гостей', "🚪 Guest visits"), webappUrl)])
+    rows.push(languageRow())
     return BotKeyboard.inline(rows)
 }
 
-const ROOT_TEXT = 'Главное меню. Выбери раздел:'
+const rootText = () => tr('Главное меню. Выбери раздел:', "Main menu. Choose a section:")
 
 /**
  * Раздел «Отметиться / уйти»: кнопки зависят от того, отмечен ли уже резидент.
@@ -67,27 +97,30 @@ const ROOT_TEXT = 'Главное меню. Выбери раздел:'
 const presenceSection = (storage: Storage, userId: number): { text: string; keyboard: ReturnType<typeof BotKeyboard.inline> } => {
     const present = storage.get().presence[String(userId)]
     const invisible = isPresenceInvisible(storage, userId)
-    const invisibleRow = [BotKeyboard.callback(`${invisible ? '✅' : '☐'} Невидимка`, CB_INVISIBLE)]
+    const invisibleRow = [BotKeyboard.callback(tr(`${invisible ? '✅' : '☐'} Невидимка`, `${invisible ? '✅' : '☐'} Invisible mode`), CB_INVISIBLE)]
     const invisibleNote = invisible
-        ? '<br><br>Невидимка включена: сам я тебя по устройству в сети не отмечаю. Отметиться кнопкой можно всегда.'
+        ? tr('<br><br>Невидимка включена: сам я тебя по устройству в сети не отмечаю. Отметиться кнопкой можно всегда.', "<br><br>Invisible mode is on. Your device won't check you in automatically. You can still check in manually.")
         : ''
+    const macHint = macHintFor(storage, userId)
     if (present) {
+        const label = html.escape(present.displayLabel)
+        const checkedIn = present.username ? `You're checked in as ${label}.` : "You're checked in anonymously."
         return {
-            text: `Ты отмечен как «${present.displayLabel}».${invisibleNote}${macHintFor(storage, userId)}`,
+            text: tr(`Ты отмечен как «${label}».`, checkedIn) + invisibleNote + macHint,
             keyboard: BotKeyboard.inline([
-                [BotKeyboard.callback('Уйти / снять отметку', CB_CHECKOUT)],
+                [BotKeyboard.callback(tr('Уйти / снять отметку', "Check out"), CB_CHECKOUT)],
                 invisibleRow,
-                BACK_ROW,
+                backRow(),
             ]),
         }
     }
     return {
-        text: `Отметься, чтобы остальные видели, что ты в спейсе.${invisibleNote}${macHintFor(storage, userId)}`,
+        text: tr('Отметься, чтобы остальные видели, что ты в спейсе.', "Check in so others can see you're at the space.") + invisibleNote + macHint,
         keyboard: BotKeyboard.inline([
-            [BotKeyboard.callback('Отметиться с ником', CB_CHECKIN_NICK)],
-            [BotKeyboard.callback('Отметиться без ника', CB_CHECKIN_ANON)],
+            [BotKeyboard.callback(tr('Отметиться с ником', "Check in with username"), CB_CHECKIN_NICK)],
+            [BotKeyboard.callback(tr('Отметиться без ника', "Check in anonymously"), CB_CHECKIN_ANON)],
             invisibleRow,
-            BACK_ROW,
+            backRow(),
         ]),
     }
 }
@@ -97,42 +130,43 @@ const macSection = (storage: Storage, userId: number): string => {
     const cur = storage.get().macBindings[String(userId)]
     const lines: string[] = []
     if (cur && cur.macs.length > 0) {
-        lines.push(`Привязано устройств: ${cur.macs.length}.`)
+        lines.push(tr(`Привязано устройств: ${cur.macs.length}.`, `Linked devices: ${cur.macs.length}.`))
         for (const e of [...cur.macs].sort((a, b) => a.mac.localeCompare(b.mac))) {
             lines.push(`<code>${e.mac}</code>${macLabelSuffix(e.label)}`)
         }
         const online = storage.get().presence[String(userId)]?.source === 'mac'
         lines.push('')
-        lines.push(online ? 'Сейчас ты отмечен по MAC.' : 'Сейчас авто-отметка не активна.')
+        lines.push(online ? tr('Сейчас ты отмечен по MAC.', "You're currently checked in by MAC address.") : tr('Сейчас авто-отметка не активна.', "You're not currently checked in automatically."))
         if (isPresenceInvisible(storage, userId)) {
-            lines.push('Режим «невидимка» включён - авто-отметка не ставится (раздел «Отметиться»).')
+            lines.push(tr('Режим «невидимка» включён - авто-отметка не ставится (раздел «Отметиться»).', "Invisible mode is on. To resume automatic check-in, turn it off in Check in."))
         } else if (cur.suppressedAt) {
-            lines.push('Авто-отметка приостановлена: ты ушёл вручную. Вернётся, когда устройство уйдёт из сети и появится снова.')
+            lines.push(tr('Авто-отметка приостановлена: ты ушёл вручную. Вернётся, когда устройство уйдёт из сети и появится снова.', "Automatic check-in is paused because you checked out manually. It resumes after your device disconnects and reconnects."))
         }
         lines.push('')
-        lines.push(`Режим отметки: ${cur.anon ? '«без ника»' : 'с ником'} (сменить — /settings).`)
-        lines.push('Добавить устройство — /bindmac, убрать — /unbindmac.')
+        const mode = cur.anon ? tr('«без ника»', 'anonymously') : tr('с ником', 'with username')
+        lines.push(tr(`Режим отметки: ${mode} (сменить — /settings).`, `Check in ${mode}. Change with /settings.`))
+        lines.push(tr('Добавить устройство — /bindmac, убрать — /unbindmac.', "Add a device with /bindmac or remove one with /unbindmac."))
     } else {
-        lines.push('Привяжи MAC-адрес устройства — и я буду отмечать тебя автоматически, пока ты в сети спейса.')
+        lines.push(tr('Привяжи MAC-адрес устройства — и я буду отмечать тебя автоматически, пока ты в сети спейса.', "Link your device's MAC address to check in automatically while it's connected to the space's network."))
         lines.push('')
-        lines.push('Привязать: /bindmac AA:BB:CC:DD:EE:FF [имя]')
-        lines.push('MAC можно посмотреть в настройках Wi-Fi телефона/ноутбука.')
+        lines.push(tr('Привязать: /bindmac AA:BB:CC:DD:EE:FF [имя]', "To link a device: /bindmac AA:BB:CC:DD:EE:FF [name]"))
+        lines.push(tr('MAC можно посмотреть в настройках Wi-Fi телефона/ноутбука.', "You can find the MAC address in your device's Wi-Fi settings."))
         lines.push('')
-        lines.push('⚠️ Сначала выключи ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.')
+        lines.push(tr('⚠️ Сначала выключи ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.', "⚠️ Turn off MAC address rotation for the space's Wi-Fi first. A rotating address will stop automatic check-in from working."))
     }
     return lines.join('<br>')
 }
 
-const macKeyboard = () => BotKeyboard.inline([BACK_ROW])
+const macKeyboard = () => BotKeyboard.inline([backRow()])
 
 const printerKeyboard = (view: 'preview' | 'camera', active: boolean) => {
-    if (!active) return BotKeyboard.inline([BACK_ROW])
+    if (!active) return BotKeyboard.inline([backRow()])
     return BotKeyboard.inline([
         [
-            BotKeyboard.callback(`${view === 'preview' ? '✅ ' : ''}🖼 Превью`, CB_PRINTER_PREVIEW),
-            BotKeyboard.callback(`${view === 'camera' ? '✅ ' : ''}📷 Камера`, CB_PRINTER_CAMERA),
+            BotKeyboard.callback(tr(`${view === 'preview' ? '✅ ' : ''}🖼 Превью`, `${view === 'preview' ? '✅ ' : ''}🖼 Preview`), CB_PRINTER_PREVIEW),
+            BotKeyboard.callback(tr(`${view === 'camera' ? '✅ ' : ''}📷 Камера`, `${view === 'camera' ? '✅ ' : ''}📷 Camera`), CB_PRINTER_CAMERA),
         ],
-        BACK_ROW,
+        backRow(),
     ])
 }
 
@@ -181,7 +215,7 @@ const buildPrinterScreen = async (
     } catch {
         return {
             kind: 'text',
-            text: 'Не удалось связаться с принтером. Он включён и доступен в сети?',
+            text: tr('Не удалось связаться с принтером. Он включён и доступен в сети?', "Couldn't reach the printer. Is it powered on and connected to the network?"),
             keyboard: macKeyboard(),
         }
     }
@@ -231,7 +265,7 @@ export const registerMenuHandlers = (
             }
             case 'inside':
                 await msg.answerText(html(renderPresenceText(storage)), {
-                    replyMarkup: BotKeyboard.inline([BACK_ROW]),
+                    replyMarkup: BotKeyboard.inline([backRow()]),
                     disableWebPreview: true,
                 })
                 return true
@@ -256,26 +290,24 @@ export const registerMenuHandlers = (
         if (!msg.sender || msg.sender.type !== 'user') return
         const adminChats = await residents.presenceChats(msg.sender.id)
         if (adminChats.length === 0) {
-            // Гостям меню резидента не показываем, но даём оставить заявку на визит через миниапп.
-            if (webappUrl) {
-                await msg.answerText(
-                    'Привет! Это бот хакспейса. Хотите зайти в гости — оставьте заявку на визит, резиденты увидят её и откликнутся.',
-                    { replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('🚪 Оставить заявку на визит', webappAt(webappUrl, newRequestTarget()))]]) },
-                )
-                return
-            }
-            await msg.answerText('Этот бот доступен только резидентам (участникам чата резидентов).')
+            const screen = guestScreen(webappUrl)
+            await msg.answerText(screen.text, { replyMarkup: screen.keyboard })
             return
         }
         await inviteOnStart(client, storage, msg.sender.id, webappUrl)
         const section = msg.text.trim().split(/\s+/)[1] ?? ''
         if (section && (await openSection(msg, msg.sender.id, section))) return
-        await msg.answerText(ROOT_TEXT, { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter, webappUrl) })
+        await msg.answerText(rootText(), { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter, webappUrl) })
     }
 
     // /start и /menu в личке открывают один и тот же хаб. В группах /start — алиас /help.
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('start')), openMenu)
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('menu')), openMenu)
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('language')), async (msg) => {
+        if (msg.sender?.type !== 'user') return
+        const screen = languageScreen(storage, msg.sender.id)
+        await msg.answerText(screen.text, { replyMarkup: screen.keyboard })
+    })
 
     dp.onCallbackQuery(async (ctx: CallbackQueryContext) => {
         const data = ctx.dataStr
@@ -283,20 +315,44 @@ export const registerMenuHandlers = (
 
         // Меню — только в личке. В группах кнопок меню нет, но на всякий случай гейтим.
         if (ctx.chat.type !== 'user') {
-            await ctx.answer({ text: 'Меню доступно только в личке с ботом.', alert: true })
+            await ctx.answer({ text: tr('Меню доступно только в личке с ботом.', "The menu is available in your private chat with the bot."), alert: true })
             return
         }
 
         const userId = ctx.user.id
+        if (data === CB_LANGUAGE) {
+            await replaceScreen(ctx, languageScreen(storage, userId))
+            await ctx.answer({})
+            return
+        }
+        if (data.startsWith(`${CB_LANGUAGE}:`)) {
+            const choice = LANGUAGE_CHOICES.find((language) => data === `${CB_LANGUAGE}:${language}`)
+            if (!choice) return PropagationAction.Continue
+            await setUserLanguage(storage, userId, choice)
+            void syncPrivateLanguageCommands(client, storage, userId).catch((err) => {
+                console.warn('[i18n] failed to update private commands:', err)
+            })
+            await withLocale(userLocale(storage, userId, ctx.user.language), async () => {
+                await replaceScreen(ctx, languageScreen(storage, userId))
+                await ctx.answer({ text: tr('Язык сохранён', 'Language saved') })
+            })
+            return
+        }
+
         const isResident = await residents.isResident(userId)
+        if (!isResident && data === CB_ROOT) {
+            await replaceScreen(ctx, guestScreen(webappUrl))
+            await ctx.answer({})
+            return
+        }
         if (!isResident) {
-            await ctx.answer({ text: 'Бот доступен только резидентам.', alert: true })
+            await ctx.answer({ text: tr('Бот доступен только резидентам.', "This bot is available to residents."), alert: true })
             return
         }
 
         switch (data) {
             case CB_ROOT: {
-                await replaceScreen(ctx, { kind: 'text', text: ROOT_TEXT, keyboard: rootKeyboard(storage, userId, hasPrinter, webappUrl) })
+                await replaceScreen(ctx, { kind: 'text', text: rootText(), keyboard: rootKeyboard(storage, userId, hasPrinter, webappUrl) })
                 await ctx.answer({})
                 return
             }
@@ -304,7 +360,7 @@ export const registerMenuHandlers = (
                 await replaceScreen(ctx, {
                     kind: 'text',
                     text: renderPresenceText(storage),
-                    keyboard: BotKeyboard.inline([BACK_ROW]),
+                    keyboard: BotKeyboard.inline([backRow()]),
                 })
                 await ctx.answer({})
                 return
@@ -318,7 +374,7 @@ export const registerMenuHandlers = (
             case CB_CHECKIN_NICK:
             case CB_CHECKIN_ANON: {
                 if (ctx.user.username == null && data === CB_CHECKIN_NICK) {
-                    await ctx.answer({ text: 'У тебя нет username — отметься «без ника».', alert: true })
+                    await ctx.answer({ text: tr('У тебя нет username — отметься «без ника».', "You don't have a Telegram username. Choose to check in anonymously."), alert: true })
                     return
                 }
                 const res = await checkInResident(
@@ -328,21 +384,21 @@ export const registerMenuHandlers = (
                 )
                 if (res.chats.length === 0) {
                     await ctx.answer({
-                        text: 'Отметиться могут только резиденты. Если ты резидент, напиши в чат спейса, тебя добавят.',
+                        text: tr('Отметиться могут только резиденты. Если ты резидент, напиши в чат спейса, тебя добавят.', "Only residents can check in. If you're a resident, ask in the space's chat to be added."),
                         alert: true,
                     })
                     return
                 }
                 const section = presenceSection(storage, userId)
                 await replaceScreen(ctx, { kind: 'text', text: section.text, keyboard: section.keyboard })
-                await ctx.answer({ text: res.alreadyChecked ? 'Обновил отметку' : 'Отметил' })
+                await ctx.answer({ text: res.alreadyChecked ? tr('Обновил отметку', "Check-in refreshed") : tr('Отметил', "Checked in") })
                 return
             }
             case CB_CHECKOUT: {
                 const removed = await checkOutResident(client, storage, residents, userId)
                 const section = presenceSection(storage, userId)
                 await replaceScreen(ctx, { kind: 'text', text: section.text, keyboard: section.keyboard })
-                await ctx.answer({ text: removed ? 'Снял отметку' : 'Ты и так не отмечен' })
+                await ctx.answer({ text: removed ? tr('Снял отметку', "Checked out") : tr('Ты и так не отмечен', "You're already checked out") })
                 return
             }
             case CB_INVISIBLE: {
@@ -350,7 +406,7 @@ export const registerMenuHandlers = (
                 await setPresenceInvisible(client, storage, residents, userId, next)
                 const section = presenceSection(storage, userId)
                 await replaceScreen(ctx, { kind: 'text', text: section.text, keyboard: section.keyboard })
-                await ctx.answer({ text: next ? 'Невидимка включена' : 'Невидимка выключена' })
+                await ctx.answer({ text: next ? tr('Невидимка включена', "Invisible mode on") : tr('Невидимка выключена', "Invisible mode off") })
                 return
             }
             case CB_MAC: {
@@ -362,21 +418,21 @@ export const registerMenuHandlers = (
             // (её тоже скриншотят) код не остаётся.
             case CB_DOOR: {
                 const door = doorCodeOf(storage)
-                await ctx.answer({ text: door ? doorAlertText(door) : 'Код домофона пока не задан.', alert: true })
+                await ctx.answer({ text: door ? doorAlertText(door) : tr('Код домофона пока не задан.', "The intercom code hasn't been set yet."), alert: true })
                 return
             }
             case CB_PRINTER:
             case CB_PRINTER_PREVIEW:
             case CB_PRINTER_CAMERA: {
                 if (printerUrl === null) {
-                    await ctx.answer({ text: 'Принтер не подключён.', alert: true })
+                    await ctx.answer({ text: tr('Принтер не подключён.', "The printer isn't connected."), alert: true })
                     return
                 }
                 const view = data === CB_PRINTER_CAMERA ? 'camera' : 'preview'
                 const screen = await buildPrinterScreen(printerUrl, printerAuth, view)
                 await replaceScreen(ctx, screen)
                 await ctx.answer(
-                    data === CB_PRINTER_CAMERA ? { text: '📷 Камера' } : data === CB_PRINTER_PREVIEW ? { text: '🖼 Превью' } : {},
+                    data === CB_PRINTER_CAMERA ? { text: tr('📷 Камера', "📷 Camera") } : data === CB_PRINTER_PREVIEW ? { text: tr('🖼 Превью', "🖼 Preview") } : {},
                 )
                 return
             }

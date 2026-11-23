@@ -2,8 +2,9 @@
 // в шапке, дни листаются (DayPager из Day.tsx). На странице только то, что гостю и так
 // приходит в bootstrap: публичное «кто придёт», тема дня, ивенты и замок.
 
+import { tr } from '../i18n'
 import { Fragment } from 'react'
-import { fmtDayMonth, peopleWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { fmtDayMonth, peopleWord, weekdayIdx, weekdaysFull } from '../dates'
 import { icons } from '../icons'
 import { push, startNewRequest, useParams, useStore } from '../store'
 import type { DayLock } from '../types'
@@ -20,8 +21,8 @@ function LockBanner({ lock }: { lock: DayLock }) {
     <div className="lock-banner">
       <div className="lb-icon">{icons.lockFilled()}</div>
       <div className="lb-text">
-        <div className="lb-title">Спейс закрыт для гостей</div>
-        <div className="lb-sub">{lock.reason || 'В этот день заявку оставить не получится'}</div>
+        <div className="lb-title">{tr('Спейс закрыт для гостей', 'The space is closed to guests')}</div>
+        <div className="lb-sub">{lock.reason || tr('В этот день заявку оставить не получится', 'You can’t request to visit on this day')}</div>
       </div>
     </div>
   )
@@ -32,7 +33,7 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
   const me = data!.me.id
   const att = day.attendees
   const isToday = day.dateKey === data!.todayKey
-  const weekday = WEEKDAYS_FULL[weekdayIdx(day.dateKey)]!
+  const weekday = weekdaysFull()[weekdayIdx(day.dateKey)]!
   // На этот день у гостя уже есть заявка: на месте «Хочу прийти» она сама.
   const mine = data!.myRequests.find((r) => r.dateKey === day.dateKey) ?? null
   const faces = att.slice(0, 3)
@@ -42,7 +43,7 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
       <div className="dpg-head" ref={headRef}>
         <Header
           title={weekday}
-          subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(day.dateKey)}${att.length > 0 ? ` · ${peopleWord(att.length)}` : ''}`}
+          subtitle={`${isToday ? tr('Сегодня, ', 'Today, ') : ''}${fmtDayMonth(day.dateKey)}${att.length > 0 ? ` · ${peopleWord(att.length)}` : ''}`}
         />
         {day.agenda ? <DayTopic text={day.agenda.text} dateKey={day.dateKey} /> : null}
         <div className="dpg-coming">
@@ -60,8 +61,8 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
             )}
           </div>
           <div className="dpg-coming-text">
-            <div className="dpg-coming-k">{`Придут · ${att.length}`}</div>
-            <ComingNames names={[...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]} />
+            <div className="dpg-coming-k">{tr(`Придут · ${att.length}`, `Attending · ${att.length}`)}</div>
+            <ComingNames names={[...(att.some((a) => a.userId === me) ? [tr('вы', 'you')] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]} />
           </div>
           {mine ? (
             <button
@@ -72,12 +73,12 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
               {/* Коротко, как «Вы придёте» у резидента: подпись длиннее сжимает «Придут». */}
               <span className={'dpg-pill-l ' + (mine.status === 'approved' ? 'dpg-pill-on' : 'dpg-pill-off')}>
                 {mine.status === 'approved' ? icons.check(14, '#fff', 2.6) : null}
-                {`${mine.status === 'approved' ? 'Визит' : 'Заявка'} к ${mine.time}`}
+                {`${mine.status === 'approved' ? tr('Визит', 'Visit') : tr('Заявка', 'Request')} ${tr('к', 'at')} ${mine.time}`}
               </span>
             </button>
           ) : !day.lock ? (
             <button type="button" className="dpg-pill" onClick={() => startNewRequest({ dateKey: day.dateKey })}>
-              <span className="dpg-pill-l dpg-pill-off">Хочу прийти</span>
+              <span className="dpg-pill-l dpg-pill-off">{tr('Хочу прийти', 'Request a visit')}</span>
             </button>
           ) : null}
         </div>
@@ -98,7 +99,7 @@ function GuestDayPage({ day, active, headRef, pageRef }: DayPageProps) {
         ) : null}
         {att.length > 0 ? (
           <>
-            <SectionTitle>Кто придёт</SectionTitle>
+            <SectionTitle>{tr('Кто придёт', 'Who’s coming')}</SectionTitle>
             <AttendeesCard list={att} />
           </>
         ) : null}
@@ -111,6 +112,6 @@ export function PeekDay() {
   const params = useParams()
   const { data } = useStore()
   const index = data!.days.findIndex((d) => d.dateKey === params.dateKey)
-  if (index < 0) return <DroppedDay dateKey={String(params.dateKey)} backLabel="Активность" backText="К активности" />
-  return <DayPager days={data!.days} index={index} Page={GuestDayPage} backLabel="Активность" />
+  if (index < 0) return <DroppedDay dateKey={String(params.dateKey)} backLabel={tr('Активность', 'Activity')} backText={tr('К активности', 'Back to activity')} />
+  return <DayPager days={data!.days} index={index} Page={GuestDayPage} backLabel={tr('Активность', 'Activity')} />
 }

@@ -5,6 +5,7 @@
 // же движение, что у системного пикера iOS, но подписи наши и всегда 00–23.
 // В форме заявки гостя то же колесо раскрывается прямо в карточке (TimeRow).
 
+import { tr } from '../i18n'
 import {
   useEffect,
   useLayoutEffect,
@@ -380,7 +381,7 @@ export function NumberWheel({
         values={values}
         index={n - min}
         minIndex={0}
-        label="Число"
+        label={tr("Число", "Day")}
         onLive={pick}
         onSettle={pick}
         onScrub={onScrub ? (pos) => onScrub(min + pos) : undefined}
@@ -448,7 +449,7 @@ export function TimeWheels({
         values={HOURS}
         index={Math.max(0, HOURS.indexOf(hour))}
         minIndex={minHour !== null ? HOURS.indexOf(minHour) : 0}
-        label="Часы"
+        label={tr("Часы", "Hours")}
         onLive={(i) => emit(HOURS[i]!, under.current[1])}
         onSettle={(i) => settleHour(HOURS[i]!)}
       />
@@ -457,7 +458,7 @@ export function TimeWheels({
         values={MINUTES}
         index={Math.max(0, MINUTES.indexOf(minute))}
         minIndex={minHour !== null && hour === minHour && minMinute !== null ? MINUTES.indexOf(minMinute) : 0}
-        label="Минуты"
+        label={tr("Минуты", "Minutes")}
         onLive={(i) => emit(under.current[0], MINUTES[i]!)}
         onSettle={(i) => settleMinute(MINUTES[i]!)}
       />
@@ -500,10 +501,10 @@ function TimeSheet({
       <Question text={question} />
       {shown ? <TimeWheels value={draft} min={min} onChange={setDraft} /> : <div className="tp-wheels" />}
       <Actions
-        label="Готово"
+        label={tr("Готово", "Done")}
         onConfirm={() => done({ time: draft })}
-        also={clearable ? { label: 'Без времени', onSelect: () => done('clear') } : undefined}
-        cancel="Отмена"
+        also={clearable ? { label: tr('Без времени', "No time"), onSelect: () => done('clear') } : undefined}
+        cancel={tr("Отмена", "Cancel")}
         onCancel={() => done(null)}
       />
     </>
@@ -519,7 +520,7 @@ export function TimeField({
   fallback,
   onClear,
   prefix,
-  question = 'Время',
+  question = tr('Время', "Time"),
 }: {
   value: string
   onChange: (value: string) => void
@@ -562,7 +563,7 @@ export function TimeField({
       ref={ref}
       type="button"
       className={'time-input time-field' + (empty ? ' empty' : '') + (className ? ' ' + className : '')}
-      aria-label={empty ? placeholder : 'Время: ' + hour + ':' + minute}
+      aria-label={empty ? placeholder : tr('Время: ', "Time: ") + hour + ':' + minute}
       onClick={() => void pick()}
     >
       <MorphValue text={empty ? (placeholder ?? '') : (prefix ? prefix + ' ' : '') + hour + ':' + minute} align="center" />
@@ -668,7 +669,7 @@ export function TimeRow({
         <button
           type="button"
           className={'time-input time-field inline' + (open ? ' open' : '')}
-          aria-label={'Время: ' + hour + ':' + minute}
+          aria-label={tr('Время: ', "Time: ") + hour + ':' + minute}
           aria-expanded={open}
           onClick={() => {
             haptic.impact('light')

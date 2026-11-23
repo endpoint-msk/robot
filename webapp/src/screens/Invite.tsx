@@ -7,6 +7,7 @@
 // выбор человека на день — ровно та же задача, и «уже придёт» здесь даже полезнее,
 // чем в зове (подхватить визит проще тому, кто и так будет в спейсе).
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useState } from 'react'
 import { action, api } from '../api'
 import { fmtShortDate } from '../dates'
@@ -43,12 +44,10 @@ function PersonRow({
   let right
   // В зове «уже придёт» заменяет кнопку: звать второй раз незачем. В передаче — наоборот,
   // это лучший кандидат, поэтому там метка уезжает под имя, а кнопка остаётся.
-  if (person.attending && !transfer) right = <span className="waiting-label">Придёт</span>
+  if (person.attending && !transfer) right = <span className="waiting-label">{tr('Придёт', 'Attending')}</span>
   else if (transfer) {
     right = (
-      <button type="button" className="host-btn" disabled={busy} onClick={onInvite}>
-        Передать
-      </button>
+      <button type="button" className="host-btn" disabled={busy} onClick={onInvite}>{tr('Передать', 'Transfer')}</button>
     )
   } else {
     // Позвали своим тапом: подпись меняется буквами, как у «Захостить», а кнопка гаснет в
@@ -57,7 +56,7 @@ function PersonRow({
       <button
         type="button"
         className={'host-btn invite-btn' + (invited ? ' invited' : '')}
-        aria-label={invited ? 'Позвали' : 'Позвать'}
+        aria-label={invited ? tr('Позвали', 'Invited') : tr('Позвать', 'Invite')}
         aria-disabled={invited}
         onClick={invited ? undefined : onInvite}
       >
@@ -65,8 +64,8 @@ function PersonRow({
           {icons.check(13, '#34c759', 2.4)}
         </span>
         <span className="hb-labels" aria-hidden="true">
-          <MorphWord text="Позвать" on={!invited} />
-          <MorphWord text="Позвал" on={invited} />
+          <MorphWord text={tr('Позвать', 'Invite')} on={!invited} />
+          <MorphWord text={tr('Позвал', 'Invited')} on={invited} />
         </span>
       </button>
     )
@@ -85,7 +84,7 @@ function PersonRow({
             </>
           ) : null}
           {person.username && transfer && person.attending ? ' · ' : null}
-          {transfer && person.attending ? 'уже придёт' : null}
+          {transfer && person.attending ? tr('уже придёт', 'already attending') : null}
         </div>
       </div>
       <div className="row-right">{right}</div>
@@ -140,12 +139,12 @@ const lastCount = { residents: 7, guests: 3 }
     Заголовки без счётчика — число кандидатов и есть то, чего ещё ждём. */
 function InviteSkeleton({ transfer }: { transfer: boolean }) {
   return (
-    <div aria-busy="true" aria-label="Загружаем кандидатов">
-      <SectionTitle>Резиденты</SectionTitle>
+    <div aria-busy="true" aria-label={tr('Загружаем кандидатов', 'Loading people')}>
+      <SectionTitle>{tr('Резиденты', 'Residents')}</SectionTitle>
       <SkRows count={Math.max(1, lastCount.residents)} avatar tail />
       {transfer ? null : (
         <>
-          <SectionTitle>Гости</SectionTitle>
+          <SectionTitle>{tr('Гости', 'Guests')}</SectionTitle>
           <SkRows count={Math.min(Math.max(1, lastCount.guests), 4)} avatar tail />
         </>
       )}
@@ -219,20 +218,20 @@ export function Invite() {
       residents.length === 0 && guests.length === 0 ? (
         <div className="card">
           <EmptyState
-            title={q ? 'Никого не нашлось' : transfer ? 'Некому передать' : 'Некого звать'}
+            title={q ? tr('Никого не нашлось', 'No one found') : transfer ? tr('Некому передать', 'No one to transfer the visit to') : tr('Некого звать', 'No one to invite')}
             text={
               q
-                ? 'Попробуйте другое имя или ник.'
+                ? tr('Попробуйте другое имя или ник.', 'Try another name or username.')
                 : transfer
-                  ? 'Кроме вас, резидентов бот не знает.'
-                  : 'Бот знает только резидентов и гостей, которые оставляли заявки.'
+                  ? tr('Кроме вас, резидентов бот не знает.', 'The bot only knows you as a resident.')
+                  : tr('Бот знает только резидентов и гостей, которые оставляли заявки.', 'The bot knows residents and guests who’ve submitted requests.')
             }
           />
         </div>
       ) : (
         <>
-          <Group title="Резиденты" people={residents} query={q} invited={invited} busyId={busyId} transfer={transfer} onInvite={invite} />
-          <Group title="Гости" people={guests} query={q} invited={invited} busyId={busyId} onInvite={invite} />
+          <Group title={tr('Резиденты', 'Residents')} people={residents} query={q} invited={invited} busyId={busyId} transfer={transfer} onInvite={invite} />
+          <Group title={tr('Гости', 'Guests')} people={guests} query={q} invited={invited} busyId={busyId} onInvite={invite} />
         </>
       )
   }
@@ -241,7 +240,7 @@ export function Invite() {
     <Screen>
       <BackRow />
       <Header
-        title={transfer ? 'Кому передать' : 'Позвать в спейс'}
+        title={transfer ? tr('Кому передать', 'Transfer to') : tr('Позвать в спейс', 'Invite to the space')}
         subtitle={
           // Имя гостя впереди дня: «визит Настя» спотыкается о падеж, а склонять чужое
           // имя нечем — в заголовке экрана и так понятно, о чьём визите речь.
@@ -254,10 +253,10 @@ export function Invite() {
           может. В закрытый день гостю заявку не оставить, и звать его некуда. */}
       {!transfer && !boot!.days.find((d) => d.dateKey === dateKey)?.lock ? (
         <div className="card">
-          <ShareRow target={{ kind: 'day', dateKey }} label="Из контактов Telegram" />
+          <ShareRow target={{ kind: 'day', dateKey }} label={tr('Из контактов Telegram', 'From Telegram contacts')} />
         </div>
       ) : null}
-      <SearchField value={query} onChange={setQuery} placeholder="Поиск по имени или нику" />
+      <SearchField value={query} onChange={setQuery} placeholder={tr('Поиск по имени или нику', 'Search by name or username')} />
       <Swap loading={loading && !data} skeleton={pending ? <InviteSkeleton transfer={transfer} /> : null}>
         {body}
       </Swap>

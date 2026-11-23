@@ -2,6 +2,7 @@
 // тот же для текущего сбора (данные из bootstrap) и для прошлого, открытого из
 // истории (грузится ручкой dues.period) — форма ответа у них общая.
 
+import { tr } from '../i18n'
 import { createContext, useContext, useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay, monthsWord } from '../dates'
@@ -24,7 +25,7 @@ import { SkBlock, SkRows } from '../components/skeleton'
 import { SwipeRow, swipeIcons, type SwipeAction } from '../components/SwipeRow'
 
 /** «месяц» / «2 месяца»: подпись к просрочке. */
-export const debtWord = (missed: number): string => (missed >= 2 ? monthsWord(missed) : 'месяц')
+export const debtWord = (missed: number): string => (missed >= 2 ? monthsWord(missed) : tr('месяц', 'month'))
 
 export function DebtBadge({ missed, out = false, onGone }: { missed: number; out?: boolean; onGone?: () => void }) {
   if (missed <= 0) return null
@@ -37,7 +38,10 @@ export function DebtBadge({ missed, out = false, onGone }: { missed: number; out
   )
 }
 
-const RATE_LABEL: Record<string, string> = { student: 'студент', custom: 'своя' }
+const RATE_LABEL: Record<string, string> = {
+  get student() { return tr('студент', 'student') },
+  get custom() { return tr('своя', 'custom') },
+}
 
 /** Ставка 0 — человек освобождён от взноса: ни суммы, ни просрочки, ни строки в счётчике. */
 const isExempt = (row: DuesRow): boolean => row.amount <= 0
@@ -66,13 +70,13 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
 
   const sub =
     row.status === 'paid' && row.at
-      ? `${fmtIsoDay(row.at)}${row.by ? ` · подтвердил ${userLabel(row.by)}` : ''}`
+      ? `${fmtIsoDay(row.at)}${row.by ? tr(` · подтвердил ${userLabel(row.by)}`, ` · confirmed by ${userLabel(row.by)}`) : ''}`
       : row.status === 'claimed' && row.at
-        ? `заявил ${fmtIsoDay(row.at)}`
+        ? tr(`заявил ${fmtIsoDay(row.at)}`, `claimed ${fmtIsoDay(row.at)}`)
         : isExempt(row)
           ? ''
           : row.missed >= 2
-            ? 'Крайний срок неуплаты'
+            ? tr('Крайний срок неуплаты', 'Payment deadline')
             : ''
 
   const body = (
@@ -87,7 +91,7 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
           <span className="dues-name">{userLabel(row)}</span>
           {isExempt(row) ? null : <DebtBadge missed={row.missed} />}
           {isExempt(row) ? (
-            <span className="rate-chip">не платит</span>
+            <span className="rate-chip">{tr('не платит', 'exempt')}</span>
           ) : row.rate !== 'common' ? (
             <span className="rate-chip">{RATE_LABEL[row.rate]}</span>
           ) : null}
@@ -98,7 +102,7 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
       </div>
       <div className="row-right">
         <span className={'dues-amount' + (row.status === 'paid' ? ' paid' : isExempt(row) ? ' muted' : '')}>
-          {isExempt(row) ? 'освобождён' : money(row.amount, snap.currency)}
+          {isExempt(row) ? tr('освобождён', 'exempt') : money(row.amount, snap.currency)}
         </span>
         {icons.chevron()}
       </div>
@@ -108,10 +112,10 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
   if (!snap.canEdit) return body
 
   const actions: SwipeAction[] = [
-    { key: 'rate', label: 'Ставка', icon: swipeIcons.tag(), tone: 'neutral', onSelect: open },
+    { key: 'rate', label: tr('Ставка', 'Rate'), icon: swipeIcons.tag(), tone: 'neutral', onSelect: open },
     row.status === 'paid'
-      ? { key: 'undo', label: 'Снять отметку', icon: swipeIcons.undo(), tone: 'red', onSelect: () => mark(row, 'none') }
-      : { key: 'ok', label: 'Отметить взнос', icon: swipeIcons.check(), onSelect: () => mark(row, 'paid') },
+      ? { key: 'undo', label: tr('Снять отметку', 'Remove payment mark'), icon: swipeIcons.undo(), tone: 'red', onSelect: () => mark(row, 'none') }
+      : { key: 'ok', label: tr('Отметить взнос', 'Mark as paid'), icon: swipeIcons.check(), onSelect: () => mark(row, 'paid') },
   ]
   return <SwipeRow actions={actions}>{body}</SwipeRow>
 }
@@ -122,17 +126,17 @@ function Verdict({ row, mark, done }: { row: DuesRow; mark: Mark; done: boolean 
     return (
       <div className="dues-verdict done">
         {icons.check(13, 'var(--green)', 2.4)}
-        Подтверждено
+        {tr('Подтверждено', 'Confirmed')}
       </div>
     )
   }
   return (
     <div className="dues-verdict">
       <button className="small-btn green" onClick={() => mark(row, 'paid')}>
-        Подтвердить
+        {tr('Подтвердить', 'Confirm')}
       </button>
       <button className="small-btn gray" onClick={() => mark(row, 'none')}>
-        Отклонить
+        {tr('Отклонить', 'Reject')}
       </button>
     </div>
   )
@@ -212,17 +216,18 @@ function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: (
     else setClaiming(false)
   }
   const copy = async (e: MouseEvent) => {
-    if (!(await clip.copy(snap.requisites, e))) showAlert('Не получилось скопировать. Выделите текст вручную.')
+    if (!(await clip.copy(snap.requisites, e))) showAlert(tr('Не получилось скопировать. Выделите текст вручную.', "Couldn't copy. Select and copy the text manually."))
   }
 
-  const title = `Взнос за ${snap.periodLabel.split(' ')[0]?.toLowerCase() ?? ''}`
+  const month = snap.periodLabel.split(' ')[0] ?? ''
+  const title = tr(`Взнос за ${month.toLowerCase()}`, `Dues for ${month}`)
   // Ставка 0 — человек освобождён: карточка остаётся, но без реквизитов и кнопки.
   if (snap.me.amount <= 0) {
     return (
       <div className="my-dues">
         <div className="my-dues-title">{title}</div>
-        <div className="my-dues-sum">Не требуется</div>
-        <div className="my-dues-sub">Ставка обнулена, взнос с вас не спрашивают.</div>
+        <div className="my-dues-sum">{tr('Не требуется', 'No payment due')}</div>
+        <div className="my-dues-sub">{tr('Ставка обнулена, взнос с вас не спрашивают.', 'Your rate is zero.')}</div>
       </div>
     )
   }
@@ -239,13 +244,13 @@ function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: (
           <div className="my-dues-title">{title}</div>
           <span className="md-tags">
             <span className="ob-tag warn md-s" data-s="none">
-              Не внесён
+              {tr('Не внесён', 'Unpaid')}
             </span>
             <span className="ob-tag gray md-s" data-s="claimed">
-              Ждёт сверки
+              {tr('Ждёт сверки', 'Awaiting verification')}
             </span>
             <span className="ob-tag green md-s" data-s="paid">
-              Внесён
+              {tr('Внесён', 'Paid')}
             </span>
           </span>
         </div>
@@ -259,10 +264,10 @@ function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: (
             <div className="md-req-in">
               <div className="my-dues-req">
                 <div className="mdr-main">
-                  <div className="mdr-k">Реквизиты</div>
+                  <div className="mdr-k">{tr('Реквизиты', 'Payment details')}</div>
                   <div className="mdr-text">{snap.requisites}</div>
                 </div>
-                <button className="mdr-copy" aria-label="Скопировать реквизиты" onClick={(e) => void copy(e)}>
+                <button className="mdr-copy" aria-label={tr('Скопировать реквизиты', 'Copy payment details')} onClick={(e) => void copy(e)}>
                   {clip.glyph}
                 </button>
               </div>
@@ -278,15 +283,15 @@ function MyDues({ snap, onChanged, onClaim }: { snap: DuesSnapshot; onChanged: (
             onClick={() => void claim()}
           >
             {icons.check(18, '#fff', 2)}
-            Я внёс
+            {tr('Я внёс', "I've paid")}
           </button>
           <div className="ob-pay-line md-s" data-s="claimed">
             {icons.clock(16, 'currentColor')}
-            Отметка ушла на сверку
+            {tr('Отметка ушла на сверку', 'Payment reported for verification')}
           </div>
           <div className="ob-pay-line ok md-s" data-s="paid">
             {icons.check(15, 'currentColor', 2.2)}
-            {`Сверено с выпиской${paidOn}`}
+            {tr(`Сверено с выпиской${paidOn}`, `Verified against the bank statement${paidOn}`)}
           </div>
         </div>
       </div>
@@ -305,7 +310,7 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
         <span className="df-main">
           <Flip value={paid} />
         </span>
-        <span className="df-of">{nb(`из ${total} подтверждено`)}</span>
+        <span className="df-of">{nb(tr(`из ${total} подтверждено`, `of ${total} confirmed`))}</span>
         <span className="df-sum">
           <Units text={money(collected, snap.currency)} />
         </span>
@@ -322,18 +327,18 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
         <div className="dues-split">
           <span>
             <i style={{ background: 'var(--green)' }} />
-            {'подтверждено '}
+            {tr('подтверждено ', 'confirmed ')}
             <Flip value={paid} />
           </span>
           <span>
             <i style={{ background: 'var(--orange)' }} />
-            {'ждут сверки '}
+            {tr('ждут сверки ', 'awaiting verification ')}
             <Flip value={claimed} />
           </span>
         </div>
       ) : null}
       <div className="dues-note">
-        {left > 0 ? `Осталось собрать ${money(left, snap.currency)}` : 'Собрано полностью'}
+        {left > 0 ? tr(`Осталось собрать ${money(left, snap.currency)}`, `${money(left, snap.currency)} left to collect`) : tr('Собрано полностью', 'Fully collected')}
       </div>
     </div>
   )
@@ -346,7 +351,7 @@ function Summary({ snap }: { snap: DuesSnapshot }) {
  */
 function DuesSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Загружаем период взносов">
+    <div aria-busy="true" aria-label={tr('Загружаем период взносов', 'Loading dues period')}>
       <div className="my-dues">
         <SkBlock w={74} h={11} />
         <SkBlock w={148} h={30} style={{ display: 'block', marginTop: 6 }} />
@@ -457,7 +462,7 @@ export function DuesScreen() {
   const frame = (subtitle: ReactNode, body: ReactNode) => (
     <Screen>
       <BackRow />
-      <Header title="Взносы" subtitle={subtitle} />
+      <Header title={tr('Взносы', 'Dues')} subtitle={subtitle} />
       <Swap loading={loading} skeleton={remote.pending ? <DuesSkeleton /> : null}>
         {body}
       </Swap>
@@ -478,11 +483,11 @@ export function DuesScreen() {
       <>
         <div className="card">
           <EmptyState
-            title={snap?.enabled ? 'Сбор ещё не открывался' : 'Сбор выключен'}
+            title={snap?.enabled ? tr('Сбор ещё не открывался', "Dues collection hasn't started yet") : tr('Сбор выключен', 'Dues collection is off')}
             text={
               snap?.enabled
-                ? `Первый период откроется ${snap.day}-го числа. До этого никто ничего не должен.`
-                : 'Пока сбор выключен, периоды не открываются и никто ничего не должен.'
+                ? tr(`Первый период откроется ${snap.day}-го числа. До этого никто ничего не должен.`, `The first period opens on day ${snap.day} of the month. No payments are due until then.`)
+                : tr('Пока сбор выключен, периоды не открываются и никто ничего не должен.', 'While collection is off, no periods open and no payments are due.')
             }
           />
         </div>
@@ -492,7 +497,7 @@ export function DuesScreen() {
               <div className="row-icon" style={{ background: 'var(--orange)' }}>
                 {icons.gear()}
               </div>
-              <span className="row-label">Настройки взносов</span>
+              <span className="row-label">{tr('Настройки взносов', 'Dues settings')}</span>
               <div className="row-right">{icons.chevron()}</div>
             </button>
           </div>
@@ -530,16 +535,16 @@ export function DuesScreen() {
     <DuesSection key={title} title={title} items={items} snap={snap} mark={mark} meId={meId} verdicts={verdicts} />
   )
   const sections: ReactNode[] = snap.canEdit
-    ? [section('Ждут подтверждения', claimed, true), section('Не внесли', unpaid), section('Внесли', paid)]
-    : [section('Не внесли', unpaid), section('Ждут подтверждения', claimed), section('Внесли', paid)]
-  sections.push(section('Не платят', exempt))
+    ? [section(tr('Ждут подтверждения', 'Awaiting confirmation'), claimed, true), section(tr('Не внесли', 'Unpaid'), unpaid), section(tr('Внесли', 'Paid'), paid)]
+    : [section(tr('Не внесли', 'Unpaid'), unpaid), section(tr('Ждут подтверждения', 'Awaiting confirmation'), claimed), section(tr('Внесли', 'Paid'), paid)]
+  sections.push(section(tr('Не платят', 'Exempt'), exempt))
   const order: DuesRef[] = [...(snap.canEdit ? [claimed, unpaid, paid] : [unpaid, claimed, paid]), exempt]
     .flat()
     .filter((it) => !it.leaving)
     .map((it) => ({ userId: it.row.userId, name: it.row.name, username: it.row.username }))
 
   return frame(
-    `${snap.periodLabel}${snap.isCurrent ? ` · сбор ${snap.day}-го числа` : ' · прошлый период'}`,
+    `${snap.periodLabel}${snap.isCurrent ? tr(` · сбор ${snap.day}-го числа`, ` · collected on day ${snap.day} of the month`) : tr(' · прошлый период', ' · previous period')}`,
     <>
       <MyDues snap={snap} onChanged={onChanged} onClaim={claimMine} />
       <Summary snap={snap} />
@@ -550,7 +555,7 @@ export function DuesScreen() {
             <div className="row-icon" style={{ background: 'var(--gray)' }}>
               {icons.archiveBox()}
             </div>
-            <span className="row-label">История и статистика</span>
+            <span className="row-label">{tr('История и статистика', 'History and statistics')}</span>
             <div className="row-right">{icons.chevron()}</div>
           </button>
           {snap.canEdit ? (
@@ -560,7 +565,7 @@ export function DuesScreen() {
                 <div className="row-icon" style={{ background: 'var(--orange)' }}>
                   {icons.gear()}
                 </div>
-                <span className="row-label">Настройки взносов</span>
+                <span className="row-label">{tr('Настройки взносов', 'Dues settings')}</span>
                 <div className="row-right">{icons.chevron()}</div>
               </button>
             </>

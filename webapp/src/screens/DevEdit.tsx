@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { useEffect, useState } from 'react'
 import { action } from '../api'
 import { showAlert } from '../modals'
@@ -26,7 +27,7 @@ export function DevEdit() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажите время.')
+      showAlert(tr('Укажите время.', 'Choose a time.'))
       return
     }
     const res = await action('dev.update', { id: r.id, dateKey: selected, time, purpose })
@@ -39,13 +40,13 @@ export function DevEdit() {
   return (
     <Screen hasBottomBar>
       <BackRow label="Dev" />
-      <Header title={r.guest.name} subtitle="Правка заявки" />
-      <SectionTitle>День</SectionTitle>
+      <Header title={r.guest.name} subtitle={tr('Правка заявки', 'Edit request')} />
+      <SectionTitle>{tr('День', 'Day')}</SectionTitle>
       <DayChips days={days} selected={selected} onSelect={setSelected} showCounts={false} />
-      <SectionTitle>Детали</SectionTitle>
+      <SectionTitle>{tr('Детали', 'Details')}</SectionTitle>
       <div className="card">
         <div className="row time-row">
-          <span style={{ fontSize: 16 }}>Придёт к</span>
+          <span style={{ fontSize: 16 }}>{tr('Придёт к', 'Arrival time')}</span>
           <TimeField value={time} onChange={setTime} />
         </div>
         <Sep inset="text" />
@@ -61,7 +62,7 @@ export function DevEdit() {
       </div>
       <BottomBar>
         <button className="primary-btn" onClick={submit}>
-          Сохранить
+          {tr('Сохранить', 'Save')}
         </button>
       </BottomBar>
     </Screen>

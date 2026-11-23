@@ -5,9 +5,10 @@
 // Пропуском считается только явная отметка «не пришёл». Подтверждённый визит, который
 // никто не отметил, остаётся «без отметки», а не неявкой: забыл резидент, а не гость.
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { action, api, mutate, prefetchOnTouch } from '../api'
-import { fmtDayMonth, visitsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { fmtDayMonth, visitsWord, weekdayIdx, weekdaysFull } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { confirmDialog } from '../modals'
@@ -46,12 +47,12 @@ function effective(r: HostingRequest, pending: Record<string, boolean | null>, m
 /** Подпись исхода: существительными, а не «пришёл/пришла» - пол гостя мы не знаем. */
 function outcomeLine(o: VisitOutcome): { text: string; tone: string } | null {
   if (o.status === 'came') {
-    if (o.source === 'door') return { text: 'визит · по кнопке «Я на месте»', tone: 'came' }
-    if (o.source === 'legacy') return { text: 'визит · до отметок', tone: 'came' }
-    return { text: o.by ? `визит · отметка ${userLabel(o.by)}` : 'визит', tone: 'came' }
+    if (o.source === 'door') return { text: tr('визит · по кнопке «Я на месте»', 'visited · used “I’m here”'), tone: 'came' }
+    if (o.source === 'legacy') return { text: tr('визит · до отметок', 'visited · before attendance tracking'), tone: 'came' }
+    return { text: o.by ? tr(`визит · отметка ${userLabel(o.by)}`, `visited · marked by ${userLabel(o.by)}`) : tr('визит', 'visit'), tone: 'came' }
   }
-  if (o.status === 'missed') return { text: o.by ? `неявка · отметка ${userLabel(o.by)}` : 'неявка', tone: 'missed' }
-  if (o.status === 'unknown') return { text: 'без отметки', tone: 'muted' }
+  if (o.status === 'missed') return { text: o.by ? tr(`неявка · отметка ${userLabel(o.by)}`, `no-show · marked by ${userLabel(o.by)}`) : tr('неявка', 'no-show'), tone: 'missed' }
+  if (o.status === 'unknown') return { text: tr('без отметки', 'unmarked'), tone: 'muted' }
   return null
 }
 
@@ -182,6 +183,8 @@ function RequestVisitRow({
   const ownCame = came && outcome.source === 'mark'
   const rowRef = useRef<HTMLDivElement>(null)
   const was = useRef(outcome.status)
+  const host = r.approvedBy ? userLabel(r.approvedBy) : null
+  const hosting = host ? tr(`хостит ${host}`, `hosted by ${host}`) : tr('без хоста', 'no host')
   // Отметка другого резидента и откат после отказа сервера встают без движения: у
   // строки в этот момент нет своего тапа в ожидании.
   useLayoutEffect(() => {
@@ -198,8 +201,8 @@ function RequestVisitRow({
         <div className="req-main">
           <div className="req-name">{r.guest.name}</div>
           <div className="req-sub">
-            {nb(`к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'без хоста'}`)}
-            {r.anon ? ' · анонимно' : ''}
+            {nb(`${tr('к', 'at')} ${r.time} · ${hosting}`)}
+            {r.anon ? tr(' · анонимно', ' · anonymous') : ''}
           </div>
           <Collapse open={line !== null}>
             {line ? <div className={'visit-status ' + line.tone}>{line.text}</div> : null}
@@ -211,7 +214,7 @@ function RequestVisitRow({
           <button
             type="button"
             className={'vm-btn came' + (came ? ' on' : '')}
-            aria-label={ownCame ? 'Снять отметку визита' : 'Отметить визит'}
+            aria-label={ownCame ? tr('Снять отметку визита', 'Clear attendance') : tr('Отметить визит', 'Mark as attended')}
             aria-pressed={came}
             onClick={() => onMark(r, ownCame ? null : true)}
           >
@@ -221,10 +224,10 @@ function RequestVisitRow({
           <button
             type="button"
             className={'vm-btn missed' + (missed ? ' on' : '')}
-            aria-label={missed ? 'Снять отметку неявки' : 'Отметить неявку'}
+            aria-label={missed ? tr('Снять отметку неявки', 'Clear no-show') : tr('Отметить неявку', 'Mark as no-show')}
             aria-pressed={missed}
             disabled={!canMiss && !missed}
-            title={!canMiss && !missed ? (r.status === 'approved' ? 'Визит ещё не начался' : 'Заявку никто не брал') : undefined}
+            title={!canMiss && !missed ? (r.status === 'approved' ? tr('Визит ещё не начался', 'The visit hasn’t started') : tr('Заявку никто не брал', 'No one hosted this request')) : undefined}
             onClick={() => onMark(r, missed ? null : false)}
           >
             <i className="vm-fill" />
@@ -237,7 +240,7 @@ function RequestVisitRow({
 }
 
 function WalkInRow({ w, editable, onRemove }: { w: WalkIn; editable: boolean; onRemove: (w: WalkIn) => Promise<unknown> }) {
-  const sub = w.guest.username ? '@' + w.guest.username : w.guest.userId === 0 ? 'без аккаунта' : ''
+  const sub = w.guest.username ? '@' + w.guest.username : w.guest.userId === 0 ? tr('без аккаунта', 'no account') : ''
   return (
     <div className="row visit-row" data-dust={'walkin-' + w.id}>
       <button type="button" className="visit-who" {...prefetchOnTouch('guest.requests', { userId: w.guest.userId })} onClick={() => openGuest(w.guest)}>
@@ -245,11 +248,11 @@ function WalkInRow({ w, editable, onRemove }: { w: WalkIn; editable: boolean; on
         <div className="req-main">
           <div className="req-name">{w.guest.name}</div>
           {sub ? <div className="req-sub">{sub}</div> : null}
-          <div className="visit-status came">{`визит · отметка ${userLabel(w.by)}`}</div>
+          <div className="visit-status came">{tr(`визит · отметка ${userLabel(w.by)}`, `visited · marked by ${userLabel(w.by)}`)}</div>
         </div>
       </button>
       {editable ? (
-        <ActionButton className="vm-remove" label="Убрать из списка" onClick={() => onRemove(w)}>
+        <ActionButton className="vm-remove" label={tr('Убрать из списка', 'Remove from list')} onClick={() => onRemove(w)}>
           {icons.xmark(11, sec(0.5))}
         </ActionButton>
       ) : null}
@@ -305,8 +308,8 @@ export function Visits() {
   const markAll = async (ids: string[]): Promise<void> => {
     if (ids.length === 0 || cascading.current) return
     cascading.current = true
-    const ok = await confirmDialog(`Отметить ${visitsWord(ids.length)}? Тех, кого уже отметили, это не коснётся.`, {
-      confirmLabel: 'Отметить',
+    const ok = await confirmDialog(tr(`Отметить ${visitsWord(ids.length)}? Тех, кого уже отметили, это не коснётся.`, `Mark ${visitsWord(ids.length)} as attended? Existing marks will stay in place.`), {
+      confirmLabel: tr('Отметить', 'Mark as attended'),
     })
     if (!ok) {
       cascading.current = false
@@ -351,8 +354,8 @@ export function Visits() {
     if (res.data.visitsDay) setLocal(res.data.visitsDay)
   }
 
-  const title = isToday || isGrace ? 'Кто пришёл' : WEEKDAYS_FULL[weekdayIdx(dateKey)]
-  const when = `${isToday ? 'Сегодня, ' : isGrace ? 'Вчера, ' : ''}${fmtDayMonth(dateKey)}`
+  const title = isToday || isGrace ? tr('Кто пришёл', 'Who came') : weekdaysFull()[weekdayIdx(dateKey)]
+  const when = `${isToday ? tr('Сегодня, ', 'Today, ') : isGrace ? tr('Вчера, ', 'Yesterday, ') : ''}${fmtDayMonth(dateKey)}`
   let subtitle: ReactNode = when
   let body = null
 
@@ -366,9 +369,10 @@ export function Visits() {
     const unmarked = requests.filter((r) => outcomes.get(r.id)?.status === 'unknown').length
     subtitle = (
       <>
-        {`${when} · пришли\u00a0`}
+        {when}{tr(' · пришли\u00a0', ' · ')}
         <Flip value={came} />
-        {unmarked > 0 ? ` · без отметки\u00a0${unmarked}` : ''}
+        {tr('', ' attended')}
+        {unmarked > 0 ? tr(` · без отметки\u00a0${unmarked}`, ` · ${unmarked} unmarked`) : ''}
       </>
     )
     // «Все пришли» трогает только тех, о ком ничего не известно: явную неявку и приход
@@ -398,7 +402,7 @@ export function Visits() {
                   <div className="row-icon" style={{ background: 'var(--green)' }}>
                     {icons.check(17, '#fff', 2.4)}
                   </div>
-                  <span className="row-label">Все пришли</span>
+                  <span className="row-label">{tr('Все пришли', 'Mark all as attended')}</span>
                   <span className="row-right count-muted">{String(rest.length)}</span>
                 </ActionButton>
               </div>
@@ -408,7 +412,7 @@ export function Visits() {
         ) : null}
         {requests.length > 0 ? (
           <>
-            <SectionTitle>{`По заявкам · ${requests.length}`}</SectionTitle>
+            <SectionTitle>{tr(`По заявкам · ${requests.length}`, `Requests · ${requests.length}`)}</SectionTitle>
             <div className="card">
               {requests.map((r, i) => (
                 <Fragment key={r.id}>
@@ -428,7 +432,7 @@ export function Visits() {
         ) : null}
         {day.walkIns.length > 0 || editable ? (
           <>
-            <SectionTitle>{day.walkIns.length > 0 ? `Без заявки · ${day.walkIns.length}` : 'Без заявки'}</SectionTitle>
+            <SectionTitle>{day.walkIns.length > 0 ? tr(`Без заявки · ${day.walkIns.length}`, `Walk-ins · ${day.walkIns.length}`) : tr('Без заявки', 'Walk-ins')}</SectionTitle>
             <div className="card">
               {day.walkIns.map((w, i) => {
                 const row = (
@@ -456,7 +460,7 @@ export function Visits() {
                     <div className="row-icon" style={{ background: 'var(--blue)' }}>
                       {icons.personPlus('#fff')}
                     </div>
-                    <span className="row-label">Добавить гостя без заявки</span>
+                    <span className="row-label">{tr('Добавить гостя без заявки', 'Add a walk-in')}</span>
                     <div className="row-right">{icons.chevron()}</div>
                   </button>
                 </>
@@ -466,7 +470,7 @@ export function Visits() {
         ) : null}
         {requests.length === 0 && day.walkIns.length === 0 && !editable ? (
           <div className="card">
-            <EmptyState title="Никого не отметили" text="В этот день не было ни заявок, ни гостей без заявки." />
+            <EmptyState title={tr('Никого не отметили', 'No attendance recorded')} text={tr('В этот день не было ни заявок, ни гостей без заявки.', 'There were no requests or walk-ins on this day.')} />
           </div>
         ) : null}
       </>
@@ -482,8 +486,8 @@ export function Visits() {
         loading={!day && !remote.error}
         skeleton={
           remote.pending ? (
-            <div aria-busy="true" aria-label="Загружаем, кто пришёл">
-              <SectionTitle>По заявкам</SectionTitle>
+            <div aria-busy="true" aria-label={tr('Загружаем, кто пришёл', 'Loading attendance')}>
+              <SectionTitle>{tr('По заявкам', 'Requests')}</SectionTitle>
               <SkRows count={3} avatar tail />
             </div>
           ) : null

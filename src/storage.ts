@@ -107,6 +107,7 @@ export class Storage {
     private hydrate(parsed: Partial<State>): State {
         return {
             ...parsed,
+            userLanguages: parsed.userLanguages ?? {},
             fundraisers: parsed.fundraisers ?? {},
             lastMessages: parsed.lastMessages ?? {},
             presence: parsed.presence ?? {},

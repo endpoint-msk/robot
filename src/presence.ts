@@ -1,3 +1,5 @@
+import { tr, userLocale, withLocale } from './i18n.js'
+import { languageButton } from './bot-language-commands.js'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher } from '@mtcute/dispatcher'
 import { newRequestTarget, startappAt } from './deeplink.js'
@@ -93,25 +95,26 @@ const remindOnArrival = (client: TelegramClient, storage: Storage, userId: numbe
 /** Клавиатура под списком присутствующих: кнопка заявки на визит для гостей, читающих чат. */
 const presenceListMarkup = () =>
     hostingMiniappLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(hostingMiniappLink, newRequestTarget()))]])
+        ? BotKeyboard.inline([[BotKeyboard.url(tr('🚪 Хочу прийти', "🚪 Request a visit"), startappAt(hostingMiniappLink, newRequestTarget()))]])
         : undefined
 
 /** Клавиатура настроек авто-отметки по MAC. У текущего выбора — галочка. */
 const settingsKeyboard = (anon: boolean) =>
     BotKeyboard.inline([
-        [BotKeyboard.callback(`${anon ? '' : '✅ '}С ником`, CB_SETTINGS_NICK)],
-        [BotKeyboard.callback(`${anon ? '✅ ' : ''}Без ника`, CB_SETTINGS_ANON)],
+        [BotKeyboard.callback(tr(`${anon ? '' : '✅ '}С ником`, `${anon ? '' : '✅ '}With username`), CB_SETTINGS_NICK)],
+        [BotKeyboard.callback(tr(`${anon ? '✅ ' : ''}Без ника`, `${anon ? '✅ ' : ''}Anonymously`), CB_SETTINGS_ANON)],
+        [languageButton()],
     ])
 
 const checkedInKeyboard = () =>
     BotKeyboard.inline([
-        [BotKeyboard.callback('Уйти / снять отметку', CB_CHECKOUT)],
+        [BotKeyboard.callback(tr('Уйти / снять отметку', "Check out"), CB_CHECKOUT)],
     ])
 
 const pingKeyboard = () =>
     BotKeyboard.inline([
-        [BotKeyboard.callback('Я внутри', CB_CONFIRM)],
-        [BotKeyboard.callback('Уйти', CB_CHECKOUT)],
+        [BotKeyboard.callback(tr('Я внутри', "I'm still here"), CB_CONFIRM)],
+        [BotKeyboard.callback(tr('Уйти', "Check out"), CB_CHECKOUT)],
     ])
 
 /** Максимальная длина имени устройства: длиннее в строку списка всё равно не влезает. */
@@ -130,7 +133,7 @@ export const macLabelSuffix = (label: string): string =>
 export const macHintFor = (storage: Storage, userId: number): string => {
     const cur = storage.get().macBindings[String(userId)]
     if (cur && cur.macs.length > 0) return ''
-    return '<br><br>💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса. Только сначала выключи на устройстве ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.'
+    return tr('<br><br>💡 Можешь привязать MAC-адрес своего устройства командой /bindmac — тогда я буду отмечать тебя автоматически, пока ты в сети спейса. Только сначала выключи на устройстве ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса — иначе адрес будет меняться и авто-отметка перестанет работать.', "<br><br>💡 Link your device's MAC address with /bindmac to check in automatically on the space's Wi-Fi. Turn off MAC address rotation for this network first so the address stays the same.")
 }
 
 /**
@@ -141,7 +144,7 @@ export const macHintFor = (storage: Storage, userId: number): string => {
 const buildPresenceMessage = (presents: ResidentPresence[]): string => {
     const named = presents.filter((p) => p.username)
     const lines: string[] = []
-    lines.push(`Внутри [${presents.length}], отметились [${named.length}]:`)
+    lines.push(tr(`Внутри [${presents.length}], отметились [${named.length}]:`, `At the space [${presents.length}], with usernames [${named.length}]:`))
     for (const p of named) {
         const nick = p.username!
         lines.push(`<a href="https://t.me/${encodeURIComponent(nick)}">@${nick}</a>`)
@@ -152,7 +155,7 @@ const buildPresenceMessage = (presents: ResidentPresence[]): string => {
 /** Текущий список присутствующих в виде HTML-строки (для прямой отправки, без привязки к сообщению чата). */
 export const renderPresenceText = (storage: Storage): string => {
     const presents = Object.values(storage.get().presence)
-    return presents.length > 0 ? buildPresenceMessage(presents) : 'Внутри [0], отметились [0]:'
+    return presents.length > 0 ? buildPresenceMessage(presents) : tr('Внутри [0], отметились [0]:', "At the space [0], with usernames [0]:")
 }
 
 /**
@@ -163,7 +166,7 @@ export const renderPresenceText = (storage: Storage): string => {
 export const insideBoardLines = (storage: Storage): string[] => {
     const presents = Object.values(storage.get().presence)
     if (presents.length === 0) return []
-    const lines = [`<b>Сейчас в спейсе [${presents.length}]:</b>`]
+    const lines = [tr(`<b>Сейчас в спейсе [${presents.length}]:</b>`, `<b>At the space [${presents.length}]:</b>`)]
     for (const p of presents) {
         if (!p.username) continue
         lines.push(`• <a href="https://t.me/${encodeURIComponent(p.username)}">@${p.username}</a>`)
@@ -215,7 +218,10 @@ export const removePresence = async (
 
     if (reason === 'timeout') {
         try {
-            await client.sendText(userId, 'Не получил подтверждение за 15 минут — снял отметку. Если ты ещё внутри, нажми /start.')
+            await withLocale(userLocale(storage, userId), () => client.sendText(userId, tr(
+                'Не получил подтверждение за 15 минут — снял отметку. Если ты ещё внутри, нажми /start.',
+                "I didn't get a confirmation within 15 minutes, so I checked you out. Tap /start if you're still at the space.",
+            )))
         } catch {
             // личка может быть закрыта — ничего страшного
         }
@@ -340,7 +346,7 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
-            await msg.answerText('Эта команда доступна только резидентам (участникам чата резидентов).')
+            await msg.answerText(tr('Эта команда доступна только резидентам (участникам чата резидентов).', "This command is available to members of the residents' chat."))
             return
         }
         const arg = msg.command[1]
@@ -352,15 +358,15 @@ export const registerPresenceHandlers = (
             await msg.answerText(
                 html(
                     list
-                        ? `Твои устройства:<br>${list}<br><br>Добавить ещё — /bindmac &lt;MAC&gt; [имя], убрать — /unbindmac &lt;MAC&gt;.`
-                        : 'Использование: /bindmac AA:BB:CC:DD:EE:FF [имя]<br>Например: /bindmac AA:BB:CC:DD:EE:FF Телефон<br>MAC устройства можно посмотреть в настройках Wi-Fi телефона/ноутбука. После привязки бот сам отметит тебя, когда устройство в сети спейса. Можно добавить несколько устройств.<br><br>⚠️ Сначала выключи ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса в настройках устройства — иначе адрес будет меняться и авто-отметка перестанет работать.',
+                        ? tr(`Твои устройства:<br>${list}<br><br>Добавить ещё — /bindmac &lt;MAC&gt; [имя], убрать — /unbindmac &lt;MAC&gt;.`, `Your devices:<br>${list}<br><br>Add another with /bindmac &lt;MAC&gt; [name] or remove one with /unbindmac &lt;MAC&gt;.`)
+                        : tr('Использование: /bindmac AA:BB:CC:DD:EE:FF [имя]<br>Например: /bindmac AA:BB:CC:DD:EE:FF Телефон<br>MAC устройства можно посмотреть в настройках Wi-Fi телефона/ноутбука. После привязки бот сам отметит тебя, когда устройство в сети спейса. Можно добавить несколько устройств.<br><br>⚠️ Сначала выключи ротацию (рандомизацию) MAC-адреса для Wi-Fi спейса в настройках устройства — иначе адрес будет меняться и авто-отметка перестанет работать.', "Usage: /bindmac AA:BB:CC:DD:EE:FF [name]<br>Example: /bindmac AA:BB:CC:DD:EE:FF Phone<br>Find your MAC address in your device's Wi-Fi settings. After linking, the bot checks you in when the device connects to the space's network. You can link more than one device.<br><br>⚠️ Turn off MAC address rotation for the space's Wi-Fi first so the address stays the same."),
                 ),
                 { disableWebPreview: true },
             )
             return
         }
         if (!isValidMac(arg)) {
-            await msg.answerText('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF (12 hex-символов).')
+            await msg.answerText(tr('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF (12 hex-символов).', "That doesn't look like a MAC address. Use AA:BB:CC:DD:EE:FF (12 hex characters)."))
             return
         }
         const mac = normalizeMac(arg)
@@ -370,12 +376,12 @@ export const registerPresenceHandlers = (
             (b) => b.userId !== userId && b.macs.some((e) => e.mac === mac),
         )
         if (owner) {
-            await msg.answerText('Этот MAC уже привязан к другому резиденту.')
+            await msg.answerText(tr('Этот MAC уже привязан к другому резиденту.', "This MAC address is already linked to another resident."))
             return
         }
         const existing = storage.get().macBindings[String(userId)]
         if (existing?.macs.some((e) => e.mac === mac)) {
-            await msg.answerText(`MAC ${mac} уже привязан к тебе. Чтобы переименовать — сначала /unbindmac ${mac}, потом добавь заново с именем.`)
+            await msg.answerText(tr(`MAC ${mac} уже привязан к тебе. Чтобы переименовать — сначала /unbindmac ${mac}, потом добавь заново с именем.`, `MAC address ${mac} is already linked to you. To rename it, run /unbindmac ${mac} and link it again with the new name.`))
             return
         }
         await storage.update((s) => {
@@ -396,7 +402,7 @@ export const registerPresenceHandlers = (
                 }
             }
         })
-        await msg.answerText(`Привязал MAC ${mac}${label ? ` («${label}»)` : ''}. Теперь отмечу тебя автоматически, когда устройство появится в сети спейса.`)
+        await msg.answerText(tr(`Привязал MAC ${mac}${label ? ` («${label}»)` : ''}. Теперь отмечу тебя автоматически, когда устройство появится в сети спейса.`, `Linked MAC address ${mac}${label ? ` («${label}»)` : ''}. You'll be checked in automatically when it connects to the space's network.`))
     })
 
     // /unbindmac [MAC] в личке — убрать один MAC или все привязки.
@@ -405,7 +411,7 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const cur = storage.get().macBindings[String(userId)]
         if (!cur || cur.macs.length === 0) {
-            await msg.answerText('У тебя нет привязанных MAC.')
+            await msg.answerText(tr('У тебя нет привязанных MAC.', "You have no linked MAC addresses."))
             return
         }
         const arg = msg.command[1]
@@ -418,16 +424,16 @@ export const registerPresenceHandlers = (
             if (present?.source === 'mac') {
                 await removePresence(client, storage, residents, userId, 'manual')
             }
-            await msg.answerText('Убрал все привязки MAC. Авто-отметки больше не будут ставиться.')
+            await msg.answerText(tr('Убрал все привязки MAC. Авто-отметки больше не будут ставиться.', "Unlinked all MAC addresses. Automatic check-in is off."))
             return
         }
         if (!isValidMac(arg)) {
-            await msg.answerText('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF, или /unbindmac без аргумента — убрать все.')
+            await msg.answerText(tr('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF, или /unbindmac без аргумента — убрать все.', "That doesn't look like a MAC address. Use AA:BB:CC:DD:EE:FF, or run /unbindmac without an address to unlink all devices."))
             return
         }
         const mac = normalizeMac(arg)
         if (!cur.macs.some((e) => e.mac === mac)) {
-            await msg.answerText(`MAC ${mac} к тебе не привязан.`)
+            await msg.answerText(tr(`MAC ${mac} к тебе не привязан.`, `MAC address ${mac} isn't linked to you.`))
             return
         }
         let leftEmpty = false
@@ -448,7 +454,7 @@ export const registerPresenceHandlers = (
                 await removePresence(client, storage, residents, userId, 'manual')
             }
         }
-        await msg.answerText(`Убрал MAC ${mac}.`)
+        await msg.answerText(tr(`Убрал MAC ${mac}.`, `Unlinked MAC address ${mac}.`))
     })
 
     // /maclist в личке — показать СВОИ привязанные MAC-адреса.
@@ -457,24 +463,24 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
-            await msg.answerText('Эта команда доступна только резидентам (участникам чата резидентов).')
+            await msg.answerText(tr('Эта команда доступна только резидентам (участникам чата резидентов).', "This command is available to members of the residents' chat."))
             return
         }
         const cur = storage.get().macBindings[String(userId)]
         if (!cur || cur.macs.length === 0) {
-            await msg.answerText('У тебя нет привязанных MAC. Привяжи через /bindmac AA:BB:CC:DD:EE:FF.')
+            await msg.answerText(tr('У тебя нет привязанных MAC. Привяжи через /bindmac AA:BB:CC:DD:EE:FF.', "You have no linked MAC addresses. Link one using /bindmac AA:BB:CC:DD:EE:FF."))
             return
         }
         const online = storage.get().presence[String(userId)]?.source === 'mac'
-        const lines = [`Твои устройства [${cur.macs.length}]:`, '']
+        const lines = [tr(`Твои устройства [${cur.macs.length}]:`, `Your devices [${cur.macs.length}]:`), '']
         for (const e of [...cur.macs].sort((a, b) => a.mac.localeCompare(b.mac))) {
             lines.push(`<code>${e.mac}</code>${macLabelSuffix(e.label)}`)
         }
-        lines.push('', online ? 'Сейчас ты отмечен по MAC.' : 'Сейчас авто-отметка не активна.')
+        lines.push('', online ? tr('Сейчас ты отмечен по MAC.', "You're currently checked in by MAC address.") : tr('Сейчас авто-отметка не активна.', "You're not currently checked in automatically."))
         if (isPresenceInvisible(storage, userId)) {
-            lines.push('Включён режим «невидимка» - авто-отметка не ставится (переключить в меню /start).')
+            lines.push(tr('Включён режим «невидимка» - авто-отметка не ставится (переключить в меню /start).', "Invisible mode is on. To resume automatic check-in, turn it off in the /start menu."))
         } else if (cur.suppressedAt) {
-            lines.push('Авто-отметка приостановлена: ты снял отметку вручную. Вернётся, когда устройство уйдёт из сети и появится снова.')
+            lines.push(tr('Авто-отметка приостановлена: ты снял отметку вручную. Вернётся, когда устройство уйдёт из сети и появится снова.', "Automatic check-in is paused because you checked out manually. It resumes after your device disconnects and reconnects."))
         }
         await msg.answerText(html(lines.join('<br>')), { disableWebPreview: true })
     })
@@ -485,13 +491,16 @@ export const registerPresenceHandlers = (
         const userId = msg.sender.id
         const adminChats = await residents.presenceChats(userId)
         if (adminChats.length === 0) {
-            await msg.answerText('Эта команда доступна только резидентам (участникам чата резидентов).')
+            await msg.answerText(tr('Эта команда доступна только резидентам (участникам чата резидентов).', "This command is available to members of the residents' chat."))
             return
         }
         const cur = storage.get().macBindings[String(userId)]
         const anon = cur?.anon ?? false
         await msg.answerText(
-            `Авто-отметка по MAC: сейчас ${anon ? '«без ника»' : 'с ником'}.\nВыбери, как отмечаться:`,
+            tr(
+                `Авто-отметка по MAC: сейчас ${anon ? '«без ника»' : 'с ником'}.\nВыбери, как отмечаться:`,
+                `Automatic check-in is set to ${anon ? 'anonymous' : 'with username'}.\nChoose how to check in:`,
+            ),
             { replyMarkup: settingsKeyboard(anon) },
         )
     })
@@ -511,7 +520,7 @@ export const registerPresenceHandlers = (
             const userId = ctx.user.id
             const anon = data === CB_SETTINGS_ANON
             if (storage.get().macBindings[String(userId)] === undefined) {
-                await ctx.answer({ text: 'Сначала привяжи MAC через /bindmac.', alert: true })
+                await ctx.answer({ text: tr('Сначала привяжи MAC через /bindmac.', "Link a MAC address with /bindmac first."), alert: true })
                 return
             }
             await storage.update((s) => {
@@ -537,11 +546,11 @@ export const registerPresenceHandlers = (
             }
             try {
                 await ctx.editMessage({
-                    text: `Авто-отметка по MAC: теперь ${anon ? '«без ника»' : 'с ником'}.`,
+                    text: tr(`Авто-отметка по MAC: теперь ${anon ? '«без ника»' : 'с ником'}.`, `Automatic check-in is now set to ${anon ? 'anonymous' : 'with username'}.`),
                     replyMarkup: settingsKeyboard(anon),
                 })
             } catch {}
-            await ctx.answer({ text: 'Сохранил' })
+            await ctx.answer({ text: tr('Сохранил', "Saved") })
             return
         }
 
@@ -549,21 +558,21 @@ export const registerPresenceHandlers = (
             const present = storage.get().presence[String(ctx.user.id)]
             const wasMac = present?.source === 'mac'
             if (!present) {
-                await ctx.answer({ text: 'Ты и так не отмечен.' })
+                await ctx.answer({ text: tr('Ты и так не отмечен.', "You're already checked out.") })
                 try {
                     await ctx.editMessage({
-                        text: 'Ты не отмечен. Нажми /start, чтобы отметиться.',
+                        text: tr('Ты не отмечен. Нажми /start, чтобы отметиться.', "You're not checked in. Tap /start to check in."),
                     })
                 } catch {}
                 return
             }
             await checkOutResident(client, storage, residents, ctx.user.id)
-            await ctx.answer({ text: 'Снял отметку' })
+            await ctx.answer({ text: tr('Снял отметку', "Checked out") })
             try {
                 await ctx.editMessage({
                     text: wasMac
-                        ? 'Снял отметку. Пока твоё устройство в сети спейса, автоматически отмечать не буду - вернусь к этому, когда оно уйдёт и появится снова. Нажми /start, если снова внутри.'
-                        : 'Снял отметку. Возвращайся 👋 - нажми /start, когда снова в спейсе.',
+                        ? tr('Снял отметку. Пока твоё устройство в сети спейса, автоматически отмечать не буду - вернусь к этому, когда оно уйдёт и появится снова. Нажми /start, если снова внутри.', "Checked out. Automatic check-in resumes after your device disconnects and reconnects to the space's Wi-Fi. Tap /start if you're back inside.")
+                        : tr('Снял отметку. Возвращайся 👋 - нажми /start, когда снова в спейсе.', "Checked out. See you next time 👋 Tap /start when you're back."),
                 })
             } catch {}
             return
@@ -572,7 +581,7 @@ export const registerPresenceHandlers = (
         if (data === CB_CONFIRM) {
             const present = storage.get().presence[String(ctx.user.id)]
             if (!present) {
-                await ctx.answer({ text: 'Отметки нет — нажми /start.' })
+                await ctx.answer({ text: tr('Отметки нет — нажми /start.', "You're not checked in. Tap /start to check in.") })
                 return
             }
             const now = new Date().toISOString()
@@ -583,10 +592,10 @@ export const registerPresenceHandlers = (
                     p.pendingPingAt = null
                 }
             })
-            await ctx.answer({ text: 'Принял, ты внутри.' })
+            await ctx.answer({ text: tr('Принял, ты внутри.', "You're checked in.") })
             try {
                 await ctx.editMessage({
-                    text: `Подтвердил, ты внутри. Спрошу снова через 3 часа.`,
+                    text: tr(`Подтвердил, ты внутри. Спрошу снова через 3 часа.`, "Check-in confirmed. I'll ask again in 3 hours."),
                     replyMarkup: checkedInKeyboard(),
                 })
             } catch {}
@@ -620,11 +629,11 @@ export const startPresenceScheduler = (
                     }
                 } else if (now - lastConfirmed >= MAC_MAX_PRESENCE_MS) {
                     try {
-                        await client.sendText(
+                        await withLocale(userLocale(storage, p.userId), () => client.sendText(
                             p.userId,
-                            'Ты ещё в спейсе? Отметка держится по твоему устройству в сети уже больше 14 часов - подтверди в течение 15 минут, иначе сниму.',
+                            tr('Ты ещё в спейсе? Отметка держится по твоему устройству в сети уже больше 14 часов - подтверди в течение 15 минут, иначе сниму.', "Are you still at the space? Your device has kept you checked in for more than 14 hours. Confirm within 15 minutes to stay checked in."),
                             { replyMarkup: pingKeyboard() },
-                        )
+                        ))
                         await storage.update((s) => {
                             const cur = s.presence[String(p.userId)]
                             if (cur) cur.pendingPingAt = new Date().toISOString()
@@ -646,9 +655,9 @@ export const startPresenceScheduler = (
             } else if (now - lastConfirmed >= PRESENCE_PING_INTERVAL_MS) {
                 // отправляем ping в личку
                 try {
-                    await client.sendText(p.userId, 'Ты ещё в спейсе? Подтверди в течение 15 минут — иначе сниму отметку.', {
+                    await withLocale(userLocale(storage, p.userId), () => client.sendText(p.userId, tr('Ты ещё в спейсе? Подтверди в течение 15 минут — иначе сниму отметку.', "Are you still at the space? Confirm within 15 minutes to stay checked in."), {
                         replyMarkup: pingKeyboard(),
-                    })
+                    }))
                     await storage.update((s) => {
                         const cur = s.presence[String(p.userId)]
                         if (cur) cur.pendingPingAt = new Date().toISOString()

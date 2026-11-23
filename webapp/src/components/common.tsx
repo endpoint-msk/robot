@@ -1,6 +1,7 @@
 // Общие UI-атомы: шапка, карточки-строки, разделители, свитч, пустые состояния,
 // нижняя панель (в портал вне анимируемого экрана) и дев-чипы.
 
+import { tr } from '../i18n'
 import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BarContext } from '../barContext'
@@ -97,7 +98,7 @@ export function SearchField({ value, onChange, placeholder }: { value: string; o
           onBlur={() => setFocused(false)}
         />
         {value ? (
-          <button type="button" className="search-clear" aria-label="Очистить" onClick={() => onChange('')}>
+          <button type="button" className="search-clear" aria-label={tr("Очистить", "Clear")} onClick={() => onChange('')}>
             {icons.xmark(11, '#fff')}
           </button>
         ) : null}
@@ -114,9 +115,7 @@ export function SearchField({ value, onChange, placeholder }: { value: string; o
           onChange('')
           input.current?.blur()
         }}
-      >
-        Отмена
-      </button>
+      >{tr("Отмена", "Cancel")}</button>
     </div>
   )
 }
@@ -145,7 +144,7 @@ export function BackRow({ label }: { label?: string }) {
   return (
     <button type="button" className="back-row" onClick={pop}>
       {icons.back()}
-      {label ?? (prev ? screenTitle(prev, data) : 'Назад')}
+      {label ?? (prev ? screenTitle(prev, data) : tr('Назад', "Back"))}
     </button>
   )
 }
@@ -169,11 +168,9 @@ export function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="card">
       <div className="empty-state">
-        <div className="es-title">Не удалось загрузить</div>
-        <div className="es-text">Проверьте связь и попробуйте ещё раз.</div>
-        <button type="button" className="retry-btn" onClick={onRetry}>
-          Повторить
-        </button>
+        <div className="es-title">{tr("Не удалось загрузить", "Couldn’t load")}</div>
+        <div className="es-text">{tr("Проверьте связь и попробуйте ещё раз.", "Check your connection and try again.")}</div>
+        <button type="button" className="retry-btn" onClick={onRetry}>{tr("Повторить", "Try again")}</button>
       </div>
     </div>
   )
@@ -194,9 +191,7 @@ export const Footnote = ({ children }: { children: ReactNode }) => (
 
 export const ReadonlyBadge = () => (
   <div className="readonly-badge">
-    {icons.lock()}
-    Архив · только просмотр
-  </div>
+    {icons.lock()}{tr("Архив · только просмотр", "Archive · read only")}</div>
 )
 
 /**
@@ -333,7 +328,7 @@ export function PrimaryButton({
       disabled={disabled || wait > 0}
       onClick={onClick}
     >
-      {wait > 0 ? nb(`Подождите ${wait} с`) : children}
+      {wait > 0 ? nb(tr(`Подождите ${wait} с`, `Wait ${wait} s`)) : children}
     </button>
   )
 }

@@ -1,3 +1,4 @@
+import { plural, tr } from '../i18n'
 import { Fragment, useEffect, useState } from 'react'
 import { api, prefetchOnTouch } from '../api'
 import {
@@ -7,13 +8,12 @@ import {
   fmtShortDate,
   keyToDate,
   monthIdx,
-  MONTHS_ABBR,
-  MONTHS_NOM,
-  plural,
+  monthsAbbr,
+  monthsNom,
   requestsWord,
   visitsWord,
   weekdayIdx,
-  WEEKDAYS_SHORT,
+  weekdaysShort,
   yearOf,
 } from '../dates'
 import { nb } from '../format'
@@ -33,9 +33,10 @@ function weeksAgoLabel(weekStart: string, todayKey: string): string {
   const diffWeeks = Math.round(
     (keyToDate(currentMonday).getTime() - keyToDate(weekStart).getTime()) / (7 * 24 * 3600 * 1000),
   )
-  if (diffWeeks <= 0) return 'Текущая неделя'
-  if (diffWeeks === 1) return 'Прошлая неделя'
-  return nb(`${diffWeeks} ${plural(diffWeeks, 'неделю', 'недели', 'недель')} назад`)
+  if (diffWeeks <= 0) return tr('Текущая неделя', 'This week')
+  if (diffWeeks === 1) return tr('Прошлая неделя', 'Last week')
+  const unit = plural(diffWeeks, ['неделю', 'недели', 'недель'], ['week', 'weeks'])
+  return nb(tr(`${diffWeeks} ${unit} назад`, `${diffWeeks} ${unit} ago`))
 }
 
 /** Высота столбика самого людного дня в строке недели, px. */
@@ -47,9 +48,9 @@ const BAR_MAX = 26
  * людная. Столбики стоят без движения, как графики в статистике.
  */
 function WeekBars({ days, max }: { days: number[]; max: number }) {
-  const label = days.map((n, i) => `${WEEKDAYS_SHORT[i]} ${n}`).join(', ')
+  const label = days.map((n, i) => `${weekdaysShort()[i]} ${n}`).join(', ')
   return (
-    <span className="week-bars" role="img" aria-label={`Гости по дням: ${label}`}>
+    <span className="week-bars" role="img" aria-label={tr(`Гости по дням: ${label}`, `Guests by day: ${label}`)}>
       {days.map((n, i) => (
         <i key={i} className={n > 0 ? undefined : 'zero'} style={n > 0 ? { height: Math.max(5, Math.round((n / max) * BAR_MAX)) } : undefined} />
       ))}
@@ -65,7 +66,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
   // Группируем недели по месяцу понедельника: «Июль 2026».
   const groups: { label: string; weeks: ArchiveWeekSummary[] }[] = []
   for (const week of weeks) {
-    const label = `${MONTHS_NOM[monthIdx(week.weekStart)]} ${yearOf(week.weekStart)}`
+    const label = `${monthsNom()[monthIdx(week.weekStart)]} ${yearOf(week.weekStart)}`
     const last = groups[groups.length - 1]
     if (last && last.label === label) last.weeks.push(week)
     else groups.push({ label, weeks: [week] })
@@ -96,7 +97,7 @@ function ArchiveList({ weeks }: { weeks: ArchiveWeekSummary[] }) {
                         в заголовке справа, а «20 / –26» в две строки читалось как минус. */}
                     <div className="week-square">
                       <span className="ws-day">{String(dayNum(week.weekStart))}</span>
-                      <span className="ws-month">{MONTHS_ABBR[monthIdx(week.weekStart)]}</span>
+                      <span className="ws-month">{monthsAbbr()[monthIdx(week.weekStart)]}</span>
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div className="week-title">{fmtRange(week.weekStart, weekEnd)}</div>
@@ -145,7 +146,7 @@ function ArchiveSkeleton() {
     </Fragment>
   )
   return (
-    <div aria-busy="true" aria-label="Загружаем архив недель">
+    <div aria-busy="true" aria-label={tr('Загружаем архив недель', 'Loading the archive')}>
       {group('a', 4, 0)}
       {group('b', 3, 4)}
     </div>
@@ -177,7 +178,7 @@ function GuestSearch({
   if (guests === null) {
     if (!pending) return null
     return (
-      <div aria-busy="true" aria-label="Ищем людей">
+      <div aria-busy="true" aria-label={tr('Ищем людей', 'Searching for people')}>
         <SectionTitle>
           <SkBlock w={72} h={11} />
         </SectionTitle>
@@ -188,12 +189,12 @@ function GuestSearch({
   if (guests.length === 0)
     return (
       <div className="card">
-        <EmptyState title="Никого не нашли" text={`По запросу «${query}» заявок нет.`} />
+        <EmptyState title={tr('Никого не нашли', 'No one found')} text={tr(`По запросу «${query}» заявок нет.`, `No requests matched “${query}”.`)} />
       </div>
     )
   return (
     <>
-      <SectionTitle>{`Люди · ${guests.length}`}</SectionTitle>
+      <SectionTitle>{tr(`Люди · ${guests.length}`, `People · ${guests.length}`)}</SectionTitle>
       <div className="card">
         {guests.map((g, i) => (
           <Fragment key={g.user.userId}>
@@ -218,7 +219,7 @@ function GuestSearch({
                     </>
                   ) : null}
                   {/* Дата не рвётся: иначе число оставалось в конце строки, а месяц уезжал на следующую. */}
-                  {`последняя ${fmtShortDate(g.lastDateKey).replace(/ /g, '\u00a0')}`}
+                  {tr(`последняя ${fmtShortDate(g.lastDateKey).replace(/ /g, '\u00a0')}`, `last request ${fmtShortDate(g.lastDateKey).replace(/ /g, '\u00a0')}`)}
                 </div>
               </div>
               {/* Визиты из всех записей человека: «был 4 раза из 5 заявок». */}
@@ -267,7 +268,7 @@ export function Archive() {
   else if (weeks.data.length === 0)
     body = (
       <div className="card">
-        <EmptyState title="Архив пуст" text="Здесь появятся недели с заявками." />
+        <EmptyState title={tr('Архив пуст', 'Archive is empty')} text={tr('Здесь появятся недели с заявками.', 'Weeks with visit requests will appear here.')} />
       </div>
     )
   else body = <ArchiveList weeks={weeks.data} />
@@ -276,9 +277,9 @@ export function Archive() {
 
   return (
     <Screen>
-      <BackRow label="Ближайшие дни" />
-      <Header title="Архив" />
-      <SearchField value={query} onChange={setQuery} placeholder="Поиск по гостям: имя или @ник" />
+      <BackRow label={tr('Ближайшие дни', 'Upcoming days')} />
+      <Header title={tr('Архив', 'Archive')} />
+      <SearchField value={query} onChange={setQuery} placeholder={tr('Поиск по гостям: имя или @ник', 'Search guests by name or @username')} />
       {searching ? (
         search
       ) : (

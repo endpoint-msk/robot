@@ -6,9 +6,10 @@
 // движок из src/onboarding.ts прямыми правками style; React отвечает за
 // содержимое шагов, которое зависит от данных.
 
+import { tr } from '../i18n'
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { action, api, subscribeToEvents } from '../api'
-import { fmtShortDate, MONTHS_GEN, MONTHS_NOM } from '../dates'
+import { fmtShortDate, monthsGen, monthsNom } from '../dates'
 import { money, nb } from '../format'
 import { icons } from '../icons'
 import {
@@ -87,7 +88,7 @@ const orderPeople = (list: OnboardingPerson[]): OnboardingPerson[] =>
   [...list].sort((a, b) => Number(b.inside) - Number(a.inside) || a.name.localeCompare(b.name, 'ru'))
 
 const labelOf = (s: Step, bound: boolean): string =>
-  s.id === 'cover' ? 'Начать' : s.id === 'done' ? 'К ближайшим дням' : s.id === 'mac' && !bound ? 'Привязать телефон' : 'Дальше'
+  s.id === 'cover' ? tr('Начать', 'Get started') : s.id === 'done' ? tr('К ближайшим дням', 'See upcoming days') : s.id === 'mac' && !bound ? tr('Привязать телефон', 'Link phone') : tr('Дальше', 'Next')
 
 // --- движок листалки -----------------------------------------------------------
 
@@ -462,7 +463,7 @@ const pickEvent = (d: Bootstrap): EventCardData => {
   return {
     title: real ? real.title : DEMO_EVENT.title,
     short: `${fmtShortDate(dateKey).split(',')[0]!.toLowerCase()} ${dateKey.slice(8, 10)}.${dateKey.slice(5, 7)}, ${time}`,
-    when: `${fmtShortDate(dateKey)} к ${time}`,
+    when: tr(`${fmtShortDate(dateKey)} к ${time}`, `${fmtShortDate(dateKey)} at ${time}`),
     desc: desc.length > 140 ? `${desc.slice(0, 140).trimEnd()}…` : desc,
     photo: photoId
       ? eventPhotoUrl(photoId)
@@ -487,7 +488,8 @@ const nextDues = (today: string, day: number): { date: string; label: string } =
   }
   const openDay = Math.min(day, new Date(Date.UTC(year, month, 0)).getUTCDate())
   const covered = day === 1 ? month : (month % 12) + 1
-  return { date: `${openDay} ${MONTHS_GEN[month - 1]}`, label: MONTHS_NOM[covered - 1]!.toLowerCase() }
+  const coveredMonth = monthsNom()[covered - 1]!
+  return { date: `${openDay} ${monthsGen()[month - 1]}`, label: tr(coveredMonth.toLowerCase(), coveredMonth) }
 }
 
 /** Дата вступления для карты: '2026-09-23' по часам телефона. */
@@ -500,9 +502,9 @@ const isoDay = (iso: string): string | null => {
 /** «Заявки на сегодня, ивенты, взносы»: что придёт в личку после знакомства. */
 const notifySummary = (s: { notify: NotifyPrefs; eventNotify: NotifyPrefs }, dues: boolean | null): string => {
   const parts: string[] = []
-  if (s.notify.enabled) parts.push(s.notify.mode === 'today' ? 'заявки на сегодня' : 'все заявки')
-  if (s.eventNotify.enabled) parts.push(s.eventNotify.mode === 'today' ? 'ивенты на сегодня' : 'ивенты')
-  if (dues) parts.push('взносы')
+  if (s.notify.enabled) parts.push(s.notify.mode === 'today' ? tr('заявки на сегодня', "today's requests") : tr('все заявки', 'all requests'))
+  if (s.eventNotify.enabled) parts.push(s.eventNotify.mode === 'today' ? tr('ивенты на сегодня', "today's events") : tr('ивенты', 'events'))
+  if (dues) parts.push(tr('взносы', 'dues'))
   const text = parts.join(', ')
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
 }
@@ -764,7 +766,7 @@ export function Onboarding() {
               {
                 key: 'dues',
                 time: nextCollection ? nextCollection.date : '',
-                text: `💸 Открыт сбор резидентского взноса за ${nextCollection?.label ?? ''}. С тебя ${money(dues.me.amount, dues.currency)}.`,
+                text: tr(`💸 Открыт сбор резидентского взноса за ${nextCollection?.label ?? ''}. С тебя ${money(dues.me.amount, dues.currency)}.`, `💸 Resident dues for ${nextCollection?.label ?? ''} are open. Your amount is ${money(dues.me.amount, dues.currency)}.`),
                 off: !dues.notify,
               },
             ]
@@ -789,9 +791,9 @@ export function Onboarding() {
       case 'dues':
         return dues && nextCollection ? (
           <DuesScene
-            label={`Взнос за ${nextCollection.label}`}
+            label={tr(`Взнос за ${nextCollection.label}`, `Dues for ${nextCollection.label}`)}
             amount={money(dues.me.amount, dues.currency)}
-            sub={`Бот напишет ${nextCollection.date}`}
+            sub={tr(`Бот напишет ${nextCollection.date}`, `The bot will message you on ${nextCollection.date}`)}
           />
         ) : null
       case 'bot':
@@ -823,23 +825,23 @@ export function Onboarding() {
             {i > 0 ? <Sep inset="text" /> : null}
             <div className="row">
               <span className="row-label">
-                {m.label || 'Устройство'}
+                {m.label || tr('Устройство', 'Device')}
                 <span className="row-sublabel mono">{m.mac}</span>
               </span>
-              {m.online ? <span className="ob-tag green">в сети</span> : null}
+              {m.online ? <span className="ob-tag green">{tr('в сети', 'online')}</span> : null}
             </div>
           </Fragment>
         ))}
         <Sep inset="text" />
         <button type="button" className="row tappable" onClick={() => void openSheet()}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
-          <span className="add-row-label">Добавить устройство</span>
+          <span className="add-row-label">{tr('Добавить устройство', 'Add device')}</span>
         </button>
       </div>
       <div className="card ob-card-gap">
         <SwitchRow
-          label="Отмечаться без ника"
-          sub="В списке будет «Без ника»"
+          label={tr('Отмечаться без ника', 'Check in anonymously')}
+          sub={tr('В списке будет «Без ника»', "You'll appear as “Anonymous” on the board")}
           on={settings.macAnon}
           onToggle={() => action('mac.anon', { anon: !settings.macAnon }, { quiet: true })}
         />
@@ -851,13 +853,13 @@ export function Onboarding() {
     switch (s.id) {
       case 'cover':
         return text(
-          'Добро пожаловать в резиденты',
-          `${people.length > 0 ? `Теперь нас ${count}. ` : ''}Дальше коротко о том, что умеет бот, и две настройки: авто-отметка и уведомления.`,
+          tr('Добро пожаловать в резиденты', 'Welcome, resident'),
+          tr(`${people.length > 0 ? `Теперь нас ${count}. ` : ''}Дальше коротко о том, что умеет бот, и две настройки: авто-отметка и уведомления.`, `${people.length > 0 ? `There are ${count} of us now. ` : ''}Here's what the bot can do and how to set up automatic check-in and notifications.`),
         )
       case 'presence':
         return (
           <>
-            {text('Отмечайтесь, когда пришли', 'Отметка попадает на доску в чате спейса: видно, что спейс открыт, и можно подтянуться.')}
+            {text(tr('Отмечайтесь, когда пришли', 'Check in when you arrive'), tr('Отметка попадает на доску в чате спейса: видно, что спейс открыт, и можно подтянуться.', "Your check-in appears on the chat's noticeboard so people know the space is open and can join you."))}
             {bot ? (
               <div className="ob-extra">
                 <div className="card">
@@ -865,8 +867,8 @@ export function Onboarding() {
                     <InfoRow
                       icon={icons.chat(18, '#fff')}
                       color="var(--green)"
-                      label="Отметиться в боте"
-                      sub="/menu, кнопка «Отметиться»"
+                      label={tr('Отметиться в боте', 'Check in with the bot')}
+                      sub={tr('/menu, кнопка «Отметиться»', 'Use “Check in” in /menu')}
                       right={<span className="row-right">{icons.external(sec(0.3))}</span>}
                     />
                   </button>
@@ -878,19 +880,19 @@ export function Onboarding() {
       case 'mac':
         return (
           <>
-            {text('Отметка без кнопок', nb('Привяжите телефон: пока он в спейсе, бот сам держит отметку и снимает её через 10 минут после ухода.'))}
+            {text(tr('Отметка без кнопок', 'Automatic check-in'), nb(tr('Привяжите телефон: пока он в спейсе, бот сам держит отметку и снимает её через 10 минут после ухода.', 'Link your phone. The bot keeps you checked in while your phone is at the space and checks you out 10 minutes after you leave.')))}
             <div className="ob-extra">
               <div className="card">
                 <div className="row">
-                  <InfoRow icon={icons.wifi()} color="var(--gray)" label="Только в спейсе" sub="Вне спейса бот телефон не видит" />
+                  <InfoRow icon={icons.wifi()} color="var(--gray)" label={tr('Только в спейсе', 'Only at the space')} sub={tr('Вне спейса бот телефон не видит', "The bot can only see your phone when it's at the space")} />
                 </div>
                 <Sep inset="icon" />
                 <div className="row">
                   <InfoRow
                     icon={icons.eyeOff(18, '#fff', 'var(--gray)')}
                     color="var(--gray)"
-                    label="Невидимка"
-                    sub="Выключает авто-отметку, когда нужно"
+                    label={tr('Невидимка', 'Invisible mode')}
+                    sub={tr('Выключает авто-отметку, когда нужно', 'Pause automatic check-in whenever you need')}
                   />
                 </div>
               </div>
@@ -900,14 +902,14 @@ export function Onboarding() {
       case 'notify':
         return (
           <>
-            {text('Что присылать в личку', 'Включено то, что нужно почти всем. Поменять можно в настройках.')}
+            {text(tr('Что присылать в личку', 'Private notifications'), tr('Включено то, что нужно почти всем. Поменять можно в настройках.', 'The essentials are on by default. You can change them in Settings.'))}
             {settings ? (
               <div className="ob-extra" ref={extraRef}>
                 <div className="card">
                   <div className="row">
                     <InfoRow
                       tile={<NotifyIcon color="var(--orange)" off={!settings.notify.enabled} />}
-                      label="Новые заявки"
+                      label={tr('Новые заявки', 'New requests')}
                       right={
                         <button type="button" className="ob-popup" onClick={(e) => openMenu('req', e.currentTarget)}>
                           {CHOICE_LABEL[choiceOf(settings.notify)]}
@@ -920,7 +922,7 @@ export function Onboarding() {
                   <div className="row">
                     <InfoRow
                       tile={<NotifyIcon color="var(--purple)" off={!settings.eventNotify.enabled} />}
-                      label="Новые ивенты"
+                      label={tr('Новые ивенты', 'New events')}
                       right={
                         <button type="button" className="ob-popup" onClick={(e) => openMenu('ev', e.currentTarget)}>
                           {CHOICE_LABEL[choiceOf(settings.eventNotify)]}
@@ -938,7 +940,7 @@ export function Onboarding() {
                             {icons.rub(17, '#fff')}
                           </div>
                         }
-                        label="Взносы"
+                        label={tr('Взносы', 'Dues')}
                         on={dues.notify}
                         onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
                       />
@@ -972,12 +974,12 @@ export function Onboarding() {
         return (
           <>
             {text(
-              'Гостей встречают резиденты',
-              'Гость оставляет заявку на день и время. Кто первым нажал «Захостить», тот и встречает, а бот напишет, когда гость у двери.',
+              tr('Гостей встречают резиденты', 'Residents welcome guests'),
+              tr('Гость оставляет заявку на день и время. Кто первым нажал «Захостить», тот и встречает, а бот напишет, когда гость у двери.', 'Guests request a date and time. The first resident to tap “Host” welcomes the guest. The bot will message the host when the guest is at the door.'),
             )}
             {pending.length > 0 ? (
               <div className="ob-extra">
-                <div className="section-title">{`Ждут ответа · ${pending.length}`}</div>
+                <div className="section-title">{tr(`Ждут ответа · ${pending.length}`, `Pending · ${pending.length}`)}</div>
                 <div className="card">
                   {pending.slice(0, 2).map((r, i) => {
                     const stats = d.guestStats?.[String(r.guest.userId)]
@@ -989,11 +991,11 @@ export function Onboarding() {
                           <span className="row-label">
                             <span className="ob-guest-name">
                               {r.guest.name}
-                              {stats && stats.past === 0 ? <span className="visit-chip first">впервые</span> : null}
-                              {stats && stats.past > 0 ? <span className="visit-chip">{stats.past + 1}-й</span> : null}
+                              {stats && stats.past === 0 ? <span className="visit-chip first">{tr('впервые', 'first visit')}</span> : null}
+                              {stats && stats.past > 0 ? <span className="visit-chip">{tr(`${stats.past + 1}-й`, `Visit ${stats.past + 1}`)}</span> : null}
                             </span>
                             <span className="row-sublabel">
-                              {nb(`${r.dateKey === d.todayKey ? 'Сегодня' : fmtShortDate(r.dateKey)} к ${r.time}`)}
+                              {nb(tr(`${r.dateKey === d.todayKey ? tr('Сегодня', 'Today') : fmtShortDate(r.dateKey)} к ${r.time}`, `${r.dateKey === d.todayKey ? tr('Сегодня', 'Today') : fmtShortDate(r.dateKey)} at ${r.time}`))}
                             </span>
                           </span>
                         </div>
@@ -1009,8 +1011,8 @@ export function Onboarding() {
         return (
           <>
             {text(
-              'Ивенты заводят резиденты',
-              'Создайте ивент на экране дня или перешлите боту пост из канала: название, описание и афиша заполнятся сами.',
+              tr('Ивенты заводят резиденты', 'Residents create events'),
+              tr('Создайте ивент на экране дня или перешлите боту пост из канала: название, описание и афиша заполнятся сами.', "Create an event from the day's screen or forward a channel post to the bot to fill in its title, description, and poster."),
             )}
             <div className="ob-extra">
               <div className="card">
@@ -1018,8 +1020,8 @@ export function Onboarding() {
                   <InfoRow
                     icon={icons.calendar(18, '#fff')}
                     color="var(--purple)"
-                    label="Подписаться на ивенты"
-                    sub="По желанию: новые появятся в календаре"
+                    label={tr('Подписаться на ивенты', 'Subscribe to events')}
+                    sub={tr('По желанию: новые появятся в календаре', 'Optional: new events will appear in your calendar')}
                     right={<span className="row-right">{icons.chevron()}</span>}
                   />
                 </button>
@@ -1031,27 +1033,27 @@ export function Onboarding() {
         if (!dues) return null
         const status =
           dues.me.status === 'paid'
-            ? { text: 'Внесён', color: 'var(--green)' }
+            ? { text: tr('Внесён', 'Paid'), color: 'var(--green)' }
             : dues.me.status === 'claimed'
-              ? { text: 'Ждёт сверки', color: 'var(--text-2)' }
-              : { text: 'Не внесён', color: 'var(--orange)' }
+              ? { text: tr('Ждёт сверки', 'Awaiting verification'), color: 'var(--text-2)' }
+              : { text: tr('Не внесён', 'Unpaid'), color: 'var(--orange)' }
         return (
           <>
             {text(
-              'Взнос раз в месяц',
-              `${dues.day}-го числа бот пришлёт сумму и реквизиты. Переведите и нажмите «Я внёс»: взнос засчитают после сверки с выпиской.`,
+              tr('Взнос раз в месяц', 'Monthly dues'),
+              tr(`${dues.day}-го числа бот пришлёт сумму и реквизиты. Переведите и нажмите «Я внёс»: взнос засчитают после сверки с выпиской.`, `On day ${dues.day} of the month, the bot sends you the amount and payment details. Send your payment and tap “I've paid”. It counts once verified against the bank statement.`),
             )}
             <div className="ob-extra">
               <div className="card">
                 <div className="row">
-                  <span className="row-label">Ваша ставка</span>
-                  <span className="row-right ob-row-value">{`${money(dues.me.amount, dues.currency)} в месяц`}</span>
+                  <span className="row-label">{tr('Ваша ставка', 'Your rate')}</span>
+                  <span className="row-right ob-row-value">{tr(`${money(dues.me.amount, dues.currency)} в месяц`, `${money(dues.me.amount, dues.currency)} per month`)}</span>
                 </div>
                 {dues.periodKey && dues.me.inRoster ? (
                   <>
                     <Sep inset="text" />
                     <div className="row">
-                      <span className="row-label">{`За ${dues.periodLabel.split(' ')[0]!.toLowerCase()}`}</span>
+                      <span className="row-label">{tr(`За ${dues.periodLabel.split(' ')[0]!.toLowerCase()}`, `For ${dues.periodLabel.split(' ')[0]}`)}</span>
                       <span className="row-right ob-row-value" style={{ color: status.color }}>
                         {status.text}
                       </span>
@@ -1066,23 +1068,23 @@ export function Onboarding() {
       case 'bot':
         return (
           <>
-            {text('Бот в личке', 'Для быстрых дел открывать миниапп не нужно.')}
+            {text(tr('Бот в личке', 'Bot in private chat'), tr('Для быстрых дел открывать миниапп не нужно.', 'Use the bot directly for quick tasks.'))}
             {bot ? (
               <div className="ob-extra">
                 <div className="card">
-                  <CmdRow cmd="/menu" what="Отметки и телефон" onClick={() => openBotSection(bot, 'menu')} />
+                  <CmdRow cmd="/menu" what={tr('Отметки и телефон', 'Check-ins and phone')} onClick={() => openBotSection(bot, 'menu')} />
                   <Sep inset="text" />
-                  <CmdRow cmd="/inside" what="Кто сейчас в спейсе" onClick={() => openBotSection(bot, 'inside')} />
+                  <CmdRow cmd="/inside" what={tr('Кто сейчас в спейсе', "Who's at the space")} onClick={() => openBotSection(bot, 'inside')} />
                   {info?.printer ? (
                     <>
                       <Sep inset="text" />
-                      <CmdRow cmd="/printer" what="Принтер и камера" onClick={() => openBotSection(bot, 'printer')} />
+                      <CmdRow cmd="/printer" what={tr('Принтер и камера', 'Printer and camera')} onClick={() => openBotSection(bot, 'printer')} />
                     </>
                   ) : null}
                   <Sep inset="text" />
                   <CmdRow
                     cmd={`@${bot}`}
-                    what="Доска в любом чате"
+                    what={tr('Доска в любом чате', 'Noticeboard in any chat')}
                     onClick={() => {
                       if (!switchInline()) openBotSection(bot, 'menu')
                     }}
@@ -1097,7 +1099,7 @@ export function Onboarding() {
         const summary = settings ? notifySummary(settings, duesStep && dues ? dues.notify : null) : ''
         return (
           <>
-            {text('Всё готово', 'Знакомство можно открыть снова в настройках.')}
+            {text(tr('Всё готово', "You're all set"), tr('Знакомство можно открыть снова в настройках.', 'You can revisit this walkthrough from Settings.'))}
             <div className="ob-extra">
               <div className="card">
                 <div className="row">
@@ -1105,18 +1107,18 @@ export function Onboarding() {
                     <InfoRow
                       icon={icons.check(14, '#fff', 2.2)}
                       color="var(--green)"
-                      label="Телефон"
-                      sub={`${phone.label || 'Устройство'}, отметка ставится сама`}
+                      label={tr('Телефон', 'Phone')}
+                      sub={tr(`${phone.label || tr('Устройство', 'Device')}, отметка ставится сама`, `${phone.label || tr('Устройство', 'Device')}, automatic check-in on`)}
                     />
                   ) : (
                     <InfoRow
                       icon={icons.wifi()}
                       color="var(--gray)"
-                      label="Телефон"
-                      sub="Не привязан"
+                      label={tr('Телефон', 'Phone')}
+                      sub={tr('Не привязан', 'Unlinked')}
                       right={
                         <button type="button" className="small-btn blue" onClick={() => void openSheet()}>
-                          Привязать
+                          {tr('Привязать', 'Link')}
                         </button>
                       }
                     />
@@ -1125,9 +1127,9 @@ export function Onboarding() {
                 <Sep inset="icon" />
                 <div className="row">
                   {summary ? (
-                    <InfoRow icon={icons.check(14, '#fff', 2.2)} color="var(--green)" label="Уведомления" sub={summary} />
+                    <InfoRow icon={icons.check(14, '#fff', 2.2)} color="var(--green)" label={tr('Уведомления', 'Notifications')} sub={summary} />
                   ) : (
-                    <InfoRow icon={icons.bell()} color="var(--gray)" label="Уведомления" sub="Выключены" />
+                    <InfoRow icon={icons.bell()} color="var(--gray)" label={tr('Уведомления', 'Notifications')} sub={tr('Выключены', 'Off')} />
                   )}
                 </div>
               </div>
@@ -1176,7 +1178,7 @@ export function Onboarding() {
               </div>
               {s.id === 'mac' ? (
                 <div className="ob-var ob-var-done" ref={doneVarRef}>
-                  {text('Телефон привязан', 'Когда придёте в спейс, отметка поставится сама.')}
+                  {text(tr('Телефон привязан', 'Phone linked'), tr('Когда придёте в спейс, отметка поставится сама.', "You'll check in automatically when you arrive at the space."))}
                   {macRows}
                 </div>
               ) : null}
@@ -1184,7 +1186,7 @@ export function Onboarding() {
           </div>
         ))}
         <button type="button" className="ob-skip" ref={skipRef} onClick={() => engine.current?.goTo(last)}>
-          Пропустить
+          {tr('Пропустить', 'Skip')}
         </button>
         <div className="ob-dots" ref={dotsRef} aria-hidden="true">
           {steps.slice(1, -1).map((s) => (
@@ -1207,7 +1209,7 @@ export function Onboarding() {
             <span className="ob-lb" ref={lbBRef} />
           </button>
           <button type="button" className="ob-second" ref={secondRef} onClick={() => engine.current?.goTo(macIdx + 1)}>
-            Не сейчас
+            {tr('Не сейчас', 'Maybe later')}
           </button>
         </div>
       </div>

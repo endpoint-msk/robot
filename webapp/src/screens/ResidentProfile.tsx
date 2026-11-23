@@ -4,6 +4,7 @@
 // Свой профиль из настроек - карточка журнала, как «Мои визиты»: без неё резидент без
 // прав дева видел бы только свою аватарку. Права дева идут под ней.
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { confirmDialog, showAlert } from '../modals'
@@ -32,9 +33,9 @@ function PermPill({ on, label, onClick }: { on: boolean; label: string; onClick:
     if (box && a && b) box.style.width = `${(on ? b : a).offsetWidth}px`
   }, [on, label])
   return (
-    <button type="button" className={'perm-pill' + (on ? ' on' : '')} aria-label={on ? label : 'Выдать'} onClick={onClick}>
+    <button type="button" className={'perm-pill' + (on ? ' on' : '')} aria-label={on ? label : tr('Выдать', 'Grant access')} onClick={onClick}>
       <span className="hb-labels pp-labels" ref={ref} aria-hidden="true">
-        <MorphWord text="Выдать" on={!on} />
+        <MorphWord text={tr('Выдать', 'Grant access')} on={!on} />
         <MorphWord text={label} on={on} />
       </span>
       <span className="pp-check" aria-hidden="true">
@@ -50,10 +51,10 @@ const accountLine = (a: AccountStatus): string =>
   (!a.exists
     ? `telegram_id ${a.telegramId}`
     : !a.active
-      ? 'выключен'
+      ? tr('выключен', 'disabled')
       : !a.inGroup
-        ? `без группы «${a.group}»`
-        : (a.email ?? `группа «${a.group}»`))
+        ? tr(`без группы «${a.group}»`, `outside group “${a.group}”`)
+        : (a.email ?? tr(`группа «${a.group}»`, `group “${a.group}”`)))
 
 export function ResidentProfile() {
   const { userId, name, username } = useParams() as { userId: number; name?: string; username?: string | null }
@@ -144,7 +145,7 @@ export function ResidentProfile() {
   }
 
   const face = { userId, name: name ?? '', username: username ?? null }
-  const label = name || (username ? '@' + username : 'Резидент')
+  const label = name || (username ? '@' + username : tr('Резидент', 'Resident'))
   const frame = (body: ReactNode) =>
     userId === boot!.me.id ? (
       <Screen>
@@ -182,8 +183,8 @@ export function ResidentProfile() {
 
   const removeAccount = async (a: AccountStatus) => {
     const login = a.username ?? ''
-    const ok = await confirmDialog(`Удалить аккаунт ${login}? Он пропадёт из Authentik вместе с сессиями.`, {
-      confirmLabel: 'Удалить',
+    const ok = await confirmDialog(tr(`Удалить аккаунт ${login}? Он пропадёт из Authentik вместе с сессиями.`, `Delete account ${login}? This removes the account from Authentik and ends its sessions.`), {
+      confirmLabel: tr('Удалить', 'Delete'),
       destructive: true,
       subject: { user: face, line: login },
     })
@@ -194,7 +195,7 @@ export function ResidentProfile() {
     <>
       {status.targets.length > 0 ? (
         <>
-          <SectionTitle>Администратор</SectionTitle>
+          <SectionTitle>{tr('Администратор', 'Administrator')}</SectionTitle>
           <div className="card">
             {status.targets.map((t, i) => (
               <Fragment key={t.key}>
@@ -202,17 +203,17 @@ export function ResidentProfile() {
                 <div className="row">
                   <span className="row-label">{t.label}</span>
                   {t.error ? (
-                    <span className="perm-state">нет доступа</span>
+                    <span className="perm-state">{tr('нет доступа', 'no access')}</span>
                   ) : t.creator ? (
-                    <span className="perm-state">владелец</span>
+                    <span className="perm-state">{tr('владелец', 'owner')}</span>
                   ) : !t.present ? (
-                    <span className="perm-state">не в чате</span>
+                    <span className="perm-state">{tr('не в чате', 'outside the chat')}</span>
                   ) : t.admin && !t.canEdit && want[t.key] === undefined ? (
-                    <span className="perm-state">админ, выдал не бот</span>
+                    <span className="perm-state">{tr('админ, выдал не бот', 'admin granted outside the bot')}</span>
                   ) : (
                     <PermPill
                       on={want[t.key] ?? t.admin}
-                      label="Админ"
+                      label={tr('Админ', 'Admin')}
                       onClick={() => {
                         const on = want[t.key] ?? t.admin
                         void run(on ? 'admin.revoke' : 'admin.grant', { target: t.key }, t.key, !on)
@@ -226,14 +227,14 @@ export function ResidentProfile() {
 
           {tagTarget ? (
             <>
-              <SectionTitle>Тег «{RESIDENT_TAG}»</SectionTitle>
+              <SectionTitle>{tr('Тег «', 'Tag “')}{RESIDENT_TAG}»</SectionTitle>
               <div className="card">
                 <div className="row">
-                  <span className="row-label">Тег в чате</span>
+                  <span className="row-label">{tr('Тег в чате', 'Chat tag')}</span>
                   {tagTarget.error ? (
-                    <span className="perm-state">нет доступа</span>
+                    <span className="perm-state">{tr('нет доступа', 'no access')}</span>
                   ) : !tagTarget.present ? (
-                    <span className="perm-state">не в чате</span>
+                    <span className="perm-state">{tr('не в чате', 'outside the chat')}</span>
                   ) : (
                     <PermPill
                       on={want['#tag'] ?? Boolean(tagTarget.tag)}
@@ -252,20 +253,20 @@ export function ResidentProfile() {
       ) : null}
       {acc ? (
         <>
-          <SectionTitle>Аккаунт</SectionTitle>
+          <SectionTitle>{tr('Аккаунт', 'Account')}</SectionTitle>
           <div className="card">
             <div className="row">
               <span className="row-label">
-                {acc.username ?? 'Нет аккаунта'}
+                {acc.username ?? tr('Нет аккаунта', 'No account')}
                 <span className="row-sublabel">{accountLine(acc)}</span>
               </span>
               {acc.error ? (
-                <span className="perm-state">нет доступа</span>
+                <span className="perm-state">{tr('нет доступа', 'no access')}</span>
               ) : acc.exists && acc.active && acc.inGroup ? (
-                <span className="perm-state">включён</span>
+                <span className="perm-state">{tr('включён', 'enabled')}</span>
               ) : (
                 <button type="button" className="perm-pill" disabled={busy} onClick={() => void runAccount('account.create')}>
-                  {acc.exists ? 'Включить' : 'Создать'}
+                  {acc.exists ? tr('Включить', 'Enable') : tr('Создать', 'Create')}
                 </button>
               )}
             </div>
@@ -278,7 +279,7 @@ export function ResidentProfile() {
               disabled={busy}
               onClick={() => void removeAccount(acc)}
             >
-              Удалить аккаунт
+              {tr('Удалить аккаунт', 'Delete account')}
             </button>
           ) : null}
         </>

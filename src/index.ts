@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { stat } from 'node:fs/promises'
-import { BotCommands, TelegramClient } from '@mtcute/node'
+import { BotCommands, TelegramClient, type ParsedUpdate } from '@mtcute/node'
 import { Dispatcher, filters } from '@mtcute/dispatcher'
 import { healthSnapshot } from './health.js'
 import { rateLimitStats } from './ratelimit.js'
@@ -52,6 +52,34 @@ import { buildAdminTargets } from './resident-admin.js'
 import { AuthentikClient, parseAuthentikConfig } from './authentik.js'
 import { OutlineClient, parseOutlineConfig } from './outline.js'
 import { registerResidentAccessHandlers, startAccessReconciler } from './resident-access.js'
+import { rememberTelegramLanguage, tr, userLocale, withLocale } from './i18n.js'
+import { insideCommand, privateCommands } from './bot-language-commands.js'
+
+class LocalizedDispatcher extends Dispatcher {
+    constructor(client: TelegramClient, private readonly store: Storage) {
+        super(client)
+    }
+
+    override async dispatchUpdateNow(update: ParsedUpdate): Promise<boolean> {
+        let user
+        switch (update.name) {
+            case 'new_message':
+                if (update.data.chat.type === 'user' && update.data.sender?.type === 'user') {
+                    user = update.data.sender
+                }
+                break
+            case 'callback_query':
+                if (update.data.chat.type === 'user') user = update.data.user
+                break
+            case 'inline_query':
+                user = update.data.user
+                break
+        }
+        if (!user || user.isBot) return withLocale('ru', () => super.dispatchUpdateNow(update))
+        rememberTelegramLanguage(this.store, user.id, user.language)
+        return withLocale(userLocale(this.store, user.id, user.language), () => super.dispatchUpdateNow(update))
+    }
+}
 
 const required = (name: string): string => {
     const v = process.env[name]
@@ -200,7 +228,7 @@ const main = async () => {
     // (участник чата резидентов); при переходе на Authentik меняется только эта реализация.
     const residents = createTelegramResidentDirectory(tg, allowedChats, residentsChatId)
 
-    const dp = Dispatcher.for(tg)
+    const dp = new LocalizedDispatcher(tg, storage)
     // Единый обработчик ошибок: логируем (а console.error форвардит в личку dev'ам)
     // и гасим, чтобы упавший хендлер не ронял обработку остальных апдейтов.
     dp.onError((err, update) => {
@@ -326,7 +354,7 @@ const main = async () => {
             await tg.call({
                 _: 'bots.setBotMenuButton',
                 userId: { _: 'inputUserEmpty' },
-                button: { _: 'botMenuButton', text: 'Хост', url: webappConfig.publicUrl },
+                button: { _: 'botMenuButton', text: 'Endpoint', url: webappConfig.publicUrl },
             })
         } catch (err) {
             console.error('[webapp] не удалось установить кнопку меню:', err)
@@ -338,7 +366,7 @@ const main = async () => {
     // После логина: форвардить все ошибки (console.error + process-level) в личку dev'ам.
     // Необработанное исключение роняет процесс - но сначала дописав стейт, иначе
     // подтверждённая пользователю правка ушла бы в никуда.
-    installErrorReporting(tg, devUserIds, async () => {
+    installErrorReporting(tg, storage, devUserIds, async () => {
         await flushUndo()
         await storage.drain()
         await drainAudit()
@@ -353,52 +381,37 @@ const main = async () => {
 
     // Список команд, который Telegram показывает по / в меню.
     // Большинство админских команд показываем только админам группы; /inside — всем участникам.
-    const adminCommands = [
-        BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
-        BotCommands.cmd('komanda', 'команда'),
-        BotCommands.cmd('goals', 'Показать текущий сбор'),
-        BotCommands.cmd('history', 'Прошлые сборы: /history [период]'),
-        BotCommands.cmd('goalsmute', 'Вкл/выкл автоотправку сбора в этот чат'),
-        BotCommands.cmd('donate', 'Добавить донат: /donate <сумма> <ник>'),
-        BotCommands.cmd('remove', 'Удалить донат: /remove <номер|ник> [сумма]'),
-        BotCommands.cmd('setgoal', 'Задать цель текущего сбора (0 — снять)'),
-        BotCommands.cmd('settitle', 'Изменить тему сбора'),
-        BotCommands.cmd('setdesc', 'Изменить описание сбора (реквизиты/ссылки)'),
-        BotCommands.cmd('setresetday', 'День сброса сбора (1–29)'),
-        BotCommands.cmd('announcemute', 'Вкл/выкл анонсы (обновления/объявления) в этот чат'),
-        BotCommands.cmd('boardmute', 'Вкл/выкл доску «кто сегодня в спейсе» в этом чате'),
-        BotCommands.cmd('eventmute', 'Вкл/выкл анонсы новых ивентов в этот чат'),
-        BotCommands.cmd('export', 'Выгрузить донаты в CSV (all — за все периоды)'),
-        BotCommands.cmd('help', 'Справка по командам'),
+    const helpCommand = () => BotCommands.cmd('help', tr('Справка по командам', 'Command help'))
+    const memberCommands = () => [
+        insideCommand(),
+        BotCommands.cmd('komanda', tr('команда', 'Team')),
+        BotCommands.cmd('goals', tr('Показать текущий сбор', 'Show the current fundraiser')),
+        BotCommands.cmd('history', tr('Прошлые сборы: /history [период]', 'Past fundraisers: /history [period]')),
     ]
-    // /printer в группах больше нет: он только в личке резидента (за кнопкой «Камера»
-    // живой кадр из помещения, а участник allowlist-чата - ещё не «свой»).
-    const memberCommands = [
-        BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
-        BotCommands.cmd('komanda', 'команда'),
-        BotCommands.cmd('goals', 'Показать текущий сбор'),
-        BotCommands.cmd('history', 'Прошлые сборы: /history [период]'),
-        BotCommands.cmd('help', 'Справка по командам'),
+    const adminCommands = () => [
+        ...memberCommands(),
+        BotCommands.cmd('goalsmute', tr('Вкл/выкл автоотправку сбора в этот чат', 'Toggle daily fundraiser posts')),
+        BotCommands.cmd('donate', tr('Добавить донат: /donate <сумма> <ник>', 'Add a donation: /donate <amount> <username>')),
+        BotCommands.cmd('remove', tr('Удалить донат: /remove <номер|ник> [сумма]', 'Remove a donation: /remove <rank|username> [amount]')),
+        BotCommands.cmd('setgoal', tr('Задать цель текущего сбора (0 — снять)', 'Set the fundraiser goal (0 to clear)')),
+        BotCommands.cmd('settitle', tr('Изменить тему сбора', 'Change the fundraiser title')),
+        BotCommands.cmd('setdesc', tr('Изменить описание сбора (реквизиты/ссылки)', 'Change the fundraiser description')),
+        BotCommands.cmd('setresetday', tr('День сброса сбора (1–29)', 'Set the fundraiser reset day (1–29)')),
+        BotCommands.cmd('announcemute', tr('Вкл/выкл анонсы (обновления/объявления) в этот чат', 'Toggle bot updates and announcements')),
+        BotCommands.cmd('boardmute', tr('Вкл/выкл доску «кто сегодня в спейсе» в этом чате', 'Toggle the space board in this chat')),
+        BotCommands.cmd('eventmute', tr('Вкл/выкл анонсы новых ивентов в этот чат', 'Toggle new event announcements')),
+        BotCommands.cmd('export', tr('Выгрузить донаты в CSV (all — за все периоды)', 'Export donations to CSV (all for every period)')),
+        helpCommand(),
     ]
     try {
-        // Всем участникам групп — только /inside в меню.
-        await tg.setMyCommands({ commands: memberCommands, scope: BotCommands.allGroups })
-        // Админам групп — полный набор админских команд (перекрывает allGroups для админов).
-        await tg.setMyCommands({ commands: adminCommands, scope: BotCommands.allGroupAdmins })
-        // В личке — /start (меню резидента), /printer (статус принтера), /bindmac (привязка MAC)
-        await tg.setMyCommands({
-            commands: [
-                BotCommands.cmd('start', 'Открыть меню бота'),
-                BotCommands.cmd('menu', 'Открыть меню бота'),
-                BotCommands.cmd('inside', 'Показать, кто сейчас в спейсе'),
-                BotCommands.cmd('printer', 'Статус 3D-принтера'),
-                BotCommands.cmd('bindmac', 'Привязать MAC для авто-отметок'),
-                BotCommands.cmd('unbindmac', 'Убрать привязку MAC'),
-                BotCommands.cmd('maclist', 'Показать свои привязанные MAC'),
-                BotCommands.cmd('settings', 'Настройки авто-отметки (ник/аноним)'),
-            ],
-            scope: BotCommands.allPrivate,
-        })
+        for (const language of ['en', 'ru'] as const) {
+            await withLocale(language, async () => {
+                const langCode = language === 'ru' ? 'ru' : undefined
+                await tg.setMyCommands({ commands: [...memberCommands(), helpCommand()], scope: BotCommands.allGroups, langCode })
+                await tg.setMyCommands({ commands: adminCommands(), scope: BotCommands.allGroupAdmins, langCode })
+                await tg.setMyCommands({ commands: privateCommands(), scope: BotCommands.allPrivate, langCode })
+            })
+        }
         // Дефолтный scope — пустой
         await tg.setMyCommands({ commands: null })
     } catch (err) {
@@ -476,27 +489,28 @@ const main = async () => {
             } catch {
                 // файла ещё нет - не повод молчать про остальное
             }
-            const ago = (ms: number | null): string => (ms === null ? 'ни разу' : `${Math.round(ms / 1000)} с назад`)
+            const ago = (ms: number | null): string => (ms === null ? tr('ни разу', "never") : tr(`${Math.round(ms / 1000)} с назад`, `${Math.round(ms / 1000)} sec ago`))
             // Лимиты API: молча отданный 429 иначе виден только в логах прокси, а по нему
             // и понятно, ошиблись ли мы с полками или кто-то действительно долбится.
             const rateLimitLines = (): string[] => {
                 const limits = rateLimitStats()
-                if (limits.throttled.length === 0) return ['', `Лимиты API: отказов не было, бакетов ${limits.buckets}`]
+                if (limits.throttled.length === 0) return ['', tr(`Лимиты API: отказов не было, бакетов ${limits.buckets}`, `API limits: no rejections, ${limits.buckets} buckets`)]
                 const total = limits.throttled.reduce((sum, s) => sum + s.count, 0)
                 return [
                     '',
-                    `Лимиты API: ${total} отказов, последний ${ago(Date.now() - limits.lastAt)}, бакетов ${limits.buckets}`,
+                    tr(`Лимиты API: ${total} отказов, последний ${ago(Date.now() - limits.lastAt)}, бакетов ${limits.buckets}`, `API limits: ${total} rejections, last ${ago(Date.now() - limits.lastAt)}, ${limits.buckets} buckets`),
                     ...limits.throttled.slice(0, 5).map((s) => `• ${s.scope} — ${s.count}`),
                 ]
             }
             const lines = [
-                `Аптайм: ${Math.round(health.uptimeMs / 60_000)} мин`,
-                `Стейт: ${sizeKb} КБ, запись ${write.lastError ? `СБОЙ (${write.lastError})` : 'в порядке'}`,
+                tr(`Аптайм: ${Math.round(health.uptimeMs / 60_000)} мин`, `Uptime: ${Math.round(health.uptimeMs / 60_000)} min`),
+                tr(`Стейт: ${sizeKb} КБ, запись ${write.lastError ? `СБОЙ (${write.lastError})` : 'в порядке'}`,
+                    `State: ${sizeKb} KB, writes ${write.lastError ? `FAILED (${write.lastError})` : 'OK'}`),
                 '',
-                'Компоненты:',
+                tr('Компоненты:', "Components:"),
                 ...health.components.map((c) => `${c.healthy ? '✅' : '⚠️'} ${c.name} - ${ago(c.ageMs)}${c.note ? ` (${c.note})` : ''}`),
                 '',
-                `Заявок: ${Object.keys(state.hostingRequests).length}, ивентов: ${Object.keys(state.events).length}, внутри: ${Object.keys(state.presence).length}`,
+                tr(`Заявок: ${Object.keys(state.hostingRequests).length}, ивентов: ${Object.keys(state.events).length}, внутри: ${Object.keys(state.presence).length}`, `Visit requests: ${Object.keys(state.hostingRequests).length}, events: ${Object.keys(state.events).length}, checked in: ${Object.keys(state.presence).length}`),
                 ...rateLimitLines(),
             ]
             await msg.answerText(lines.join('\n'))
@@ -517,7 +531,7 @@ const main = async () => {
             if (!devUserIds.has(msg.sender.id)) return
             const entries = await readRecentErrors(ERRORS_LIMIT)
             if (entries.length === 0) {
-                await msg.answerText('Журнал ошибок пуст.')
+                await msg.answerText(tr('Журнал ошибок пуст.', "The error log is empty."))
                 return
             }
             const lines = entries.map((e) => {
@@ -526,7 +540,7 @@ const main = async () => {
                 const short = head.length > ERROR_LINE_LEN ? `${head.slice(0, ERROR_LINE_LEN)}…` : head
                 return `${fmtAt(e.at)}  ${short}`
             })
-            await msg.answerText([`Последние ошибки (${entries.length}):`, '', ...lines].join('\n'))
+            await msg.answerText([tr(`Последние ошибки (${entries.length}):`, `Recent errors (${entries.length}):`), '', ...lines].join('\n'))
         })
         console.log(`[error-log] /errors enabled for dev users: ${[...devUserIds].join(', ')}`)
     }
@@ -537,15 +551,15 @@ const main = async () => {
             if (!msg.sender || msg.sender.type !== 'user') return
             if (!devUserIds.has(msg.sender.id)) return
             if (macPoller === null) {
-                await msg.answerText('Поллер MAC выключен (нет KEENETIC_*).')
+                await msg.answerText(tr('Поллер MAC выключен (нет KEENETIC_*).', "MAC polling is disabled (KEENETIC_* is unset)."))
                 return
             }
             try {
                 await macPoller.triggerNow()
-                await msg.answerText('Готово: опросил Keenetic и пересчитал отметки.')
+                await msg.answerText(tr('Готово: опросил Keenetic и пересчитал отметки.', "Keenetic polled and check-ins updated."))
             } catch (err) {
                 console.error('[keenetic] forcemacupdate failed:', err)
-                await msg.answerText('Ошибка при опросе Keenetic — см. логи.')
+                await msg.answerText(tr('Ошибка при опросе Keenetic — см. логи.', "Keenetic polling failed. See the logs."))
             }
         })
         console.log(`[keenetic] /forcemacupdate enabled for dev users: ${[...devUserIds].join(', ')}`)

@@ -1,6 +1,7 @@
 // Рецензент разбирает заявки на ивент: список с ответами, «Принять» / «Отклонить».
 // Данные грузятся отдельной ручкой (event.apps) — ответы объёмные, в bootstrap им не место.
 
+import { tr } from '../i18n'
 import { useState } from 'react'
 import { action, api, mutate } from '../api'
 import { fmtShortDate } from '../dates'
@@ -73,8 +74,7 @@ function AppCard({
         </div>
         {app.status === 'approved' && !held ? (
           <span className="waiting-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {icons.check(13, '#34c759', 2.4)} Принят
-          </span>
+            {icons.check(13, '#34c759', 2.4)}{tr(' Принят', ' Accepted')}</span>
         ) : null}
       </div>
       {app.answers.length > 0 ? (
@@ -89,7 +89,7 @@ function AppCard({
           <button
             type="button"
             className={'host-btn ea-accept' + (held ? ' accepted' : '')}
-            aria-label={held ? 'Принят' : 'Принять'}
+            aria-label={held ? tr('Принят', 'Accepted') : tr('Принять', 'Accept')}
             aria-disabled={held}
             onClick={held ? undefined : onApprove}
           >
@@ -97,14 +97,12 @@ function AppCard({
               {icons.check(13, 'currentColor', 2.4)}
             </span>
             <span className="hb-labels" aria-hidden="true">
-              <MorphWord text="Принять" on={!held} />
-              <MorphWord text="Принят" on={held} />
+              <MorphWord text={tr('Принять', 'Accept')} on={!held} />
+              <MorphWord text={tr('Принят', 'Accepted')} on={held} />
             </span>
           </button>
         ) : null}
-        <button type="button" className="ea-decline" onClick={onDecline}>
-          Отклонить
-        </button>
+        <button type="button" className="ea-decline" onClick={onDecline}>{tr('Отклонить', 'Decline')}</button>
       </div>
     </div>
   )
@@ -134,7 +132,7 @@ export function EventApps() {
     if (!res) return
     setData(res.data)
     setGone((g) => [...g, app.id])
-    offerUndo('Заявка отклонена', res.data.undo, (back) => {
+    offerUndo(tr('Заявка отклонена', 'Application declined'), res.data.undo, (back) => {
       bringBack(key, res.dust, () => {
         setData(back)
         setGone((g) => g.filter((id) => id !== app.id))
@@ -174,7 +172,7 @@ export function EventApps() {
   else if (data.length === 0) {
     body = (
       <div className="card" ref={growIn} data-dust-empty="">
-        <EmptyState title="Заявок пока нет" text="Как только кто-то оставит заявку, она появится здесь." />
+        <EmptyState title={tr('Заявок пока нет', 'No applications yet')} text={tr('Как только кто-то оставит заявку, она появится здесь.', 'Applications will appear here as they come in.')} />
       </div>
     )
   } else {
@@ -189,7 +187,7 @@ export function EventApps() {
         {pendingApps.length > 0 ? (
           <>
             <div className={'section-title' + (waiting === 0 && approvedApps.length > 0 ? ' sec-dim' : '')}>
-              {mixed ? 'На рассмотрении · ' : 'Приняты · '}
+              {mixed ? tr('На рассмотрении · ', 'Pending · ') : tr('Приняты · ', 'Accepted · ')}
               <Flip value={mixed ? waiting : pendingApps.length} delay={120} />
             </div>
             {pendingApps.map((a) => (
@@ -199,7 +197,7 @@ export function EventApps() {
         ) : null}
         {approvedApps.length > 0 ? (
           <>
-            <SectionTitle>{`Приняты · ${approvedApps.length}`}</SectionTitle>
+            <SectionTitle>{tr(`Приняты · ${approvedApps.length}`, `Accepted · ${approvedApps.length}`)}</SectionTitle>
             {approvedApps.map((a) => (
               <AppCard key={a.id} app={a} held={false} onApprove={() => decide(a, true)} onDecline={() => decide(a, false)} />
             ))}
@@ -212,7 +210,7 @@ export function EventApps() {
   return (
     <Screen>
       <BackRow />
-      <Header title="Заявки на ивент" subtitle={`${event.title} · ${fmtShortDate(event.dateKey)} в\u00a0${event.time}`} />
+      <Header title={tr('Заявки на ивент', 'Event applications')} subtitle={tr(`${event.title} · ${fmtShortDate(event.dateKey)} в\u00a0${event.time}`, `${event.title} · ${fmtShortDate(event.dateKey)} at ${event.time}`)} />
       <Swap loading={loading && !data} skeleton={pending ? <SkRows count={3} avatar tail /> : null}>
         {body}
       </Swap>

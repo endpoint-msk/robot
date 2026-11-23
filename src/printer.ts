@@ -1,3 +1,4 @@
+import { tr, userLocale, withLocale } from './i18n.js'
 import { BotKeyboard, html, InputMedia, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import { startHeartbeatInterval } from './health.js'
@@ -21,13 +22,13 @@ type PrinterStatus = {
 
 export type { PrinterStatus }
 
-const HUMAN_STATE: Record<string, string> = {
-    standby: 'Простаивает',
-    printing: 'Печатает',
-    paused: 'На паузе',
-    complete: 'Печать завершена',
-    cancelled: 'Печать отменена',
-    error: 'Ошибка',
+const HUMAN_STATE: Record<string, readonly [string, string]> = {
+    standby: ['Простаивает', 'Idle'],
+    printing: ['Печатает', 'Printing'],
+    paused: ['На паузе', 'Paused'],
+    complete: ['Печать завершена', 'Print complete'],
+    cancelled: ['Печать отменена', 'Print canceled'],
+    error: ['Ошибка', 'Error'],
 }
 
 const FETCH_TIMEOUT_MS = 8000
@@ -222,11 +223,11 @@ export const setPrinterTimezone = (offsetMinutes: number): void => {
 /** «2 ч 10 мин», «18 мин», «меньше минуты». */
 const formatRemaining = (seconds: number): string => {
     const total = Math.round(seconds / 60)
-    if (total < 1) return 'меньше минуты'
+    if (total < 1) return tr('меньше минуты', "less than a minute")
     const h = Math.floor(total / 60)
     const m = total % 60
-    if (h === 0) return `${m} мин`
-    return m === 0 ? `${h} ч` : `${h} ч ${m} мин`
+    if (h === 0) return tr(`${m} мин`, `${m} min`)
+    return m === 0 ? tr(`${h} ч`, `${h} hr`) : tr(`${h} ч ${m} мин`, `${h} hr ${m} min`)
 }
 
 /** «19:40» в поясе спейса. */
@@ -249,18 +250,21 @@ const remainingOf = (status: PrinterStatus): number | null => {
 
 /** Собирает текст ответа по статусу принтера. Строки склеиваются через `<br>`, т.к. `html()` схлопывает `\n` в пробел. */
 export const renderStatus = (status: PrinterStatus): string => {
-    const human = HUMAN_STATE[status.state] ?? status.state
-    const lines = [`🖨 <b>Статус принтера:</b> ${human}`]
+    const label = HUMAN_STATE[status.state]
+    const human = label ? tr(...label) : status.state
+    const lines = [tr(`🖨 <b>Статус принтера:</b> ${human}`, `🖨 <b>Printer status:</b> ${human}`)]
     if (status.state === 'printing' || status.state === 'paused') {
-        if (status.filename) lines.push(`Файл: <code>${html.escape(status.filename)}</code>`)
+        if (status.filename) lines.push(tr(`Файл: <code>${html.escape(status.filename)}</code>`, `File: <code>${html.escape(status.filename)}</code>`))
         if (status.progress !== null) {
-            lines.push(`Прогресс: ${Math.round(status.progress * 100)}%`)
+            lines.push(tr(`Прогресс: ${Math.round(status.progress * 100)}%`, `Progress: ${Math.round(status.progress * 100)}%`))
         }
         const left = remainingOf(status)
         // Без этой строки по процентам не понять, освободится принтер через двадцать
         // минут или через девять часов - из-за чего и отменяли чужие печати.
         if (left !== null) {
-            lines.push(`Осталось ~${formatRemaining(left)} · закончит в ${clockAt(new Date(Date.now() + left * 1000))}`)
+            const remaining = formatRemaining(left)
+            const end = clockAt(new Date(Date.now() + left * 1000))
+            lines.push(tr(`Осталось ~${remaining} · закончит в ${end}`, `About ${remaining} left · finishes at ${end}`))
         }
     }
     return lines.join('<br>')
@@ -291,12 +295,12 @@ const canUsePrinter = async (
     if (!isPrivateChat(msg)) return false
     if (!msg.sender || msg.sender.type !== 'user') return false
     if (await canUsePrinterIn(residents, msg.chat.type, msg.sender.id)) return true
-    await msg.answerText('Статус принтера доступен резидентам спейса.')
+    await msg.answerText(tr('Статус принтера доступен резидентам спейса.', "Printer status is available to residents."))
     return false
 }
 
 const unsubscribeKeyboard = () =>
-    BotKeyboard.inline([[BotKeyboard.callback('🔕 Отписаться', CB_UNSUBSCRIBE)]])
+    BotKeyboard.inline([[BotKeyboard.callback(tr('🔕 Отписаться', "🔕 Unsubscribe"), CB_UNSUBSCRIBE)]])
 
 /** Какая картинка сейчас показана в сообщении активной печати. */
 type PrinterView = 'preview' | 'camera'
@@ -306,10 +310,10 @@ type PrinterView = 'preview' | 'camera'
 const activeKeyboard = (view: PrinterView) =>
     BotKeyboard.inline([
         [
-            BotKeyboard.callback(`${view === 'preview' ? '✅ ' : ''}🖼 Превью`, CB_VIEW_PREVIEW),
-            BotKeyboard.callback(`${view === 'camera' ? '✅ ' : ''}📷 Камера`, CB_VIEW_CAMERA),
+            BotKeyboard.callback(tr(`${view === 'preview' ? '✅ ' : ''}🖼 Превью`, `${view === 'preview' ? '✅ ' : ''}🖼 Preview`), CB_VIEW_PREVIEW),
+            BotKeyboard.callback(tr(`${view === 'camera' ? '✅ ' : ''}📷 Камера`, `${view === 'camera' ? '✅ ' : ''}📷 Camera`), CB_VIEW_CAMERA),
         ],
-        [BotKeyboard.callback('🔔 Уведомить по окончании печати', CB_NOTIFY)],
+        [BotKeyboard.callback(tr('🔔 Уведомить по окончании печати', "🔔 Notify me when the print finishes"), CB_NOTIFY)],
     ])
 
 export const registerPrinterHandlers = (
@@ -334,7 +338,7 @@ export const registerPrinterHandlers = (
             // warn, а не error: выключенный/недоступный принтер — обычное дело, а console.error
             // форвардится дев-аккаунтам в личку (см. errors.ts) и превращается там в спам.
             console.warn('[printer] не удалось получить статус:', err)
-            await msg.answerText('Не удалось связаться с принтером. Он включён и доступен в сети?')
+            await msg.answerText(tr('Не удалось связаться с принтером. Он включён и доступен в сети?', "Couldn't reach the printer. Is it powered on and connected to the network?"))
             return
         }
 
@@ -368,7 +372,7 @@ export const registerPrinterHandlers = (
         if (ctx.dataStr === CB_VIEW_PREVIEW || ctx.dataStr === CB_VIEW_CAMERA || ctx.dataStr === CB_NOTIFY) {
             const allowedHere = await canUsePrinterIn(residents, ctx.chat.type, ctx.user.id)
             if (!allowedHere) {
-                await ctx.answer({ text: 'Принтер доступен резидентам спейса.', alert: true })
+                await ctx.answer({ text: tr('Принтер доступен резидентам спейса.', "The printer is available to residents."), alert: true })
                 return
             }
         }
@@ -380,7 +384,7 @@ export const registerPrinterHandlers = (
             try {
                 status = await fetchPrinterStatus(printerUrl, printerAuth, { withEta: true })
             } catch {
-                await ctx.answer({ text: 'Принтер сейчас недоступен, попробуй позже.', alert: true })
+                await ctx.answer({ text: tr('Принтер сейчас недоступен, попробуй позже.', "The printer is currently unavailable. Try again later."), alert: true })
                 return
             }
 
@@ -390,7 +394,7 @@ export const registerPrinterHandlers = (
 
             if (!image) {
                 await ctx.answer({
-                    text: wantCamera ? 'Не удалось получить кадр с камеры.' : 'Превью для этой модели нет.',
+                    text: wantCamera ? tr('Не удалось получить кадр с камеры.', "Couldn't get a snapshot from the camera.") : tr('Превью для этой модели нет.', "There's no preview for this model."),
                     alert: true,
                 })
                 return
@@ -402,18 +406,18 @@ export const registerPrinterHandlers = (
                     media: InputMedia.photo(image, { caption }),
                     replyMarkup: activeKeyboard(wantCamera ? 'camera' : 'preview'),
                 })
-                await ctx.answer({ text: wantCamera ? '📷 Камера' : '🖼 Превью' })
+                await ctx.answer({ text: wantCamera ? tr('📷 Камера', "📷 Camera") : tr('🖼 Превью', "🖼 Preview") })
             } catch (err) {
                 // У mtcute RpcError код лежит в `.text` (напр. 'MESSAGE_NOT_MODIFIED'), а `.message` — описание без кода.
                 const text = `${(err as { text?: string })?.text ?? ''} ${(err as Error)?.message ?? ''}`
                 // Повторный тап по активной кнопке (статичное превью) — картинка та же, Telegram ругается.
                 if (/MESSAGE_NOT_MODIFIED/i.test(text)) {
-                    await ctx.answer({ text: 'Уже показано' })
+                    await ctx.answer({ text: tr('Уже показано', "Already shown") })
                     return
                 }
                 // Сообщение было текстовым (превью не нашлось при /printer) — media в него не вставить через edit.
                 if (/MEDIA_NEW_INVALID|message.*media/i.test(text)) {
-                    await ctx.answer({ text: 'Не получилось обновить картинку.', alert: true })
+                    await ctx.answer({ text: tr('Не получилось обновить картинку.', "Couldn't update the image."), alert: true })
                     return
                 }
                 throw err
@@ -430,10 +434,10 @@ export const registerPrinterHandlers = (
             }
             try {
                 await ctx.editMessage({
-                    text: had ? 'Отписал тебя от уведомлений о печати 🔕' : 'Ты и так не подписан.',
+                    text: had ? tr('Отписал тебя от уведомлений о печати 🔕', "Unsubscribed from print notifications 🔕") : tr('Ты и так не подписан.', "You weren't subscribed."),
                 })
             } catch {}
-            await ctx.answer({ text: had ? 'Отписал' : 'Подписки не было' })
+            await ctx.answer({ text: had ? tr('Отписал', "Unsubscribed") : tr('Подписки не было', "You weren't subscribed") })
             return
         }
 
@@ -443,28 +447,28 @@ export const registerPrinterHandlers = (
         try {
             status = await fetchPrinterStatus(printerUrl, printerAuth)
         } catch {
-            await ctx.answer({ text: 'Принтер сейчас недоступен, попробуй позже.', alert: true })
+            await ctx.answer({ text: tr('Принтер сейчас недоступен, попробуй позже.', "The printer is currently unavailable. Try again later."), alert: true })
             return
         }
         if (!ACTIVE_STATES.has(status.state)) {
-            await ctx.answer({ text: 'Принтер уже не печатает — уведомлять не о чем.', alert: true })
+            await ctx.answer({ text: tr('Принтер уже не печатает — уведомлять не о чем.', "The printer is no longer printing."), alert: true })
             return
         }
         // Уже подписан — не шлём второе сообщение в личку.
         if (storage.get().printerSubscribers[String(ctx.user.id)] === true) {
-            await ctx.answer({ text: 'Ты уже подписан — уведомлю по окончании печати 🔔' })
+            await ctx.answer({ text: tr('Ты уже подписан — уведомлю по окончании печати 🔔', "You're already subscribed. I'll notify you when the print finishes 🔔") })
             return
         }
         // Подтверждение шлём в личку (с кнопкой отписки) — заодно проверяем, что бот может писать юзеру.
         try {
             await client.sendText(
                 ctx.user.id,
-                'Подписал тебя на уведомление 🔔 — напишу сюда, когда печать закончится.',
+                tr('Подписал тебя на уведомление 🔔 — напишу сюда, когда печать закончится.', "You're subscribed 🔔 I'll message you here when the print finishes."),
                 { replyMarkup: unsubscribeKeyboard() },
             )
         } catch {
             await ctx.answer({
-                text: 'Сначала напиши мне в личку (/start) — иначе я не смогу прислать уведомление.',
+                text: tr('Сначала напиши мне в личку (/start) — иначе я не смогу прислать уведомление.', "Send me /start in a private chat first so I can notify you."),
                 alert: true,
             })
             return
@@ -472,7 +476,7 @@ export const registerPrinterHandlers = (
         await storage.update((s) => {
             s.printerSubscribers[String(ctx.user.id)] = true
         })
-        await ctx.answer({ text: 'Уведомлю в личке, когда печать закончится 🔔' })
+        await ctx.answer({ text: tr('Уведомлю в личке, когда печать закончится 🔔', "I'll message you when the print finishes 🔔") })
     })
 }
 
@@ -514,17 +518,18 @@ export const startPrinterCompletionWatcher = (
             s.printerSubscribers = {}
         })
 
-        const file = status.filename ? `\nФайл: ${status.filename}` : ''
-        const message =
-            status.state === 'complete'
-                ? `🖨 Печать завершена!${file}`
-                : status.state === 'cancelled'
-                  ? `🛑 Печать отменена.${file}`
-                  : `⚠️ Печать прервана из-за ошибки принтера.${file}`
         for (const idStr of subscribers) {
             const userId = Number(idStr)
             try {
-                await client.sendText(userId, message)
+                await withLocale(userLocale(storage, userId), () => {
+                    const file = status.filename ? tr(`\nФайл: ${status.filename}`, `\nFile: ${status.filename}`) : ''
+                    const message = status.state === 'complete'
+                        ? tr('🖨 Печать завершена!', '🖨 Print complete!')
+                        : status.state === 'cancelled'
+                          ? tr('🛑 Печать отменена.', '🛑 Printing canceled.')
+                          : tr('⚠️ Печать прервана из-за ошибки принтера.', '⚠️ Printing stopped due to a printer error.')
+                    return client.sendText(userId, message + file)
+                })
             } catch (err) {
                 console.warn(`[printer] не смог уведомить ${userId}:`, err)
             }

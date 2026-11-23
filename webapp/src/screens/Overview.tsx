@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Ref, type RefObject } from 'react'
 import { fmtRange, requestsWord } from '../dates'
 import { icons } from '../icons'
@@ -243,7 +244,7 @@ function DoorRow() {
       <button
         type="button"
         className="row tappable"
-        aria-label={shown ? `Код домофона ${door.code}` : 'Показать код домофона'}
+        aria-label={shown ? tr(`Код домофона ${door.code}`, `Intercom code ${door.code}`) : tr('Показать код домофона', 'Show the intercom code')}
         onClick={(e) => {
           if (shown) {
             haptic.impact('soft')
@@ -259,9 +260,7 @@ function DoorRow() {
         <div className="row-icon" style={{ background: 'var(--orange)' }}>
           {icons.door(18, '#fff')}
         </div>
-        <span className="row-label">
-          Домофон
-          {door.note ? <span className="row-sublabel">{door.note}</span> : null}
+        <span className="row-label">{tr('Домофон', 'Intercom')}{door.note ? <span className="row-sublabel">{door.note}</span> : null}
         </span>
         <div className="row-right">
           <DoorSpoiler code={door.code} shown={shown} tap={tap} />
@@ -276,17 +275,17 @@ function DoorRow() {
 const lockIsOpen = (state: LockState): boolean =>
   state === 'unlocked' || state === 'unlocking' || state === 'open' || state === 'opening'
 
-const LOCK_CHIP: Record<LockState, { text: string; tone: 'green' | 'warn' | 'gray' }> = {
-  locked: { text: 'закрыт', tone: 'green' },
-  locking: { text: 'закрывается', tone: 'gray' },
-  unlocked: { text: 'открыт', tone: 'warn' },
-  unlocking: { text: 'открывается', tone: 'gray' },
-  open: { text: 'открыт', tone: 'warn' },
-  opening: { text: 'открывается', tone: 'gray' },
-  jammed: { text: 'заклинило', tone: 'warn' },
-  unavailable: { text: 'нет связи', tone: 'gray' },
-  unknown: { text: 'нет связи', tone: 'gray' },
-}
+const lockChips = (): Record<LockState, { text: string; tone: 'green' | 'warn' | 'gray' }> => ({
+  locked: { text: tr('закрыт', 'locked'), tone: 'green' },
+  locking: { text: tr('закрывается', 'locking'), tone: 'gray' },
+  unlocked: { text: tr('открыт', 'unlocked'), tone: 'warn' },
+  unlocking: { text: tr('открывается', 'unlocking'), tone: 'gray' },
+  open: { text: tr('открыт', 'unlocked'), tone: 'warn' },
+  opening: { text: tr('открывается', 'unlocking'), tone: 'gray' },
+  jammed: { text: tr('заклинило', 'jammed'), tone: 'warn' },
+  unavailable: { text: tr('нет связи', 'offline'), tone: 'gray' },
+  unknown: { text: tr('нет связи', 'offline'), tone: 'gray' },
+})
 
 /** Сколько держится движение после своего касания: промежуточные «открывается» и
  * «закрывается» приходят опросом Home Assistant и бывают позже окна ownTapRecent. */
@@ -342,12 +341,12 @@ function LockRow() {
   }, [own])
   if (!lock) return null
   const open = lockIsOpen(lock.state)
-  const chip = LOCK_CHIP[lock.state]
+  const chip = lockChips()[lock.state]
   return (
     <>
       <div className={'row lock-row' + (own ? ' own' : '')}>
         <div className={'row-icon lock-ic' + (open ? ' open' : '')}>{icons.lockFilled(17, '#fff')}</div>
-        <span className="row-label">Замок</span>
+        <span className="row-label">{tr('Замок', 'Door lock')}</span>
         <div className="row-right">
           <span className={'ob-tag ' + chip.tone}>
             <LockWord text={chip.text} play={own} />
@@ -358,12 +357,12 @@ function LockRow() {
               haptic.impact('light')
               setOwn(true)
               const res = await action(open ? 'lock.close' : 'lock.open', {}, { quiet: true })
-              if (res && !open) showAlert('Замок открыт. Не забудьте закрыть его за собой.', 'Понятно')
+              if (res && !open) showAlert(tr('Замок открыт. Не забудьте закрыть его за собой.', 'The door is unlocked. Remember to lock it behind you.'), tr('Понятно', 'Got it'))
             }}
           >
             <span className={'hb-labels' + (own ? '' : ' still')}>
-              <MorphWord text="Открыть" on={!open} />
-              <MorphWord text="Закрыть" on={open} />
+              <MorphWord text={tr('Открыть', 'Unlock')} on={!open} />
+              <MorphWord text={tr('Закрыть', 'Lock')} on={open} />
             </span>
           </ActionButton>
         </div>
@@ -384,7 +383,7 @@ export function Overview() {
 
   return (
     <Screen>
-      <Header title="Ближайшие дни" subtitle={`${fmtRange(first, last)} · ${requestsWord(total)}`} />
+      <Header title={tr('Ближайшие дни', 'Upcoming days')} subtitle={`${fmtRange(first, last)} · ${requestsWord(total)}`} />
       {today ? <TodayCard day={today} onOpen={() => push('day', { dateKey: today.dateKey })} /> : null}
       <div className="card">
         {week.map((day, i) => (
@@ -398,7 +397,7 @@ export function Overview() {
           </Fragment>
         ))}
       </div>
-      <LaterEvents backLabel="Ближайшие дни" />
+      <LaterEvents backLabel={tr('Ближайшие дни', 'Upcoming days')} />
       <div style={{ height: 22 }} />
       {/* Кнопка замка делает строку 52 px, соседние текстовые встают так же (ctl-card). */}
       <div className={data!.lock ? 'card ctl-card' : 'card'}>
@@ -409,7 +408,7 @@ export function Overview() {
           <div className="row-icon" style={{ background: 'var(--indigo)' }}>
             {icons.archiveBox()}
           </div>
-          <span className="row-label">Архив</span>
+          <span className="row-label">{tr('Архив', 'Archive')}</span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
       </div>

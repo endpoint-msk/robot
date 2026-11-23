@@ -4,6 +4,7 @@
 // движение (app.css, .tab-ic.play): по ключу он ремаунтится, и анимация начинается заново.
 // Красная точка на вкладке - там ждёт ваше дело, как непрочитанное в Telegram.
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactElement } from 'react'
 import { dayNum } from '../dates'
 import { icons } from '../icons'
@@ -82,15 +83,15 @@ const iconOf = (name: ScreenName, today: number): ReactElement | undefined =>
   // Активность гостя - та же неделя, что «Дни» у резидента, и значок тот же.
   name === 'overview' || name === 'peek' ? days(today) : ICONS[name]
 
-const LABELS: Partial<Record<ScreenName, string>> = {
-  overview: 'Дни',
-  stats: 'Статистика',
-  dues: 'Взносы',
-  settings: 'Настройки',
-  myVisits: 'Визиты',
-  peek: 'Активность',
-  route: 'Как пройти',
-}
+const tabLabels = (): Partial<Record<ScreenName, string>> => ({
+  overview: tr('Дни', "Days"),
+  stats: tr('Статистика', "Stats"),
+  dues: tr('Взносы', "Dues"),
+  settings: tr('Настройки', "Settings"),
+  myVisits: tr('Визиты', "Visits"),
+  peek: tr('Активность', "Activity"),
+  route: tr('Как пройти', "Directions"),
+})
 
 /** Сколько после вступления точка на «Настройках» зовёт привязать телефон. */
 const PHONE_DOT_MS = 7 * 24 * 60 * 60 * 1000
@@ -132,9 +133,9 @@ const DRAG_SLOP = 6
 const HOLD_MS = 420
 
 type DevPick = 'resident' | 'guest' | 'dev'
-const DEV_ITEMS: { value: DevPick; label: string }[] = [
-  { value: 'resident', label: 'Как резидент' },
-  { value: 'guest', label: 'Как гость' },
+const devItems = (): { value: DevPick; label: string }[] => [
+  { value: 'resident', label: tr('Как резидент', "As a resident") },
+  { value: 'guest', label: tr('Как гость', "As a guest") },
   { value: 'dev', label: 'Dev' },
 ]
 
@@ -147,7 +148,7 @@ function DevMenu({ open, hot, onPick }: { open: boolean; hot: DevPick | null; on
   const { perspective } = useStore()
   return (
     <div className={'ob-menu up dev-menu' + (open ? ' open' : '')} role="menu">
-      {DEV_ITEMS.map((it) => (
+      {devItems().map((it) => (
         <Fragment key={it.value}>
           {it.value === 'dev' ? <div className="ob-menu-gap" /> : null}
           <button
@@ -327,7 +328,7 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
 
   const caps = { '--i': index, '--n': tabs.length } as CSSProperties
   return (
-    <nav className={'tab-bar' + (still ? ' still' : ' live') + (enter && !still ? ' ' + enter : '')} aria-label="Разделы">
+    <nav className={'tab-bar' + (still ? ' still' : ' live') + (enter && !still ? ' ' + enter : '')} aria-label={tr("Разделы", "Sections")}>
       <div
         className="tab-caps"
         ref={capsRef}
@@ -383,7 +384,7 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
             <span className={'tab-ic' + (play?.name === name ? ' play' : '')} key={play?.name === name ? play.n : 0}>
               {iconOf(name, today)}
             </span>
-            <span className="tab-label">{LABELS[name]}</span>
+            <span className="tab-label">{tabLabels()[name]}</span>
             <TabDot on={dots.includes(name)} />
           </button>
         ))}
@@ -393,7 +394,7 @@ export function TabBar({ tabs, active, anim = null, still = false }: { tabs: Scr
         <button
           type="button"
           className="tab-plus"
-          aria-label="Новая заявка"
+          aria-label={tr("Новая заявка", "New request")}
           tabIndex={still ? -1 : undefined}
           // Круг вырастает в кнопку формы на её месте (hero.ts, ключ cta); у картинки под
           // свайпом ключа нет, иначе имя перехода досталось бы двум узлам.

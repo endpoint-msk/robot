@@ -3,6 +3,7 @@
 // «День» и касание самой темы ставят курсор в шапку. У гостя это только текст. Автора здесь
 // нет: резиденты видят его подписью строки «Тема дня» в карточке «День».
 
+import { tr } from '../i18n'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { action } from '../api'
@@ -91,9 +92,9 @@ function TopicField({ dateKey, current }: { dateKey: string; current: string }) 
       rows={1}
       value={value}
       maxLength={MAX_TOPIC}
-      placeholder="Что в этот день в спейсе?"
+      placeholder={tr('Что в этот день в спейсе?', 'What’s happening at the space that day?')}
       enterKeyHint="done"
-      aria-label="Тема дня"
+      aria-label={tr('Тема дня', 'Day topic')}
       onChange={(e) => {
         const raw = e.target.value
         // Клавиатуры Android присылают «Готово» переносом в тексте, а не нажатием Enter.

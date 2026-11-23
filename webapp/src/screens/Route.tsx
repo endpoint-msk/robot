@@ -4,6 +4,7 @@
 // Содержимое — во фронте, как и текст правил (screens/Rules.tsx): это константа
 // конкретного спейса, а не настройка, и в стейте ей делать нечего.
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { nb } from '../format'
 import { icons } from '../icons'
@@ -17,14 +18,15 @@ import { Screen } from '../components/Screen'
 import { DOOR, ROADS, WIDE, type StationKey } from './routeMap'
 
 /** Адрес нужен и на карточке визита — там он и есть ответ на «куда идти». */
-export const ADDRESS = 'ул. Литвина-Седого, 7'
-export const ENTRANCE = nb('3 подъезд')
+const MAP_ADDRESS = 'ул. Литвина-Седого, 7'
+export const address = (): string => tr(MAP_ADDRESS, '7 Litvina-Sedogo St.')
+export const entrance = (): string => nb(tr('3 подъезд', 'Entrance 3'))
 
 // Минуты и километры по той же дороге OSRM, что рисуется на карте, от ближнего выхода:
 // у Шелепихи это выход 3 МЦК, у «Улицы 1905 года» выход 1.
-const METRO: { key: StationKey; icon: string; line: string; station: string; walk: string }[] = [
-  { key: 'mcc', icon: '/metro-mck.webp', line: 'МЦК', station: 'Шелепиха', walk: '23\u00a0мин пешком · 1,7\u00a0км' },
-  { key: 'm7', icon: '/metro-line7.webp', line: 'Линия 7', station: 'Улица 1905 года', walk: '22\u00a0мин пешком · 1,6\u00a0км' },
+const metro = (): { key: StationKey; icon: string; line: string; station: string; walk: string }[] => [
+  { key: 'mcc', icon: '/metro-mck.webp', line: tr('МЦК', 'MCC'), station: tr('Шелепиха', 'Shelepikha'), walk: tr('23\u00a0мин пешком · 1,7\u00a0км', '23 min walk · 1.7 km') },
+  { key: 'm7', icon: '/metro-line7.webp', line: tr('Линия 7', 'Line 7'), station: tr('Улица 1905 года', 'Ulitsa 1905 Goda'), walk: tr('22\u00a0мин пешком · 1,6\u00a0км', '22 min walk · 1.6 km') },
 ]
 
 type Rect = [number, number, number, number]
@@ -180,7 +182,9 @@ function RouteMap({ focus }: { focus: StationKey | null }) {
     return () => window.removeEventListener('resize', onResize)
   }, [focus])
 
-  const station = METRO.find((m) => m.key === focus)
+  const stations = metro()
+  const station = stations.find((m) => m.key === focus)
+  const mapAddress = address()
   return (
     <svg
       ref={svgRef}
@@ -188,7 +192,7 @@ function RouteMap({ focus }: { focus: StationKey | null }) {
       viewBox="0 0 320 210"
       preserveAspectRatio="xMidYMid slice"
       role="img"
-      aria-label={`Карта района: ${ADDRESS}` + (station ? `, пешая дорога от станции ${station.station}` : '')}
+      aria-label={tr(`Карта района: ${mapAddress}`, `Neighborhood map: ${mapAddress}`) + (station ? tr(`, пешая дорога от станции ${station.station}`, `, walking route from ${station.station} station`) : '')}
     >
       {/* Земля с запасом на дальний кадр. */}
       <rect className="rs-bg" x="-4000" y="-4000" width="9000" height="9000" />
@@ -304,8 +308,8 @@ function RouteMap({ focus }: { focus: StationKey | null }) {
         <path className="rs-road rs-tertiary" d="M311.9 116.5 L314.3 106.3 L323.7 65.6 L332.0 29.9 L337.8 2.8 L340.0 -7.4 L352.6 -65.5 L353.7 -70.9 L356.1 -81.8 L380.8 -196.8 L384.0 -210.0" />
         <path className="rs-road rs-tertiary" d="M157.2 -152.0 L154.8 -141.2 L148.4 -110.9 L126.5 -10.5 L109.8 66.1 L108.4 72.4" />
         <path className="rs-here" d="M167.0 96.8 L193.3 102.7 L187.5 128.1 L177.4 125.9 L178.6 120.5 L180.5 112.1 L180.9 110.2 L172.1 108.3 L164.8 106.6 L167.0 96.8Z" />
-        <text className="rs-name" transform="translate(35.2 57.1) rotate(11.6)" textAnchor="middle" dy="2.4">Литвина-Седого</text>
-        <text className="rs-name" transform="translate(114.8 43.1) rotate(-77.7)" textAnchor="middle" dy="2.4">Стрельбищенский пер.</text>
+        <text className="rs-name" transform="translate(35.2 57.1) rotate(11.6)" textAnchor="middle" dy="2.4">{tr('Литвина-Седого', 'Litvina-Sedogo')}</text>
+        <text className="rs-name" transform="translate(114.8 43.1) rotate(-77.7)" textAnchor="middle" dy="2.4">{tr('Стрельбищенский пер.', 'Strelbishchensky Ln.')}</text>
       </g>
       {KEYS.map((k) => (
         <Fragment key={k}>
@@ -313,7 +317,7 @@ function RouteMap({ focus }: { focus: StationKey | null }) {
           <path ref={(el) => void (roadRefs.current[k + 'r'] = el)} className="rs-walk" d={ROADS[k].d} pathLength={1} />
         </Fragment>
       ))}
-      {METRO.map((m) => (
+      {stations.map((m) => (
         <image key={m.key} ref={(el) => void (stationRefs.current[m.key] = el)} className="rs-station" href={m.icon} x="0" y="0" width="0" height="0" />
       ))}
       {/* Метка стоит остриём внутри дома, в его нижнем крыле, и своим цветом:
@@ -326,23 +330,24 @@ function RouteMap({ focus }: { focus: StationKey | null }) {
   )
 }
 
-const MAPS_URL = `https://yandex.ru/maps/?text=${encodeURIComponent(`Москва, ${ADDRESS}`)}`
+const MAPS_URL = `https://yandex.ru/maps/?text=${encodeURIComponent(`Москва, ${MAP_ADDRESS}`)}`
 
 export function Route() {
   const clip = useCopyFeedback(20)
   const [focus, setFocus] = useState<StationKey | null>(null)
+  const routeAddress = address()
 
   // Ответ на месте пальца, а не модалкой: «скопировано» на весь экран слишком громкое.
   const copyAddress = async (e: MouseEvent): Promise<void> => {
     // В вебвью буфер обмена может быть недоступен — тогда просто показываем адрес,
     // выделить и скопировать его руками всё равно можно.
-    if (!(await clip.copy(ADDRESS, e))) showAlert(ADDRESS)
+    if (!(await clip.copy(routeAddress, e))) showAlert(routeAddress)
   }
 
   return (
     <Screen>
-      <BackRow label="Мои визиты" />
-      <Header title="Как пройти" />
+      <BackRow label={tr('Мои визиты', 'My visits')} />
+      <Header title={tr('Как пройти', 'Directions')} />
 
       {/* Карточка места, как место в Telegram: карта, ради которой экран открывают по
           дороге, сверху, адрес заголовком, действия кнопками, как в шапке профиля. */}
@@ -352,17 +357,17 @@ export function Route() {
           <div className="route-map-credit">© OpenStreetMap</div>
         </div>
         <div className="route-place-body">
-          <div className="route-place-t">{ADDRESS}</div>
-          <div className="route-place-s">{ENTRANCE}</div>
+          <div className="route-place-t">{routeAddress}</div>
+          <div className="route-place-s">{entrance()}</div>
         </div>
         <div className="prof-acts route-acts">
           <button type="button" className="prof-act" onClick={(e) => void copyAddress(e)}>
             {clip.glyph}
-            <span>Адрес</span>
+            <span>{tr('Адрес', 'Address')}</span>
           </button>
           <button type="button" className="prof-act" onClick={() => openUrl(MAPS_URL)}>
             {icons.map(20, accent())}
-            <span>В картах</span>
+            <span>{tr('В картах', 'Open in maps')}</span>
           </button>
         </div>
       </div>
@@ -371,8 +376,8 @@ export function Route() {
       {/* Станция нажимается как строка: карта отъезжает к ней и рисует дорогу до двери.
           Минуты стоят и без тапа: именно их на экране не хватало больше всего. */}
       <div className="card route-metro">
-        {METRO.map((m, i) => (
-          <Fragment key={m.station}>
+        {metro().map((m, i) => (
+          <Fragment key={m.key}>
             {i > 0 ? <Sep inset="icon" /> : null}
             <button
               type="button"
@@ -395,11 +400,11 @@ export function Route() {
       </div>
 
       {/* Дверь ищут в темноте по фотографии — её нужно уметь рассмотреть. */}
-      <div className="route-door tappable" onClick={() => showImage('/door.jpg', 'Дверь подъезда')}>
-        <img src="/door.jpg" alt="Дверь подъезда" />
+      <div className="route-door tappable" onClick={() => showImage('/door.jpg', tr('Дверь подъезда', 'Building entrance'))}>
+        <img src="/door.jpg" alt={tr('Дверь подъезда', 'Building entrance')} />
       </div>
 
-      <Footnote>По прибытии свяжитесь с резидентом, который вас хостит, или нажмите кнопку «Я на месте».</Footnote>
+      <Footnote>{tr('По прибытии свяжитесь с резидентом, который вас хостит, или нажмите кнопку «Я на месте».', 'When you arrive, contact your host or tap “I’m here”.')}</Footnote>
     </Screen>
   )
 }

@@ -197,7 +197,7 @@ export function App() {
         <EntryContext.Provider value={top.id}>
           <SnapContext.Provider value={held}>
             <TabsContext.Provider value={onTab}>
-              <ScreenComp key={navId} />
+              <ScreenComp key={`${navId}:${data?.me.language ?? ''}`} />
             </TabsContext.Provider>
           </SnapContext.Provider>
         </EntryContext.Provider>

@@ -3,6 +3,7 @@
 // действие её сменяет, а смахнуть вниз можно раньше. Лежит над нижней панелью экрана и
 // над шторками: отсчёт идёт и тогда, когда поверх открыли лист.
 
+import { tr } from '../i18n'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clamp, E, markOwnTap, mix, play, pr, springPlay, tracker, type Look } from '../motion'
@@ -189,9 +190,7 @@ export function UndoToast() {
         </span>
       </span>
       <span className="undo-text">{shown.text}</span>
-      <button type="button" className="undo-btn" onClick={() => void takeBack(shown.id)}>
-        Вернуть
-      </button>
+      <button type="button" className="undo-btn" onClick={() => void takeBack(shown.id)}>{tr("Вернуть", "Undo")}</button>
     </div>,
     document.body,
   )

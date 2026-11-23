@@ -1,6 +1,7 @@
 // Загрузка: тема, инициализация Telegram-клиента, слушатели темы, bootstrap.
 // Соответствует boot() из старого миниаппа.
 
+import { tr } from './i18n'
 import { useCallback, useEffect, useState } from 'react'
 import { api, bootstrapOnStart, loadOnboardingPeople } from './api'
 import { App } from './App'
@@ -18,7 +19,7 @@ import { takeBackLatest, topScreen } from './undo'
 const NoTg = () => (
   <div className="center-screen">
     <div style={{ fontSize: 40 }}>🚪</div>
-    <div>Откройте миниапп из Telegram — через кнопку меню в чате с ботом.</div>
+    <div>{tr("Откройте миниапп из Telegram — через кнопку меню в чате с ботом.", "Open the Mini App from the menu in the bot’s Telegram chat.")}</div>
   </div>
 )
 
@@ -28,9 +29,9 @@ const NoTg = () => (
  * ни понять, ни переслать в поддержку.
  */
 const errorTitle = (code?: string): string => {
-  if (code === 'network') return 'Нет связи с сервером'
-  if (code === 'rate_limited') return 'Слишком часто'
-  return 'Не получилось загрузиться'
+  if (code === 'network') return tr('Нет связи с сервером', "Can’t reach the server")
+  if (code === 'rate_limited') return tr('Слишком часто', "Too many requests")
+  return tr('Не получилось загрузиться', "Couldn’t load the Mini App")
 }
 
 /**
@@ -47,10 +48,8 @@ const BootError = ({ message, code, onRetry }: { message: string; code?: string;
       <div className="be-title">{errorTitle(code)}</div>
       {/* У сетевого сбоя текст ответа начинается той же фразой, что и заголовок —
           второй строкой остаётся только то, что человек может сделать. */}
-      <div className="be-text">{code === 'network' ? 'Проверьте интернет и попробуйте ещё раз.' : message}</div>
-      <button type="button" className="retry-btn" onClick={onRetry}>
-        Повторить
-      </button>
+      <div className="be-text">{code === 'network' ? tr('Проверьте интернет и попробуйте ещё раз.', "Check your connection and try again.") : message}</div>
+      <button type="button" className="retry-btn" onClick={onRetry}>{tr("Повторить", "Try again")}</button>
     </div>
   </div>
 )
@@ -250,7 +249,7 @@ export function Root() {
       // с уже вставленным текстом поста. Проверяем и саму заготовку: её могли
       // отработать с другого устройства, и тогда открывать нечего.
       if (wantsDraft && data.me.isResident && data.eventDraft) {
-        push('event', { fromDraft: true, backLabel: 'Обзор' })
+        push('event', { fromDraft: true, backLabel: tr('Обзор', "Overview") })
       } else if (place.length > 0) {
         // Остальные кнопки бота ведут на своё место. Это ответ на тап, поэтому знакомство,
         // которое открылось бы само, ждёт следующего входа.

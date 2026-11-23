@@ -3,6 +3,7 @@
 // даже если тот ни разу не приходил в спейс (список — ростер, а не журнал присутствия).
 // Гейт на сервере (admin.* под requireDev), вход-чип лишь прячет раздел в Dev-меню.
 
+import { tr } from '../i18n'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
@@ -31,8 +32,8 @@ export function Residents() {
   const frame = (body: ReactNode) => (
     <Screen>
       <BackRow />
-      <Header title="Резиденты" subtitle="Права в чатах и тег" />
-      <SearchField value={q} onChange={setQ} placeholder="Поиск по имени или нику" />
+      <Header title={tr('Резиденты', 'Residents')} subtitle={tr('Права в чатах и тег', 'Chat access and tag')} />
+      <SearchField value={q} onChange={setQ} placeholder={tr('Поиск по имени или нику', 'Search by name or username')} />
       <Swap loading={!data && !error} skeleton={pending ? <SkRows count={8} avatar /> : null}>
         {body}
       </Swap>
@@ -43,7 +44,7 @@ export function Residents() {
   if (!data) return frame(null)
 
   if (people.length === 0) {
-    return frame(<Footnote>{q.trim() ? 'Никого не нашлось.' : 'Ростер резидентов пуст — бот не смог прочитать состав чата.'}</Footnote>)
+    return frame(<Footnote>{q.trim() ? tr('Никого не нашлось.', 'No residents found.') : tr('Ростер резидентов пуст — бот не смог прочитать состав чата.', "The resident list is empty because the bot couldn't read the chat membership.")}</Footnote>)
   }
 
   return frame(

@@ -2,6 +2,7 @@
 // вопрос со свободным ответом и блок выбора (одиночный/множественный, с вариантом «Другое»).
 // Плюс выбор круга рецензентов: все резиденты / только автор / выбранные люди.
 
+import { tr } from '../i18n'
 import { useRef, useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
@@ -34,7 +35,7 @@ function OptionRow({
     <div className="fb-option">
       <input
         className="fb-input"
-        placeholder="Вариант"
+        placeholder={tr('Вариант', 'Option')}
         maxLength={200}
         value={option.label}
         onChange={(e) => onChange({ ...option, label: e.target.value })}
@@ -42,12 +43,12 @@ function OptionRow({
       <button
         type="button"
         className={'fb-writein' + (option.writeIn ? ' on' : '')}
-        title="Разрешить свой вариант (поле ввода)"
+        title={tr('Разрешить свой вариант (поле ввода)', 'Allow a write-in answer')}
         onClick={() => onChange({ ...option, writeIn: !option.writeIn })}
       >
-        {option.writeIn ? 'своё ✓' : 'своё'}
+        {option.writeIn ? tr('своё ✓', 'write-in ✓') : tr('своё', 'write-in')}
       </button>
-      <button type="button" className="fb-icon-btn" aria-label="Убрать вариант" onClick={onRemove}>
+      <button type="button" className="fb-icon-btn" aria-label={tr('Убрать вариант', 'Remove option')} onClick={onRemove}>
         {icons.xmark(11, 'currentColor')}
       </button>
     </div>
@@ -71,9 +72,9 @@ function FieldCard({
   return (
     <div className="fb-field" data-reorder-id={field.id}>
       <div className="fb-field-head">
-        <span className="fb-kind">{field.type === 'text' ? 'Свободный ответ' : field.multi ? 'Выбор (несколько)' : 'Выбор (один)'}</span>
+        <span className="fb-kind">{field.type === 'text' ? tr('Свободный ответ', 'Free text') : field.multi ? tr('Выбор (несколько)', 'Multiple choice') : tr('Выбор (один)', 'Single choice')}</span>
         <div className="fb-field-tools">
-          <button type="button" className="fb-icon-btn danger" aria-label="Удалить блок" onClick={onRemove}>
+          <button type="button" className="fb-icon-btn danger" aria-label={tr('Удалить блок', 'Delete question')} onClick={onRemove}>
             {icons.xmark(12, 'currentColor')}
           </button>
           {/* Тянут за ручку (useListReorder), с клавиатуры стрелками: фокус на ручке. */}
@@ -81,7 +82,7 @@ function FieldCard({
             <button
               type="button"
               className="fb-grip"
-              aria-label="Переставить вопрос"
+              aria-label={tr('Переставить вопрос', 'Reorder question')}
               data-reorder-handle=""
               data-noback=""
               onKeyDown={(e) => {
@@ -99,7 +100,7 @@ function FieldCard({
       </div>
       <input
         className="fb-input fb-question"
-        placeholder="Текст вопроса"
+        placeholder={tr('Текст вопроса', 'Question text')}
         maxLength={200}
         value={field.label}
         onChange={(e) => onChange({ ...field, label: e.target.value })}
@@ -119,8 +120,7 @@ function FieldCard({
             className="fb-add-option"
             onClick={() => setOptions([...(field.options ?? []), { id: uid(), label: '' }])}
           >
-            {icons.plusSmall()} Вариант
-          </button>
+            {icons.plusSmall()}{tr(' Вариант', ' Option')}</button>
         </div>
       ) : null}
       <div className="fb-field-foot">
@@ -129,14 +129,14 @@ function FieldCard({
             className="fb-toggle-row"
             on={field.multi === true}
             onToggle={() => onChange({ ...field, multi: !field.multi })}
-            label="Несколько ответов"
+            label={tr('Несколько ответов', 'Allow multiple answers')}
           />
         ) : null}
         <SwitchRow
           className="fb-toggle-row"
           on={field.required}
           onToggle={() => onChange({ ...field, required: !field.required })}
-          label="Обязательный"
+          label={tr('Обязательный', 'Required')}
         />
       </div>
     </div>
@@ -145,9 +145,9 @@ function FieldCard({
 
 function CirclePicker({ selected, onToggle }: { selected: number[]; onToggle: (id: number) => void }) {
   const { data, error, loading } = useRemote(async () => (await api<ReviewersResponse>('reviewers')).people, [])
-  if (loading) return <div className="fb-hint">Загружаем резидентов…</div>
-  if (error || !data) return <div className="fb-hint">Не удалось загрузить список резидентов.</div>
-  if (data.length === 0) return <div className="fb-hint">Резидентов не нашлось.</div>
+  if (loading) return <div className="fb-hint">{tr('Загружаем резидентов…', 'Loading residents…')}</div>
+  if (error || !data) return <div className="fb-hint">{tr('Не удалось загрузить список резидентов.', 'Couldn’t load the resident list.')}</div>
+  if (data.length === 0) return <div className="fb-hint">{tr('Резидентов не нашлось.', 'No residents found.')}</div>
   return (
     <div className="card" style={{ marginTop: 8 }}>
       {data.map((u: User, i) => {
@@ -210,14 +210,14 @@ export function FormBuilder({ value, onChange }: { value: BuilderForm; onChange:
   }
 
   const REVIEWER_OPTS: { kind: ReviewerScope['kind']; label: string; sub: string }[] = [
-    { kind: 'all', label: 'Все резиденты', sub: 'Любой резидент может принять заявку' },
-    { kind: 'circle', label: 'Выбранный круг', sub: 'Только выбранные резиденты' },
-    { kind: 'creator', label: 'Только я', sub: 'Заявки рассматриваете вы' },
+    { kind: 'all', label: tr('Все резиденты', 'All residents'), sub: tr('Любой резидент может принять заявку', 'Any resident can accept an application') },
+    { kind: 'circle', label: tr('Выбранный круг', 'Selected residents'), sub: tr('Только выбранные резиденты', 'Only the residents you choose') },
+    { kind: 'creator', label: tr('Только я', 'Only me'), sub: tr('Заявки рассматриваете вы', 'You review applications') },
   ]
 
   return (
     <>
-      <SectionTitle>Блоки формы</SectionTitle>
+      <SectionTitle>{tr('Блоки формы', 'Form questions')}</SectionTitle>
       <div className="fb-fields" ref={listRef}>
         {value.fields.map((f, i) => (
           <FieldCard
@@ -232,14 +232,12 @@ export function FormBuilder({ value, onChange }: { value: BuilderForm; onChange:
       </div>
       <div className="fb-add-row">
         <button type="button" className="fb-add-btn" onClick={() => addField('text')}>
-          {icons.plusSmall()} Вопрос
-        </button>
+          {icons.plusSmall()}{tr(' Вопрос', ' Free-text question')}</button>
         <button type="button" className="fb-add-btn" onClick={() => addField('choice')}>
-          {icons.plusSmall()} Выбор
-        </button>
+          {icons.plusSmall()}{tr(' Выбор', ' Choice question')}</button>
       </div>
 
-      <SectionTitle>Кто рассматривает заявки</SectionTitle>
+      <SectionTitle>{tr('Кто рассматривает заявки', 'Who reviews applications')}</SectionTitle>
       <div className="card">
         {REVIEWER_OPTS.map((o, i) => (
           <div key={o.kind}>

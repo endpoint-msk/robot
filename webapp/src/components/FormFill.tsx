@@ -2,6 +2,7 @@
 // id блока, наружу отдаёт onChange. Пустой ответ на обязательный блок валидирует
 // вызывающий (см. isFormComplete).
 
+import { tr } from '../i18n'
 import type { EventFormField } from '../types'
 
 export type FieldAnswer = { text?: string; optionIds?: string[]; writeIn?: string }
@@ -67,7 +68,7 @@ function Choice({
       {writeInOpen ? (
         <input
           className="ff-input"
-          placeholder="Свой вариант"
+          placeholder={tr('Свой вариант', 'Your own answer')}
           maxLength={200}
           disabled={disabled}
           value={answer.writeIn ?? ''}
@@ -103,7 +104,7 @@ export function FormFill({
             {f.type === 'text' ? (
               <textarea
                 className="ff-input ff-textarea"
-                placeholder="Ответ"
+                placeholder={tr('Ответ', 'Answer')}
                 rows={2}
                 maxLength={1000}
                 disabled={disabled}

@@ -1,3 +1,4 @@
+import { tr } from './i18n.js'
 import { BotKeyboard, html, type MessageForwardInfo, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type Dispatcher } from '@mtcute/dispatcher'
 import {
@@ -68,13 +69,13 @@ export const registerEventIntake = (
         if (!(await residents.isResident(userId))) {
             // Не резидент переслал пост канала — это не наш поток, но и молчать
             // в личке невежливо: пусть знает, что кнопка ему не светит.
-            await msg.answerText('Ивенты заводят резиденты спейса.')
+            await msg.answerText(tr('Ивенты заводят резиденты спейса.', "Only residents can create events."))
             return PropagationAction.Stop
         }
 
         const { title, description } = splitPostText(msg.text ?? '')
         if (!title) {
-            await msg.answerText('В этом посте нет текста — из чего делать ивент, непонятно. Перешли пост с описанием.')
+            await msg.answerText(tr('В этом посте нет текста — из чего делать ивент, непонятно. Перешли пост с описанием.', "This post has no description. Forward a post with text to create an event."))
             return PropagationAction.Stop
         }
 
@@ -106,11 +107,13 @@ export const registerEventIntake = (
         })
 
         const preview = title.length > 60 ? `${title.slice(0, 60)}…` : title
+        const heading = tr('Сделать из этого поста ивент?', 'Create an event from this post?')
+        const photoNote = hasPhoto ? tr('<br>Афиша из поста тоже подтянется.', '<br>The photo from the post will be included.') : ''
         await msg.answerText(
-            html(`Сделать из этого поста ивент?<br><br><b>${html.escape(preview)}</b>${hasPhoto ? '<br>Афиша из поста тоже подтянется.' : ''}`),
+            html(`${heading}<br><br><b>${html.escape(preview)}</b>${photoNote}`),
             {
                 replyMarkup: BotKeyboard.inline([
-                    [BotKeyboard.webView('Создать ивент', `${webappUrl}?draft=1`)],
+                    [BotKeyboard.webView(tr('Создать ивент', "Create event"), `${webappUrl}?draft=1`)],
                 ]),
                 disableWebPreview: true,
             },

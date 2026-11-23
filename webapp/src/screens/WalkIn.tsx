@@ -2,6 +2,7 @@
 // дня (их визит - ивент, заявки на визит у них обычно нет), дальше знакомые боту гости.
 // Кого бот не знает, ищем по @нику в Telegram, а у кого и ника нет - пишем просто имя.
 
+import { tr } from '../i18n'
 import { Fragment, useState } from 'react'
 import { action, api } from '../api'
 import { fmtShortDate } from '../dates'
@@ -34,9 +35,7 @@ function CandidateRow({ p, query, onAdd }: { p: WalkInCandidate; query: string; 
           </div>
         ) : null}
       </div>
-      <ActionButton className="host-btn" onClick={onAdd}>
-        Отметить
-      </ActionButton>
+      <ActionButton className="host-btn" onClick={onAdd}>{tr('Отметить', 'Mark as attended')}</ActionButton>
     </div>
   )
 }
@@ -97,7 +96,7 @@ export function WalkIn() {
                 <div className="row-icon" style={{ background: 'var(--blue)' }}>
                   {icons.chat(17, '#fff')}
                 </div>
-                <span className="row-label">{`Найти @${byUsername} в Telegram`}</span>
+                <span className="row-label">{tr(`Найти @${byUsername} в Telegram`, `Find @${byUsername} on Telegram`)}</span>
               </ActionButton>
             ) : null}
             {byUsername && byName ? <Sep inset="icon" /> : null}
@@ -107,18 +106,18 @@ export function WalkIn() {
                   {icons.personPlus('#fff')}
                 </div>
                 <span className="row-label">
-                  {`Добавить «${byName}»`}
-                  <span className="row-sublabel">без аккаунта Telegram</span>
+                  {tr(`Добавить «${byName}»`, `Add “${byName}”`)}
+                  <span className="row-sublabel">{tr('без аккаунта Telegram', 'no Telegram account')}</span>
                 </span>
               </ActionButton>
             ) : null}
           </div>
         ) : null}
-        {group('С ивента', fromEvent)}
-        {group('Гости', known)}
+        {group(tr('С ивента', 'From the event'), fromEvent)}
+        {group(tr('Гости', 'Guests'), known)}
         {fromEvent.length === 0 && known.length === 0 && !q ? (
           <div className="card">
-            <EmptyState title="Знакомых гостей нет" text="Впишите @ник или имя того, кто пришёл." />
+            <EmptyState title={tr('Знакомых гостей нет', 'No previous guests')} text={tr('Впишите @ник или имя того, кто пришёл.', 'Enter the guest’s @username or name.')} />
           </div>
         ) : null}
       </>
@@ -128,14 +127,14 @@ export function WalkIn() {
   return (
     <Screen>
       <BackRow />
-      <Header title="Без заявки" subtitle={fmtShortDate(dateKey)} />
-      <SearchField value={query} onChange={setQuery} placeholder="Имя, @ник или новый гость" />
+      <Header title={tr('Без заявки', 'Walk-ins')} subtitle={fmtShortDate(dateKey)} />
+      <SearchField value={query} onChange={setQuery} placeholder={tr('Имя, @ник или новый гость', 'Name, @username, or new guest')} />
       <Swap
         loading={loading && !data}
         skeleton={
           pending ? (
-            <div aria-busy="true" aria-label="Загружаем гостей">
-              <SectionTitle>Гости</SectionTitle>
+            <div aria-busy="true" aria-label={tr('Загружаем гостей', 'Loading guests')}>
+              <SectionTitle>{tr('Гости', 'Guests')}</SectionTitle>
               <SkRows count={4} avatar tail />
             </div>
           ) : null

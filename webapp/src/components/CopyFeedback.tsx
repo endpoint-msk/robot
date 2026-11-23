@@ -1,6 +1,7 @@
 // Ответ на копирование там, где лежит палец: значок двух рамок дорисовывается в
 // галочку, а над пальцем всплывает и гаснет «Скопировано».
 
+import { tr } from '../i18n'
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { icons } from '../icons'
@@ -91,7 +92,7 @@ export function useCopyFeedback(size: number): {
 
     const g = glyph?.getBoundingClientRect()
     const at = e.detail > 0 || !g ? { x: e.clientX, y: e.clientY } : { x: g.left + g.width / 2, y: g.top + g.height / 2 }
-    toast.textContent = 'Скопировано'
+    toast.textContent = tr('Скопировано', "Copied")
     const tw = toast.offsetWidth
     const th = toast.offsetHeight
     const x = clamp(at.x - tw / 2, 10, window.innerWidth - 10 - tw)

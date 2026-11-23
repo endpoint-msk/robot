@@ -8,6 +8,7 @@
 // Вопрос, заданный сразу после ответа на предыдущий (меню пилла хоста → подтверждение),
 // появляется в том же листе: лист не закрывается и не открывается заново.
 
+import { tr } from './i18n'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { CapBar, paintCapBar } from './components/CapBar'
@@ -397,14 +398,14 @@ function TimeBody({ modal }: { modal: Of<'time'> }) {
       <Question text={modal.text} />
       <div className="card">
         <div className="row modal-row">
-          <span className="row-label">Время</span>
+          <span className="row-label">{tr("Время", "Time")}</span>
           <TimeField value={time} onChange={setTime} />
         </div>
       </div>
       <Actions
         label={modal.confirmLabel}
         onConfirm={() => settle(modal.id, time || null)}
-        cancel="Отмена"
+        cancel={tr("Отмена", "Cancel")}
         onCancel={() => settle(modal.id, null)}
       />
     </>
@@ -421,7 +422,7 @@ function RescheduleBody({ modal }: { modal: Of<'reschedule'> }) {
     // Прошедший слот «на сегодня»: ответ ложится в тот же лист поверх вопроса, а выбор
     // дня и времени под ним сохраняется.
     if (isPastForToday(day, time)) {
-      showAlert('Это время уже прошло, выберите время позже текущего.')
+      showAlert(tr('Это время уже прошло, выберите время позже текущего.', "This time has already passed. Choose a later time."))
       return
     }
     settle(modal.id, { dateKey: day, time })
@@ -435,11 +436,11 @@ function RescheduleBody({ modal }: { modal: Of<'reschedule'> }) {
       </div>
       <div className="card">
         <div className="row modal-row">
-          <span className="row-label">Время</span>
+          <span className="row-label">{tr("Время", "Time")}</span>
           <TimeField value={time} min={min} onChange={onTimeChange} />
         </div>
       </div>
-      <Actions label={modal.confirmLabel} onConfirm={confirm} cancel="Отмена" onCancel={() => settle(modal.id, null)} />
+      <Actions label={modal.confirmLabel} onConfirm={confirm} cancel={tr("Отмена", "Cancel")} onCancel={() => settle(modal.id, null)} />
     </>
   )
 }
@@ -478,7 +479,7 @@ function NumberBody({ modal, active }: { modal: Of<'number'>; active: boolean })
         />
       </div>
       {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
-      <Actions label={modal.confirmLabel} disabled={!valid} onConfirm={confirm} cancel="Отмена" onCancel={() => settle(modal.id, null)} />
+      <Actions label={modal.confirmLabel} disabled={!valid} onConfirm={confirm} cancel={tr("Отмена", "Cancel")} onCancel={() => settle(modal.id, null)} />
     </>
   )
 }
@@ -510,20 +511,20 @@ function NumberWheelBody({ modal }: { modal: Of<'number'> }) {
               кадре прокрутки, и целое число из состояния отбрасывало бы её на полшага. */}
           <CapBar ref={barRef} className="cap-bar-sheet" occupied={bar.occupied} pending={bar.pending} cap={first} />
           <div className="cap-sheet-note">
-            {`Занято ${bar.occupied}\u00a0из\u00a0${value}`}
+            {tr(`Занято ${bar.occupied}\u00a0из\u00a0${value}`, `${bar.occupied} of ${value} spots taken`)}
             {over > 0 ? (
               <>
                 {', '}
-                <b>{`${over}\u00a0сверх`}</b>
+                <b>{tr(`${over}\u00a0сверх`, `${over} over capacity`)}</b>
               </>
             ) : bar.pending > 0 ? (
-              nb(`, ещё ${requestsWord(bar.pending)} без хоста`)
+              nb(tr(`, ещё ${requestsWord(bar.pending)} без хоста`, `, plus ${requestsWord(bar.pending)} awaiting a host`))
             ) : null}
           </div>
         </>
       ) : null}
       {modal.hint ? <div className="modal-num-hint">{modal.hint}</div> : null}
-      <Actions label={modal.confirmLabel} onConfirm={() => settle(modal.id, value)} cancel="Отмена" onCancel={() => settle(modal.id, null)} />
+      <Actions label={modal.confirmLabel} onConfirm={() => settle(modal.id, value)} cancel={tr("Отмена", "Cancel")} onCancel={() => settle(modal.id, null)} />
     </>
   )
 }
@@ -606,7 +607,7 @@ function DateBody({ modal }: { modal: Of<'date'> }) {
       <Question text={modal.text} />
       <div className="card">
         <label className="row modal-row">
-          <span className="row-label">Дата</span>
+          <span className="row-label">{tr("Дата", "Date")}</span>
           <input className="time-input" type="date" value={value} max={modal.max} onChange={(e) => setValue(e.target.value)} />
         </label>
       </div>
@@ -616,7 +617,7 @@ function DateBody({ modal }: { modal: Of<'date'> }) {
         onConfirm={() => {
           if (valid) settle(modal.id, value)
         }}
-        cancel="Отмена"
+        cancel={tr("Отмена", "Cancel")}
         onCancel={() => settle(modal.id, null)}
       />
     </>
@@ -881,7 +882,7 @@ function ImageCard({ modal }: { modal: Modal & { kind: 'image' } }) {
   const close = (): void => settle(modal.id, true)
   return (
     <div className={'lightbox' + (shown && !modal.settled ? ' shown' : '')} onClick={close}>
-      <button className="lightbox-close" aria-label="Закрыть" onClick={close}>
+      <button className="lightbox-close" aria-label={tr("Закрыть", "Close")} onClick={close}>
         {icons.xmark(15, '#fff')}
       </button>
       <img src={modal.src} alt={modal.alt} />
@@ -916,8 +917,8 @@ export const confirmDialog = (
   open<boolean>({
     kind: 'confirm',
     text: message,
-    confirmLabel: opts?.confirmLabel ?? 'Да',
-    cancelLabel: opts?.cancelLabel ?? 'Отмена',
+    confirmLabel: opts?.confirmLabel ?? tr('Да', "Yes"),
+    cancelLabel: opts?.cancelLabel ?? tr('Отмена', "Cancel"),
     destructive: opts?.destructive ?? false,
     subject: opts?.subject,
   })
@@ -932,7 +933,7 @@ export const choiceDialog = (
     kind: 'choice',
     text: message,
     options,
-    cancelLabel: opts?.cancelLabel ?? 'Отмена',
+    cancelLabel: opts?.cancelLabel ?? tr('Отмена', "Cancel"),
     subject: opts?.subject,
   })
 
@@ -946,7 +947,7 @@ export const timePrompt = (opts: {
     kind: 'time',
     text: opts.text,
     initial: opts.initial,
-    confirmLabel: opts.confirmLabel ?? 'Предложить',
+    confirmLabel: opts.confirmLabel ?? tr('Предложить', "Suggest"),
     subject: opts.subject,
   })
 
@@ -963,7 +964,7 @@ export const reschedulePrompt = (opts: {
     text: opts.text,
     initialDay: opts.initialDay,
     initialTime: opts.initialTime,
-    confirmLabel: opts.confirmLabel ?? 'Предложить',
+    confirmLabel: opts.confirmLabel ?? tr('Предложить', "Suggest"),
     subject: opts.subject,
   })
 
@@ -989,7 +990,7 @@ export const numberPrompt = (opts: {
     min: opts.min ?? 0,
     max: opts.max ?? 1_000_000,
     wheel: opts.wheel,
-    confirmLabel: opts.confirmLabel ?? 'Сохранить',
+    confirmLabel: opts.confirmLabel ?? tr('Сохранить', "Save"),
     subject: opts.subject,
   })
 
@@ -1013,8 +1014,8 @@ export const textPrompt = (opts: {
     placeholder: opts.placeholder,
     hint: opts.hint,
     maxLength: opts.maxLength ?? 200,
-    confirmLabel: opts.confirmLabel ?? 'Сохранить',
-    cancelLabel: opts.cancelLabel ?? 'Отмена',
+    confirmLabel: opts.confirmLabel ?? tr('Сохранить', "Save"),
+    cancelLabel: opts.cancelLabel ?? tr('Отмена', "Cancel"),
     multiline: opts.multiline ?? false,
     destructive: opts.destructive ?? false,
     subject: opts.subject,
@@ -1062,6 +1063,6 @@ export const datePrompt = (opts: {
     text: opts.text,
     initial: opts.initial,
     max: opts.max,
-    confirmLabel: opts.confirmLabel ?? 'Поставить',
+    confirmLabel: opts.confirmLabel ?? tr('Поставить', "Set"),
     subject: opts.subject,
   })

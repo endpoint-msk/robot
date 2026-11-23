@@ -6,9 +6,10 @@
 // Строки истории свои, а не RequestsCard: там главное — гость и время внутри одного
 // дня, а здесь гость один на весь экран и главное — дата.
 
+import { plural, tr } from '../i18n'
 import { Fragment } from 'react'
 import { api } from '../api'
-import { fmtDayMonth, fmtShortDate, plural, yearOf } from '../dates'
+import { fmtDayMonth, fmtShortDate, visitsWord, weekdaysFull, yearOf } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
@@ -37,16 +38,16 @@ const fmtWhen = (dateKey: string, todayKey: string): string =>
  */
 function requestLine(r: HostingRequest, todayKey: string): { text: string; tone: 'came' | 'missed' | 'muted' } {
   const o: VisitOutcome = r.visit ?? { status: null, source: null, by: null, at: null }
-  const host = r.approvedBy ? `хост ${userLabel(r.approvedBy)}` : ''
+  const host = r.approvedBy ? tr(`хост ${userLabel(r.approvedBy)}`, `host: ${userLabel(r.approvedBy)}`) : ''
   const join = (...parts: string[]): string => parts.filter(Boolean).join(' · ')
   if (o.status === 'came') {
-    const how = o.source === 'door' ? 'по кнопке «Я на месте»' : o.source === 'mark' && o.by ? `отметка ${userLabel(o.by)}` : ''
-    return { text: join('визит', how, host), tone: 'came' }
+    const how = o.source === 'door' ? tr('по кнопке «Я на месте»', 'used “I’m here”') : o.source === 'mark' && o.by ? tr(`отметка ${userLabel(o.by)}`, `marked by ${userLabel(o.by)}`) : ''
+    return { text: join(tr('визит', 'visit'), how, host), tone: 'came' }
   }
-  if (o.status === 'missed') return { text: join('неявка', o.by ? `отметка ${userLabel(o.by)}` : '', host), tone: 'missed' }
-  if (o.status === 'unknown') return { text: join('без отметки', host), tone: 'muted' }
-  if (r.dateKey >= todayKey) return { text: r.status === 'approved' ? join('подтверждён', host) : 'ждёт ответа', tone: 'muted' }
-  return { text: 'без ответа', tone: 'muted' }
+  if (o.status === 'missed') return { text: join(tr('неявка', 'no-show'), o.by ? tr(`отметка ${userLabel(o.by)}`, `marked by ${userLabel(o.by)}`) : '', host), tone: 'missed' }
+  if (o.status === 'unknown') return { text: join(tr('без отметки', 'unmarked'), host), tone: 'muted' }
+  if (r.dateKey >= todayKey) return { text: r.status === 'approved' ? join(tr('подтверждён', 'confirmed'), host) : tr('ждёт ответа', 'pending'), tone: 'muted' }
+  return { text: tr('без ответа', 'no reply'), tone: 'muted' }
 }
 
 type HistoryItem = { key: string; dateKey: string; request: HostingRequest | null; walkIn: WalkIn | null }
@@ -60,15 +61,15 @@ function HistoryRow({ item, todayKey }: { item: HistoryItem; todayKey: string })
   const r = item.request
   const line = r
     ? requestLine(r, todayKey)
-    : { text: `без заявки · отметка ${userLabel(item.walkIn!.by)}`, tone: 'came' as const }
+    : { text: tr(`без заявки · отметка ${userLabel(item.walkIn!.by)}`, `walk-in · marked by ${userLabel(item.walkIn!.by)}`), tone: 'came' as const }
   const node = line.tone !== 'muted' ? line.tone : r && r.dateKey >= todayKey ? 'next' : 'muted'
   return (
     <div className={'row hist-row ' + node}>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="week-title">{r ? `${fmtShortDate(r.dateKey)} · к ${r.time}` : fmtShortDate(item.dateKey)}</div>
+        <div className="week-title">{r ? tr(`${fmtShortDate(r.dateKey)} · к ${r.time}`, `${fmtShortDate(r.dateKey)} · at ${r.time}`) : fmtShortDate(item.dateKey)}</div>
         <div className={'week-sub visit-status ' + line.tone}>
           {line.text}
-          {r?.anon ? ' · инкогнито' : ''}
+          {r?.anon ? tr(' · инкогнито', ' · anonymous') : ''}
         </div>
         {r?.purpose ? <div className="week-sub guest-purpose">{r.purpose}</div> : null}
       </div>
@@ -78,22 +79,25 @@ function HistoryRow({ item, todayKey }: { item: HistoryItem; todayKey: string })
 
 /** Сводка: визиты и неявки первой строкой, «обычно» и ближайший визит второй. */
 function ProfileStats({ p }: { p: GuestProfile }) {
-  const usual = p.usual ? `по ${WEEKDAYS_PLURAL_DAT[p.usual.weekday]}${p.usual.time ? ` к ${p.usual.time}` : ''}` : null
-  const next = p.next ? `${fmtShortDate(p.next.dateKey)} к ${p.next.time}` : null
+  const usual = p.usual
+    ? tr(`по ${WEEKDAYS_PLURAL_DAT[p.usual.weekday]}`, `on ${weekdaysFull()[p.usual.weekday]}s`) +
+      (p.usual.time ? tr(` к ${p.usual.time}`, ` at ${p.usual.time}`) : '')
+    : null
+  const next = p.next ? tr(`${fmtShortDate(p.next.dateKey)} к ${p.next.time}`, `${fmtShortDate(p.next.dateKey)} at ${p.next.time}`) : null
   return (
     <div className="card stats-quad">
       <div className="sq-row">
         <div className="sq-cell">
           <div className="sq-num">{p.visits}</div>
           <div className="sq-label">
-            {plural(p.visits, 'визит', 'визита', 'визитов')}
-            {p.unmarked > 0 ? nb(`, ${p.unmarked} без отметки`) : ''}
+            {plural(p.visits, ['визит', 'визита', 'визитов'], ['visit', 'visits'])}
+            {p.unmarked > 0 ? nb(tr(`, ${p.unmarked} без отметки`, `, ${p.unmarked} unmarked`)) : ''}
           </div>
         </div>
         <div className="sq-vsep" />
         <div className="sq-cell">
           <div className={'sq-num' + (p.missed > 0 ? ' missed' : '')}>{p.missed}</div>
-          <div className="sq-label">{plural(p.missed, 'неявка', 'неявки', 'неявок')}</div>
+          <div className="sq-label">{plural(p.missed, ['неявка', 'неявки', 'неявок'], ['no-show', 'no-shows'])}</div>
         </div>
       </div>
       {usual || next ? (
@@ -102,12 +106,12 @@ function ProfileStats({ p }: { p: GuestProfile }) {
           <div className="sq-row">
             <div className="sq-cell">
               <div className="sq-num small">{usual ?? '—'}</div>
-              <div className="sq-label">обычно приходит</div>
+              <div className="sq-label">{tr('обычно приходит', 'usually visits')}</div>
             </div>
             <div className="sq-vsep" />
             <div className="sq-cell">
               <div className="sq-num small">{next ?? '—'}</div>
-              <div className="sq-label">{p.next && !p.next.approved ? 'заявка ждёт ответа' : 'следующий визит'}</div>
+              <div className="sq-label">{p.next && !p.next.approved ? tr('заявка ждёт ответа', 'request pending') : tr('следующий визит', 'next visit')}</div>
             </div>
           </div>
         </>
@@ -130,7 +134,7 @@ export function GuestVisits() {
   const profile = guest.data?.profile ?? null
   const sub = [
     user?.username ? '@' + user.username : '',
-    profile ? (profile.firstDateKey ? `первый визит ${fmtWhen(profile.firstDateKey, todayKey)}` : 'визитов пока нет') : '',
+    profile ? (profile.firstDateKey ? tr(`первый визит ${fmtWhen(profile.firstDateKey, todayKey)}`, `first visit ${fmtWhen(profile.firstDateKey, todayKey)}`) : tr('визитов пока нет', 'no visits yet')) : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -150,7 +154,7 @@ export function GuestVisits() {
         <ProfileStats p={profile} />
         {profile.hosts.length > 0 ? (
           <>
-            <SectionTitle>Хосты</SectionTitle>
+            <SectionTitle>{tr('Хосты', 'Hosts')}</SectionTitle>
             <div className="card">
               {profile.hosts.map((h, i) => (
                 <Fragment key={h.user.userId}>
@@ -158,7 +162,7 @@ export function GuestVisits() {
                   <div className="row">
                     <Avatar user={h.user} className="stat-avatar" profile />
                     <span className="row-label">{userLabel(h.user)}</span>
-                    <span className="row-right count-muted">{`${h.count} ${plural(h.count, 'визит', 'визита', 'визитов')}`}</span>
+                    <span className="row-right count-muted">{visitsWord(h.count)}</span>
                   </div>
                 </Fragment>
               ))}
@@ -167,7 +171,7 @@ export function GuestVisits() {
         ) : null}
         {profile.events.length > 0 ? (
           <>
-            <SectionTitle>Ивенты</SectionTitle>
+            <SectionTitle>{tr('Ивенты', 'Events')}</SectionTitle>
             <div className="card">
               {profile.events.map((e, i) => (
                 <Fragment key={e.id}>
@@ -186,10 +190,10 @@ export function GuestVisits() {
             </div>
           </>
         ) : null}
-        <SectionTitle>История</SectionTitle>
+        <SectionTitle>{tr('История', 'History')}</SectionTitle>
         {items.length === 0 ? (
           <div className="card">
-            <EmptyState title="Записей нет" text="Все заявки этого человека уже удалены." />
+            <EmptyState title={tr('Записей нет', 'No records')} text={tr('Все заявки этого человека уже удалены.', 'This person’s requests have all been deleted.')} />
           </div>
         ) : (
           <div className="card hist-card">
@@ -207,7 +211,7 @@ export function GuestVisits() {
     ? [
         {
           key: 'note',
-          label: 'Заметка',
+          label: tr('Заметка', 'Note'),
           icon: icons.note(22, 'currentColor'),
           onClick: () => startNoteEdit('guest-' + user.userId),
         },
@@ -240,7 +244,7 @@ export function GuestVisits() {
               <div className="row-icon" style={{ background: 'rgba(var(--sec), 0.12)' }}>
                 {icons.note(17, sec(0.6))}
               </div>
-              <GuestNoteText place={'guest-' + user.userId} guest={user} note={note} empty="Добавить заметку" />
+              <GuestNoteText place={'guest-' + user.userId} guest={user} note={note} empty={tr('Добавить заметку', 'Add note')} />
             </div>
           </div>
         </>
@@ -252,15 +256,15 @@ export function GuestVisits() {
           guest.pending ? (
             // Каркас по секциям экрана, иначе «История» уезжала вниз на всю сводку и хостов.
             // Хосты есть у того, кто уже приходил: это знает значок визитов из bootstrap.
-            <div aria-busy="true" aria-label="Загружаем профиль гостя">
+            <div aria-busy="true" aria-label={tr('Загружаем профиль гостя', 'Loading guest profile')}>
               <SkQuad />
               {(data!.guestStats?.[String(userId)]?.past ?? 0) > 0 ? (
                 <>
-                  <SectionTitle>Хосты</SectionTitle>
+                  <SectionTitle>{tr('Хосты', 'Hosts')}</SectionTitle>
                   <SkRows count={1} avatar />
                 </>
               ) : null}
-              <SectionTitle>История</SectionTitle>
+              <SectionTitle>{tr('История', 'History')}</SectionTitle>
               <SkRows count={4} avatar />
             </div>
           ) : null

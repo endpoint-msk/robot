@@ -1,7 +1,8 @@
 // Строка дня в обзоре недели (резидент) и в неделе архива, сегодняшний день карточкой.
 
+import { tr } from '../i18n'
 import { useEffect, useState } from 'react'
-import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
+import { fmtDayMonth, peopleWord, requestsWord, weekdayIdx, weekdaysFull, weekdaysShort } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { E, ownTapRecent, reducedMotion } from '../motion'
@@ -104,11 +105,11 @@ export function DayRow({
   const dayCol = (
     <div className="day-col">
       <div className="dow">
-        <span>{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]}</span>
+        <span>{weekdaysShort()[weekdayIdx(day.dateKey)]}</span>
         {needsAction ? <i className="day-dot" aria-hidden="true" /> : null}
       </div>
       <div className="date">
-        <span>{isToday ? 'Сегодня' : fmtDayMonth(day.dateKey)}</span>
+        <span>{isToday ? tr('Сегодня', 'Today') : fmtDayMonth(day.dateKey)}</span>
       </div>
     </div>
   )
@@ -122,21 +123,19 @@ export function DayRow({
     // (скринридер, наведение мышью): текстовой метки в строке нет намеренно.
     <Tag
       className={cls + (turn.own ? ' day-fresh' : '')}
-      title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined}
+      title={lock ? tr('Закрыт для заявок', 'Closed to requests') : needsAction ? tr('Есть заявка без хоста', 'A request still needs a host') : undefined}
       {...(tappable ? { type: 'button' as const, onClick: onOpen } : {})}
     >
       {dayCol}
       {empty ? (
         // «Пока никого» в закрытом дне — неправда: никого и не будет.
-        <span className={'day-none' + (turn.own ? ' day-none-in' : '')}>{lock ? lock.reason || 'Закрыт для гостей' : 'Пока никого'}</span>
+        <span className={'day-none' + (turn.own ? ' day-none-in' : '')}>{lock ? lock.reason || tr('Закрыт для гостей', 'Closed to guests') : tr('Пока никого', 'No one yet')}</span>
       ) : (
         // Ивент и люди — двумя строками, как в «Активности» у гостя: в одну строку
         // метка и список не влезают. По одному времени не понять, ради чего открывать день.
         <div className={'day-main' + (turn.grow ? ' day-in' : '')}>
           {turn.grow ? (
-            <span className="day-none day-ghost" aria-hidden="true">
-              Пока никого
-            </span>
+            <span className="day-none day-ghost" aria-hidden="true">{tr('Пока никого', 'No one yet')}</span>
           ) : null}
           <Collapse open={Boolean(event)} ms={320} ease={E.crisp}>
             {event ? (
@@ -192,36 +191,38 @@ export function TodayCard({ day, onOpen, guest = false }: { day: DayRowData; onO
   const lock = day.lock ?? null
   // Причина закрытия встаёт на место повестки, как в строке: слова «закрыт» нет нигде,
   // и без неё штриховку не прочесть. Повестка тогда строкой ниже, если она о другом.
-  const headline = lock ? lock.reason || 'Закрыт для гостей' : (day.agenda?.text ?? null)
+  const headline = lock ? lock.reason || tr('Закрыт для гостей', 'Closed to guests') : (day.agenda?.text ?? null)
   const agendaLine = lock && day.agenda && day.agenda.text !== lock.reason ? day.agenda.text : null
   const pending = day.total - day.approved
   const needsAction = !guest && pending > 0 && !lock
+  const dayName = weekdaysFull()[weekdayIdx(day.dateKey)]!
+  const weekday = tr(dayName.toLowerCase(), dayName)
 
   // «вы, @mika и ещё 1»: себя человек ищет в списке первым.
-  const names = [...(att.some((a) => a.userId === me) ? ['вы'] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]
+  const names = [...(att.some((a) => a.userId === me) ? [tr('вы', 'you')] : []), ...att.filter((a) => a.userId !== me).map(userLabel)]
   const rest = names.length - 2
   const who =
-    rest > 0 ? nb(`${names.slice(0, 2).join(', ')} и ещё ${rest}`) : names.length === 2 ? `${names[0]} и ${names[1]}` : (names[0] ?? '')
+    rest > 0 ? nb(tr(`${names.slice(0, 2).join(', ')} и ещё ${rest}`, `${names.slice(0, 2).join(', ')} and ${rest} more`)) : names.length === 2 ? tr(`${names[0]} и ${names[1]}`, `${names[0]} and ${names[1]}`) : (names[0] ?? '')
 
   const foot =
     day.total > 0
-      ? `${requestsWord(day.total)}${needsAction ? `, ${pending}\u00a0без хоста` : ''}`
+      ? `${requestsWord(day.total)}${needsAction ? tr(`, ${pending}\u00a0без хоста`, `, ${pending} without a host`) : ''}`
       : lock
-        ? 'Заявки закрыты'
+        ? tr('Заявки закрыты', 'Requests are closed')
         : att.length > 0
-          ? 'Заявок нет'
-          : 'Пока никого'
+          ? tr('Заявок нет', 'No requests')
+          : tr('Пока никого', 'No one yet')
 
   return (
     <button
       type="button"
       className={'today-card' + (lock ? ' day-locked' : '') + (guest && att.length > 0 ? ' tc-nofoot' : '')}
-      title={lock ? 'Закрыт для заявок' : needsAction ? 'Есть заявка без хоста' : undefined}
+      title={lock ? tr('Закрыт для заявок', 'Closed to requests') : needsAction ? tr('Есть заявка без хоста', 'A request still needs a host') : undefined}
       onClick={onOpen}
     >
       <div className="tc-k">
-        <span className="tc-today">Сегодня</span>
-        {` · ${WEEKDAYS_FULL[weekdayIdx(day.dateKey)]!.toLowerCase()}, ${fmtDayMonth(day.dateKey)}`}
+        <span className="tc-today">{tr('Сегодня', 'Today')}</span>
+        {` · ${weekday}, ${fmtDayMonth(day.dateKey)}`}
       </div>
       {/* Тема, ивент и люди вырастают, когда появились своим действием, а подписи
           перетекают: та же смена, что на экране дня, доигранная на «назад» (App.tsx). */}
@@ -248,7 +249,7 @@ export function TodayCard({ day, onOpen, guest = false }: { day: DayRowData; onO
           <AvatarStack users={att} />
           <span className="tc-who">
             <b>
-              {'Придут '}
+              {tr('Придут ', 'Attending ')}
               <Flip value={att.length} delay={140} />
             </b>
             <span>
@@ -261,7 +262,7 @@ export function TodayCard({ day, onOpen, guest = false }: { day: DayRowData; onO
       {guest ? (
         att.length > 0 ? null : (
           <div className="tc-foot muted">
-            <span className="tc-req">{lock ? 'Заявки закрыты' : 'Пока никого'}</span>
+            <span className="tc-req">{lock ? tr('Заявки закрыты', 'Requests are closed') : tr('Пока никого', 'No one yet')}</span>
             {icons.chevron(sec(0.4))}
           </div>
         )

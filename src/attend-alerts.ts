@@ -6,6 +6,7 @@
 // снятие отметки гостям не рассылается, и промах по кнопке иначе так и остался бы у
 // них в личке неправдой.
 
+import { tr, withUserLocale } from './i18n.js'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { newRequestTarget, webappAt } from './deeplink.js'
 import {
@@ -33,13 +34,13 @@ const SETTLE_MS = 5 * 60_000
 const TICK_INTERVAL_MS = 60 * 1000
 
 const dayLabel = (dateKey: string, today: string): string => {
-    if (dateKey === today) return 'Сегодня'
-    if (dateKey === addDaysToKey(today, 1)) return 'Завтра'
+    if (dateKey === today) return tr('Сегодня', "Today")
+    if (dateKey === addDaysToKey(today, 1)) return tr('Завтра', "Tomorrow")
     return formatDayKey(dateKey)
 }
 
 const joinNames = (names: string[]): string =>
-    names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}`
+    names.length < 2 ? names.join('') : tr(`${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}`, `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`)
 
 /**
  * Отметки, о которых пора написать. Окно проверяем первым: `hostingAttendance` не
@@ -65,15 +66,18 @@ const buildText = (marks: HostingAttendance[], labels: Map<number, string>, toda
     const byDay = new Map<string, string[]>()
     for (const a of marks) {
         const names = byDay.get(a.dateKey) ?? []
-        names.push(`${labels.get(a.user.userId) ?? ''}${a.time ? ` к ${a.time}` : ''}`)
+        names.push(`${labels.get(a.user.userId) ?? ''}${a.time ? tr(` к ${a.time}`, ` at ${a.time}`) : ''}`)
         byDay.set(a.dateKey, names)
     }
     const days = [...byDay.entries()]
     const single = days.length === 1 ? days[0] : undefined
     const lines = single
-        ? [`🙋 <b>${dayLabel(single[0], today)}</b> в спейс ${single[1].length === 1 ? 'придёт резидент' : 'придут резиденты'} ${joinNames(single[1])}.`]
-        : ['🙋 Резиденты собираются в спейс:', ...days.map(([dateKey, names]) => `• <b>${dayLabel(dateKey, today)}</b>: ${names.join(', ')}`)]
-    lines.push('Хотите прийти? Оставьте заявку на визит.')
+        ? [tr(
+            `🙋 <b>${dayLabel(single[0], today)}</b> в спейс ${single[1].length === 1 ? 'придёт резидент' : 'придут резиденты'} ${joinNames(single[1])}.`,
+            `🙋 <b>${dayLabel(single[0], today)}</b>: ${joinNames(single[1])} ${single[1].length === 1 ? 'is' : 'are'} coming to the space.`,
+        )]
+        : [tr('🙋 Резиденты собираются в спейс:', "🙋 Residents are planning to visit the space:"), ...days.map(([dateKey, names]) => `• <b>${dayLabel(dateKey, today)}</b>: ${names.join(', ')}`)]
+    lines.push(tr('Хотите прийти? Оставьте заявку на визит.', "Want to join them? Request a visit."))
     return lines.join('<br>')
 }
 
@@ -131,10 +135,10 @@ export const startAttendAlertScheduler = (
                 const days = new Set(mine.map((a) => a.dateKey))
                 const target = days.size === 1 ? newRequestTarget(mine[0]!.dateKey) : newRequestTarget()
                 try {
-                    await client.sendText(sub.userId, html(buildText(mine, labels, today)), {
-                        replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Оставить заявку', webappAt(webappUrl, target))]]),
+                    await withUserLocale(storage, sub.userId, () => client.sendText(sub.userId, html(buildText(mine, labels, today)), {
+                        replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Оставить заявку', "Request a visit"), webappAt(webappUrl, target))]]),
                         disableWebPreview: true,
-                    })
+                    }))
                 } catch {
                     // гость не открывал личку с ботом
                 }

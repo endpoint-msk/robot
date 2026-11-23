@@ -1,4 +1,5 @@
 import { html, type TelegramClient } from '@mtcute/node'
+import { tr } from './i18n.js'
 import type { Storage } from './storage.js'
 
 /**
@@ -81,8 +82,8 @@ const changelogLines = (body: string): string[] => {
 /** Дефолтный текст анонса версии — его дев видит в textarea и может править. */
 export const buildDefaultAnnouncement = (release: ReleaseInfo, repo: string): string => {
     const changelog = changelogLines(release.body)
-    const lines = [`✨ Бот обновлён до версии ${release.version}, ченджлоги:`, '']
-    lines.push(...(changelog.length ? changelog : ['• Мелкие улучшения и исправления.']))
+    const lines = [tr(`✨ Бот обновлён до версии ${release.version}, ченджлоги:`, `✨ Bot updated to ${release.version}. What changed:`), '']
+    lines.push(...(changelog.length ? changelog : [tr('• Мелкие улучшения и исправления.', '• Minor improvements and fixes.')]))
     // Ссылка на репо в конце: в Telegram сам ченджлог никуда не ведёт.
     lines.push('', `https://github.com/${repo}`)
     return lines.join('\n')

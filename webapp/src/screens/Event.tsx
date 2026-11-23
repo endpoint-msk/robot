@@ -3,9 +3,10 @@
 // экране дня и заготовка из пересланного в личку поста канала (тогда поля уже заполнены,
 // см. params.draft).
 
+import { plural, tr } from '../i18n'
 import { Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
 import { action, uploadEventPhoto } from '../api'
-import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_ABBR, plural, weekdayIdx, WEEKDAYS_FULL, WEEKDAYS_SHORT } from '../dates'
+import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, monthsAbbr, weekdayIdx, weekdaysFull, weekdaysShort } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { NEW_EVENT_DRAFT, useDraft, type EventDraft } from '../drafts'
@@ -70,7 +71,7 @@ export function EventPoster({ photoId, className }: { photoId: string; className
       onLoad={() => setLoading(false)}
       onClick={(e) => {
         e.stopPropagation()
-        showImage(src, 'Афиша ивента')
+        showImage(src, tr('Афиша ивента', 'Event poster'))
       }}
     />
   )
@@ -148,7 +149,7 @@ export function Event() {
     if (picked.length === 0) return
     const room = MAX_PHOTOS - photos.length
     if (room <= 0) {
-      showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
+      showAlert(tr(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`, `An event can have up to ${MAX_PHOTOS} photos.`))
       return
     }
     setBusy(true)
@@ -166,9 +167,9 @@ export function Event() {
       markOwnTap()
       setPhotos((prev) => [...prev, ...added])
       haptic.notify('success')
-      if (picked.length > room) showAlert(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`)
+      if (picked.length > room) showAlert(tr(`К ивенту можно приложить не больше ${MAX_PHOTOS} фото.`, `An event can have up to ${MAX_PHOTOS} photos.`))
     } catch (err) {
-      showAlert(err instanceof Error && err.message ? err.message : 'Не получилось загрузить фото.')
+      showAlert(err instanceof Error && err.message ? err.message : tr('Не получилось загрузить фото.', 'Couldn’t upload the photo.'))
     } finally {
       setBusy(false)
     }
@@ -329,9 +330,9 @@ export function Event() {
 
   const remove = async (): Promise<void> => {
     if (!existing) return
-    const ok = await confirmDialog(`Удалить ивент «${existing.title}»?`, {
-      confirmLabel: 'Удалить ивент',
-      cancelLabel: 'Оставить',
+    const ok = await confirmDialog(tr(`Удалить ивент «${existing.title}»?`, `Delete “${existing.title}”?`), {
+      confirmLabel: tr('Удалить ивент', 'Delete event'),
+      cancelLabel: tr('Оставить', 'Keep'),
       destructive: true,
     })
     if (!ok) return
@@ -365,8 +366,8 @@ export function Event() {
               ref={titleRef}
               className="evv-pt evv-pt-in"
               rows={1}
-              placeholder="Название"
-              aria-label="Название ивента"
+              placeholder={tr('Название', 'Title')}
+              aria-label={tr('Название ивента', 'Event title')}
               maxLength={MAX_TITLE}
               enterKeyHint="next"
               value={title}
@@ -398,11 +399,9 @@ export function Event() {
                   pickPhotos()
                 }}
               >
-                {icons.camera(15, 'currentColor')}
-                Афиша
-              </button>
+                {icons.camera(15, 'currentColor')}{tr('Афиша', 'Poster')}</button>
             ) : null}
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden aria-label="Добавить фото" onChange={addPhotos} />
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden aria-label={tr('Добавить фото', 'Add photo')} onChange={addPhotos} />
           </div>
           <button
             type="button"
@@ -416,17 +415,17 @@ export function Event() {
             <DateTile dateKey={dateKey} />
             <div className="evv-when-text">
               <div className="evv-wt">
-                {`${WEEKDAYS_FULL[weekdayIdx(dateKey)]}, ${fmtDayMonth(dateKey)}`}
-                {residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
+                {`${weekdaysFull()[weekdayIdx(dateKey)]}, ${fmtDayMonth(dateKey)}`}
+                {residentsOnly ? <span className="ev-chip">{tr('только резидентам', 'residents only')}</span> : null}
               </div>
-              <div className="evv-ws">{`в ${time} · ${untilWord(data!.todayKey, dateKey)}`}</div>
+              <div className="evv-ws">{tr(`в ${time} · ${untilWord(data!.todayKey, dateKey)}`, `at ${time} · ${untilWord(data!.todayKey, dateKey)}`)}</div>
             </div>
             <span className={'evv-when-chev' + (whenOpen ? ' open' : '')}>{icons.chevron()}</span>
           </button>
           <Unfold open={whenOpen}>
             <div className="card evv-when-card">
               <div className="row time-row">
-                <span className="row-label">Дата</span>
+                <span className="row-label">{tr('Дата', 'Date')}</span>
                 <div className="row-right">
                   <DateField
                     value={dateKey}
@@ -466,7 +465,7 @@ export function Event() {
                   <EventPoster photoId={id} className="ev-thumb-img" />
                   <button
                     className="ev-thumb-del"
-                    aria-label="Убрать фото"
+                    aria-label={tr('Убрать фото', 'Remove photo')}
                     onClick={(e) => {
                       // Клик по крестику не должен ещё и открывать просмотр под ним.
                       e.stopPropagation()
@@ -479,7 +478,7 @@ export function Event() {
                 </div>
               ))}
               {photos.length < MAX_PHOTOS ? (
-                <button type="button" className="ev-thumb ev-thumb-add" title="Добавить фото" aria-label="Добавить фото" onClick={pickPhotos}>
+                <button type="button" className="ev-thumb ev-thumb-add" title={tr('Добавить фото', 'Add photo')} aria-label={tr('Добавить фото', 'Add photo')} onClick={pickPhotos}>
                   {icons.plusSmall()}
                 </button>
               ) : null}
@@ -492,15 +491,15 @@ export function Event() {
             <Avatar user={host} className="req-avatar" />
             <span className="row-label">
               {host.name}
-              <span className="row-sublabel">{(host.username ? '@' + host.username + ' · ' : '') + 'ведёт'}</span>
+              <span className="row-sublabel">{(host.username ? '@' + host.username + ' · ' : '') + tr('ведёт', 'hosting')}</span>
             </span>
           </div>
           <Sep inset="text" />
           <textarea
             ref={descRef}
             className="evv-desc evv-desc-in"
-            placeholder="Что будет, кому интересно, что взять с собой"
-            aria-label="Описание"
+            placeholder={tr('Что будет, кому интересно, что взять с собой', 'What’s happening, who it’s for, and what to bring')}
+            aria-label={tr('Описание', 'Description')}
             rows={3}
             maxLength={MAX_DESCRIPTION}
             value={description}
@@ -512,8 +511,8 @@ export function Event() {
         </div>
 
         {existing?.canReview && existing.form ? (
-          <button className="card row tappable evv-apps" onClick={() => push('eventApps', { event: existing, backLabel: 'Ивент' })}>
-            <span className="row-label">Разобрать заявки</span>
+          <button className="card row tappable evv-apps" onClick={() => push('eventApps', { event: existing, backLabel: tr('Ивент', 'Event') })}>
+            <span className="row-label">{tr('Разобрать заявки', 'Review applications')}</span>
             <div className="row-right">
               {existing.applicationsPending ? <span className="ev-count">{existing.applicationsPending}</span> : null}
               {icons.chevron()}
@@ -524,17 +523,15 @@ export function Event() {
           <SwitchRow
             on={residentsOnly}
             onToggle={() => setResidentsOnly(!residentsOnly)}
-            label="Только резидентам"
-            sub="Гости не увидят ивент в «Активности»"
+            label={tr('Только резидентам', 'Residents only')}
+            sub={tr('Гости не увидят ивент в «Активности»', 'Guests won’t see this event in Activity')}
           />
           <Sep inset="text" />
           <button type="button" className="row tappable" onClick={() => void pickResponsibles(responsibles, setResponsibles)}>
-            <span className="row-label">
-              Ответственные
-              <span className="row-sublabel">
+            <span className="row-label">{tr('Ответственные', 'Organizers')}<span className="row-sublabel">
                 {responsibles.length
                   ? responsibles.map((u) => (u.username ? '@' + u.username : u.name)).join(', ')
-                  : 'Резиденты или гости'}
+                  : tr('Резиденты или гости', 'Residents or guests')}
               </span>
             </span>
             <div className="row-right">{icons.chevron()}</div>
@@ -543,16 +540,14 @@ export function Event() {
           <SwitchRow
             on={formOn}
             onToggle={() => setFormOn(!formOn)}
-            label="Принимать заявки по форме"
-            sub="Гость попадёт на ивент только через заявку"
+            label={tr('Принимать заявки по форме', 'Require an application')}
+            sub={tr('Гость попадёт на ивент только через заявку', 'Guests need to apply to attend')}
           />
         </div>
         {formOn ? <FormBuilder value={form} onChange={setForm} /> : null}
 
         {existing ? (
-          <button className="destructive-btn" style={{ marginTop: 22 }} onClick={remove}>
-            Удалить ивент
-          </button>
+          <button className="destructive-btn" style={{ marginTop: 22 }} onClick={remove}>{tr('Удалить ивент', 'Delete event')}</button>
         ) : null}
         <button
           className="primary-btn"
@@ -560,7 +555,7 @@ export function Event() {
           disabled={!canSave || (guardPast && pastSlot) || (Boolean(existing) && !dirty)}
           onClick={save}
         >
-          {existing ? 'Сохранить' : 'Опубликовать'}
+          {existing ? tr('Сохранить', 'Save') : tr('Опубликовать', 'Publish')}
         </button>
       </div>
     </Screen>
@@ -572,22 +567,23 @@ const posterWhen = (dateKey: string, time: string): string => {
   const d = keyToDate(dateKey)
   const dd = String(d.getUTCDate()).padStart(2, '0')
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${WEEKDAYS_SHORT[weekdayIdx(dateKey)]!.toLowerCase()} ${dd}.${mm}, ${time}`
+  const weekday = weekdaysShort()[weekdayIdx(dateKey)]!
+  return tr(`${weekday.toLowerCase()} ${dd}.${mm}, ${time}`, `${weekday} ${fmtDayMonth(dateKey)}, ${time}`)
 }
 
 /** «сегодня», «завтра», «через 41 день». */
 export const untilWord = (todayKey: string, dateKey: string): string => {
   const n = Math.round((keyToDate(dateKey).getTime() - keyToDate(todayKey).getTime()) / 86_400_000)
-  if (n <= 0) return 'сегодня'
-  if (n === 1) return 'завтра'
-  return `через\u00a0${n}\u00a0${plural(n, 'день', 'дня', 'дней')}`
+  if (n <= 0) return tr('сегодня', 'today')
+  if (n === 1) return tr('завтра', 'tomorrow')
+  return tr('через', 'in') + `\u00a0${n}\u00a0${plural(n, ['день', 'дня', 'дней'], ['day', 'days'])}`
 }
 
 /** Дата плиткой: месяц и число крупно, как листок календаря. */
 export function DateTile({ dateKey, small = false }: { dateKey: string; small?: boolean }) {
   return (
     <div className={'ev-tile' + (small ? ' small' : '')} aria-hidden="true">
-      <span>{MONTHS_ABBR[monthIdx(dateKey)]}</span>
+      <span>{monthsAbbr()[monthIdx(dateKey)]}</span>
       <b>{dayNum(dateKey)}</b>
     </div>
   )
@@ -649,7 +645,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
   for (const u of event.approvedAttendees ?? []) {
     if (!people.some((a) => a.userId === u.userId)) people.push({ ...u, resident: false, time: null })
   }
-  const names = people.map((a) => (a.userId === data!.me.id ? 'вы' : userLabel(a)))
+  const names = people.map((a) => (a.userId === data!.me.id ? tr('вы', 'you') : userLabel(a)))
 
   // «Хочу прийти» у гостя и есть заявка на день ивента: форма открывается уже с днём и
   // временем. Заявка на этот день уже есть: вместо кнопки она сама.
@@ -678,10 +674,10 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
           <DateTile dateKey={event.dateKey} />
           <div className="evv-when-text">
             <div className="evv-wt">
-              {`${WEEKDAYS_FULL[weekdayIdx(event.dateKey)]}, ${fmtDayMonth(event.dateKey)}`}
-              {event.residentsOnly ? <span className="ev-chip">только резидентам</span> : null}
+              {`${weekdaysFull()[weekdayIdx(event.dateKey)]}, ${fmtDayMonth(event.dateKey)}`}
+              {event.residentsOnly ? <span className="ev-chip">{tr('только резидентам', 'residents only')}</span> : null}
             </div>
-            <div className="evv-ws">{`в\u00a0${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`}</div>
+            <div className="evv-ws">{tr(`в\u00a0${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`, `at ${event.time} · ${untilWord(data!.todayKey, event.dateKey)}`)}</div>
           </div>
         </div>
         {canAttend ? (
@@ -702,7 +698,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
               )}
             </div>
             <div className="dpg-coming-text">
-              <div className="dpg-coming-k">{`Придут · ${people.length}`}</div>
+              <div className="dpg-coming-k">{tr(`Придут · ${people.length}`, `Attending · ${people.length}`)}</div>
               <ComingNames names={names} />
             </div>
           </div>
@@ -713,7 +709,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
           <Avatar user={event.host} className="req-avatar" />
           <span className="row-label">
             {event.host.name}
-            <span className="row-sublabel">{(event.host.username ? '@' + event.host.username + ' · ' : '') + 'ведёт'}</span>
+            <span className="row-sublabel">{(event.host.username ? '@' + event.host.username + ' · ' : '') + tr('ведёт', 'hosting')}</span>
           </span>
         </Profile>
         {/* Ответственные приходят только резидентам: у гостя этих строк нет. */}
@@ -724,7 +720,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
               <Avatar user={u} className="req-avatar" />
               <span className="row-label">
                 {u.name}
-                <span className="row-sublabel">{(u.username ? '@' + u.username + ' · ' : '') + 'отвечает'}</span>
+                <span className="row-sublabel">{(u.username ? '@' + u.username + ' · ' : '') + tr('отвечает', 'organizer')}</span>
               </span>
             </Profile>
           </Fragment>
@@ -739,7 +735,7 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
           <>
             <Sep inset="text" />
             <button type="button" className="row tappable" onClick={() => openUrl(event.sourceUrl!)}>
-              <span className="row-label">Пост в канале</span>
+              <span className="row-label">{tr('Пост в канале', 'Channel post')}</span>
               <div className="row-right">{icons.external('#bf5af2')}</div>
             </button>
           </>
@@ -762,8 +758,10 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
         <div className="card evv-mine">
           <button type="button" className="row tappable" onClick={() => push('visit', { id: mine.id })}>
             <span className="row-label">
-              Ваша заявка
-              <span className="row-sublabel">{nb(`к ${mine.time} · ${mine.status === 'approved' ? 'подтверждена' : 'ждёт ответа'}`)}</span>
+              {tr('Ваша заявка', 'Your request')}
+              <span className="row-sublabel">
+                {nb(`${tr('к', 'at')} ${mine.time} · ${mine.status === 'approved' ? tr('подтверждена', 'confirmed') : tr('ждёт ответа', 'pending')}`)}
+              </span>
             </span>
             <div className="row-right">{icons.chevron()}</div>
           </button>
@@ -771,10 +769,8 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
       ) : null}
       {canAsk && !mine ? (
         <div className="evv-acts" style={tv}>
-          <button type="button" className="primary-btn" onClick={() => startNewRequest({ dateKey: event.dateKey, time: event.time })}>
-            Хочу прийти
-          </button>
-          <button type="button" className="evv-cal" aria-label="В календарь" title="В календарь" onClick={() => void openIcs()}>
+          <button type="button" className="primary-btn" onClick={() => startNewRequest({ dateKey: event.dateKey, time: event.time })}>{tr('Хочу прийти', 'Request a visit')}</button>
+          <button type="button" className="evv-cal" aria-label={tr('В календарь', 'Add to calendar')} title={tr('В календарь', 'Add to calendar')} onClick={() => void openIcs()}>
             {icons.calendarPlus(20, 'currentColor')}
           </button>
           {canShare ? <ShareIconButton target={shareTarget} /> : null}
@@ -782,16 +778,12 @@ function EventView({ event, asGuest }: { event: SpaceEvent; asGuest: boolean }) 
       ) : canShare ? (
         <div className="evv-pair">
           <button type="button" className="secondary-btn evv-cal-wide" style={tv} onClick={() => void openIcs()}>
-            {icons.calendarPlus(18, 'currentColor')}
-            В календарь
-          </button>
+            {icons.calendarPlus(18, 'currentColor')}{tr('В календарь', 'Add to calendar')}</button>
           <ShareButton target={shareTarget} style={tv} />
         </div>
       ) : (
         <button type="button" className="secondary-btn evv-cal-wide" style={tv} onClick={() => void openIcs()}>
-          {icons.calendarPlus(18, 'currentColor')}
-          В календарь
-        </button>
+          {icons.calendarPlus(18, 'currentColor')}{tr('В календарь', 'Add to calendar')}</button>
       )}
       </div>
     </Screen>
@@ -812,24 +804,20 @@ function EventFormActions({ event }: { event: SpaceEvent }) {
       {count > 0 ? (
         <div className="ev-going">
           {icons.check(13, '#34c759', 2.4)}
-          <span>
-            Придут: {count}
+          <span>{tr('Придут: ', 'Attending: ')}{count}
             {names ? <span className="ev-going-names"> · {names}</span> : null}
           </span>
         </div>
       ) : null}
       {canReview ? (
-        <button className="primary-btn" onClick={() => push('eventApps', { event, backLabel: 'Ивент' })}>
-          Заявки{event.applicationsPending ? ` · ${event.applicationsPending}` : ''}
+        <button className="primary-btn" onClick={() => push('eventApps', { event, backLabel: tr('Ивент', 'Event') })}>{tr('Заявки', 'Applications')}{event.applicationsPending ? ` · ${event.applicationsPending}` : ''}
         </button>
       ) : app ? (
-        <button className="ev-status-btn" onClick={() => push('eventApply', { event, backLabel: 'Ивент' })}>
-          {app.status === 'approved' ? 'Вы участвуете · открыть' : 'Заявка на рассмотрении · изменить'}
+        <button className="ev-status-btn" onClick={() => push('eventApply', { event, backLabel: tr('Ивент', 'Event') })}>
+          {app.status === 'approved' ? tr('Вы участвуете · открыть', 'You’re attending · open') : tr('Заявка на рассмотрении · изменить', 'Application pending · edit')}
         </button>
       ) : (
-        <button className="primary-btn" onClick={() => push('eventApply', { event, backLabel: 'Ивент' })}>
-          Оставить заявку
-        </button>
+        <button className="primary-btn" onClick={() => push('eventApply', { event, backLabel: tr('Ивент', 'Event') })}>{tr('Оставить заявку', 'Apply')}</button>
       )}
     </div>
   )

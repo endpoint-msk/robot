@@ -1,3 +1,4 @@
+import { locale, tr } from './i18n.js'
 import type { Donation, Fundraiser } from './types.js'
 
 const MONTH_NAMES_RU = [
@@ -9,6 +10,13 @@ const MONTH_NAMES_RU_GENITIVE = [
     'Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня',
     'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря',
 ] as const
+
+const MONTH_NAMES_EN = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+] as const
+
+const DEFAULT_TITLE = 'аренду'
 
 export const periodKey = (year: number, month: number): string =>
     `${year}-${String(month).padStart(2, '0')}`
@@ -52,6 +60,7 @@ export const periodKeyOf = (date: Date, resetDay = DEFAULT_RESET_DAY): string =>
 
 export const monthNameRu = (month: number): string => MONTH_NAMES_RU[month - 1] ?? '?'
 export const monthNameRuGenitive = (month: number): string => MONTH_NAMES_RU_GENITIVE[month - 1] ?? '?'
+export const monthName = (month: number): string => tr(monthNameRu(month), MONTH_NAMES_EN[month - 1] ?? '?')
 
 /** День сброса, закодированный в periodKey 3-м сегментом (`YYYY-MM-DD`). Для календарного ключа `YYYY-MM` — DEFAULT_RESET_DAY. */
 const resetDayFromKey = (key: string): number => {
@@ -75,7 +84,7 @@ export const displayPeriodOf = (year: number, month: number, resetDay: number): 
 /** Подпись периода для показа: «Июнь 2026» (день сброса берётся из ключа сбора). */
 export const fundraiserPeriodLabel = (f: Fundraiser): string => {
     const disp = displayPeriodOf(f.year, f.month, resetDayFromKey(f.periodKey))
-    return `${monthNameRu(disp.month)} ${disp.year}`
+    return `${monthName(disp.month)} ${disp.year}`
 }
 
 export const createFundraiser = (
@@ -89,7 +98,7 @@ export const createFundraiser = (
     month,
     goal: opts.goal ?? 0,
     currency: opts.currency ?? 'RUB',
-    title: opts.title ?? 'аренду',
+    title: opts.title ?? DEFAULT_TITLE,
     description: opts.description ?? '',
     donations: [],
 })
@@ -102,7 +111,7 @@ const PROGRESS_WIDTH = 10
 /** Рисует прогресс-бар вида ====10%=== длиной PROGRESS_WIDTH символов '=' с процентом по центру. */
 export const renderProgressBar = (current: number, goal: number): string => {
     if (goal <= 0) {
-        return '=' .repeat(PROGRESS_WIDTH) + ' (цель не задана)'
+        return '=' .repeat(PROGRESS_WIDTH) + tr(' (цель не задана)', " (no goal set)")
     }
     const ratio = Math.max(0, Math.min(1, current / goal))
     const percent = Math.round(ratio * 100)
@@ -132,9 +141,9 @@ const currencySymbol = (currency: string): string => {
 /** Сумма для чтения человеком: «10 000 ₽». */
 export const formatMoney = (amount: number, currency: string): string => {
     const [int = '0', frac] = formatAmount(Math.abs(amount)).split('.')
-    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, tr(' ', ','))
     const symbol = currencySymbol(currency)
-    return `${amount < 0 ? '-' : ''}${grouped}${frac ? `,${frac}` : ''}${symbol ? ` ${symbol}` : ''}`
+    return `${amount < 0 ? '-' : ''}${grouped}${frac ? `${tr(',', '.')}${frac}` : ''}${symbol ? ` ${symbol}` : ''}`
 }
 
 const escapeNick = (raw: string): string => raw.trim().replace(/^@+/, '')
@@ -166,6 +175,7 @@ export const PAGE_SIZE = 10
 
 /** Подпись для донатов без ника. Все они группируются в одну запись лидерборда. */
 export const ANON_LABEL = 'Анонимно'
+export const anonymousDonorLabel = (): string => tr(ANON_LABEL, 'Anonymous')
 
 /** Донат без ника — анонимный (ник пустой/пробелы). */
 export const isAnonNick = (nick: string): boolean => nick.trim() === ''
@@ -226,11 +236,13 @@ const renderPreviousTop = (prev: Fundraiser): string => {
     const board = buildLeaderboard(prev).slice(0, MEDAL_EMOJI.length)
     if (board.length === 0) return ''
     const parts = board.map((entry, i) => {
-        const who = isAnonNick(entry.nick) ? ANON_LABEL : nickLink(entry.nick)
+        const who = isAnonNick(entry.nick) ? anonymousDonorLabel() : nickLink(entry.nick)
         return `${MEDAL_EMOJI[i]} ${who}`
     })
     const disp = displayPeriodOf(prev.year, prev.month, resetDayFromKey(prev.periodKey))
-    return `Топ за ${monthNameRu(disp.month)}: ${parts.join(' · ')}`
+    const month = monthName(disp.month)
+    const donors = parts.join(' · ')
+    return tr(`Топ за ${month}: ${donors}`, `Top donors in ${month}: ${donors}`)
 }
 
 /**
@@ -256,6 +268,7 @@ export const daysLeftInPeriod = (f: Fundraiser, now: Date = new Date()): number 
 
 /** Русское склонение: 1 день, 2 дня, 5 дней, 21 день. */
 const pluralDays = (n: number): string => {
+    if (locale() === 'en') return n === 1 ? 'day' : 'days'
     const mod100 = n % 100
     if (mod100 >= 11 && mod100 <= 14) return 'дней'
     const mod10 = n % 10
@@ -268,8 +281,8 @@ const pluralDays = (n: number): string => {
 const renderDaysLeft = (f: Fundraiser, now: Date): string => {
     const days = daysLeftInPeriod(f, now)
     if (days <= 0) return ''
-    if (days === 1) return '⏳ Сегодня последний день сбора'
-    return `⏳ До конца сбора ${days} ${pluralDays(days)}`
+    if (days === 1) return tr('⏳ Сегодня последний день сбора', "⏳ Today is the last day of the fundraiser")
+    return tr(`⏳ До конца сбора ${days} ${pluralDays(days)}`, `⏳ ${days} ${pluralDays(days)} left in the fundraiser`)
 }
 
 export const renderFundraiser = (
@@ -284,7 +297,9 @@ export const renderFundraiser = (
     const page = clampPage(requestedPage, pages)
     const closed = f.goal > 0 && total >= f.goal
 
-    const header = `Сбор на ${escapeHtml(f.title)} за ${fundraiserPeriodLabel(f)}.`
+    const title = escapeHtml(f.title === DEFAULT_TITLE ? tr(DEFAULT_TITLE, 'rent') : f.title)
+    const period = fundraiserPeriodLabel(f)
+    const header = tr(`Сбор на ${title} за ${period}.`, `Fundraiser for ${title} · ${period}.`)
     const bar = renderProgressBar(total, f.goal)
 
     const lines: string[] = [header, bar]
@@ -292,7 +307,7 @@ export const renderFundraiser = (
     const daysLeft = closed ? '' : renderDaysLeft(f, now)
     if (daysLeft) lines.push(daysLeft)
     if (board.length === 0) {
-        lines.push('', 'Пока нет ни одного доната.')
+        lines.push('', tr('Пока нет ни одного доната.', "There are no donations yet."))
     } else {
         lines.push('')
         const start = (page - 1) * PAGE_SIZE
@@ -301,18 +316,18 @@ export const renderFundraiser = (
             const entry = board[i]!
             const place = i + 1
             const medal = i < MEDAL_EMOJI.length ? `${MEDAL_EMOJI[i]} ` : ''
-            const who = isAnonNick(entry.nick) ? ANON_LABEL : nickLink(entry.nick)
+            const who = isAnonNick(entry.nick) ? anonymousDonorLabel() : nickLink(entry.nick)
             lines.push(`${medal}${place}. ${who} — ${formatMoney(entry.total, f.currency)}`)
         }
         lines.push('')
-        const goalSuffix = f.goal > 0 ? ` из ${formatMoney(f.goal, f.currency)}` : ''
-        lines.push(`Итого: ${formatMoney(total, f.currency)}${goalSuffix}`)
+        const goalSuffix = f.goal > 0 ? tr(` из ${formatMoney(f.goal, f.currency)}`, ` of ${formatMoney(f.goal, f.currency)}`) : ''
+        lines.push(tr(`Итого: ${formatMoney(total, f.currency)}${goalSuffix}`, `Total: ${formatMoney(total, f.currency)}${goalSuffix}`))
         if (pages > 1) {
-            lines.push(`Страница ${page}/${pages}`)
+            lines.push(tr(`Страница ${page}/${pages}`, `Page ${page}/${pages}`))
         }
     }
     if (closed) {
-        lines.push('', '✅ Сбор закрыт — цель достигнута!')
+        lines.push('', tr('✅ Сбор закрыт — цель достигнута!', "✅ Fundraiser goal reached!"))
     }
     if (previous) {
         const prevTop = renderPreviousTop(previous)
@@ -341,18 +356,18 @@ export const pastFundraisers = (all: Fundraiser[], currentKey: string): Fundrais
 
 /** Список прошлых сборов: период, итог, цель и отметка «цель взята». */
 export const renderHistoryList = (past: Fundraiser[], truncated = false): string => {
-    if (past.length === 0) return 'Прошлых сборов пока нет.'
-    const lines = ['История сборов:', '']
+    if (past.length === 0) return tr('Прошлых сборов пока нет.', "There are no past fundraisers yet.")
+    const lines = [tr('История сборов:', "Fundraiser history:"), '']
     for (const f of past) {
         const total = totalAmount(f)
-        const goalSuffix = f.goal > 0 ? ` из ${formatMoney(f.goal, f.currency)}` : ''
+        const goalSuffix = f.goal > 0 ? tr(` из ${formatMoney(f.goal, f.currency)}`, ` of ${formatMoney(f.goal, f.currency)}`) : ''
         const done = f.goal > 0 && total >= f.goal ? ' ✅' : ''
         lines.push(`${fundraiserPeriodLabel(f)} — ${formatMoney(total, f.currency)}${goalSuffix}${done}`)
     }
     lines.push('')
     // Текст уходит через html(): угловые скобки в подсказке дали бы «тег», поэтому пример без них.
-    if (truncated) lines.push('Показаны только последние периоды. Остальные — командой вида /history 2026-06.')
-    lines.push('Открыть сбор целиком — кнопкой ниже.')
+    if (truncated) lines.push(tr('Показаны только последние периоды. Остальные — командой вида /history 2026-06.', "Only recent fundraisers are listed. Open an older one with a command like /history 2026-06."))
+    lines.push(tr('Открыть сбор целиком — кнопкой ниже.', "Tap a period below to open the full fundraiser."))
     return lines.join('<br>')
 }
 
@@ -372,12 +387,12 @@ const csvField = (raw: string): string => {
  * анонимы схлопнуты в одну строку под ANON_LABEL). Месяцы — по возрастанию periodKey.
  */
 export const buildDonationsCsv = (fundraisers: Fundraiser[]): string => {
-    const header = ['Месяц', 'Ник', 'Сумма']
+    const header = [tr('Месяц', "Month"), tr('Ник', "Username"), tr('Сумма', "Amount")]
     const rows: string[] = [header.join(',')]
     const sorted = [...fundraisers].sort((a, b) => a.periodKey.localeCompare(b.periodKey))
     for (const f of sorted) {
         for (const entry of buildLeaderboard(f)) {
-            const nick = isAnonNick(entry.nick) ? ANON_LABEL : entry.nick
+            const nick = isAnonNick(entry.nick) ? anonymousDonorLabel() : entry.nick
             rows.push([
                 csvField(f.periodKey),
                 csvField(nick),
@@ -397,7 +412,7 @@ export const buildDonationsCsv = (fundraisers: Fundraiser[]): string => {
  */
 export const parseDonateArgs = (args: string[]): { amount: number; nick: string } | string => {
     if (args.length < 1) {
-        return 'Использование: /donate <сумма> [ник] (без ника — анонимно)'
+        return tr('Использование: /donate <сумма> [ник] (без ника — анонимно)', "Usage: /donate <amount> [username] (omit the username for an anonymous donation)")
     }
     let amountStr: string | undefined
     let nick: string | undefined
@@ -410,11 +425,11 @@ export const parseDonateArgs = (args: string[]): { amount: number; nick: string 
         }
     }
     if (amountStr === undefined) {
-        return 'Не удалось распознать сумму. Пример: /donate 10000 @otomir23 или /donate 10000'
+        return tr('Не удалось распознать сумму. Пример: /donate 10000 @otomir23 или /donate 10000', "Couldn't read the amount. Try /donate 10000 @otomir23 or /donate 10000.")
     }
     const amount = Number(amountStr)
     if (!Number.isFinite(amount) || amount <= 0) {
-        return 'Сумма должна быть положительным числом.'
+        return tr('Сумма должна быть положительным числом.', "The amount must be greater than zero.")
     }
     return { amount, nick: (nick ?? '').replace(/^@+/, '') }
 }
@@ -430,7 +445,7 @@ export type RemoveSpec =
 
 export const parseRemoveArgs = (args: string[]): RemoveSpec | string => {
     if (args.length === 0) {
-        return 'Использование: /remove <номер> или /remove <ник> [сумма]'
+        return tr('Использование: /remove <номер> или /remove <ник> [сумма]', "Usage: /remove <rank> or /remove <username> [amount]")
     }
     if (args.length === 1) {
         const a = args[0]!
@@ -448,6 +463,6 @@ export const parseRemoveArgs = (args: string[]): RemoveSpec | string => {
             nick = a.replace(/^@+/, '')
         }
     }
-    if (nick === undefined) return 'Не указан ник для удаления.'
+    if (nick === undefined) return tr('Не указан ник для удаления.', "Enter the donor's username.")
     return { kind: 'nick', nick, amount }
 }

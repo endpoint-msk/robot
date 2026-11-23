@@ -1,5 +1,7 @@
 import type { TelegramClient } from '@mtcute/node'
 import { logError } from './error-log.js'
+import { tr, userLocale, withLocale } from './i18n.js'
+import type { Storage } from './storage.js'
 
 /** Максимальная длина отчёта в личку (Telegram режет на 4096; оставляем запас под стектрейс). */
 const MAX_REPORT_LEN = 3500
@@ -46,6 +48,7 @@ const withTimeout = async (p: Promise<unknown>, ms: number): Promise<void> => {
  */
 export const installErrorReporting = (
     client: TelegramClient,
+    storage: Storage,
     devUserIds: Set<number>,
     /** Что успеть сделать перед падением - обычно `storage.drain()`. */
     onFatal?: () => Promise<void>,
@@ -68,7 +71,11 @@ export const installErrorReporting = (
         return Promise.all(
             // silent: отчёты приходят пачками и по ночам — уведомление без звука.
             ids.map((id) =>
-                client.sendText(id, `⚠️ Ошибка бота\n\n${trimmed}`, { silent: true }).catch((err) => {
+                withLocale(userLocale(storage, id), () => client.sendText(
+                    id,
+                    tr('⚠️ Ошибка бота', '⚠️ Bot error') + `\n\n${trimmed}`,
+                    { silent: true },
+                )).catch((err) => {
                     origError(`${SELF_PREFIX} не смог отправить отчёт ${id}:`, err)
                 }),
             ),

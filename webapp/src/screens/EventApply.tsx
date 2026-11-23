@@ -1,9 +1,10 @@
 // Гость подаёт (или правит) заявку на ивент по его форме. Одна заявка на ивент:
 // если она уже есть — режим правки (пока на рассмотрении) либо чтение (если принята).
 
+import { tr } from '../i18n'
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { action } from '../api'
-import { weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { weekdayIdx, weekdaysFull } from '../dates'
 import { afterHero } from '../hero'
 import { markOwnTap, stageTint, toHex, toneColors } from '../motion'
 import { UnderContext } from '../screenContext'
@@ -80,11 +81,13 @@ export function EventApply() {
     const done = (await action('event.apply.cancel', { id: app.id }, { quiet: true })) as Undoable | null
     if (!done) return
     pop()
-    offerUndo(readOnly ? 'Участие отменено' : 'Заявка отменена', done.undo)
+    offerUndo(readOnly ? tr('Участие отменено', 'Attendance canceled') : tr('Заявка отменена', 'Application withdrawn'), done.undo)
   }
 
-  const title = app ? (readOnly ? 'Вы участвуете' : 'Ваша заявка') : 'Заявка на ивент'
-  const when = `${WEEKDAYS_FULL[weekdayIdx(event.dateKey)]!.toLowerCase()}, в ${event.time}, ${untilWord(data!.todayKey, event.dateKey)}`
+  const title = app ? (readOnly ? tr('Вы участвуете', 'You’re attending') : tr('Ваша заявка', 'Your request')) : tr('Заявка на ивент', 'Event application')
+  const weekday = weekdaysFull()[weekdayIdx(event.dateKey)]!
+  const until = untilWord(data!.todayKey, event.dateKey)
+  const when = tr(`${weekday.toLowerCase()}, в ${event.time}, ${until}`, `${weekday} at ${event.time} · ${until}`)
 
   return (
     <Screen>
@@ -104,26 +107,26 @@ export function EventApply() {
       {app ? (
         <Footnote>
           {readOnly
-            ? 'Заявка принята — вы в списке участников. Можно отменить участие.'
-            : 'Заявка на рассмотрении. Пока её не приняли, ответы можно менять.'}
+            ? tr('Заявка принята — вы в списке участников. Можно отменить участие.', 'Your application was accepted and you’re on the guest list. You can cancel your attendance.')
+            : tr('Заявка на рассмотрении. Пока её не приняли, ответы можно менять.', 'Your application is pending. You can edit your answers until it’s accepted.')}
         </Footnote>
       ) : (
-        <Footnote>Заполните форму организатора — резиденты рассмотрят заявку и ответят в личке.</Footnote>
+        <Footnote>{tr('Заполните форму организатора — резиденты рассмотрят заявку и ответят в личке.', 'Fill out the organizer’s form. Residents will review your application and reply in a private message.')}</Footnote>
       )}
 
-      <SectionTitle>Форма</SectionTitle>
+      <SectionTitle>{tr('Форма', 'Application form')}</SectionTitle>
       <div className="card">
         <FormFill fields={fields} value={answers} disabled={readOnly} onChange={setAnswers} />
       </div>
 
       {!readOnly ? (
         <button className="primary-btn" style={{ marginTop: 22 }} disabled={!complete} onClick={submit}>
-          {app ? 'Сохранить' : 'Отправить заявку'}
+          {app ? tr('Сохранить', 'Save') : tr('Отправить заявку', 'Submit application')}
         </button>
       ) : null}
       {app ? (
         <button className="destructive-btn" style={{ marginTop: 14 }} onClick={cancel}>
-          {readOnly ? 'Отменить участие' : 'Отменить заявку'}
+          {readOnly ? tr('Отменить участие', 'Cancel attendance') : tr('Отменить заявку', 'Withdraw application')}
         </button>
       ) : null}
     </Screen>

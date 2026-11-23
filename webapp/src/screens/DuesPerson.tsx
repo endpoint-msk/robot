@@ -1,6 +1,7 @@
 // Карточка резидента по взносам: просрочка, ставка и вся история по месяцам.
 // Читают все резиденты, меняют ставку и закрывают месяцы только dev.
 
+import { tr } from '../i18n'
 import { Fragment, useLayoutEffect, useState, type ReactNode } from 'react'
 import { action, api } from '../api'
 import { fmtIsoDay } from '../dates'
@@ -21,10 +22,10 @@ import { SwipeRow, swipeIcons } from '../components/SwipeRow'
 import { SkBlock, SkRows } from '../components/skeleton'
 import { DebtBadge, type DuesRef } from './Dues'
 
-const RATE_ROWS: { kind: DuesRateKind; label: string }[] = [
-  { kind: 'common', label: 'Общая' },
-  { kind: 'student', label: 'Студенческая' },
-  { kind: 'custom', label: 'Своя' },
+const rateRows = (): { kind: DuesRateKind; label: string }[] => [
+  { kind: 'common', label: tr('Общая', 'Standard') },
+  { kind: 'student', label: tr('Студенческая', 'Student') },
+  { kind: 'custom', label: tr('Своя', 'Custom') },
 ]
 
 /**
@@ -35,7 +36,7 @@ const RATE_ROWS: { kind: DuesRateKind; label: string }[] = [
  */
 function PersonSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Загружаем карточку по взносам">
+    <div aria-busy="true" aria-label={tr('Загружаем карточку по взносам', 'Loading dues profile')}>
       <SectionTitle>
         <SkBlock w={104} h={11} />
       </SectionTitle>
@@ -50,7 +51,7 @@ function PersonSkeleton() {
           <SkBlock w={74} h={15} style={{ marginLeft: 'auto' }} />
         </div>
       </div>
-      <SectionTitle>История</SectionTitle>
+      <SectionTitle>{tr('История', 'History')}</SectionTitle>
       <SkRows count={6} tail />
     </div>
   )
@@ -86,7 +87,7 @@ export function DuesPerson() {
   if (!people || index < 0 || people.length < 2) {
     return (
       <Screen>
-        <BackRow label="Взносы" />
+        <BackRow label={tr('Взносы', 'Dues')} />
         <DuesPage userId={userId} known={people?.[index] ?? null} />
       </Screen>
     )
@@ -102,7 +103,7 @@ export function DuesPerson() {
           const C = palette()
           return mixc(C.bg, avatarTone(p.userId), C.mixp)
         }}
-        top={<BackRow label="Взносы" />}
+        top={<BackRow label={tr('Взносы', 'Dues')} />}
         renderPage={(p) => <DuesPage userId={p.userId} known={p} />}
       />
     </Screen>
@@ -142,11 +143,11 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
   // Шапка из ответа, а пока его нет — из списка, откуда открыли, если он есть.
   if (loading && !data) {
     return known
-      ? frame(known.name, known.username ? `@${known.username}` : 'без ника', null)
+      ? frame(known.name, known.username ? `@${known.username}` : tr('без ника', 'No username'), null)
       : frame(<SkBlock w={186} h={30} />, <SkBlock w={108} h={14} />, null)
   }
-  if (error) return frame('Взносы', undefined, <ErrorState onRetry={reload} />)
-  if (!data) return frame('Не нашёл', 'Человека нет ни в одном периоде взносов.', null)
+  if (error) return frame(tr('Взносы', 'Dues'), undefined, <ErrorState onRetry={reload} />)
+  if (!data) return frame(tr('Не нашёл', 'Person unavailable'), tr('Человека нет ни в одном периоде взносов.', "This person hasn't been included in any dues period."), null)
 
   const current = data.months[0]
 
@@ -157,10 +158,10 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
       // null — отмена, и ставку не трогаем вовсе. Ноль это осмысленное значение
       // («не платит»), поэтому отличать его от отмены обязательно.
       const picked = await numberPrompt({
-        text: 'Своя ставка',
+        text: tr('Своя ставка', 'Custom rate'),
         initial: data.rate.amount,
-        hint: `Сумма по договорённости, в ${data.currency}. Ноль — освободить от взноса.`,
-        confirmLabel: 'Поставить',
+        hint: tr(`Сумма по договорённости, в ${data.currency}. Ноль — освободить от взноса.`, `Agreed amount, in ${data.currency}. Enter zero to waive dues.`),
+        confirmLabel: tr('Поставить', 'Set rate'),
       })
       if (picked === null) return
       amount = picked
@@ -191,27 +192,27 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
     const paid = isPaid(m)
     const tag =
       m.status === 'claimed' && !paid ? (
-        <span className="ob-tag gray">ждёт сверки</span>
+        <span className="ob-tag gray">{tr('ждёт сверки', 'awaiting verification')}</span>
       ) : (
-        <span className="ob-tag warn">не внесён</span>
+        <span className="ob-tag warn">{tr('не внесён', 'unpaid')}</span>
       )
     return (
       <span className={'dues-st' + (marked === m.periodKey ? ' own' : '')}>
         {data.canEdit && cta ? (
           <ActionButton className={'host-btn' + (paid ? ' gone' : '')} onClick={() => confirm(m.periodKey)}>
-            {m.status === 'claimed' ? 'Подтвердить' : 'Отметить'}
+            {m.status === 'claimed' ? tr('Подтвердить', 'Confirm') : tr('Отметить', 'Mark as paid')}
           </ActionButton>
         ) : (
           <span className={paid ? 'gone' : undefined}>{tag}</span>
         )}
-        <span className={'ob-tag green' + (paid ? '' : ' gone')}>внесён</span>
+        <span className={'ob-tag green' + (paid ? '' : ' gone')}>{tr('внесён', 'paid')}</span>
       </span>
     )
   }
 
   return frame(
     data.user.name,
-    data.user.username ? `@${data.user.username}` : 'без ника',
+    data.user.username ? `@${data.user.username}` : tr('без ника', 'No username'),
     <>
       {current ? (
         <>
@@ -221,19 +222,19 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
           </div>
           <div className="card dues-kv">
             <div className="row kv-block">
-              <span className="kv-key">Ставка</span>
+              <span className="kv-key">{tr('Ставка', 'Rate')}</span>
               <span className="kv-val">{money(current.amount, data.currency)}</span>
             </div>
             <Sep inset="text" />
             <div className="row kv-block">
               <span className="kv-key">
-                Статус
+                {tr('Статус', 'Status')}
                 {/* Своё «Отметить»: подпись вырастает, как сворачивается строка долга ниже,
                     а не сдвигает карточку за кадр. */}
                 <Collapse open={current.status === 'paid' && Boolean(current.at)} as="span">
                   {current.at ? (
                     <span className="kv-sub">
-                      {`${fmtIsoDay(current.at)}${current.by ? ` · подтвердил ${userLabel(current.by)}` : ''}`}
+                      {`${fmtIsoDay(current.at)}${current.by ? tr(` · подтвердил ${userLabel(current.by)}`, ` · confirmed by ${userLabel(current.by)}`) : ''}`}
                     </span>
                   ) : null}
                 </Collapse>
@@ -243,7 +244,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
             <Collapse open={data.debt > 0}>
               <Sep inset="text" />
               <div className="row kv-block">
-                <span className="kv-key">Долг с учётом прошлых</span>
+                <span className="kv-key">{tr('Долг с учётом прошлых', 'Balance including past periods')}</span>
                 <span className="kv-val">{money(data.debt, data.currency)}</span>
               </div>
             </Collapse>
@@ -253,9 +254,9 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
 
       {data.canEdit ? (
         <>
-          <SectionTitle>Ставка</SectionTitle>
+          <SectionTitle>{tr('Ставка', 'Rate')}</SectionTitle>
           <div className="card">
-            {RATE_ROWS.map((r, i) => (
+            {rateRows().map((r, i) => (
               <Fragment key={r.kind}>
                 {i > 0 ? <Sep inset="text" /> : null}
                 <button type="button" className="row tappable" onClick={() => void setRate(r.kind)}>
@@ -263,12 +264,12 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
                     {r.label}
                     <span className="row-sublabel">
                       {r.kind === 'common'
-                        ? `${money(data.amount, data.currency)}, как у всех`
+                        ? tr(`${money(data.amount, data.currency)}, как у всех`, `${money(data.amount, data.currency)}, standard rate`)
                         : r.kind === 'student'
-                          ? `${money(data.studentAmount, data.currency)}, следует за настройкой спейса`
+                          ? tr(`${money(data.studentAmount, data.currency)}, следует за настройкой спейса`, `${money(data.studentAmount, data.currency)}, follows the space's student rate`)
                           : data.rate.kind === 'custom'
-                            ? `${money(data.rate.amount, data.currency)} по договорённости`
-                            : 'Сумма по договорённости'}
+                            ? tr(`${money(data.rate.amount, data.currency)} по договорённости`, `${money(data.rate.amount, data.currency)}, as agreed`)
+                            : tr('Сумма по договорённости', 'Agreed amount')}
                     </span>
                   </span>
                   <RadioCheck on={data.rate.kind === r.kind} />
@@ -276,11 +277,11 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
               </Fragment>
             ))}
           </div>
-          <Footnote>«Своя» это фиксированное число: общая и студенческая ставки на неё больше не влияют.</Footnote>
+          <Footnote>{tr('«Своя» это фиксированное число: общая и студенческая ставки на неё больше не влияют.', 'A custom rate stays fixed when the standard or student rate changes.')}</Footnote>
         </>
       ) : null}
 
-      <SectionTitle>История</SectionTitle>
+      <SectionTitle>{tr('История', 'History')}</SectionTitle>
       <div className="card">
         {data.months.map((m, i) => {
           const paid = isPaid(m)
@@ -290,7 +291,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
                 {m.label}
                 {m.at ? (
                   <span className="row-sublabel">
-                    {`${fmtIsoDay(m.at)}${m.by ? ` · подтвердил ${userLabel(m.by)}` : ''}`}
+                    {`${fmtIsoDay(m.at)}${m.by ? tr(` · подтвердил ${userLabel(m.by)}`, ` · confirmed by ${userLabel(m.by)}`) : ''}`}
                   </span>
                 ) : null}
               </span>
@@ -310,7 +311,7 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
               {/* Снять отметку можно только свайпом: случайный тап молча её снимал. */}
               {data.canEdit && m.status === 'paid' ? (
                 <SwipeRow
-                  actions={[{ key: 'undo', label: 'Снять отметку', icon: swipeIcons.undo(), tone: 'red', onSelect: () => void clear(m.periodKey) }]}
+                  actions={[{ key: 'undo', label: tr('Снять отметку', 'Remove payment mark'), icon: swipeIcons.undo(), tone: 'red', onSelect: () => void clear(m.periodKey) }]}
                 >
                   {row}
                 </SwipeRow>

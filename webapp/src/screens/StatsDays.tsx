@@ -1,9 +1,10 @@
 // История по дням. Месяцы — свёрнутые группы: за год журнала выходит триста строк,
 // и прокрутить их до нужной даты нереально. Раскрыт последний, остальные тапом.
 
+import { plural, tr } from '../i18n'
 import { Fragment, useState, type ReactNode } from 'react'
 import { api } from '../api'
-import { dayNum, MONTHS_NOM, monthIdx, peopleWord, plural, WEEKDAYS_SHORT, weekdayIdx, yearOf } from '../dates'
+import { dayNum, monthsNom, monthIdx, peopleWord, weekdaysShort, weekdayIdx, yearOf } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { useRemote } from '../remote'
@@ -23,6 +24,7 @@ type Group = { key: string; title: string; days: StatsDaySummary[]; minutes: num
  * тихий день и людный выглядели бы одинаково; по самому людному дню бледнели бы все.
  */
 const DAY_CELL_FULL = 240
+const dayCount = (n: number): string => `${n} ${plural(n, ['день', 'дня', 'дней'], ['day', 'days'])}`
 
 /**
  * Сутки строкой: двенадцать ячеек по два часа в ступенях тепловой карты. Стоят вместо
@@ -32,7 +34,7 @@ const DAY_CELL_FULL = 240
 function DayStrip({ day }: { day: StatsDaySummary }) {
   const gaps = new Set(day.gaps ?? [])
   return (
-    <span className="day12" role="img" aria-label={nb(`с ${day.from} до ${dayEnd(day.to)}`)}>
+    <span className="day12" role="img" aria-label={nb(tr(`с ${day.from} до ${dayEnd(day.to)}`, `${day.from} to ${dayEnd(day.to)}`))}>
       {day.buckets!.map((v, i) => {
         const level = heatLevel(v, DAY_CELL_FULL)
         if (level > 0) return <i key={i} style={{ background: `var(--heat-${level})` }} />
@@ -53,7 +55,7 @@ const groupByMonth = (days: StatsDaySummary[]): Group[] => {
     } else {
       out.push({
         key,
-        title: `${MONTHS_NOM[monthIdx(day.dateKey)]} ${yearOf(day.dateKey)}`,
+        title: `${monthsNom()[monthIdx(day.dateKey)]} ${yearOf(day.dateKey)}`,
         days: [day],
         minutes: day.openMinutes,
       })
@@ -68,7 +70,7 @@ const groupByMonth = (days: StatsDaySummary[]): Group[] => {
  */
 function DaysSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Загружаем историю по дням">
+    <div aria-busy="true" aria-label={tr('Загружаем историю по дням', 'Loading daily history')}>
       <div className="card month-group">
         <SkRows count={1} card={false} />
         <SkRows count={5} avatar card={false} />
@@ -97,8 +99,8 @@ export function StatsDays() {
   // проявляющихся данных, а не исчезает в том же кадре.
   const frame = (subtitle: string | undefined, body: ReactNode) => (
     <Screen>
-      <BackRow label="Статистика" />
-      <Header title="История по дням" subtitle={subtitle} />
+      <BackRow label={tr('Статистика', 'Statistics')} />
+      <Header title={tr('История по дням', 'Daily history')} subtitle={subtitle} />
       <Swap loading={loading && !data} skeleton={pending ? <DaysSkeleton /> : null}>
         {body}
       </Swap>
@@ -111,7 +113,7 @@ export function StatsDays() {
     return frame(
       undefined,
       <div className="card">
-        <EmptyState title="Дней с отметками пока нет" />
+        <EmptyState title={tr('Дней с отметками пока нет', 'No days with check-ins yet')} />
       </div>,
     )
   }
@@ -120,7 +122,7 @@ export function StatsDays() {
   const toggle = (key: string, isOpen: boolean): void => setToggled((cur) => ({ ...cur, [key]: !isOpen }))
 
   return frame(
-    nb(`${data.days.length} ${plural(data.days.length, 'день', 'дня', 'дней')} с отметками`),
+    nb(tr(`${dayCount(data.days.length)} с отметками`, `${dayCount(data.days.length)} with check-ins`)),
     <>
       <FloatingMonth />
       {groups.map((group) => {
@@ -136,7 +138,7 @@ export function StatsDays() {
               <span className="row-label">
                 {group.title}
                 <span className="row-sublabel">
-                  {nb(`${group.days.length} ${plural(group.days.length, 'день', 'дня', 'дней')} · ${hoursNum(group.minutes)} ч`)}
+                  {`${dayCount(group.days.length)} · ${hoursNum(group.minutes)} ${tr('ч', 'h')}`}
                 </span>
               </span>
               <div className="row-right">
@@ -152,18 +154,18 @@ export function StatsDays() {
                     <button
                       type="button"
                       className="row tappable"
-                      onClick={() => push('statsDay', { dateKey: day.dateKey, backLabel: 'История по дням' })}
+                      onClick={() => push('statsDay', { dateKey: day.dateKey, backLabel: tr('История по дням', 'Daily history') })}
                     >
                       <div className="date-tile">
                         <span className="dt-num">{dayNum(day.dateKey)}</span>
-                        <span className="dt-sub">{WEEKDAYS_SHORT[weekdayIdx(day.dateKey)]?.toLowerCase()}</span>
+                        <span className="dt-sub">{weekdaysShort()[weekdayIdx(day.dateKey)]?.toLowerCase()}</span>
                       </div>
                       <span className="row-label">
                         {fmtDuration(day.openMinutes)}
                         <span className="row-sublabel">
                           {day.buckets?.length === 12
-                            ? nb(`${peopleWord(day.people)} · пик ${day.peak}`)
-                            : nb(`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`)}
+                            ? nb(tr(`${peopleWord(day.people)} · пик ${day.peak}`, `${peopleWord(day.people)} · peak ${day.peak}`))
+                            : nb(tr(`с ${day.from} до ${dayEnd(day.to)} · ${peopleWord(day.people)} · пик ${day.peak}`, `${day.from} to ${dayEnd(day.to)} · ${peopleWord(day.people)} · peak ${day.peak}`))}
                         </span>
                       </span>
                       <div className="row-right">

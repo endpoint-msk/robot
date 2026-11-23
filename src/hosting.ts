@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { dayTarget, newRequestTarget, requestTarget, webappAt } from './deeplink.js'
 import type { ResidentDirectory } from './residents.js'
+import { locale, tr, withUserLocale } from './i18n.js'
 import type { Storage } from './storage.js'
 import type { BlockedUser, DayAgenda, DayCap, DayLock, GuestNote, HostingAttendance, HostingNotifyPrefs, HostingRequest, HostingUser, HostTransfer, RescheduleProposal, VisitReminder, WalkIn } from './types.js'
 import { own } from './types.js'
@@ -347,12 +348,12 @@ export const isDaySubscribed = (storage: Storage, dateKey: string, userId: numbe
  * (`exceptUserId`) пропускаем — он и так знает, что сделал. Закрытая личка не фатальна.
  * `target`: куда ведёт кнопка (см. deeplink.ts).
  */
-export const notifyDaySubscribers = async (
+const notifyDaySubscribers = async (
     client: TelegramClient,
     storage: Storage,
     webappUrl: string,
     dateKeys: string[],
-    text: string,
+    text: () => string,
     exceptUserId: number,
     target: string,
 ): Promise<void> => {
@@ -362,11 +363,12 @@ export const notifyDaySubscribers = async (
             if (userId !== exceptUserId) recipients.add(userId)
         }
     }
-    if (recipients.size === 0) return
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть', webappAt(webappUrl, target))]])
     for (const userId of recipients) {
         try {
-            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+            await withUserLocale(storage, userId, () => client.sendText(userId, html(text()), {
+                replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть', 'Open'), webappAt(webappUrl, target))]]),
+                disableWebPreview: true,
+            }))
         } catch {
             // личка закрыта — пропускаем
         }
@@ -381,7 +383,12 @@ export const notifySubsHosted = async (
     request: HostingRequest,
     host: HostingUser,
 ): Promise<void> => {
-    const text = `✅ ${await mentionLabel(client, host)} захостил ${await mentionLabel(client, request.guest)} — ${slotLabel(request.dateKey, request.time)}.`
+    const hostLabel = await mentionLabel(client, host)
+    const guest = await mentionLabel(client, request.guest)
+    const text = () => {
+        const slot = slotLabel(request.dateKey, request.time)
+        return tr(`✅ ${hostLabel} захостил ${guest} — ${slot}.`, `✅ ${hostLabel} is hosting ${guest} on ${slot}.`)
+    }
     await notifyDaySubscribers(client, storage, webappUrl, [request.dateKey], text, host.userId, requestTarget(request.id))
 }
 
@@ -394,7 +401,12 @@ export const notifySubsAttending = async (
     resident: HostingUser,
     time: string | null,
 ): Promise<void> => {
-    const text = `🙋 ${await mentionLabel(client, resident)} придёт <b>${formatDayKey(dateKey)}</b>${time ? ` к ${time}` : ''}.`
+    const who = await mentionLabel(client, resident)
+    const text = () => {
+        const date = formatDayKey(dateKey)
+        const at = time ? tr(` к ${time}`, ` at ${time}`) : ''
+        return tr(`🙋 ${who} придёт <b>${date}</b>${at}.`, `🙋 ${who} is coming on <b>${date}</b>${at}.`)
+    }
     await notifyDaySubscribers(client, storage, webappUrl, [dateKey], text, resident.userId, dayTarget(dateKey))
 }
 
@@ -410,9 +422,11 @@ export const notifySubsRescheduled = async (
 ): Promise<void> => {
     const guest = await mentionLabel(client, request.guest)
     const dayChanged = oldDateKey !== request.dateKey
-    const from = dayChanged ? slotLabel(oldDateKey, oldTime) : oldTime
-    const to = dayChanged ? slotLabel(request.dateKey, request.time) : request.time
-    const text = `🔁 Перенос визита ${guest}: ${from} → ${to}.`
+    const text = () => {
+        const from = dayChanged ? slotLabel(oldDateKey, oldTime) : oldTime
+        const to = dayChanged ? slotLabel(request.dateKey, request.time) : request.time
+        return tr(`🔁 Перенос визита ${guest}: ${from} → ${to}.`, `🔁 Visit rescheduled for ${guest}: ${from} → ${to}.`)
+    }
     const days = dayChanged ? [oldDateKey, request.dateKey] : [request.dateKey]
     await notifyDaySubscribers(client, storage, webappUrl, days, text, actorId, requestTarget(request.id))
 }
@@ -615,14 +629,16 @@ export const archiveWeeks = (
 }
 
 // ---------------------------------------------------------------------------
-// Русские подписи дат для сообщений в личку
+// Подписи дат для сообщений в Telegram
 // ---------------------------------------------------------------------------
 
 const MONTHS_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+const ENGLISH_DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' })
 
 /** '2026-07-17' → 'Пт, 17 июля'. */
 export const formatDayKey = (key: string): string => {
+    if (locale() === 'en' && isValidDayKey(key)) return ENGLISH_DAY.format(new Date(`${key}T12:00:00Z`))
     const [, m, d] = key.split('-').map(Number)
     return `${WEEKDAYS_SHORT[weekdayOfKey(key)]}, ${d} ${MONTHS_GENITIVE[(m ?? 1) - 1]}`
 }
@@ -662,7 +678,7 @@ export const mentionLabel = async (client: TelegramClient, user: HostingUser): P
 }
 
 /** Человекочитаемый слот для сообщений: «Пт, 17 июля к 15:00». */
-const slotLabel = (dateKey: string, time: string): string => `${formatDayKey(dateKey)} к ${time}`
+const slotLabel = (dateKey: string, time: string): string => tr(`${formatDayKey(dateKey)} к ${time}`, `${formatDayKey(dateKey)} at ${time}`)
 
 /** У гостя уже есть другая заявка на этот день (исключая заявку с id). */
 const hasOtherRequestOnDay = (storage: Storage, guestUserId: number, dateKey: string, exceptId: string): boolean =>
@@ -895,15 +911,24 @@ export const notifyArrival = async (
         for (const p of Object.values(storage.get().presence)) targets.add(p.userId)
     }
     for (const userId of targets) {
-        const forHost = userId === host.userId
-        const lines = forHost
-            ? [`🚪 <b>${guest} у двери</b> - визит к ${request.time}.`]
-            : [
-                `🚪 <b>${guest} у двери</b> - визит к ${request.time}, хостит ${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}.`,
-                'Хоста сейчас нет в спейсе - откройте, если вы рядом.',
-            ]
+        const text = withUserLocale(storage, userId, () => {
+            const hostLabel = `${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}`
+            const lines = userId === host.userId
+                ? [tr(
+                    `🚪 <b>${guest} у двери</b> - визит к ${request.time}.`,
+                    `🚪 <b>${guest} is at the door</b> for a visit at ${request.time}.`,
+                )]
+                : [
+                    tr(
+                        `🚪 <b>${guest} у двери</b> - визит к ${request.time}, хостит ${hostLabel}.`,
+                        `🚪 <b>${guest} is at the door</b> for a visit at ${request.time}, hosted by ${hostLabel}.`,
+                    ),
+                    tr('Хоста сейчас нет в спейсе - откройте, если вы рядом.', 'The host isn’t at the space. Please let the guest in if you’re nearby.'),
+                ]
+            return lines.join('<br>')
+        })
         try {
-            await client.sendText(userId, html(lines.join('<br>')), { disableWebPreview: true })
+            await client.sendText(userId, html(text), { disableWebPreview: true })
         } catch {
             // личка закрыта - не повод рушить остальных получателей
         }
@@ -1250,13 +1275,8 @@ export const notifyResidentsAboutRequest = async (
 ): Promise<void> => {
     const isForToday = request.dateKey === todayKey(tzOffsetMinutes)
     const residents = await directory.listIds()
-    const lines = [
-        `🚪 Новая заявка на визит: <b>${formatDayKey(request.dateKey)}</b> к ${request.time}${isForToday ? ' (сегодня)' : ''}.`,
-        `Гость: ${await mentionLabel(client, request.guest)}.`,
-    ]
-    if (request.purpose) lines.push(`Цель: ${html.escape(request.purpose)}`)
-    const text = lines.join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, requestTarget(request.id)))]])
+    const guest = await mentionLabel(client, request.guest)
+    const purpose = request.purpose ? html.escape(request.purpose) : ''
 
     for (const userId of residents) {
         if (userId === request.guest.userId) continue
@@ -1264,7 +1284,17 @@ export const notifyResidentsAboutRequest = async (
         if (!prefs.enabled) continue
         if (prefs.mode === 'today' && !isForToday) continue
         try {
-            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+            await withUserLocale(storage, userId, () => {
+                const date = formatDayKey(request.dateKey)
+                const today = isForToday ? tr(' (сегодня)', ' (today)') : ''
+                const lines = [
+                    tr(`🚪 Новая заявка на визит: <b>${date}</b> к ${request.time}${today}.`, `🚪 New visit request: <b>${date}</b> at ${request.time}${today}.`),
+                    tr(`Гость: ${guest}.`, `Guest: ${guest}.`),
+                ]
+                if (purpose) lines.push(tr(`Цель: ${purpose}`, `Purpose: ${purpose}`))
+                const keyboard = BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть заявки', 'View requests'), webappAt(webappUrl, requestTarget(request.id)))]])
+                return client.sendText(userId, html(lines.join('<br>')), { replyMarkup: keyboard, disableWebPreview: true })
+            })
         } catch {
             // резидент не открывал личку с ботом — молча пропускаем
         }
@@ -1283,7 +1313,7 @@ export const remindAboutTodayRequests = async (
     tzOffsetMinutes: number,
     webappUrl: string,
     userId: number,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, userId, async () => {
     if (!notifyPrefsFor(storage, userId).enabled) return
     const today = todayKey(tzOffsetMinutes)
     // Один раз за визит: повторный чек-ин или мигание MAC-отметки в тот же день не дублируют напоминание.
@@ -1296,58 +1326,60 @@ export const remindAboutTodayRequests = async (
     })
     const lines = [
         pending.length === 1
-            ? '👋 Ты в спейсе — на сегодня есть заявка без хоста:'
-            : '👋 Ты в спейсе — на сегодня есть заявки без хоста:',
+            ? tr('👋 Ты в спейсе — на сегодня есть заявка без хоста:', "👋 You’re at the space, and this guest still needs a host today:")
+            : tr('👋 Ты в спейсе — на сегодня есть заявки без хоста:', "👋 You’re at the space, and these guests still need a host today:"),
         ...(await Promise.all(pending.map(async (r) => `• ${r.time} — ${await mentionLabel(client, r.guest)}`))),
     ]
     // Одна заявка: её строка под пальцем, несколько: день, где они все.
     const target = pending.length === 1 ? requestTarget(pending[0]!.id) : dayTarget(today)
     try {
         await client.sendText(userId, html(lines.join('<br>')), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, target))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть заявки', "View requests"), webappAt(webappUrl, target))]]),
             disableWebPreview: true,
         })
     } catch {
         // резидент не открывал личку с ботом
     }
-}
+})
 
 /** Сообщает гостю в личку, что его заявку одобрили. */
 export const notifyGuestApproved = async (
     client: TelegramClient,
+    storage: Storage,
     webappUrl: string,
     request: HostingRequest,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, request.guest.userId, async () => {
     const approver = request.approvedBy
     if (!approver) return
     const who = await mentionLabel(client, approver)
-    const text = `✅ Ваш визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time} подтверждён!<br>Вас хостит ${who}.`
+    const text = tr(`✅ Ваш визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time} подтверждён!<br>Вас хостит ${who}.`, `✅ Your visit on <b>${formatDayKey(request.dateKey)}</b> at ${request.time} is confirmed!<br>Your host is ${who}.`)
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Мои визиты', "My visits"), webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
         // гость не открывал личку с ботом
     }
-}
+})
 
 /** Сообщает гостю, что резидент отменил хостинг его визита (заявка снова в ожидании). */
 export const notifyGuestUnapproved = async (
     client: TelegramClient,
+    storage: Storage,
     webappUrl: string,
     request: HostingRequest,
-): Promise<void> => {
-    const text = `⚠️ Резидент отменил хостинг вашего визита <b>${formatDayKey(request.dateKey)}</b> к ${request.time}. Заявка снова ждёт ответа.`
+): Promise<void> => withUserLocale(storage, request.guest.userId, async () => {
+    const text = tr(`⚠️ Резидент отменил хостинг вашего визита <b>${formatDayKey(request.dateKey)}</b> к ${request.time}. Заявка снова ждёт ответа.`, `⚠️ Your host cancelled for <b>${formatDayKey(request.dateKey)}</b> at ${request.time}. Your request is awaiting a new host.`)
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Мои визиты', "My visits"), webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
         // гость не открывал личку с ботом
     }
-}
+})
 
 /** Потолок комментария к закрытию: это пара фраз гостю, а не переписка. */
 export const MAX_CLOSE_COMMENT_LENGTH = 500
@@ -1368,25 +1400,26 @@ export const cleanCloseComment = (raw: string): string =>
  */
 export const notifyGuestClosed = async (
     client: TelegramClient,
+    storage: Storage,
     webappUrl: string,
     request: HostingRequest,
     by: HostingUser,
     comment: string,
-): Promise<boolean> => {
+): Promise<boolean> => withUserLocale(storage, request.guest.userId, async () => {
     const who = await mentionLabel(client, by)
-    const slot = `<b>${formatDayKey(request.dateKey)}</b> к ${request.time}`
+    const slot = tr(`<b>${formatDayKey(request.dateKey)}</b> к ${request.time}`, `<b>${formatDayKey(request.dateKey)}</b> at ${request.time}`)
     // `html()` схлопывает `\n` в пробел, поэтому строки комментария склеиваем через `<br>`.
     const lines = comment
         ? [
-            `Резидент ${who} закрывает заявку на визит ${slot}:`,
+            tr(`Резидент ${who} закрывает заявку на визит ${slot}:`, `Resident ${who} cancelled your visit on ${slot}:`),
             `<blockquote>${comment.split('\n').map((l) => html.escape(l)).join('<br>')}</blockquote>`,
-            'Можно выбрать другой день.',
+            tr('Можно выбрать другой день.', "You can choose another day."),
         ]
-        : [`Резидент ${who} закрывает заявку на визит ${slot}: в этот день не получится.`, 'Можно выбрать другой день.']
+        : [tr(`Резидент ${who} закрывает заявку на визит ${slot}: в этот день не получится.`, `Resident ${who} cancelled your visit on ${slot}. That day is no longer available.`), tr('Можно выбрать другой день.', "You can choose another day.")]
     try {
         await client.sendText(request.guest.userId, html(lines.join('<br>')), {
             // Тот день только что закрыли, поэтому форма открывается без него.
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Выбрать другой день', webappAt(webappUrl, newRequestTarget()))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Выбрать другой день', "Choose another day"), webappAt(webappUrl, newRequestTarget()))]]),
             disableWebPreview: true,
         })
         return true
@@ -1394,22 +1427,23 @@ export const notifyGuestClosed = async (
         // гость не открывал личку с ботом
         return false
     }
-}
+})
 
 /** Сообщает одобрившему резиденту, что гость отменил визит. */
 export const notifyApproverCancelled = async (
     client: TelegramClient,
+    storage: Storage,
     request: HostingRequest,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, request.approvedBy?.userId ?? request.guest.userId, async () => {
     const approver = request.approvedBy
     if (!approver) return
-    const text = `Гость ${await mentionLabel(client, request.guest)} отменил визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time}.`
+    const text = (locale() === 'ru' ? `Гость ${await mentionLabel(client, request.guest)} отменил визит <b>${formatDayKey(request.dateKey)}</b> к ${request.time}.` : `Guest ${await mentionLabel(client, request.guest)} cancelled their visit on <b>${formatDayKey(request.dateKey)}</b> at ${request.time}.`)
     try {
         await client.sendText(approver.userId, html(text), { disableWebPreview: true })
     } catch {
         // личка закрыта — не критично
     }
-}
+})
 
 // ---------------------------------------------------------------------------
 // Уведомления о переносе дня/времени
@@ -1418,42 +1452,44 @@ export const notifyApproverCancelled = async (
 /** Гостю в личку: резидент предлагает перенести визит. `request.proposal.by` === 'resident'. */
 export const notifyGuestReschedule = async (
     client: TelegramClient,
+    storage: Storage,
     webappUrl: string,
     request: HostingRequest,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, request.guest.userId, async () => {
     const p = request.proposal
     if (!p) return
     const who = await mentionLabel(client, p.user)
-    const text = `🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Откройте «Мои визиты», чтобы принять или предложить свой вариант.`
+    const text = tr(`🕘 Резидент ${who} предлагает перенести визит на <b>${slotLabel(p.dateKey, p.time)}</b> (сейчас ${slotLabel(request.dateKey, request.time)}).<br>Откройте «Мои визиты», чтобы принять или предложить свой вариант.`, `🕘 Resident ${who} suggests moving your visit to <b>${slotLabel(p.dateKey, p.time)}</b> (currently ${slotLabel(request.dateKey, request.time)}).<br>Open My Visits to accept or suggest another time.`)
     try {
         await client.sendText(request.guest.userId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Мои визиты', "My visits"), webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
         // гость не открывал личку с ботом
     }
-}
+})
 
 /** Резиденту-адресату в личку: гость ответил своим слотом. `request.proposal.by` === 'guest'. */
 export const notifyResidentRescheduleCountered = async (
     client: TelegramClient,
+    storage: Storage,
     recipientId: number,
     webappUrl: string,
     request: HostingRequest,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, recipientId, async () => {
     const p = request.proposal
     if (!p) return
-    const text = `🕘 Гость ${await mentionLabel(client, request.guest)} предлагает <b>${slotLabel(p.dateKey, p.time)}</b> (было ${slotLabel(request.dateKey, request.time)}).<br>Открой заявки, чтобы принять или предложить другое.`
+    const text = (locale() === 'ru' ? `🕘 Гость ${await mentionLabel(client, request.guest)} предлагает <b>${slotLabel(p.dateKey, p.time)}</b> (было ${slotLabel(request.dateKey, request.time)}).<br>Открой заявки, чтобы принять или предложить другое.` : `🕘 Guest ${await mentionLabel(client, request.guest)} suggests <b>${slotLabel(p.dateKey, p.time)}</b> (previously ${slotLabel(request.dateKey, request.time)}).<br>Open the request to accept or suggest another time.`)
     try {
         await client.sendText(recipientId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, requestTarget(request.id)))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть заявки', "View requests"), webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
         // резидент не открывал личку с ботом
     }
-}
+})
 
 /**
  * Предложившей стороне в личку: предложение приняли, действует новый слот `request.dateKey`/`time`.
@@ -1461,18 +1497,19 @@ export const notifyResidentRescheduleCountered = async (
  */
 export const notifyProposalAccepted = async (
     client: TelegramClient,
+    storage: Storage,
     targetId: number,
     webappUrl: string,
     request: HostingRequest,
     targetIsGuest: boolean,
     actor: HostingUser,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, targetId, async () => {
     const slot = slotLabel(request.dateKey, request.time)
     const who = await mentionLabel(client, actor)
     const text = targetIsGuest
-        ? `✅ Резидент ${who} принимает ваш вариант — визит <b>${slot}</b>.`
-        : `✅ Гость ${who} принимает новый слот — визит <b>${slot}</b>.`
-    const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
+        ? tr(`✅ Резидент ${who} принимает ваш вариант — визит <b>${slot}</b>.`, `✅ Resident ${who} accepted your suggestion. The visit is now <b>${slot}</b>.`)
+        : tr(`✅ Гость ${who} принимает новый слот — визит <b>${slot}</b>.`, `✅ Guest ${who} accepted the new time. The visit is now <b>${slot}</b>.`)
+    const label = targetIsGuest ? tr('Мои визиты', "My visits") : tr('Открыть заявки', "View requests")
     try {
         await client.sendText(targetId, html(text), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappAt(webappUrl, requestTarget(request.id)))]]),
@@ -1481,7 +1518,7 @@ export const notifyProposalAccepted = async (
     } catch {
         // личка закрыта — не критично
     }
-}
+})
 
 /**
  * Второй стороне в личку: предложение о переносе сняли, остаётся прежний слот `request.dateKey`/`time`.
@@ -1491,21 +1528,22 @@ export const notifyProposalAccepted = async (
  */
 export const notifyProposalCancelled = async (
     client: TelegramClient,
+    storage: Storage,
     targetId: number,
     webappUrl: string,
     request: HostingRequest,
     proposed: { dateKey: string; time: string },
     targetIsGuest: boolean,
     actor: { user: HostingUser; isGuest: boolean; withdrawn: boolean },
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, targetId, async () => {
     const who = await mentionLabel(client, actor.user)
-    const role = actor.isGuest ? 'Гость' : 'Резидент'
+    const role = actor.isGuest ? tr('Гость', "Guest") : tr('Резидент', "Resident")
     const proposedSlot = slotLabel(proposed.dateKey, proposed.time)
     const staysSlot = slotLabel(request.dateKey, request.time)
     const text = actor.withdrawn
-        ? `↩️ ${role} ${who} снимает предложение перенести визит на ${proposedSlot} — остаётся ${staysSlot}.`
-        : `↩️ ${role} ${who} отклоняет перенос на ${proposedSlot} — остаётся ${staysSlot}.`
-    const label = targetIsGuest ? 'Мои визиты' : 'Открыть заявки'
+        ? tr(`↩️ ${role} ${who} снимает предложение перенести визит на ${proposedSlot} — остаётся ${staysSlot}.`, `↩️ ${role} ${who} withdrew the proposal to move the visit to ${proposedSlot}. It’s still on ${staysSlot}.`)
+        : tr(`↩️ ${role} ${who} отклоняет перенос на ${proposedSlot} — остаётся ${staysSlot}.`, `↩️ ${role} ${who} declined the move to ${proposedSlot}. The visit is still on ${staysSlot}.`)
+    const label = targetIsGuest ? tr('Мои визиты', "My visits") : tr('Открыть заявки', "View requests")
     try {
         await client.sendText(targetId, html(text), {
             replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(label, webappAt(webappUrl, requestTarget(request.id)))]]),
@@ -1514,7 +1552,7 @@ export const notifyProposalCancelled = async (
     } catch {
         // личка закрыта — не критично
     }
-}
+})
 
 /**
  * Резиденту-автору предложения в личку: гость сам передвинул заявку, и висящее
@@ -1523,22 +1561,23 @@ export const notifyProposalCancelled = async (
  */
 export const notifyProposalDroppedByEdit = async (
     client: TelegramClient,
+    storage: Storage,
     targetId: number,
     webappUrl: string,
     request: HostingRequest,
     proposed: { dateKey: string; time: string },
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, targetId, async () => {
     const who = await mentionLabel(client, request.guest)
-    const text = `✏️ Гость ${who} переносит заявку на <b>${slotLabel(request.dateKey, request.time)}</b> — предложение перенести на ${slotLabel(proposed.dateKey, proposed.time)} снято.`
+    const text = tr(`✏️ Гость ${who} переносит заявку на <b>${slotLabel(request.dateKey, request.time)}</b> — предложение перенести на ${slotLabel(proposed.dateKey, proposed.time)} снято.`, `✏️ Guest ${who} moved their request to <b>${slotLabel(request.dateKey, request.time)}</b>. The proposal for ${slotLabel(proposed.dateKey, proposed.time)} was withdrawn.`)
     try {
         await client.sendText(targetId, html(text), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, requestTarget(request.id)))]]),
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть заявки', "View requests"), webappAt(webappUrl, requestTarget(request.id)))]]),
             disableWebPreview: true,
         })
     } catch {
         // личка закрыта — не критично
     }
-}
+})
 
 // ---------------------------------------------------------------------------
 // Дев-операции над заявками (гейт — requireDev в webapp.ts)
@@ -2019,8 +2058,8 @@ export const visitFeedVevent = (request: HostingRequest, tzOffsetMinutes: number
         `DTSTAMP:${icsStamp(now)}`,
         `DTSTART:${icsStamp(startUtc)}`,
         `DTEND:${icsStamp(endUtc)}`,
-        `SUMMARY:${icsEscape('Визит в хакспейс')}`,
-        ...(host ? [`DESCRIPTION:${icsEscape(`Хостит: ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}`)}`] : []),
+        `SUMMARY:${icsEscape(tr('Визит в хакспейс', "Hackerspace visit"))}`,
+        ...(host ? [`DESCRIPTION:${icsEscape(tr(`Хостит: ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}`, `Host: ${displayName(host.name)}${host.username ? ` (@${host.username})` : ''}`))}`] : []),
         'STATUS:CONFIRMED',
         'END:VEVENT',
     ]
@@ -2041,7 +2080,7 @@ export const buildVisitIcs = (
     if (request.purpose) description.push(request.purpose)
     if (request.approvedBy) {
         const a = request.approvedBy
-        description.push(`Хостит: ${displayName(a.name)}${a.username ? ` (@${a.username})` : ''}`)
+        description.push(tr(`Хостит: ${displayName(a.name)}${a.username ? ` (@${a.username})` : ''}`, `Host: ${displayName(a.name)}${a.username ? ` (@${a.username})` : ''}`))
     }
 
     const lines = [
@@ -2055,7 +2094,7 @@ export const buildVisitIcs = (
         `DTSTAMP:${icsStamp(now)}`,
         `DTSTART:${icsStamp(startUtc)}`,
         `DTEND:${icsStamp(endUtc)}`,
-        `SUMMARY:${icsEscape('Визит в хакспейс')}`,
+        `SUMMARY:${icsEscape(tr('Визит в хакспейс', "Hackerspace visit"))}`,
         ...(description.length > 0 ? [`DESCRIPTION:${icsEscape(description.join('\n'))}`] : []),
         `STATUS:${request.status === 'approved' ? 'CONFIRMED' : 'TENTATIVE'}`,
         'END:VEVENT',

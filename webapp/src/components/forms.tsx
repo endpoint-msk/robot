@@ -1,8 +1,9 @@
 // Поля форм новой заявки / правки: чипы дней, выбор дня+времени, цель, анонимность,
 // напоминание о визите.
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { addDays, dayNum, fmtShortDate, weekdayIdx, WEEKDAYS_SHORT } from '../dates'
+import { addDays, dayNum, fmtShortDate, weekdayIdx, weekdaysShort } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { clamp, growField, spring } from '../motion'
@@ -252,7 +253,7 @@ export function DayChips({
         const locked = Boolean(d.lock)
         const face = (ink: boolean) => (
           <>
-            <span className="dc-dow">{WEEKDAYS_SHORT[weekdayIdx(d.dateKey)]}</span>
+            <span className="dc-dow">{weekdaysShort()[weekdayIdx(d.dateKey)]}</span>
             <span className="dc-num">{String(dayNum(d.dateKey))}</span>
             {/* Ивент дня — точкой в углу. Гостю сюда приезжают только открытые
                 ивенты (сервер фильтрует residentsOnly), так что метка честная. */}
@@ -281,7 +282,7 @@ export function DayChips({
             className={'day-chip' + (locked ? ' locked' : '')}
             aria-pressed={d.dateKey === selected}
             disabled={locked}
-            title={locked ? (d.lock!.reason ? `Закрыт: ${d.lock!.reason}` : 'День закрыт для заявок') : undefined}
+            title={locked ? (d.lock!.reason ? tr(`Закрыт: ${d.lock!.reason}`, `Closed: ${d.lock!.reason}`) : tr('День закрыт для заявок', "This day is closed to requests")) : undefined}
             onClick={() => {
               if (d.dateKey !== selected) tapAt.current = performance.now()
               onSelect(d.dateKey)
@@ -303,9 +304,9 @@ const whoComes = (list: Attendee[]): string => {
   const me = getState().data!.me.id
   // Себя человек ищет в списке первым.
   const mineFirst = [...list.filter((a) => a.userId === me), ...list.filter((a) => a.userId !== me)]
-  const names = mineFirst.map((a) => (a.userId === me ? 'вы' : userLabel(a)) + (a.time ? ` к ${a.time}` : ''))
-  if (names.length <= 2) return names.join(' и ')
-  return nb(`${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`)
+  const names = mineFirst.map((a) => (a.userId === me ? tr('вы', "you") : userLabel(a)) + (a.time ? tr(` к ${a.time}`, ` at ${a.time}`) : ''))
+  if (names.length <= 2) return names.join(tr(' и ', " and "))
+  return nb(tr(`${names.slice(0, 2).join(', ')} и ещё ${names.length - 2}`, `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`))
 }
 
 /**
@@ -331,7 +332,7 @@ export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: str
           <div className="di-row">
             <span className="di-ico">{icons.calendar(15, '#bf5af2')}</span>
             <span className="di-title">{e.title}</span>
-            <span className="di-time">{`в ${e.time}`}</span>
+            <span className="di-time">{tr(`в ${e.time}`, `at ${e.time}`)}</span>
           </div>
         </Fragment>
       ))}
@@ -339,7 +340,7 @@ export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: str
       <div className="di-row">
         {att.length > 0 ? <AvatarStack users={att} /> : <span className="di-slot" />}
         <span className="di-who">
-          <b>{att.length > 0 ? `Придут ${att.length}` : 'Пока никого'}</b>
+          <b>{att.length > 0 ? tr(`Придут ${att.length}`, `Coming: ${att.length}`) : tr('Пока никого', "No one yet")}</b>
           {att.length > 0 ? <span>{whoComes(att)}</span> : null}
         </span>
       </div>
@@ -350,7 +351,7 @@ export function SelectedDayInfo({ days, selected }: { days: Day[]; selected: str
 export function PurposeInput({
   value,
   onChange,
-  placeholder = 'Цель визита (опционально)',
+  placeholder = tr('Цель визита (опционально)', "Purpose of your visit (optional)"),
 }: {
   value: string
   onChange: (v: string) => void
@@ -385,13 +386,13 @@ export function PurposeInput({
 // «сейчас» (todayKey/nowTime из bootstrap) приходят с сервера уже в нём, поэтому сдвиг
 // пояса фронту знать не нужно, а локальные часы устройства тут вообще ни при чём.
 
-export const REMINDER_LABELS: Record<ReminderChoice, string> = {
-  m30: nb('за 30 мин'),
-  h1: 'за час',
-  h2: nb('за 2 часа'),
-  morning: 'утром',
-  evening: 'накануне вечером',
-}
+export const reminderLabels = (): Record<ReminderChoice, string> => ({
+  m30: nb(tr('за 30 мин', "30 min before")),
+  h1: tr('за час', "1 hour before"),
+  h2: nb(tr('за 2 часа', "2 hours before")),
+  morning: tr('утром', "That morning"),
+  evening: tr('накануне вечером', "The evening before"),
+})
 
 /** Порядок в карточке — от ближнего срока к дальнему, как в макете. */
 export const REMINDER_ORDER: ReminderChoice[] = ['m30', 'h1', 'h2', 'morning', 'evening']
@@ -451,16 +452,16 @@ export const reminderFor = (dateKey: string, time: string, choice: ReminderChoic
 export function reminderWhen(dateKey: string, time: string, choice: ReminderChoice): string {
   const d = getState().data!
   const at = reminderSlot(dateKey, time, choice)
-  if (at.dateKey === d.todayKey) return `сегодня в\u00a0${at.time}`
-  if (at.dateKey === addDays(d.todayKey, 1)) return `завтра в\u00a0${at.time}`
-  return `в\u00a0${fmtShortDate(at.dateKey)} в\u00a0${at.time}`
+  if (at.dateKey === d.todayKey) return tr(`сегодня в\u00a0${at.time}`, `today at ${at.time}`)
+  if (at.dateKey === addDays(d.todayKey, 1)) return tr(`завтра в\u00a0${at.time}`, `tomorrow at ${at.time}`)
+  return tr(`в\u00a0${fmtShortDate(at.dateKey)} в\u00a0${at.time}`, `on ${fmtShortDate(at.dateKey)} at ${at.time}`)
 }
 
 /** Ряд «Прийти анонимно» — общий для новой заявки и правки. */
 export function AnonRow({ anon, onChange }: { anon: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="card">
-      <SwitchRow on={anon} onToggle={() => onChange(!anon)} label="Прийти анонимно" sub="Другие гости не увидят вас в списке" />
+      <SwitchRow on={anon} onToggle={() => onChange(!anon)} label={tr("Прийти анонимно", "Visit anonymously")} sub={tr("Другие гости не увидят вас в списке", "Other guests won’t see you on the list")} />
     </div>
   )
 }

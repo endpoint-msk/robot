@@ -1,6 +1,7 @@
 // Карточка человека в журнале: сколько бывает, когда приходит, последние визиты.
 // Открывается и на себя (строка «Мои визиты»), и на любого резидента из топа.
 
+import { plural, tr } from '../i18n'
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { action, api } from '../api'
@@ -9,12 +10,11 @@ import {
   dayNum,
   fmtDayMonth,
   keyToDate,
-  MONTHS_ABBR,
-  MONTHS_NOM,
+  monthsAbbr,
+  monthsNom,
   monthIdx,
-  plural,
   weekdayIdx,
-  WEEKDAYS_SHORT,
+  weekdaysShort,
   yearOf,
 } from '../dates'
 import { nb } from '../format'
@@ -58,7 +58,7 @@ function VisitStrip({ from, to }: { from: string; to: string }) {
   const a = minuteOf(from)
   const b = minuteOf(to) < a ? 24 * 60 : minuteOf(to)
   return (
-    <span className="day12" role="img" aria-label={nb(`с ${from} до ${to}`)}>
+    <span className="day12" role="img" aria-label={nb(tr(`с ${from} до ${to}`, `${from} to ${to}`))}>
       {Array.from({ length: 12 }, (_, i) => {
         const level = heatLevel(Math.min(b, (i + 1) * VISIT_CELL_MIN) - Math.max(a, i * VISIT_CELL_MIN), VISIT_CELL_MIN)
         return <i key={i} style={level > 0 ? { background: `var(--heat-${level})` } : undefined} />
@@ -103,19 +103,19 @@ function DotsCard({ dots, from, todayIndex, paged }: { dots: number[]; from: str
       seen.add(month)
       // Именительный падеж: MONTHS_ABBR держит «мая» под плитку «5 мая», а на оси
       // нужен «май».
-      return MONTHS_NOM[month]?.slice(0, 3).toLowerCase() ?? ''
+      return monthsNom()[month]?.slice(0, 3).toLowerCase() ?? ''
     })
   })()
   const dayText = (i: number): string => {
     const key = addDays(from, i)
-    return `${WEEKDAYS_SHORT[weekdayIdx(key)]}, ${fmtDayMonth(key)}`
+    return `${weekdaysShort()[weekdayIdx(key)]}, ${fmtDayMonth(key)}`
   }
-  const spent = (v: number): string => (v > 0 ? fmtDuration(v) : 'без визита')
+  const spent = (v: number): string => (v > 0 ? fmtDuration(v) : tr('без визита', 'no visit'))
   const lens = picked !== null ? heatCell(heatLevel(cells[picked] ?? 0, max)) : null
 
   return (
     <div className="card stats-card">
-      <div className="stats-card-title">Когда приходит</div>
+      <div className="stats-card-title">{tr('Когда приходит', 'Usual arrival times')}</div>
       <div className="dots-months">
         {monthLabels.map((label, i) => (
           <div key={i}>{label}</div>
@@ -123,7 +123,7 @@ function DotsCard({ dots, from, todayIndex, paged }: { dots: number[]; from: str
       </div>
       <div className="dots" data-scrub={paged ? 'hold' : ''} ref={gridRef}>
         <div className="dots-labels">
-          {WEEKDAYS_SHORT.map((d, r) => (
+          {weekdaysShort().map((d, r) => (
             <div key={d} className={scrub && picked !== null && picked % 7 === r ? 'on' : undefined}>
               {d}
             </div>
@@ -149,13 +149,13 @@ function DotsCard({ dots, from, todayIndex, paged }: { dots: number[]; from: str
         </div>
       </div>
       <div className="heat-legend">
-        <span>{nb('Последние 12 недель')}</span>
+        <span>{nb(tr('Последние 12 недель', 'Past 12 weeks'))}</span>
         <div className="heat-scale">
-          <span>меньше</span>
+          <span>{tr('меньше', 'fewer')}</span>
           {[1, 2, 3, 4, 5].map((level) => (
             <i key={level} style={{ background: `var(--heat-${level})` }} />
           ))}
-          <span>больше</span>
+          <span>{tr('больше', 'more')}</span>
         </div>
       </div>
       {loupe && picked !== null && lens
@@ -178,13 +178,13 @@ function DotsCard({ dots, from, todayIndex, paged }: { dots: number[]; from: str
 /** Скелет карточки: шапка, четыре показателя, сетка визитов и список последних. */
 function PersonSkeleton({ head }: { head: boolean }) {
   return (
-    <div aria-busy="true" aria-label="Загружаем карточку резидента">
+    <div aria-busy="true" aria-label={tr('Загружаем карточку резидента', 'Loading resident profile')}>
       {head ? <SkProfile /> : null}
       <SkQuad />
-      <SkCard title="Когда приходит">
+      <SkCard title={tr('Когда приходит', 'Usual arrival times')}>
         <SkGrid rows={7} cols={DOT_WEEKS} />
       </SkCard>
-      <div className="section-title">Последние визиты</div>
+      <div className="section-title">{tr('Последние визиты', 'Recent visits')}</div>
       <SkRows count={4} avatar />
     </div>
   )
@@ -198,11 +198,11 @@ function PersonSkeleton({ head }: { head: boolean }) {
  * для них `ORIGIN`.
  */
 const since = (sinceKey: string): string => {
-  if (sinceKey === ORIGIN) return 'Резидент с самого начала'
-  if (!sinceKey) return 'Визитов в журнале пока нет'
+  if (sinceKey === ORIGIN) return tr('Резидент с самого начала', 'Founding resident')
+  if (!sinceKey) return tr('Визитов в журнале пока нет', 'No visits in the log yet')
   const year = yearOf(sinceKey)
   const now = new Date().getUTCFullYear()
-  return nb(`Резидент с ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`)
+  return nb(tr(`Резидент с ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`, `Resident since ${fmtDayMonth(sinceKey)}${year === now ? '' : ` ${year}`}`))
 }
 
 /** Человек из списка, откуда открыли карточку: шапка рисуется сразу, до ответа сервера. */
@@ -278,7 +278,7 @@ export function PersonPage({
   // ведёт кабинет аккаунта спейса.
   const actions: ProfileAction[] = isMe
     ? profile && accountUrl
-      ? [{ key: 'account', label: 'Кабинет', icon: icons.account(22, 'currentColor'), onClick: () => openUrl(accountUrl) }]
+      ? [{ key: 'account', label: tr('Кабинет', 'Account'), icon: icons.account(22, 'currentColor'), onClick: () => openUrl(accountUrl) }]
       : []
     : face && hasProfile(face)
       ? [{ key: 'tg', label: 'Telegram', icon: icons.telegram(22, 'currentColor'), onClick: () => openProfile(face) }]
@@ -299,7 +299,7 @@ export function PersonPage({
       {who && face ? (
         <ProfileHead
           user={face}
-          name={profile ? profile.name : isMe ? 'Мои визиты' : who.label}
+          name={profile ? profile.name : isMe ? tr('Мои визиты', 'My visits') : who.label}
           sub={sub}
           actions={actions}
         />
@@ -318,10 +318,10 @@ export function PersonPage({
 
   const sinceKey = data.manualSince || data.joinedSince || data.firstDateKey
   const sinceSource = data.manualSince
-    ? 'выставлено вручную'
+    ? tr('выставлено вручную', 'set manually')
     : data.joinedSince
-      ? 'вступление в чат резидентов'
-      : 'первый визит в журнале'
+      ? tr('вступление в чат резидентов', 'joined resident chat')
+      : tr('первый визит в журнале', 'first visit in the log')
 
   const setSince = async (dateKey: string | null) => {
     const done = await action('stats.residentSince', { userId, dateKey: dateKey ?? '' })
@@ -333,7 +333,7 @@ export function PersonPage({
 
   const askSince = async () => {
     const picked = await datePrompt({
-      text: 'Резидент с',
+      text: tr('Резидент с', 'Resident since'),
       initial: (sinceKey === ORIGIN ? data.joinedSince || data.firstDateKey : sinceKey) || boot!.todayKey,
       max: boot!.todayKey,
     })
@@ -348,24 +348,24 @@ export function PersonPage({
         <div className="sq-row">
           <div className="sq-cell">
             <div className="sq-num">{data.visits}</div>
-            <div className="sq-label">{nb(`${plural(data.visits, 'визит', 'визита', 'визитов')} за 3 месяца`)}</div>
+            <div className="sq-label">{nb(plural(data.visits, ['визит за 3 месяца', 'визита за 3 месяца', 'визитов за 3 месяца'], ['visit in 3 months', 'visits in 3 months']))}</div>
           </div>
           <div className="sq-vsep" />
           <div className="sq-cell">
             <div className="sq-num">{hoursNum(data.minutes)}</div>
-            <div className="sq-label">{`${hoursNumWord(data.minutes)} внутри`}</div>
+            <div className="sq-label">{tr(`${hoursNumWord(data.minutes)} внутри`, `${hoursNumWord(data.minutes)} inside`)}</div>
           </div>
         </div>
         <div className="sep" style={{ margin: '0 16px' }} />
         <div className="sq-row">
           <div className="sq-cell">
             <div className="sq-num small">{data.avgMinutes > 0 ? <Units text={fmtDuration(data.avgMinutes)} /> : '—'}</div>
-            <div className="sq-label">средний визит</div>
+            <div className="sq-label">{tr('средний визит', 'average visit')}</div>
           </div>
           <div className="sq-vsep" />
           <div className="sq-cell">
             <div className="sq-num small">{data.favArrival || '—'}</div>
-            <div className="sq-label">обычно приходит</div>
+            <div className="sq-label">{tr('обычно приходит', 'usual arrival time')}</div>
           </div>
         </div>
         {data.hostedGuests > 0 ? (
@@ -374,7 +374,7 @@ export function PersonPage({
             <div className="sq-row">
               <div className="sq-cell">
                 <div className="sq-num small">{data.hostedGuests}</div>
-                <div className="sq-label">захостил гостей за всё время</div>
+                <div className="sq-label">{tr('захостил гостей за всё время', 'guests hosted overall')}</div>
               </div>
             </div>
           </>
@@ -385,7 +385,7 @@ export function PersonPage({
 
       {data.lastVisits.length > 0 ? (
         <>
-          <div className="section-title">Последние визиты</div>
+          <div className="section-title">{tr('Последние визиты', 'Recent visits')}</div>
           <div className="card stats-list">
             {data.lastVisits.map((v, i) => (
               <Fragment key={`${v.dateKey}-${v.from}`}>
@@ -393,15 +393,15 @@ export function PersonPage({
                 <button
                   type="button"
                   className="row tappable"
-                  onClick={() => push('statsDay', { dateKey: v.dateKey, backLabel: 'Назад' })}
+                  onClick={() => push('statsDay', { dateKey: v.dateKey, backLabel: tr('Назад', 'Back') })}
                 >
                   <div className="date-tile">
                     <span className="dt-num">{dayNum(v.dateKey)}</span>
-                    <span className="dt-sub">{MONTHS_ABBR[monthIdx(v.dateKey)]}</span>
+                    <span className="dt-sub">{monthsAbbr()[monthIdx(v.dateKey)]}</span>
                   </div>
                   <span className="row-label">
                     {fmtDuration(v.minutes)}
-                    <span className="row-sublabel">{v.source === 'mac' ? 'по MAC' : 'отметился сам'}</span>
+                    <span className="row-sublabel">{v.source === 'mac' ? tr('по MAC', 'automatic check-in') : tr('отметился сам', 'checked in manually')}</span>
                   </span>
                   <div className="row-right">
                     <VisitStrip from={v.from} to={v.to} />
@@ -415,22 +415,22 @@ export function PersonPage({
       ) : null}
 
       {isMe && boot!.settings && !boot!.settings.logVisits ? (
-        <Footnote>Журнал ваших визитов выключен в настройках, поэтому новые визиты сюда не попадают.</Footnote>
+        <Footnote>{tr('Журнал ваших визитов выключен в настройках, поэтому новые визиты сюда не попадают.', "Your check-in log is off in Settings. New visits won't appear here.")}</Footnote>
       ) : null}
 
       {boot!.me.isDev ? (
         <>
-          <div className="section-title">Резидент с</div>
+          <div className="section-title">{tr('Резидент с', 'Resident since')}</div>
           <div className="card">
             <button type="button" className="row tappable" onClick={() => void askSince()}>
               <span className="row-label">
-                Дата
+                {tr('Дата', 'Date')}
                 <span className="row-sublabel">{sinceSource}</span>
               </span>
               <div className="row-right">
                 <span className={'row-value' + (sinceKey ? '' : ' muted')}>
                   {sinceKey === ORIGIN
-                    ? 'с самого начала'
+                    ? tr('с самого начала', 'since the beginning')
                     : sinceKey
                       ? `${fmtDayMonth(sinceKey)} ${yearOf(sinceKey)}`
                       : '—'}
@@ -443,7 +443,7 @@ export function PersonPage({
                 <Sep inset="text" />
                 <button type="button" className="row tappable" onClick={() => void setSince(ORIGIN)}>
                   <span className="row-label" style={{ color: 'var(--blue)' }}>
-                    С самого начала
+                    {tr('С самого начала', 'Since the beginning')}
                   </span>
                 </button>
               </>
@@ -453,16 +453,14 @@ export function PersonPage({
                 <Sep inset="text" />
                 <button type="button" className="row tappable" onClick={() => void setSince(null)}>
                   <span className="row-label" style={{ color: 'var(--blue)' }}>
-                    Считать автоматически
+                    {tr('Считать автоматически', 'Set automatically')}
                   </span>
                 </button>
               </>
             ) : null}
           </div>
           <Footnote>
-            По умолчанию берётся вступление в чат резидентов, а если Telegram даты не отдал — первый визит в журнале.
-            Ручная дата нужна тем, кто пришёл в спейс раньше и того и другого, а «с самого начала» — тем, с кого спейс
-            начинался.
+            {tr('По умолчанию берётся вступление в чат резидентов, а если Telegram даты не отдал — первый визит в журнале. Ручная дата нужна тем, кто пришёл в спейс раньше и того и другого, а «с самого начала» — тем, с кого спейс начинался.', "By default, this is when the resident joined the chat. If Telegram doesn't provide that date, the bot uses their first logged visit. Enter a date for someone who joined sooner, or choose “Since the beginning” for a founding resident.")}
           </Footnote>
         </>
       ) : null}

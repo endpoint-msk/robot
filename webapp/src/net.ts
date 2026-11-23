@@ -1,6 +1,7 @@
 // Сеть пропала посреди своего действия: вместо алерта «Нет связи» шапка экрана говорит
 // «Ожидание сети…», как Telegram, а запрос повторяется сам, когда сеть вернулась.
 
+import { tr } from './i18n'
 import { useSyncExternalStore } from 'react'
 
 export type NetState = 'ok' | 'waiting' | 'connecting'
@@ -24,7 +25,7 @@ export function setNetState(next: NetState): void {
 
 /** Подпись шапки вместо подзаголовка, пока сети нет. null - всё в порядке. */
 export const netLabel = (s: NetState): string | null =>
-  s === 'waiting' ? 'Ожидание сети…' : s === 'connecting' ? 'Соединение…' : null
+  s === 'waiting' ? tr('Ожидание сети…', "Waiting for a connection…") : s === 'connecting' ? tr('Соединение…', "Connecting…") : null
 
 /**
  * Сеть вернулась или прошло время: событие `online` в вебвью приходит не всегда (сеть

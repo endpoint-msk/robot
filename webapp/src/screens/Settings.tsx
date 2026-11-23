@@ -1,6 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { action, mutate, openOnboarding, subscribeToEvents } from '../api'
 import { icons } from '../icons'
+import { tr, type LanguageChoice } from '../i18n'
 import { CHOICE_LABEL, choiceOf, notifyBanners, prefsFor, type NotifyChoice } from '../notifyPreview'
 import { markOwnTap } from '../motion'
 import { push, setData, setThemeFrom, useStore } from '../store'
@@ -14,23 +15,75 @@ import { Notification } from '../components/OnboardingScenes'
 import { Screen } from '../components/Screen'
 import { bringBack, dustRow, offerUndo, removeRow, type Undoable } from '../undo'
 
-const THEMES: { value: ThemeChoice; label: string }[] = [
-  { value: 'system', label: 'Как в Telegram' },
-  { value: 'light', label: 'Светлая' },
-  { value: 'dark', label: 'Тёмная' },
-]
+function LanguageSection() {
+  const { data } = useStore()
+  const menu = useRowMenu<'language'>()
+  const [saving, setSaving] = useState(false)
+  const choice = data?.me.languageChoice ?? 'auto'
+  const title = tr('Язык', 'Language')
+  const items: { value: LanguageChoice; label: string }[] = [
+    { value: 'auto', label: tr('Как в Telegram', 'Same as Telegram') },
+    { value: 'ru', label: 'Русский' },
+    { value: 'en', label: 'English' },
+  ]
+  return (
+    <>
+      <SectionTitle>{title}</SectionTitle>
+      <div className="nt-host" ref={menu.hostRef}>
+        <div className="card">
+          <div className="row">
+            <span className="row-label">{tr('Язык бота и миниаппа', 'Bot and Mini App language')}</span>
+            <button
+              type="button"
+              className="ob-popup"
+              aria-label={title}
+              aria-haspopup="menu"
+              aria-expanded={menu.openFor === 'language'}
+              disabled={saving}
+              onClick={(e) => menu.open('language', e.currentTarget)}
+            >
+              <MorphValue text={items.find((item) => item.value === choice)?.label ?? ''} align="end" />
+              {icons.updown()}
+            </button>
+          </div>
+        </div>
+        <MenuItems
+          open={menu.openFor === 'language'}
+          place={menu.place}
+          items={items}
+          value={choice}
+          onPick={async (value) => {
+            menu.close()
+            if (value === choice || saving) return
+            setSaving(true)
+            try {
+              await action('language.set', { choice: value }, { quiet: true })
+            } finally {
+              setSaving(false)
+            }
+          }}
+        />
+      </div>
+    </>
+  )
+}
 
 /** Тема одной строкой с меню, как «Новые заявки»: три строки с галочкой говорили то же. */
 function ThemeSection() {
   const { theme } = useStore()
   const menu = useRowMenu<'theme'>()
+  const themes: { value: ThemeChoice; label: string }[] = [
+    { value: 'system', label: tr('Как в Telegram', 'Same as Telegram') },
+    { value: 'light', label: tr('Светлая', 'Light') },
+    { value: 'dark', label: tr('Тёмная', 'Dark') },
+  ]
   return (
     <>
-      <SectionTitle>Оформление</SectionTitle>
+      <SectionTitle>{tr("Оформление", "Appearance")}</SectionTitle>
       <div className="nt-host" ref={menu.hostRef}>
         <div className="card">
           <div className="row">
-            <span className="row-label">Тема</span>
+            <span className="row-label">{tr("Тема", "Theme")}</span>
             <button
               type="button"
               className="ob-popup"
@@ -38,7 +91,7 @@ function ThemeSection() {
               aria-expanded={menu.openFor === 'theme'}
               onClick={(e) => menu.open('theme', e.currentTarget)}
             >
-              <MorphValue text={THEMES.find((t) => t.value === theme)?.label ?? ''} align="end" />
+              <MorphValue text={themes.find((t) => t.value === theme)?.label ?? ''} align="end" />
               {icons.updown()}
             </button>
           </div>
@@ -46,7 +99,7 @@ function ThemeSection() {
         <MenuItems
           open={menu.openFor === 'theme'}
           place={menu.place}
-          items={THEMES}
+          items={themes}
           value={theme}
           onPick={(v, e) => {
             menu.close()
@@ -80,7 +133,7 @@ function CalendarRow() {
       <div className="row-icon" style={{ background: 'var(--purple)' }}>
         {icons.calendar(17, '#fff')}
       </div>
-      <span className="row-label">Ивенты и визиты в календаре</span>
+      <span className="row-label">{tr("Ивенты и визиты в календаре", "Events and visits in your calendar")}</span>
       <div className="row-right">{icons.chevron()}</div>
     </button>
   )
@@ -184,7 +237,7 @@ function NotifySection({ s }: { s: SettingsData }) {
 
   return (
     <>
-      <SectionTitle>Уведомления</SectionTitle>
+      <SectionTitle>{tr("Уведомления", "Notifications")}</SectionTitle>
       <div className="nt-host" ref={menu.hostRef}>
         <div className="nt-stage" aria-hidden="true">
           {notifyBanners(s, data!.todayKey).map((b) => (
@@ -192,9 +245,9 @@ function NotifySection({ s }: { s: SettingsData }) {
           ))}
         </div>
         <div className="card">
-          {row('req', 'Новые заявки', 'var(--orange)', s.notify)}
+          {row('req', tr('Новые заявки', "New visit requests"), 'var(--orange)', s.notify)}
           <Sep inset="icon" />
-          {row('ev', 'Новые ивенты', 'var(--purple)', s.eventNotify)}
+          {row('ev', tr('Новые ивенты', "New events"), 'var(--purple)', s.eventNotify)}
           <Sep inset="icon" />
           <CalendarRow />
         </div>
@@ -215,15 +268,15 @@ function AttendNotifySection() {
   const { data } = useStore()
   return (
     <>
-      <SectionTitle>Уведомления</SectionTitle>
+      <SectionTitle>{tr("Уведомления", "Notifications")}</SectionTitle>
       <NotifyCard
         prefs={data!.attendNotify}
         method="notify.attend"
-        title="Придут резиденты"
+        title={tr("Придут резиденты", "Resident plans")}
         color="var(--green)"
         options={[
-          { mode: 'near', label: 'Сегодня и завтра', sublabel: 'Кто собрался на ближайшие два дня' },
-          { mode: 'week', label: 'Вся неделя', sublabel: 'Кто собрался на любой день' },
+          { mode: 'near', label: tr('Сегодня и завтра', "Today and tomorrow"), sublabel: tr('Кто собрался на ближайшие два дня', "Who plans to come in the next two days") },
+          { mode: 'week', label: tr('Вся неделя', "Whole week"), sublabel: tr('Кто собрался на любой день', "Who plans to come on any day") },
         ]}
         // Гость, открывший миниапп из чата без /start, иначе подписался бы на тишину:
         // писать ему в личку бот не может.
@@ -289,24 +342,24 @@ function PresenceCard({ s }: { s: SettingsData }) {
     const res = await removeRow(dustRow(key), mutate<Undoable>('mac.remove', { mac }))
     if (!res) return
     setData(res.data)
-    offerUndo('Устройство отвязано', res.data.undo, (data) => bringBack(key, res.dust, () => setData(data)))
+    offerUndo(tr('Устройство отвязано', "Device unlinked"), res.data.undo, (data) => bringBack(key, res.dust, () => setData(data)))
   }
   return (
     <>
-      <SectionTitle>Отметки</SectionTitle>
+      <SectionTitle>{tr("Отметки", "Check-ins")}</SectionTitle>
       <div className="card ctl-card">
         {s.macs.map((m) => (
           <Fragment key={m.mac}>
             <div className="row" data-dust={'mac-' + m.mac}>
               <span className="row-label">
-                {m.label || 'Устройство'}
+                {m.label || tr('Устройство', "Device")}
                 <span className="row-sublabel mono">{m.mac}</span>
               </span>
               <div className="row-right">
-                {m.online ? <span className="ob-tag green">в сети</span> : null}
+                {m.online ? <span className="ob-tag green">{tr("в сети", "online")}</span> : null}
                 <button
                   className="remove-btn"
-                  aria-label="Убрать устройство"
+                  aria-label={tr("Убрать устройство", "Remove device")}
                   onClick={() => void removeMac(m.mac)}
                 >
                   {icons.minusCircle()}
@@ -318,21 +371,21 @@ function PresenceCard({ s }: { s: SettingsData }) {
         ))}
         <button type="button" className="row tappable" onClick={() => void bindPhone()}>
           <div className="icon-plus-circle">{icons.plusSmall()}</div>
-          <span className="add-row-label">Добавить устройство</span>
+          <span className="add-row-label">{tr("Добавить устройство", "Add a device")}</span>
         </button>
         <Sep inset="text" />
         <SwitchRow
           className={'row' + (s.macs.length === 0 ? ' rows-disabled' : '')}
           disabled={s.macs.length === 0}
-          label="Отмечаться без ника"
-          sub="В списке будет «Без ника»"
+          label={tr("Отмечаться без ника", "Check in without a username")}
+          sub={tr("В списке будет «Без ника»", "You’ll appear as “Anonymous”")}
           on={s.macAnon}
           onToggle={() => action('mac.anon', { anon: !s.macAnon }, { quiet: true })}
         />
         <Sep inset="text" />
         <SwitchRow
-          label="Вести историю визитов"
-          sub="Для статистики спейса"
+          label={tr("Вести историю визитов", "Keep visit history")}
+          sub={tr("Для статистики спейса", "Used for space statistics")}
           on={s.logVisits}
           onToggle={() => action('presence.log', { enabled: !s.logVisits }, { quiet: true })}
         />
@@ -353,7 +406,8 @@ export function Settings() {
     return (
       <Screen>
         <BackRow />
-        <Header title="Настройки" />
+        <Header title={tr("Настройки", "Settings")} />
+        <LanguageSection />
         <AttendNotifySection />
         <ThemeSection />
         <BuildSign />
@@ -363,30 +417,27 @@ export function Settings() {
 
   return (
     <Screen>
-      <BackRow label="Ближайшие дни" />
-      <Header title="Настройки" />
-      <SectionTitle>Профиль</SectionTitle>
+      <BackRow label={tr("Ближайшие дни", "Upcoming days")} />
+      <Header title={tr("Настройки", "Settings")} />
+      <SectionTitle>{tr("Профиль", "Profile")}</SectionTitle>
       <div className="card">
         <button
           type="button"
           className="row tappable"
           onClick={() => push('residentProfile', { userId: data!.me.id, name: data!.me.name, username: data!.me.username })}
         >
-          <span className="row-label">
-            Мой профиль
-            <span className="row-sublabel">{data!.me.isDev ? 'Права и интеграции' : 'Визиты и статистика'}</span>
+          <span className="row-label">{tr("Мой профиль", "My profile")}<span className="row-sublabel">{data!.me.isDev ? tr('Права и интеграции', "Permissions and integrations") : tr('Визиты и статистика', "Visits and stats")}</span>
           </span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
         <Sep inset="text" />
         <button type="button" className="row tappable" onClick={() => void openOnboarding()}>
-          <span className="row-label">
-            Знакомство с ботом
-            <span className="row-sublabel">Что умеет бот для резидентов</span>
+          <span className="row-label">{tr("Знакомство с ботом", "Bot tour")}<span className="row-sublabel">{tr("Что умеет бот для резидентов", "See what the bot can do for residents")}</span>
           </span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
       </div>
+      <LanguageSection />
       <PresenceCard s={s} />
       <NotifySection s={s} />
       <ThemeSection />

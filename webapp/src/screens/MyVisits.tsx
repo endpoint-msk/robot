@@ -1,5 +1,6 @@
+import { plural, tr } from '../i18n'
 import { Fragment } from 'react'
-import { fmtDayMonth, fmtShortDate, fmtWeekdayDate, plural, visitDayWord } from '../dates'
+import { fmtDayMonth, fmtShortDate, fmtWeekdayDate, visitDayWord } from '../dates'
 import { nb } from '../format'
 import { icons } from '../icons'
 import { bump, push, useStore } from '../store'
@@ -35,10 +36,15 @@ function VisitRow({ r }: { r: HostingRequest }) {
   // Хост - словом в подписи, как у прошедших визитов: пилл справа забирает ширину у
   // даты, и на узком экране от неё остаётся «Четверг, 22…».
   let subText: string
-  if (needsAnswer) subText = `Резидент предлагает ${pSlot} — нужен ответ`
-  else if (p && p.by === 'guest') subText = `вы предложили ${pSlot} · ждём${approved ? ' хоста' : ''}`
-  else if (approved) subText = nb(`к ${r.time} · ${r.approvedBy ? `хостит ${userLabel(r.approvedBy)}` : 'подтверждён'}`)
-  else subText = nb(`к ${r.time} · ждём резидента`)
+  if (needsAnswer) subText = tr(`Резидент предлагает ${pSlot} — нужен ответ`, `A resident suggested ${pSlot} · reply needed`)
+  else if (p && p.by === 'guest') {
+    const waiting = approved ? tr('ждём хоста', 'waiting for the host') : tr('ждём', 'waiting')
+    subText = tr(`вы предложили ${pSlot} · ${waiting}`, `you suggested ${pSlot} · ${waiting}`)
+  } else if (approved) {
+    const host = r.approvedBy ? userLabel(r.approvedBy) : null
+    const status = host ? tr(`хостит ${host}`, `hosted by ${host}`) : tr('подтверждён', 'confirmed')
+    subText = nb(`${tr('к', 'at')} ${r.time} · ${status}`)
+  } else subText = nb(tr(`к ${r.time} · ждём резидента`, `at ${r.time} · waiting for a resident`))
 
   return (
     <button
@@ -78,8 +84,8 @@ function WriteAccessBanner() {
     >
       <div className="wb-icon">{icons.bell()}</div>
       <div className="wb-text">
-        <div className="wb-title">Бот не может писать вам</div>
-        <div className="wb-sub">Разрешите, чтобы получать ответы на заявки</div>
+        <div className="wb-title">{tr('Бот не может писать вам', 'The bot can’t message you')}</div>
+        <div className="wb-sub">{tr('Разрешите, чтобы получать ответы на заявки', 'Allow messages to receive replies to requests')}</div>
       </div>
       {icons.chevron()}
     </button>
@@ -101,7 +107,7 @@ function PastVisitRow({ r }: { r: HostingRequest }) {
         <div className="req-name past">
           {fmtWeekdayDate(r.dateKey)}
         </div>
-        <div className="req-sub">{nb(`к ${r.time}`) + (missed ? ' · неявка' : host ? ` · хостил ${userLabel(host)}` : '')}
+        <div className="req-sub">{nb(tr(`к ${r.time}`, `at ${r.time}`)) + (missed ? tr(' · неявка', ' · no-show') : host ? tr(` · хостил ${userLabel(host)}`, ` · hosted by ${userLabel(host)}`) : '')}
         </div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
@@ -132,36 +138,38 @@ export function MyVisits() {
 
   return (
     <Screen>
-      <Header title="Мои визиты" />
+      <Header title={tr('Мои визиты', 'My visits')} />
       <WriteAccessBanner />
       {my.length === 0 && past.length === 0 ? (
         <div className="card" ref={growIn} data-dust-empty="">
           <EmptyState
-            title="Пока нет заявок"
-            text="Нажмите «+» внизу, выберите день и время: резиденты увидят заявку и откликнутся."
+            title={tr('Пока нет заявок', 'No requests yet')}
+            text={tr('Нажмите «+» внизу, выберите день и время: резиденты увидят заявку и откликнутся.', 'Tap “+” below and choose a day and time. Residents will see your request and can reply.')}
           />
         </div>
       ) : null}
       {approved.length > 0 ? (
         <>
-          <SectionTitle>Одобрены</SectionTitle>
+          <SectionTitle>{tr('Одобрены', 'Approved')}</SectionTitle>
           <VisitList list={approved} />
         </>
       ) : null}
       {pending.length > 0 ? (
         <>
-          <SectionTitle>Ждут ответа</SectionTitle>
+          <SectionTitle>{tr('Ждут ответа', 'Pending')}</SectionTitle>
           <VisitList list={pending} />
         </>
       ) : null}
       {past.length > 0 || tally.visits > 0 ? (
         <>
-          <SectionTitle>Были раньше</SectionTitle>
+          <SectionTitle>{tr('Были раньше', 'Past visits')}</SectionTitle>
           {past.length > 0 ? <VisitList list={past} past /> : null}
           {/* В списке только последние визиты, а счёт - за всё время, вместе с визитами
               без заявки, которые отметили резиденты. */}
           {tally.visits > 0 ? (
-            <div className="visits-tally">{nb(`Вы были в спейсе ${tally.visits} ${plural(tally.visits, 'раз', 'раза', 'раз')}`)}</div>
+            <div className="visits-tally">
+              {nb(`${tr('Вы были в спейсе', 'You’ve visited the space')} ${tally.visits} ${plural(tally.visits, ['раз', 'раза', 'раз'], ['time', 'times'])}`)}
+            </div>
           ) : null}
         </>
       ) : null}
@@ -172,7 +180,7 @@ export function MyVisits() {
           <div className="row-icon" style={{ background: 'var(--green)' }}>
             {icons.chat(17, '#fff')}
           </div>
-          <span className="row-label">Чат спейса</span>
+          <span className="row-label">{tr('Чат спейса', 'Space chat')}</span>
           <div className="row-right">{icons.external()}</div>
         </button>
       </div>

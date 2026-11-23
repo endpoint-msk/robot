@@ -1,6 +1,6 @@
+import { plural, tr } from '../i18n'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { plural } from '../dates'
 import { nb } from '../format'
 import { confirmDialog, showAlert } from '../modals'
 import { pop, setBusy } from '../store'
@@ -10,6 +10,8 @@ import { BackRow, EmptyState, Header, SectionTitle, SpinnerCenter } from '../com
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 
+const chatCount = (n: number): string => `${n} ${plural(n, ['чат', 'чата', 'чатов'], ['chat', 'chats'])}`
+
 function AnnounceForm({ info }: { info: AnnounceLatest }) {
   const [text, setText] = useState(info.defaultText || '')
   const targets = info.targetChats
@@ -17,27 +19,27 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
 
   const already = info.release && info.lastAnnouncedVersion === info.release.version
   const status = info.release
-    ? `Последний релиз: ${info.release.version}` +
+    ? tr(`Последний релиз: ${info.release.version}`, `Latest release: ${info.release.version}`) +
       (already
-        ? ' · уже анонсирован'
+        ? tr(' · уже анонсирован', ' · already announced')
         : info.lastAnnouncedVersion
-          ? ` · анонсирован ${info.lastAnnouncedVersion}`
-          : ' · ещё не анонсирован')
-    : 'Релизов пока нет — можно разослать произвольный текст.'
+          ? tr(` · анонсирован ${info.lastAnnouncedVersion}`, ` · announced version ${info.lastAnnouncedVersion}`)
+          : tr(' · ещё не анонсирован', ' · announcement pending'))
+    : tr('Релизов пока нет — можно разослать произвольный текст.', 'There are no releases yet. You can send a custom announcement.')
 
   const submit = async (): Promise<void> => {
     const t = text.trim()
     if (!t) {
-      showAlert('Текст анонса пуст.')
+      showAlert(tr('Текст анонса пуст.', 'Enter an announcement first.'))
       return
     }
     if (targets === 0) {
-      showAlert('Нет чатов для рассылки — все замьючены.')
+      showAlert(tr('Нет чатов для рассылки — все замьючены.', 'Announcements are muted in all chats.'))
       return
     }
-    const ok = await confirmDialog(`Разослать анонс в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}?`, {
-      confirmLabel: 'Разослать',
-      cancelLabel: 'Не рассылать',
+    const ok = await confirmDialog(tr(`Разослать анонс в ${chatCount(targets)}?`, `Send this announcement to ${chatCount(targets)}?`), {
+      confirmLabel: tr('Разослать', 'Send announcement'),
+      cancelLabel: tr('Не рассылать', 'Cancel'),
     })
     if (!ok) return
     setBusy(true)
@@ -47,8 +49,8 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
         version: (info.release && info.release.version) || '',
       })
       haptic.notify('success')
-      const tail = res.failed ? nb(`, не дошло в ${res.failed}`) : ''
-      showAlert(`Отправлено в ${res.sent} ${plural(res.sent, 'чат', 'чата', 'чатов')}${tail}.`)
+      const tail = res.failed ? nb(tr(`, не дошло в ${res.failed}`, `, failed in ${res.failed}`)) : ''
+      showAlert(tr(`Отправлено в ${chatCount(res.sent)}${tail}.`, `Sent to ${chatCount(res.sent)}${tail}.`))
       pop()
     } catch (err) {
       showAlert((err as Error).message)
@@ -60,26 +62,26 @@ function AnnounceForm({ info }: { info: AnnounceLatest }) {
   return (
     <>
       <div className="announce-status">{status}</div>
-      <SectionTitle>Текст</SectionTitle>
+      <SectionTitle>{tr('Текст', 'Text')}</SectionTitle>
       <div className="card announce-card">
         <textarea
           className="announce-text"
           rows={8}
           maxLength={3500}
-          placeholder="Текст анонса"
+          placeholder={tr('Текст анонса', 'Announcement text')}
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
       </div>
-      <SectionTitle>Превью</SectionTitle>
+      <SectionTitle>{tr('Превью', 'Preview')}</SectionTitle>
       <div className="card">
         <div className={'announce-preview' + (trimmed ? '' : ' is-placeholder')}>
-          {trimmed || 'Здесь появится текст анонса…'}
+          {trimmed || tr('Здесь появится текст анонса…', 'Your announcement will appear here…')}
         </div>
       </div>
       <div style={{ padding: '18px 0 8px' }}>
         <button className="primary-btn" onClick={submit}>
-          {targets === 0 ? 'Нет чатов для рассылки' : nb(`Разослать в ${targets} ${plural(targets, 'чат', 'чата', 'чатов')}`)}
+          {targets === 0 ? tr('Нет чатов для рассылки', 'No chats to send to') : nb(tr(`Разослать в ${chatCount(targets)}`, `Send to ${chatCount(targets)}`))}
         </button>
       </div>
     </>
@@ -112,7 +114,7 @@ export function Announce() {
   else if (state.status === 'error')
     body = (
       <div className="card">
-        <EmptyState title="Не получилось загрузить" text={state.message} />
+        <EmptyState title={tr('Не получилось загрузить', "Couldn't load the data")} text={state.message} />
       </div>
     )
   else body = <AnnounceForm info={state.info} />
@@ -120,7 +122,7 @@ export function Announce() {
   return (
     <Screen>
       <BackRow label="Dev" />
-      <Header title="Анонс" subtitle="Рассылка обновлений и объявлений в чаты" />
+      <Header title={tr('Анонс', 'Announcement')} subtitle={tr('Рассылка обновлений и объявлений в чаты', 'Send updates and announcements to chats')} />
       <Swap loading={state.status === 'loading'} skeleton={<SpinnerCenter />}>
         {body}
       </Swap>

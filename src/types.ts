@@ -33,7 +33,13 @@ export type LastFundraiserMessage = {
     periodKey: string
 }
 
+export type Language = 'ru' | 'en'
+export type LanguageChoice = Language | 'auto'
+export type UserLanguage = { choice?: Language; telegram?: Language }
+
 export type State = {
+    /** Язык интерфейса по выбору пользователя и последний известный язык Telegram. */
+    userLanguages: Record<string, UserLanguage>
     /** Все сборы, ключ — periodKey. */
     fundraisers: Record<string, Fundraiser>
     /** Последнее сообщение со сбором в каждом чате (ключ — chatId как строка). */
@@ -896,6 +902,7 @@ export const own = <T>(map: Record<string, T>, key: string): T | undefined =>
     Object.hasOwn(map, key) ? map[key] : undefined
 
 export const emptyState = (): State => ({
+    userLanguages: {},
     fundraisers: {},
     lastMessages: {},
     presence: {},

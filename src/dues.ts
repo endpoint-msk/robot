@@ -11,11 +11,12 @@
 // заплатил и сколько месяцев подряд». Настройка одна на спейс: взнос у резидента
 // один, а allowlist-чатов может быть несколько.
 
+import { locale, tr, withUserLocale } from './i18n.js'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type CallbackQueryContext, type Dispatcher, type MessageContext } from '@mtcute/dispatcher'
 import { audit, auditUser } from './audit.js'
 import { DUES_TARGET, webappAt } from './deeplink.js'
-import { monthNameRu } from './fundraiser.js'
+import { monthName } from './fundraiser.js'
 import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
 import type { ResidentDirectory } from './residents.js'
@@ -130,11 +131,15 @@ const displayMonthOf = (periodKey: string): { year: number; month: number } => {
 /** «Август 2026». */
 export const duesPeriodLabel = (periodKey: string): string => {
     const { year, month } = displayMonthOf(periodKey)
-    return `${monthNameRu(month)} ${year}`
+    return `${monthName(month)} ${year}`
 }
 
 /** «августа» — для фраз вида «не подтверждены июнь и июль». */
-const monthOnly = (periodKey: string): string => monthNameRu(displayMonthOf(periodKey).month)
+const monthOnly = (periodKey: string): string => monthName(displayMonthOf(periodKey).month)
+const periodInText = (periodKey: string): string => {
+    const label = duesPeriodLabel(periodKey)
+    return locale() === 'ru' ? label.toLowerCase() : label
+}
 
 // ---------------------------------------------------------------------------
 // Стейт
@@ -271,7 +276,7 @@ const plainLabel = (m: { username: string | null; name: string }): string =>
 const missedMonths = (keys: string[]): string => {
     const names = [...keys].reverse().map(monthOnly)
     if (names.length <= 1) return names[0] ?? ''
-    return `${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}`
+    return tr(`${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}`, `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`)
 }
 
 /** Строки состава: сначала не отметившиеся (просрочники сверху), потом заявки, потом закрытые. */
@@ -298,8 +303,8 @@ export const CB_CLAIM = 'dues:claim:'
 
 const claimKeyboard = (periodKey: string) =>
     BotKeyboard.inline([
-        [BotKeyboard.callback('✅ Я внёс', `${CB_CLAIM}${periodKey}`)],
-        ...(duesMiniappUrl ? [[BotKeyboard.webView('Открыть взносы', webappAt(duesMiniappUrl, DUES_TARGET))]] : []),
+        [BotKeyboard.callback(tr('✅ Я внёс', "✅ I’ve paid"), `${CB_CLAIM}${periodKey}`)],
+        ...(duesMiniappUrl ? [[BotKeyboard.webView(tr('Открыть взносы', "View dues"), webappAt(duesMiniappUrl, DUES_TARGET))]] : []),
     ])
 
 /**
@@ -309,15 +314,16 @@ const claimKeyboard = (periodKey: string) =>
  */
 const notifyMemberAboutPeriod = async (
     client: TelegramClient,
+    storage: Storage,
     dues: DuesState,
     member: DuesMember,
     periodKey: string,
     missed: string[],
-): Promise<boolean> => {
+): Promise<boolean> => withUserLocale(storage, member.userId, async () => {
     const cur = html.escape(dues.currency)
     const lines = [
-        `💸 <b>Открыт сбор резидентского взноса за ${duesPeriodLabel(periodKey).toLowerCase()}.</b>`,
-        `С тебя ${formatMoney(member.amount)} ${cur}.`,
+        tr(`💸 <b>Открыт сбор резидентского взноса за ${periodInText(periodKey)}.</b>`, `💸 <b>Resident dues for ${periodInText(periodKey)} are now open.</b>`),
+        tr(`С тебя ${formatMoney(member.amount)} ${cur}.`, `Your dues are ${formatMoney(member.amount)} ${cur}.`),
     ]
     if (dues.requisites.trim()) {
         lines.push('')
@@ -325,13 +331,13 @@ const notifyMemberAboutPeriod = async (
     }
     if (missed.length >= CRITICAL_DEBT) {
         lines.push('')
-        lines.push(`🛑 Не подтверждены ${missedMonths(missed)}. Два месяца это крайний срок неуплаты.`)
+        lines.push(tr(`🛑 Не подтверждены ${missedMonths(missed)}. Два месяца это крайний срок неуплаты.`, `🛑 Your dues for ${missedMonths(missed)} are still unconfirmed. Two months is the maximum overdue period.`))
     } else if (missed.length >= WARN_DEBT) {
         lines.push('')
-        lines.push(`⚠️ Взнос за ${missedMonths(missed)} так и не подтверждён, это месяц просрочки.`)
+        lines.push(tr(`⚠️ Взнос за ${missedMonths(missed)} так и не подтверждён, это месяц просрочки.`, `⚠️ Your dues for ${missedMonths(missed)} are still unconfirmed and one month overdue.`))
     }
     lines.push('')
-    lines.push('Перевёл? Нажми «Я внёс», перевод будет рассмотрен.')
+    lines.push(tr('Перевёл? Нажми «Я внёс», перевод будет рассмотрен.', "Paid? Tap “I’ve paid” so a developer can confirm the payment."))
 
     try {
         await client.sendText(member.userId, html(lines.join('<br>')), {
@@ -343,7 +349,7 @@ const notifyMemberAboutPeriod = async (
         // Личка закрыта: узнать это заранее нельзя, а сбор из-за одного человека не рушим.
         return false
     }
-}
+})
 
 /**
  * Рассылка об открытии сбора всем, кто не выключил уведомления и с кого есть что спрашивать.
@@ -364,7 +370,7 @@ const notifyPeriodOpened = async (
         // Ставка 0 — человек освобождён от взноса, напоминать ему не о чем.
         if (member.amount <= 0) continue
         const ok = await notifyMemberAboutPeriod(
-            client, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId),
+            client, storage, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId),
         )
         if (!ok) failed.push(member)
     }
@@ -418,7 +424,7 @@ export const retryFailedDuesNotifications = async (client: TelegramClient, stora
             continue
         }
         const ok = await notifyMemberAboutPeriod(
-            client, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId),
+            client, storage, dues, member, period.periodKey, missedPeriods(dues, period.periodKey, member.userId),
         )
         await storage.update((s) => {
             const p = s.dues.periods[period.periodKey]
@@ -439,27 +445,28 @@ const remindedLead = (v: number | true | undefined): number =>
 
 const remindMemberBeforeDeadline = async (
     client: TelegramClient,
+    storage: Storage,
     dues: DuesState,
     member: DuesMember,
     periodKey: string,
     daysLeft: number,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, member.userId, async () => {
     const cur = html.escape(dues.currency)
-    const days = `${daysLeft} ${plural(daysLeft, ['день', 'дня', 'дней'])}`
+    const days = `${daysLeft} ${tr(plural(daysLeft, ['день', 'дня', 'дней']), daysLeft === 1 ? 'day' : 'days')}`
     const lines = [
-        `⏳ <b>Остаётся ${days} на взнос за ${duesPeriodLabel(periodKey).toLowerCase()} — ${formatMoney(member.amount)} ${cur}.</b>`,
+        tr(`⏳ <b>Остаётся ${days} на взнос за ${periodInText(periodKey)} — ${formatMoney(member.amount)} ${cur}.</b>`, `⏳ <b>${days} left to pay your dues for ${periodInText(periodKey)}: ${formatMoney(member.amount)} ${cur}.</b>`),
     ]
     if (dues.requisites.trim()) {
         lines.push('')
         for (const line of dues.requisites.split('\n')) lines.push(html.escape(line))
     }
     lines.push('')
-    lines.push('Перевёл? Нажми «Я внёс», перевод будет рассмотрен.')
+    lines.push(tr('Перевёл? Нажми «Я внёс», перевод будет рассмотрен.', "Paid? Tap “I’ve paid” so a developer can confirm the payment."))
     await client.sendText(member.userId, html(lines.join('<br>')), {
         replyMarkup: claimKeyboard(periodKey),
         disableWebPreview: true,
     })
-}
+})
 
 /** Метка `reminded` ставится и при недоставке: без неё пинг уходил бы каждую минуту всей ступени. */
 export const remindUnpaidBeforeDeadline = async (
@@ -483,7 +490,7 @@ export const remindUnpaidBeforeDeadline = async (
         const stage = REMIND_STAGES.find((lead) => now >= nextOpenAt - lead * DAY_MS && lead < sent)
         if (stage === undefined) continue
         try {
-            await remindMemberBeforeDeadline(client, dues, member, period.periodKey, daysLeft)
+            await remindMemberBeforeDeadline(client, storage, dues, member, period.periodKey, daysLeft)
         } catch {}
         await storage.update((s) => {
             const p = s.dues.periods[period.periodKey]
@@ -496,21 +503,30 @@ export const remindUnpaidBeforeDeadline = async (
 /** DM девам: кто-то заявил взнос, нужна сверка. */
 export const notifyDevsAboutClaim = async (
     client: TelegramClient,
+    storage: Storage,
     devUserIds: ReadonlySet<number>,
     dues: DuesState,
     periodKey: string,
     member: DuesMember,
 ): Promise<void> => {
-    const text = [
-        `💸 <b>${html.escape(plainLabel(member))} отметил взнос за ${duesPeriodLabel(periodKey).toLowerCase()}, ${formatMoney(member.amount)} ${html.escape(dues.currency)}.</b>`,
-        'Сверь с выпиской и подтверди.',
-    ].join('<br>')
-    const markup = duesMiniappUrl
-        ? BotKeyboard.inline([[BotKeyboard.webView('Открыть взносы', webappAt(duesMiniappUrl, DUES_TARGET))]])
-        : undefined
     for (const userId of devUserIds) {
         try {
-            await client.sendText(userId, html(text), { replyMarkup: markup, disableWebPreview: true })
+            await withUserLocale(storage, userId, () => {
+                const name = html.escape(plainLabel(member))
+                const period = periodInText(periodKey)
+                const amount = `${formatMoney(member.amount)} ${html.escape(dues.currency)}`
+                const text = [
+                    tr(
+                        `💸 <b>${name} отметил взнос за ${period}, ${amount}.</b>`,
+                        `💸 <b>${name} reported a dues payment for ${period}: ${amount}.</b>`,
+                    ),
+                    tr('Сверь с выпиской и подтверди.', 'Check the bank statement and confirm the payment.'),
+                ].join('<br>')
+                const markup = duesMiniappUrl
+                    ? BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть взносы', 'View dues'), webappAt(duesMiniappUrl, DUES_TARGET))]])
+                    : undefined
+                return client.sendText(userId, html(text), { replyMarkup: markup, disableWebPreview: true })
+            })
         } catch {
             // Дев не открывал чат с ботом.
         }
@@ -697,7 +713,7 @@ export const buildDuesCsv = (dues: DuesState): string => {
     }
 
     const rows: string[] = [
-        ['Участник', 'Ник', 'Ставка', ...keys.map(duesPeriodLabel), 'Внесено всего', 'Просрочено подряд']
+        [tr('Участник', "Member"), tr('Ник', "Username"), tr('Ставка', "Rate"), ...keys.map(duesPeriodLabel), tr('Внесено всего', "Total paid"), tr('Просрочено подряд', "Consecutive overdue periods")]
             .map(csvField).join(','),
     ]
     const activeKey = keys[keys.length - 1] ?? ''
@@ -712,11 +728,11 @@ export const buildDuesCsv = (dues: DuesState): string => {
                 total += mark!.amount
                 cells.push(formatMoney(mark!.amount))
             } else if (mark) {
-                cells.push('заявлено')
+                cells.push(tr('заявлено', "reported"))
             } else if (!period.roster[id]) {
                 cells.push('')
             } else {
-                cells.push(period.roster[id]!.amount <= 0 ? 'освобождён' : 'нет')
+                cells.push(period.roster[id]!.amount <= 0 ? tr('освобождён', "exempt") : tr('нет', "no"))
             }
         }
         rows.push([
@@ -735,10 +751,10 @@ export const buildDuesCsv = (dues: DuesState): string => {
     const ratios = keys.map((key) => {
         const period = dues.periods[key]!
         const paid = Object.values(period.marks).filter((m) => m.status === 'paid').length
-        return `${paid} из ${Object.keys(period.roster).length}`
+        return tr(`${paid} из ${Object.keys(period.roster).length}`, `${paid} of ${Object.keys(period.roster).length}`)
     })
-    rows.push(['Итого', '', '', ...sums.map(formatMoney), formatMoney(sums.reduce((a, b) => a + b, 0)), ''].map(csvField).join(','))
-    rows.push(['Внесли', '', '', ...ratios, '', ''].map(csvField).join(','))
+    rows.push([tr('Итого', "Total"), '', '', ...sums.map(formatMoney), formatMoney(sums.reduce((a, b) => a + b, 0)), ''].map(csvField).join(','))
+    rows.push([tr('Внесли', "Paid"), '', '', ...ratios, '', ''].map(csvField).join(','))
     return rows.join('\r\n')
 }
 
@@ -776,8 +792,8 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
         const period = activeDuesPeriod(dues)
         if (!period) {
             return dues.enabled
-                ? `Сбор ещё не открывался, ближайший ${dues.day}-го числа.`
-                : 'Взносы выключены. Включаются в миниаппе, раздел «Взносы».'
+                ? tr(`Сбор ещё не открывался, ближайший ${dues.day}-го числа.`, `Dues haven’t opened yet. The next collection starts on day ${dues.day} of the month.`)
+                : tr('Взносы выключены. Включаются в миниаппе, раздел «Взносы».', "Dues are disabled. Enable them under Dues in the Mini App.")
         }
         return { dues, period }
     }
@@ -793,7 +809,7 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
         const current = duesPeriodKeyOf(new Date(), dues.day, tzOffsetMinutes)
         const nextKey = latest !== undefined && latest >= current ? nextMonthKey(current) : current
         await openDuesPeriod(client, storage, residents, nextKey)
-        await msg.answerText(`[тест] Открыл период ${duesPeriodLabel(nextKey)}.`)
+        await msg.answerText(tr(`[тест] Открыл период ${duesPeriodLabel(nextKey)}.`, `[test] Opened period ${duesPeriodLabel(nextKey)}.`))
     })
 
     // /clear — сбросить отметки текущего периода.
@@ -810,7 +826,7 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
             const p = s.dues.periods[period.periodKey]
             if (p) p.marks = {}
         })
-        await msg.answerText(`[тест] Сбросил отметки за ${duesPeriodLabel(period.periodKey)} (было ${count}).`)
+        await msg.answerText(tr(`[тест] Сбросил отметки за ${duesPeriodLabel(period.periodKey)} (было ${count}).`, `[test] Cleared payment records for ${duesPeriodLabel(period.periodKey)} (${count} records).`))
     })
 
     // Кнопка «Я внёс» из лички. Чужие callback'и пропускаем дальше (см. инвариант в CLAUDE.md).
@@ -820,10 +836,10 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
         const result = await claimDues(storage, periodKey, ctx.user.id)
         if (!result.ok) {
             const text = result.error === 'already'
-                ? 'Взнос за этот месяц уже отмечен.'
+                ? tr('Взнос за этот месяц уже отмечен.', "This month’s payment has already been recorded.")
                 : result.error === 'not_member'
-                    ? 'Тебя нет в списке этого месяца.'
-                    : 'Этот сбор больше не активен.'
+                    ? tr('Тебя нет в списке этого месяца.', "You’re not on this month’s dues list.")
+                    : tr('Этот сбор больше не активен.', "This collection is no longer active.")
             await ctx.answer({ text, alert: true })
             return
         }
@@ -834,20 +850,20 @@ export const registerDuesHandlers = (dp: Dispatcher, deps: DuesDeps): void => {
             actor: auditUser(ctx.user),
             text: `отметил свой взнос за ${periodKey} (кнопка в личке)`,
         })
-        void notifyDevsAboutClaim(client, devUserIds, duesOf(storage), periodKey, result.member).catch((err) =>
+        void notifyDevsAboutClaim(client, storage, devUserIds, duesOf(storage), periodKey, result.member).catch((err) =>
             console.error('[dues] не удалось уведомить дева о заявке:', err),
         )
         try {
             await ctx.editMessage({
                 text: html(
-                    `✅ Отметил взнос за ${duesPeriodLabel(periodKey).toLowerCase()}, ${formatMoney(result.member.amount)} ${html.escape(duesOf(storage).currency)}.<br>Ждём сверки с выпиской.`,
+                    tr(`✅ Отметил взнос за ${periodInText(periodKey)}, ${formatMoney(result.member.amount)} ${html.escape(duesOf(storage).currency)}.<br>Ждём сверки с выпиской.`, `✅ Your dues payment for ${periodInText(periodKey)} was reported: ${formatMoney(result.member.amount)} ${html.escape(duesOf(storage).currency)}.<br>It’s awaiting confirmation.`),
                 ),
                 replyMarkup: BotKeyboard.inline([]),
             })
         } catch (err) {
             console.warn('[dues] не удалось переписать сообщение о взносе:', err)
         }
-        await ctx.answer({ text: 'Отметил' })
+        await ctx.answer({ text: tr('Отметил', "Payment reported") })
     })
 }
 

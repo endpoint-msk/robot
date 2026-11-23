@@ -2,6 +2,7 @@
 // src/onboarding.ts по классам отсюда; здесь только конечный кадр. Сцены -
 // иллюстрации, смысл шага несёт текст под ними, поэтому для скринридера они скрыты.
 
+import { tr } from '../i18n'
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { nb } from '../format'
 import { icons } from '../icons'
@@ -62,13 +63,13 @@ export function CoverScene({ people, me }: HivePeople) {
       <span className="ob-cell ob-you">
         <Avatar user={me} />
       </span>
-      <span className="ob-you-tag">Вы</span>
+      <span className="ob-you-tag">{tr('Вы', 'You')}</span>
       {[0, 1].map((slot) => (
         <span key={slot} className="ob-tip">
           <b className="ob-tip-name" />
           <span className="ob-tip-nick" />
           <span className="ob-tip-on" hidden>
-            в спейсе
+            {tr('в спейсе', 'at the space')}
           </span>
         </span>
       ))}
@@ -238,11 +239,11 @@ export function PresenceScene({ board, botName, dayLabel }: { board: BoardData; 
         <div className="ob-bubble ob-lift">
           <div className="ob-b-name">{botName}</div>
           <p>
-            🚪 <b>{dayLabel} (сегодня)</b> в спейсе
+            🚪 <b>{dayLabel}{tr(' (сегодня)', ' (today)')}</b>{tr(' в спейсе', ' at the space')}
           </p>
           <p>
             <b>
-              Сейчас в спейсе [<Counter from={board.total} />]:
+              {tr('Сейчас в спейсе [', 'At the space now [')}<Counter from={board.total} />]:
             </b>
             <NickLines nicks={board.nicks} />
             {board.me ? (
@@ -256,7 +257,7 @@ export function PresenceScene({ board, botName, dayLabel }: { board: BoardData; 
           </p>
         </div>
         <div className="ob-kb">
-          <span>🚪 Хочу прийти</span>
+          <span>{tr('🚪 Хочу прийти', '🚪 Request a visit')}</span>
         </div>
       </div>
     </div>
@@ -287,7 +288,7 @@ export function MacScene({ board }: { board: BoardData }) {
       <div className="ob-mac-board ob-bubble ob-lift">
         <p>
           <b>
-            Сейчас в спейсе [<Counter from={board.total} />]:
+            {tr('Сейчас в спейсе [', 'At the space now [')}<Counter from={board.total} />]:
           </b>
           <NickLines nicks={board.nicks} />
           {board.me ? (
@@ -343,7 +344,7 @@ export function GuestsScene({ botName }: { botName: string }) {
     <>
       <div className="ob-door" aria-hidden="true" />
       <div className="ob-scene" aria-hidden="true">
-        <Notification botName={botName} time="сейчас" text={nb('🚪 Настя у двери - визит к 20:00.')} className="ob-nb ob-door-nb" />
+        <Notification botName={botName} time={tr('сейчас', 'now')} text={nb(tr('🚪 Настя у двери - визит к 20:00.', '🚪 Nastya is at the door for the 20:00 visit.'))} className="ob-nb ob-door-nb" />
       </div>
     </>
   )
@@ -387,7 +388,7 @@ export function EventsScene({ ev }: { ev: EventCardData }) {
           <BotAvatar name="Endpoint" size={28} />
           <span className="ob-post-ch">
             <b>Endpoint</b>
-            <span>пост в канале</span>
+            <span>{tr('пост в канале', 'channel post')}</span>
           </span>
         </div>
         <Poster ev={ev} className="ob-poster">
@@ -402,8 +403,8 @@ export function EventsScene({ ev }: { ev: EventCardData }) {
         </Poster>
         <div className="ob-ev-body">
           <div className="ob-ev-top">
-            <span className="ob-ev-kicker">Ивент</span>
-            <span className="ob-ev-from">из поста</span>
+            <span className="ob-ev-kicker">{tr('Ивент', 'Event')}</span>
+            <span className="ob-ev-from">{tr('из поста', 'from a post')}</span>
           </div>
           <div className="ob-ev-title">{ev.title}</div>
           <div className="ob-ev-meta">{ev.when}</div>
@@ -422,13 +423,13 @@ export function DuesScene({ label, amount, sub }: { label: string; amount: strin
           <span className="ob-pay-label">{label}</span>
           <span className="ob-pay-tags">
             <span className="ob-tag warn" data-st="0">
-              Не внесён
+              {tr('Не внесён', 'Unpaid')}
             </span>
             <span className="ob-tag gray" data-st="1">
-              Ждёт сверки
+              {tr('Ждёт сверки', 'Awaiting verification')}
             </span>
             <span className="ob-tag green" data-st="2">
-              Внесён
+              {tr('Внесён', 'Paid')}
             </span>
           </span>
         </div>
@@ -436,15 +437,15 @@ export function DuesScene({ label, amount, sub }: { label: string; amount: strin
         <div className="ob-pay-sub">{sub}</div>
         <div className="ob-pay-act">
           <span className="ob-pay-btn" data-st="0">
-            Я внёс
+            {tr('Я внёс', "I've paid")}
           </span>
           <span className="ob-pay-line" data-st="1">
             {icons.clock(16, 'currentColor')}
-            Отметка ушла на сверку
+            {tr('Отметка ушла на сверку', 'Payment reported for verification')}
           </span>
           <span className="ob-pay-line ok" data-st="2">
             {icons.check(15, 'currentColor', 2.2)}
-            Сверено с выпиской
+            {tr('Сверено с выпиской', 'Verified against the bank statement')}
           </span>
         </div>
       </div>
@@ -495,18 +496,18 @@ export function BotScene({
                 <PrinterModel />
               </div>
               <div className="ob-media-cap">
-                🖨 <b>Статус принтера:</b> печатает
+                🖨 <b>{tr('Статус принтера:', 'Printer status:')}</b>{tr(' печатает', ' printing')}
                 <br />
-                Прогресс: 64%
+                {tr('Прогресс: 64%', 'Progress: 64%')}
                 <br />
-                Осталось ~1 ч 20 мин · закончит в {finish}
+                {tr('Осталось ~1 ч 20 мин · закончит в ', 'About 1 h 20 min left · finishes at ')}{finish}
                 <span className="ob-b-meta">{time}</span>
               </div>
             </div>
           ) : (
             <div className="ob-bubble ob-reply">
               <p>
-                {`Внутри [${board.total}], отметились [${board.nicks.length}]:`}
+                {tr(`Внутри [${board.total}], отметились [${board.nicks.length}]:`, `Inside [${board.total}], checked in [${board.nicks.length}]:`)}
                 {board.nicks.slice(0, 3).map((nick) => (
                   <Fragment key={nick}>
                     <br />

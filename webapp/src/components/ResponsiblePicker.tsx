@@ -3,6 +3,7 @@
 // применяется сразу по тапу (родитель хранит полные объекты — они же идут в превью, на
 // сервер уходят id), поэтому решение у листа одно, «Готово».
 
+import { tr } from '../i18n'
 import { useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
@@ -84,27 +85,27 @@ function ResponsibleSheet({ initial, onChange, done }: { initial: User[]; onChan
 
   return (
     <>
-      <Question text="Ответственные" />
+      <Question text={tr('Ответственные', 'Organizers')} />
       <div className="resp-search">
-        <SearchField value={query} onChange={setQuery} placeholder="Поиск по имени или нику" />
+        <SearchField value={query} onChange={setQuery} placeholder={tr('Поиск по имени или нику', 'Search by name or username')} />
       </div>
       {/* Список прокручивается сам, а «Готово» стоит под ним: внизу длинного списка её
           пришлось бы искать. */}
       <div className="resp-body">
         {loading ? (
-          <div className="fb-hint">Загружаем людей…</div>
+          <div className="fb-hint">{tr('Загружаем людей…', 'Loading people…')}</div>
         ) : error || !data ? (
-          <div className="fb-hint">Не удалось загрузить список.</div>
+          <div className="fb-hint">{tr('Не удалось загрузить список.', 'Couldn’t load the list.')}</div>
         ) : residents.length === 0 && guests.length === 0 ? (
-          <div className="fb-hint">Никого не нашлось.</div>
+          <div className="fb-hint">{tr('Никого не нашлось.', 'No one found.')}</div>
         ) : (
           <>
-            <Group title="Резиденты" people={residents} query={q} selected={ids} onToggle={toggle} />
-            <Group title="Гости" people={guests} query={q} selected={ids} onToggle={toggle} />
+            <Group title={tr('Резиденты', 'Residents')} people={residents} query={q} selected={ids} onToggle={toggle} />
+            <Group title={tr('Гости', 'Guests')} people={guests} query={q} selected={ids} onToggle={toggle} />
           </>
         )}
       </div>
-      <Actions label="Готово" onConfirm={done} cancel={null} onCancel={done} />
+      <Actions label={tr('Готово', 'Done')} onConfirm={done} cancel={null} onCancel={done} />
     </>
   )
 }

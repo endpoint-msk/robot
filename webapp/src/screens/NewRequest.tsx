@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { useContext, useEffect, useState } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
@@ -18,7 +19,7 @@ import {
   firstOpenDay,
   isPastForToday,
   PurposeInput,
-  REMINDER_LABELS,
+  reminderLabels,
   REMINDER_ORDER,
   reminderAvailable,
   reminderFor,
@@ -86,26 +87,25 @@ export function useRemind(
   // Слот ушёл - выбор забыт: колесо, вернувшееся на тот же слот, тоже идёт без движения.
   if (pickedFor !== null && pickedFor !== slot) setPickedFor(null)
   const picked = pickedFor === slot
+  const labels = reminderLabels()
   const available = REMINDER_ORDER.filter((c) => reminderAvailable(dateKey, time, c))
   // Срок мог перестать успевать, когда гость сдвинул слот: тогда на сервер уйдёт null.
   const active = !sent && choice !== null && available.includes(choice) ? choice : null
   const none = available.length === 0
   const row = (
     <div className="row">
-      <span className="row-label">
-        Напомнить
-        <span className="row-sublabel">
+      <span className="row-label">{tr('Напомнить', 'Remind me')}<span className="row-sublabel">
           <XText
             still={!flow && !picked}
             delay={120}
             text={
               sent
-                ? 'Напоминание уже отправлено'
+                ? tr('Напоминание уже отправлено', 'Reminder already sent')
                 : none
-                  ? 'До визита слишком мало времени'
+                  ? tr('До визита слишком мало времени', 'It’s too close to the visit')
                   : active
-                    ? `Бот напишет ${reminderWhen(dateKey, time, active)}`
-                    : 'Бот напишет в личку перед визитом'
+                    ? tr(`Бот напишет ${reminderWhen(dateKey, time, active)}`, `The bot will message you ${reminderWhen(dateKey, time, active)}`)
+                    : tr('Бот напишет в личку перед визитом', 'The bot will message you before the visit')
             }
           />
         </span>
@@ -118,7 +118,7 @@ export function useRemind(
         disabled={none || sent}
         onClick={(e) => menu.open('remind', e.currentTarget)}
       >
-        <MorphValue text={active ? REMINDER_LABELS[active] : 'Нет'} align="end" still={!picked} />
+        <MorphValue text={active ? labels[active] : tr('Нет', 'Off')} align="end" still={!picked} />
         {icons.updown()}
       </button>
     </div>
@@ -128,8 +128,8 @@ export function useRemind(
       open={menu.openFor === 'remind'}
       place={menu.place}
       items={[
-        ...REMINDER_ORDER.map((c) => ({ value: c as RemindValue, label: REMINDER_LABELS[c], off: !available.includes(c) })),
-        { value: 'off', label: 'Не напоминать' },
+        ...REMINDER_ORDER.map((c) => ({ value: c as RemindValue, label: labels[c], off: !available.includes(c) })),
+        { value: 'off', label: tr('Не напоминать', 'No reminder') },
       ]}
       value={active ?? 'off'}
       gapBefore="off"
@@ -165,15 +165,15 @@ export function NewRequest() {
 
   const submit = async (): Promise<void> => {
     if (locked) {
-      showAlert('В этот день спейс закрыт для гостей — выберите другой.')
+      showAlert(tr('В этот день спейс закрыт для гостей — выберите другой.', 'The space is closed to guests that day. Choose another day.'))
       return
     }
     if (!time) {
-      showAlert('Укажите, к скольки придёте.')
+      showAlert(tr('Укажите, к скольки придёте.', 'Choose the time you’ll arrive.'))
       return
     }
     if (isPastForToday(day, time)) {
-      showAlert('Это время уже прошло — выберите время позже текущего.')
+      showAlert(tr('Это время уже прошло — выберите время позже текущего.', 'That time has passed. Choose a later time.'))
       return
     }
     haptic.impact('medium')
@@ -208,8 +208,8 @@ export function NewRequest() {
     <Screen hasBottomBar>
       <BackRow />
       <div className={'nr-form' + (leaving ? ' leaving' : '')}>
-        <Header title="Хочу прийти" />
-        <SectionTitle>День</SectionTitle>
+        <Header title={tr('Хочу прийти', 'Request a visit')} />
+        <SectionTitle>{tr('День', 'Day')}</SectionTitle>
         <DayChips
           days={days}
           selected={day}
@@ -222,15 +222,15 @@ export function NewRequest() {
         <Crossfade id={day}>
           <SelectedDayInfo days={days} selected={day} />
         </Crossfade>
-        <SectionTitle>Детали</SectionTitle>
+        <SectionTitle>{tr('Детали', 'Details')}</SectionTitle>
         {/* Всё про визит одной карточкой: время, напоминание, видимость и цель. */}
         <div className="nt-host" ref={remindUi.hostRef}>
           <div className="card">
-            <TimeRow label="Приду к" value={time} min={min} onChange={onTimeChange} />
+            <TimeRow label={tr('Приду к', 'I’ll arrive at')} value={time} min={min} onChange={onTimeChange} />
             <Sep inset="text" />
             {remindUi.row}
             <Sep inset="text" />
-            <SwitchRow on={anon} onToggle={() => setAnon(!anon)} label="Не показывать другим гостям" />
+            <SwitchRow on={anon} onToggle={() => setAnon(!anon)} label={tr('Не показывать другим гостям', 'Hide from other guests')} />
             <Sep inset="text" />
             <div className="kv-block">
               <PurposeInput value={purpose} onChange={setPurpose} />
@@ -242,15 +242,12 @@ export function NewRequest() {
             читать инструкции поздно, а сама кнопка появится только в день визита. */}
         <div className="hint-card">
           <div className="hint-icon">{icons.pin(17, '#34c759')}</div>
-          <div className="hint-text">
-            Когда доберётесь до спейса, откройте свой визит и нажмите «Я на месте» - резиденты
-            поймут, что нужно открыть.
-          </div>
+          <div className="hint-text">{tr('Когда доберётесь до спейса, откройте свой визит и нажмите «Я на месте» - резиденты поймут, что нужно открыть.', 'When you get to the space, open your visit and tap “I’m here” to let residents know to open the door.')}</div>
         </div>
       </div>
       <BottomBar>
         <ActionButton className={'primary-btn' + (leaving ? ' nr-sent' : '')} disabled={leaving} onClick={submit} hero="cta" submit>
-          Отправить заявку
+          {tr('Отправить заявку', 'Send request')}
         </ActionButton>
       </BottomBar>
     </Screen>

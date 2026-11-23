@@ -1,3 +1,4 @@
+import { locale, tr, userLocale, withLocale } from './i18n.js'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
@@ -45,12 +46,18 @@ const UNIT_FORMS: Record<BackupUnit, [string, string, string]> = {
     w: ['неделю', 'недели', 'недель'],
     m: ['месяц', 'месяца', 'месяцев'],
 }
+const UNIT_NAMES_EN: Record<BackupUnit, string> = { h: 'hour', d: 'day', w: 'week', m: 'month' }
 
 /** «раз в месяц», «раз в 2 недели», «раз в 12 часов». */
-export const intervalLabel = (i: BackupInterval): string =>
-    i.value === 1
+export const intervalLabel = (i: BackupInterval): string => {
+    if (locale() === 'en') {
+        const unit = UNIT_NAMES_EN[i.unit]
+        return i.value === 1 ? `every ${unit}` : `every ${i.value} ${unit}s`
+    }
+    return i.value === 1
         ? `раз в ${UNIT_FORMS[i.unit][0]}`
         : `раз в ${i.value} ${plural(i.value, UNIT_FORMS[i.unit])}`
+}
 
 /**
  * Следующий запуск. Месяцы считаем календарно (UTC), а не «30 дней»: иначе бэкап
@@ -160,11 +167,14 @@ export const buildBackupArchive = async (storage: Storage, now: Date, caption: s
     ]
     const gz = buildTarGz(entries)
     const sizeKb = Math.max(1, Math.round(gz.length / 1024))
+    const count = entries.length
+    const files = tr(plural(count, ['файл', 'файла', 'файлов']), count === 1 ? 'file' : 'files')
+    const sizeUnit = tr('КБ', 'KB')
     return InputMedia.document(gz, {
         fileName: `${backupBaseName(storage, now)}.tar.gz`,
         fileMime: 'application/gzip',
         caption: html(
-            `${html.escape(caption)} · ${entries.length} ${plural(entries.length, ['файл', 'файла', 'файлов'])} · ${sizeKb} КБ · ${formatUtc(now.toISOString())}`,
+            `${html.escape(caption)} · ${count} ${files} · ${sizeKb} ${sizeUnit} · ${formatUtc(now.toISOString())}`,
         ),
     })
 }
@@ -189,20 +199,20 @@ const isDevHere = (msg: MessageContext, deps: BackupDeps): boolean => {
     return msg.chat.type === 'user'
 }
 
-const USAGE = [
-    'Использование: /autobackup <интервал>, например /autobackup 1m — бэкап в этот чат раз в месяц.',
-    'Интервал: 12h (часы), 3d (дни), 2w (недели), 1m (месяцы).',
-    'Выключить — /autobackup off. Разовый бэкап — /backup.',
+const usage = () => [
+    tr('Использование: /autobackup <интервал>, например /autobackup 1m — бэкап в этот чат раз в месяц.', "Usage: /autobackup <interval>. For example, /autobackup 1m sends a backup to this chat every month."),
+    tr('Интервал: 12h (часы), 3d (дни), 2w (недели), 1m (месяцы).', "Intervals: 12h (hours), 3d (days), 2w (weeks), 1m (months)."),
+    tr('Выключить — /autobackup off. Разовый бэкап — /backup.', "Use /autobackup off to stop or /backup for a one-time backup."),
 ].join('\n')
 
 /** Человекочитаемый статус расписания для этого чата. */
 const scheduleStatus = (b: BackupSchedule): string => {
     const lines = [
-        `Авто-бэкап в этот чат включён: ${intervalLabel(b)}.`,
-        `Следующий — ${formatUtc(b.nextAt)}.`,
+        tr(`Авто-бэкап в этот чат включён: ${intervalLabel(b)}.`, `Automatic backups to this chat are on: ${intervalLabel(b)}.`),
+        tr(`Следующий — ${formatUtc(b.nextAt)}.`, `Next backup: ${formatUtc(b.nextAt)}.`),
     ]
-    if (b.lastSentAt) lines.push(`Последний — ${formatUtc(b.lastSentAt)}.`)
-    lines.push('', USAGE)
+    if (b.lastSentAt) lines.push(tr(`Последний — ${formatUtc(b.lastSentAt)}.`, `Last backup: ${formatUtc(b.lastSentAt)}.`))
+    lines.push('', usage())
     return lines.join('\n')
 }
 
@@ -212,7 +222,7 @@ export const registerBackupHandlers = (dp: Dispatcher, deps: BackupDeps): void =
 
     dp.onNewMessage(filters.command('backup'), async (msg) => {
         if (!isDevHere(msg, deps)) return
-        await msg.answerMedia(await buildBackupArchive(storage, new Date(), 'Бэкап хранилища'), { silent: true })
+        await msg.answerMedia(await buildBackupArchive(storage, new Date(), tr('Бэкап хранилища', "Storage backup")), { silent: true })
     })
 
     dp.onNewMessage(filters.command('autobackup'), async (msg) => {
@@ -224,24 +234,27 @@ export const registerBackupHandlers = (dp: Dispatcher, deps: BackupDeps): void =
         const existing = storage.get().backups[key]
 
         if (!arg) {
-            await msg.answerText(existing ? scheduleStatus(existing) : `Авто-бэкап в этот чат выключен.\n\n${USAGE}`)
+            await msg.answerText(existing ? scheduleStatus(existing) : [
+                tr('Авто-бэкап в этот чат выключен.', 'Automatic backups to this chat are off.'),
+                usage(),
+            ].join('\n\n'))
             return
         }
         if (arg === 'off' || arg === 'stop' || arg === 'выкл') {
             if (!existing) {
-                await msg.answerText('Авто-бэкап в этот чат и так выключен.')
+                await msg.answerText(tr('Авто-бэкап в этот чат и так выключен.', "Automatic backups to this chat are already off."))
                 return
             }
             await storage.update((s) => {
                 delete s.backups[key]
             })
-            await msg.answerText('Авто-бэкап в этот чат выключен.')
+            await msg.answerText(tr('Авто-бэкап в этот чат выключен.', "Automatic backups to this chat are off."))
             return
         }
 
         const interval = parseBackupInterval(arg)
         if (!interval) {
-            await msg.answerText(`Не понял интервал «${arg}».\n\n${USAGE}`)
+            await msg.answerText([tr(`Не понял интервал «${arg}».`, `Unknown interval “${arg}”.`), usage()].join('\n\n'))
             return
         }
         const now = new Date()
@@ -258,13 +271,13 @@ export const registerBackupHandlers = (dp: Dispatcher, deps: BackupDeps): void =
         })
         await msg.answerText(
             [
-                `Готово: буду присылать бэкап хранилища в этот чат ${intervalLabel(interval)}.`,
-                `Следующий — ${formatUtc(nextBackupAt(now, interval).toISOString())}. Выключить — /autobackup off.`,
-                'Файл содержит весь стейт бота, включая персональные данные — держите чат закрытым.',
+                tr(`Готово: буду присылать бэкап хранилища в этот чат ${intervalLabel(interval)}.`, `I'll send a storage backup to this chat ${intervalLabel(interval)}.`),
+                tr(`Следующий — ${formatUtc(nextBackupAt(now, interval).toISOString())}. Выключить — /autobackup off.`, `Next backup: ${formatUtc(nextBackupAt(now, interval).toISOString())}. To stop backups, use /autobackup off.`),
+                tr('Файл содержит весь стейт бота, включая персональные данные — держите чат закрытым.', "The file contains all bot data, including personal information. Keep it private."),
             ].join('\n'),
         )
         // Первый бэкап сразу: сразу видно, что доставка работает.
-        await client.sendMedia(chatId, await buildBackupArchive(storage, now, 'Авто-бэкап хранилища'), { silent: true })
+        await client.sendMedia(chatId, await buildBackupArchive(storage, now, tr('Авто-бэкап хранилища', "Automatic storage backup")), { silent: true })
     })
 }
 
@@ -298,7 +311,10 @@ export const startBackupScheduler = (
                 continue
             }
             try {
-                await client.sendMedia(b.chatId, await buildBackupArchive(storage, now, 'Авто-бэкап хранилища'), {
+                const media = await withLocale(userLocale(storage, b.chatId), () => buildBackupArchive(
+                    storage, now, tr('Авто-бэкап хранилища', 'Automatic storage backup'),
+                ))
+                await client.sendMedia(b.chatId, media, {
                     silent: true,
                 })
                 await storage.update((s) => {

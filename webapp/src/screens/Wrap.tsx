@@ -6,9 +6,10 @@
 // история стоит: читают её в своём темпе, таймера нет. Числа встают всплытием, счётчиков
 // от нуля нет.
 
+import { plural, tr } from '../i18n'
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
-import { dayNum, MONTHS_ABBR, MONTHS_GEN, MONTHS_NOM, plural, WEEKDAYS_FULL, WEEKDAYS_SHORT, weekdayIdx } from '../dates'
+import { dayNum, fmtDayMonth, monthsAbbr, monthsNom, weekdaysFull, weekdaysShort, weekdayIdx } from '../dates'
 import { icons } from '../icons'
 import { reducedMotion, stageTint } from '../motion'
 import { clamp, crossLabel, E, mix, mixc, palette, pr, prox, rise, toHex, type Ease, type Palette, type Tone } from '../onboarding'
@@ -29,22 +30,23 @@ const DOW_DAT = ['понедельникам', 'вторникам', 'среда
 const DOW_GEN = ['понедельников', 'вторников', 'сред', 'четвергов', 'пятниц', 'суббот', 'воскресений']
 
 const monthIdxOf = (month: string): number => Number(month.slice(5, 7)) - 1
-const monthTitle = (month: string): string => `${MONTHS_NOM[monthIdxOf(month)] ?? ''}${NB}${month.slice(0, 4)}`
-const monthLower = (month: string): string => (MONTHS_NOM[monthIdxOf(month)] ?? '').toLowerCase()
+const monthTitle = (month: string): string => `${monthsNom()[monthIdxOf(month)] ?? ''}${NB}${month.slice(0, 4)}`
 const daysInMonth = (month: string): number =>
   new Date(Date.UTC(Number(month.slice(0, 4)), monthIdxOf(month) + 1, 0)).getUTCDate()
 /** Сколько клеток до первого числа: неделя начинается с понедельника. */
 const padOf = (month: string): number => weekdayIdx(`${month}-01`)
 
-const count = (n: number, one: string, few: string, many: string): string => `${n}${NB}${plural(n, one, few, many)}`
-const eveningsWord = (n: number): string => count(n, 'вечер', 'вечера', 'вечеров')
-const timesWord = (n: number): string => count(n, 'раз', 'раза', 'раз')
-const minutesWord = (n: number): string => count(n, 'минута', 'минуты', 'минут')
+const count = (n: number, ru: readonly [string, string, string], en: readonly [string, string]): string =>
+  `${n}${NB}${plural(n, ru, en)}`
+const eveningsWord = (n: number): string => count(n, ['вечер', 'вечера', 'вечеров'], ['evening', 'evenings'])
+const timesWord = (n: number): string => count(n, ['раз', 'раза', 'раз'], ['time', 'times'])
+const minutesWord = (n: number): string => count(n, ['минута', 'минуты', 'минут'], ['minute', 'minutes'])
 const hoursPhrase = (minutes: number): string => `${hoursNum(minutes)}${NB}${hoursNumWord(minutes)}`
 const together = (minutes: number): string => (minutes < 60 ? minutesWord(minutes) : hoursWord(minutes))
-const togetherShort = (minutes: number): string => (minutes < 60 ? `${minutes}${NB}мин` : `${hoursNum(minutes)}${NB}ч`)
+const togetherShort = (minutes: number): string =>
+  minutes < 60 ? `${minutes}${NB}${tr('мин', 'min')}` : `${hoursNum(minutes)}${NB}${tr('ч', 'h')}`
 /** «С 21 резидентом», но «с 11 резидентами». */
-const residentsWith = (n: number): string => `${n}${NB}${n % 10 === 1 && n % 100 !== 11 ? 'резидентом' : 'резидентами'}`
+const residentsWith = (n: number): string => count(n, ['резидентом', 'резидентами', 'резидентами'], ['resident', 'residents'])
 
 const clock = (minutes: number): string => {
   const m = ((Math.round(minutes) % 1440) + 1440) % 1440
@@ -55,10 +57,14 @@ const clock = (minutes: number): string => {
 const roughly = (minutes: number): string => {
   if (minutes < 60) return minutesWord(Math.max(1, Math.round(minutes)))
   const whole = Math.round(minutes / 60)
-  if (Math.abs(minutes - whole * 60) < 6) return count(whole, 'час', 'часа', 'часов')
-  if (minutes < whole * 60) return `почти ${count(whole, 'час', 'часа', 'часов')}`
+  if (Math.abs(minutes - whole * 60) < 6) return hoursWord(whole * 60)
+  if (minutes < whole * 60) {
+    const hours = hoursWord(whole * 60)
+    return tr(`почти ${hours}`, `almost ${hours}`)
+  }
   const floor = Math.floor(minutes / 60)
-  return floor === 1 ? 'больше часа' : `больше ${count(floor, 'часа', 'часов', 'часов')}`
+  if (floor === 1) return tr('больше часа', 'over an hour')
+  return tr(`больше ${count(floor, ['часа', 'часов', 'часов'], ['hour', 'hours'])}`, `over ${hoursWord(floor * 60)}`)
 }
 
 // --- шаги ----------------------------------------------------------------------
@@ -83,42 +89,76 @@ type Copy = { title: string; lead: string }
 
 const copyOf = (id: SceneId, v: WrapMonth): Copy => {
   const mi = monthIdxOf(v.month)
-  const prep = MONTHS_PREP[mi] ?? ''
+  const month = tr(MONTHS_PREP[mi] ?? '', monthsNom()[mi] ?? '')
   switch (id) {
     case 'calendar': {
       const delta = v.minutes - v.prevMinutes
+      const previous = (mi + 11) % 12
+      const previousMonth = tr(MONTHS_PREP[previous] ?? '', monthsNom()[previous] ?? '')
       // Сравнение только в плюс: «меньше, чем в сентябре» в итогах читалось бы упрёком.
-      const more = v.prevMinutes > 0 && delta >= 60 ? `, на ${hoursWord(delta)} больше, чем в ${MONTHS_PREP[(mi + 11) % 12]}` : ''
-      const longest =
-        v.evenings.length > 1 ? ` Самый долгий был ${dayNum(v.longest.dateKey)}${NB}${MONTHS_GEN[mi]}: ${roughly(v.longest.minutes)}.` : ''
-      return { title: `${hoursPhrase(v.minutes)} в спейсе`, lead: `${eveningsWord(v.evenings.length)} в ${prep}${more}.${longest}` }
+      const more = v.prevMinutes > 0 && delta >= 60
+        ? tr(`, на ${hoursWord(delta)} больше, чем в ${previousMonth}`, `, ${hoursWord(delta)} more than in ${previousMonth}`)
+        : ''
+      const date = fmtDayMonth(v.longest.dateKey)
+      const length = roughly(v.longest.minutes)
+      const longest = v.evenings.length > 1
+        ? tr(` Самый долгий был ${date}: ${length}.`, ` Your longest visit was on ${date}: ${length}.`)
+        : ''
+      const time = hoursPhrase(v.minutes)
+      const evenings = eveningsWord(v.evenings.length)
+      return {
+        title: tr(`${time} в спейсе`, `${time} at the space`),
+        lead: tr(`${evenings} в ${month}${more}.${longest}`, `${evenings} in ${month}${more}.${longest}`),
+      }
     }
     case 'heat': {
       const u = v.usual
-      const at = `к${NB}${u.arrival}`
+      const at = tr(`к${NB}${u.arrival}`, `around${NB}${u.arrival}`)
       const leave =
         u.leave >= 24 * 60 + 30
-          ? 'Уходите обычно за полночь.'
+          ? tr('Уходите обычно за полночь.', 'You usually leave after midnight.')
           : u.leave >= 23 * 60
-            ? 'Уходите обычно ближе к полуночи.'
-            : `Уходите обычно к${NB}${clock(u.leave)}.`
-      if (u.dow === null) return { title: `Обычно приходите ${at}`, lead: `В разные дни недели. ${leave}` }
-      const share = u.count >= u.of ? 'вы не пропустили ни одного' : `вы были в ${u.count} из ${u.of}${NB}${DOW_GEN[u.dow]}`
-      return { title: `Обычно по ${DOW_DAT[u.dow]} ${at}`, lead: `${WEEKDAYS_FULL[u.dow]} ваш день: ${share}. ${leave}` }
+            ? tr('Уходите обычно ближе к полуночи.', 'You usually leave close to midnight.')
+            : tr(`Уходите обычно к${NB}${clock(u.leave)}.`, `You usually leave around${NB}${clock(u.leave)}.`)
+      if (u.dow === null) return {
+        title: tr(`Обычно приходите ${at}`, `You usually arrive ${at}`),
+        lead: tr(`В разные дни недели. ${leave}`, `The day of the week varies. ${leave}`),
+      }
+      const weekday = weekdaysFull()[u.dow]
+      const share = u.count >= u.of
+        ? tr('вы не пропустили ни одного', "you didn't miss one")
+        : tr(`вы были в ${u.count} из ${u.of}${NB}${DOW_GEN[u.dow]}`, `you came on ${u.count} of ${u.of}${NB}${weekday}s`)
+      return {
+        title: tr(`Обычно по ${DOW_DAT[u.dow]} ${at}`, `${weekday}s ${at}`),
+        lead: tr(`${weekday} ваш день: ${share}. ${leave}`, `${weekday} is your day: ${share}. ${leave}`),
+      }
     }
     case 'opened': {
       const o = v.opened
-      const closed = o.closed > 0 ? `, а ${timesWord(o.closed)} дверь закрывали вы` : ''
+      const closed = o.closed > 0
+        ? tr(`, а ${timesWord(o.closed)} дверь закрывали вы`, ` You also closed up ${timesWord(o.closed)}.`)
+        : ''
+      const first = o.count === 1
+        ? tr('В этот вечер', 'That evening, you were the first to arrive.')
+        : tr('В эти вечера', 'On those evenings, you were the first to arrive.')
+      const opened = timesWord(o.count)
       return {
-        title: `Открыли спейс ${timesWord(o.count)}`,
-        lead: `${o.count === 1 ? 'В этот вечер' : 'В эти вечера'} до вас внутри никого не было${closed}.`,
+        title: tr(`Открыли спейс ${opened}`, `You opened the space ${opened}`),
+        lead: tr(`${first} до вас внутри никого не было${closed}.`, first + closed),
       }
     }
     case 'people': {
       const c = v.companion
       if (!c) return { title: '', lead: '' }
-      const more = v.companions > 1 ? ` Всего в ${prep} вы пересеклись с ${residentsWith(v.companions)}.` : ''
-      return { title: `Чаще всего вместе с${NB}${c.label}`, lead: `${together(c.minutes)} в одно время.${more}` }
+      const residents = residentsWith(v.companions)
+      const more = v.companions > 1
+        ? tr(` Всего в ${month} вы пересеклись с ${residents}.`, ` You crossed paths with ${residents} in ${month}.`)
+        : ''
+      const overlap = together(c.minutes)
+      return {
+        title: tr(`Чаще всего вместе с${NB}${c.label}`, `Most time with${NB}${c.label}`),
+        lead: tr(`${overlap} в одно время.${more}`, `${overlap} at the space together.${more}`),
+      }
     }
   }
 }
@@ -236,7 +276,7 @@ function CalendarScene({ v }: { v: WrapMonth }) {
         <div className="wrap-cal-in">
           <div className="wrap-cal-top wrap-cal-m">{monthTitle(v.month)}</div>
           <div className="wrap-cal-top wrap-cal-h">
-            {WEEKDAYS_SHORT.map((d) => (
+            {weekdaysShort().map((d) => (
               <b key={d}>{d}</b>
             ))}
           </div>
@@ -264,7 +304,7 @@ function HeatScene({ v }: { v: WrapMonth }) {
         <div className="wrap-heat-g">
           {v.heat.map((row, d) => (
             <Fragment key={d}>
-              <b className="wrap-heat-dow">{WEEKDAYS_SHORT[d]}</b>
+              <b className="wrap-heat-dow">{weekdaysShort()[d]}</b>
               {row.map((n, b) => {
                 const level = heatLevel(n, max)
                 return (
@@ -286,7 +326,7 @@ function HeatScene({ v }: { v: WrapMonth }) {
         </div>
         {dow === null ? null : <span className="wrap-ring" style={{ left: x, top: y }} />}
         <span className="wrap-chip" style={{ left: x + HEAT_CELL / 2, top: y - 34 }}>
-          {dow === null ? `к${NB}${arrival}` : `${WEEKDAYS_SHORT[dow]}, к${NB}${arrival}`}
+          {dow === null ? `${tr('к', 'at')}${NB}${arrival}` : `${weekdaysShort()[dow]}, ${tr('к', 'at')}${NB}${arrival}`}
         </span>
       </div>
     </div>
@@ -321,7 +361,7 @@ function StripsScene({ v }: { v: WrapMonth }) {
         {strips.map((s) => (
           <div className="wrap-strip" key={s.dateKey}>
             <div className="wrap-strip-l">
-              <b>{`${dayNum(s.dateKey)}${NB}${MONTHS_ABBR[mi]}`}</b>
+              <b>{`${dayNum(s.dateKey)}${NB}${monthsAbbr()[mi]}`}</b>
               <span>{clock(s.me[0])}</span>
             </div>
             <div className="wrap-lane">
@@ -364,7 +404,7 @@ function PeopleScene({ v, me }: { v: WrapMonth; me: User }) {
           <Avatar user={{ userId: c.userId, username: c.username, name: c.label.replace(/^@/, '') }} />
         </div>
         <span className="wrap-tag-at" style={{ left: NET.me.x, top: NET.me.y + 54 }}>
-          <span className="wrap-tag me">Вы</span>
+          <span className="wrap-tag me">{tr('Вы', 'You')}</span>
         </span>
         <span className="wrap-tag-at" style={{ left: NET.with.x, top: NET.with.y + 46 }}>
           <span className="wrap-tag">{togetherShort(c.minutes)}</span>
@@ -694,10 +734,10 @@ export function WrapRow() {
         <div className="row-icon" style={{ background: 'var(--orange)' }}>
           {icons.sparkles(17, '#fff')}
         </div>
-        <span className="row-label">{`Ваш ${monthLower(info.month)} в спейсе`}</span>
+        <span className="row-label">{tr(`Ваш ${monthsNom()[monthIdxOf(info.month)]?.toLowerCase() ?? ''} в спейсе`, `Your ${monthsNom()[monthIdxOf(info.month)] ?? ''} at the space`)}</span>
         <div className="row-right">
           <span className="dues-amount stat-count" style={{ color: 'var(--text-3)' }}>
-            {`${hoursNum(info.minutes)}${NB}ч`}
+            {`${hoursNum(info.minutes)}${NB}${tr('ч', 'h')}`}
           </span>
           {icons.chevron()}
         </div>
@@ -724,8 +764,8 @@ export function Wrap() {
   const last = steps.length - 1
 
   const prev = stack[stack.length - 2]?.name
-  const backLabel = prev === 'stats' ? 'К статистике' : 'Закрыть'
-  const labelOf = (i: number): string => (i < last ? 'Дальше' : backLabel)
+  const backLabel = prev === 'stats' ? tr('К статистике', 'Back to statistics') : tr('Закрыть', 'Close')
+  const labelOf = (i: number): string => (i < last ? tr('Дальше', 'Next') : backLabel)
 
   const rootRef = useRef<HTMLDivElement>(null)
   const pgRef = useRef<HTMLDivElement>(null)
@@ -879,13 +919,13 @@ export function Wrap() {
           <div className="ob-slide wrap-fail">
             <div className="ob-stage" />
             <div className="ob-text">
-              <h2 className="ob-title">{noWrap ? 'Итогов нет' : 'Не получилось загрузить'}</h2>
+              <h2 className="ob-title">{noWrap ? tr('Итогов нет', 'No recap available') : tr('Не получилось загрузить', "Couldn't load the data")}</h2>
               <p className="ob-lead">{error.message}</p>
             </div>
           </div>
         ) : null}
         <button type="button" className="ob-skip" ref={closeRef} onClick={() => pop()}>
-          Закрыть
+          {tr('Закрыть', 'Close')}
         </button>
         {view ? (
           <>
@@ -926,7 +966,7 @@ export function Wrap() {
                 setAttempt((n) => n + 1)
               }}
             >
-              {noWrap ? backLabel : 'Повторить'}
+              {noWrap ? backLabel : tr('Повторить', 'Try again')}
             </button>
           </div>
         ) : null}

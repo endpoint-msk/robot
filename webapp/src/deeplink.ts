@@ -6,6 +6,7 @@
 // удалили) не ругается: миниапп остаётся на ближайшем живом месте, в дне или на главной.
 // Сюда же попадает старое `startapp=hosting` со старых досок.
 
+import { tr } from './i18n'
 import type { NavParams, ScreenName } from './store'
 import { tg } from './telegram'
 import type { Bootstrap, Perspective, SpaceEvent } from './types'
@@ -64,7 +65,7 @@ export function targetEntries(raw: string, data: Bootstrap, perspective: Perspec
       const event = findEvent(data, arg)
       if (!event) return []
       const view: TargetEntry = { name: 'event', params: { event } }
-      return resident && event.canReview && event.form ? [view, { name: 'eventApps', params: { event, backLabel: 'Ивент' } }] : [view]
+      return resident && event.canReview && event.form ? [view, { name: 'eventApps', params: { event, backLabel: tr('Ивент', "Event") } }] : [view]
     }
     case 'dues':
       return resident && data.dues ? [{ name: 'dues' }] : []

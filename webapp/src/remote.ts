@@ -3,6 +3,7 @@
 // спейс то, чего в этот момент не знал («Сбор выключен» на упавшей сети).
 
 import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { locale } from './i18n'
 import { EntryContext, SnapContext } from './screenContext'
 
 /**
@@ -42,7 +43,8 @@ export type Remote<T> = {
  */
 export function useRemote<T>(load: () => Promise<T>, deps: unknown[]): Remote<T> {
   const entry = useContext(EntryContext)
-  const depsKey = deps.map(String).join('\u0001')
+  const language = locale()
+  const depsKey = [language, ...deps].map(String).join('\u0001')
   const cacheKey = `${entry}|${depsKey}`
   const cached = cache.has(cacheKey) ? (cache.get(cacheKey) as T) : null
   const [data, setData] = useState<T | null>(cached)
@@ -109,7 +111,7 @@ export function useRemote<T>(load: () => Promise<T>, deps: unknown[]): Remote<T>
       window.clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, attempt])
+  }, [...deps, language, attempt])
 
   return { data, error, loading, pending, reload: useCallback(() => setAttempt((n) => n + 1), []) }
 }

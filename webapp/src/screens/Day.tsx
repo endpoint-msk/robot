@@ -3,12 +3,13 @@
 // «Я приду» живёт в шапке и отвечает на месте. Прошедший день открывается из архива
 // экраном «Кто пришёл» (screens/Visits.tsx).
 
+import { plural, tr } from '../i18n'
 import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import { action } from '../api'
 import { nb } from '../format'
 import { afterHero } from '../hero'
 import { UnderContext } from '../screenContext'
-import { fmtDayMonth, plural, requestsWord, weekdayIdx, WEEKDAYS_FULL } from '../dates'
+import { fmtDayMonth, requestsWord, weekdayIdx, weekdaysFull } from '../dates'
 import { NEW_EVENT_DRAFT, readDraft, useDrafts, type EventDraft } from '../drafts'
 import { icons } from '../icons'
 import { confirmDialog, numberPrompt, textPrompt } from '../modals'
@@ -64,12 +65,12 @@ import { canSwipeBack, registerPagerStart, swipingBack } from '../components/use
 /** Причина закрытия: её вводят один раз при закрытии и правят строкой в карточке. */
 const askReason = (initial: string): Promise<string | null> =>
   textPrompt({
-    text: 'Почему спейс закрыт?',
+    text: tr('Почему спейс закрыт?', 'Why is the space closed to guests?'),
     initial,
-    placeholder: 'Например: уборка',
-    hint: 'Причину увидят гости. Можно оставить пустой.',
+    placeholder: tr('Например: уборка', 'For example, cleaning'),
+    hint: tr('Причину увидят гости. Можно оставить пустой.', 'Guests will see this reason. You can leave it blank.'),
     maxLength: 120,
-    confirmLabel: 'Готово',
+    confirmLabel: tr('Готово', 'Done'),
   })
 
 /**
@@ -87,17 +88,17 @@ function NewEventLabel({ more }: { more: boolean }) {
   if (!text) {
     return (
       <span className="row-label">
-        <span className="vh">{more ? 'Ещё ивент' : 'Создать ивент'}</span>
+        <span className="vh">{more ? tr('Ещё ивент', 'Add another event') : tr('Создать ивент', 'Create event')}</span>
         <span className={'hb-labels ev-new-labels' + (seen.still ? ' still' : '')} aria-hidden="true">
-          <MorphWord text="Создать ивент" on={!more} />
-          <MorphWord text="Ещё ивент" on={more} />
+          <MorphWord text={tr('Создать ивент', 'Create event')} on={!more} />
+          <MorphWord text={tr('Ещё ивент', 'Add another event')} on={more} />
         </span>
       </span>
     )
   }
   return (
     <span className="row-label">
-      <span className="draft-mark">Черновик:</span> {text}
+      <span className="draft-mark">{tr('Черновик:', 'Draft:')}</span> {text}
     </span>
   )
 }
@@ -109,9 +110,9 @@ function LockBanner({ lock }: { lock: DayLock }) {
     <div className="lock-banner">
       <div className="lb-icon">{icons.lockFilled()}</div>
       <div className="lb-text">
-        <div className="lb-title">Спейс закрыт для гостей</div>
+        <div className="lb-title">{tr('Спейс закрыт для гостей', 'The space is closed to guests')}</div>
         <div className="lb-sub">
-          {[lock.reason, who ? `закрыл ${who}` : ''].filter(Boolean).join(' · ') || 'Новые заявки не принимаются'}
+          {[lock.reason, who ? tr(`закрыл ${who}`, `Closed by ${who}`) : ''].filter(Boolean).join(' · ') || tr('Новые заявки не принимаются', 'Visit requests are closed')}
         </div>
       </div>
     </div>
@@ -141,13 +142,13 @@ function DayCard({ day }: { day: DayData }) {
       const who = lock.by ? (lock.by.username ? '@' + lock.by.username : lock.by.name) : ''
       const ok = await confirmDialog(
         [
-          who ? `День закрыл ${who}.` : 'День закрыт.',
-          lock.reason ? `Причина: ${lock.reason}.` : '',
-          'Откроем — гости снова смогут оставлять заявки, и день вернётся на доску.',
+          who ? tr(`День закрыл ${who}.`, `${who} closed this day to guests.`) : tr('День закрыт.', 'This day is closed to guests.'),
+          lock.reason ? tr(`Причина: ${lock.reason}.`, `Reason: ${lock.reason}.`) : '',
+          tr('Откроем — гости снова смогут оставлять заявки, и день вернётся на доску.', 'Reopen this day to let guests submit requests and put it back on the board.'),
         ]
           .filter(Boolean)
           .join(' '),
-        { confirmLabel: 'Открыть день' },
+        { confirmLabel: tr('Открыть день', 'Reopen day') },
       )
       if (!ok) return
       markOwnTap()
@@ -157,8 +158,8 @@ function DayCard({ day }: { day: DayData }) {
     }
     if (requests > 0) {
       const ok = await confirmDialog(
-        `На этот день уже есть ${requestsWord(requests)}. Закрытие их не отменяет — гости просто не смогут оставить новые.`,
-        { confirmLabel: 'Всё равно закрыть' },
+        tr(`На этот день уже есть ${requestsWord(requests)}. Закрытие их не отменяет — гости просто не смогут оставить новые.`, `This day already has ${requestsWord(requests)}. Existing requests will stay in place and guests will be unable to submit new ones.`),
+        { confirmLabel: tr('Всё равно закрыть', 'Close anyway') },
       )
       if (!ok) return
     }
@@ -181,16 +182,16 @@ function DayCard({ day }: { day: DayData }) {
   const editCap = async (): Promise<void> => {
     if (!capacity) return
     const value = await numberPrompt({
-      text: 'Сколько человек помещается в этот день?',
+      text: tr('Сколько человек помещается в этот день?', 'How many people can fit in the space that day?'),
       initial: capacity.cap,
-      hint: `Рекомендуем ${capacity.defaultCap}: это комфортное количество человек в подвале. Захостить сверх лимита можно, бот предупредит об этом.`,
+      hint: tr(`Рекомендуем ${capacity.defaultCap}: это комфортное количество человек в подвале. Захостить сверх лимита можно, бот предупредит об этом.`, `We recommend ${capacity.defaultCap} for the basement. You can host beyond the limit and the bot will let you know when you do.`),
       min: 1,
       max: 200,
       wheel: {
-        unit: (n) => plural(n, 'человек', 'человека', 'человек'),
+        unit: (n) => plural(n, ['человек', 'человека', 'человек'], ['person', 'people']),
         bar: { occupied: capacity.occupied, pending: capacity.pending },
       },
-      confirmLabel: 'Сохранить',
+      confirmLabel: tr('Сохранить', 'Save'),
     })
     if (value === null || value === capacity.cap) return
     markOwnTap()
@@ -210,37 +211,35 @@ function DayCard({ day }: { day: DayData }) {
 
   return (
     <>
-      <SectionTitle>День</SectionTitle>
+      <SectionTitle>{tr('День', 'Day')}</SectionTitle>
       <div className="card ctl-card">
         {/* Сама тема стоит в шапке дня, здесь вход в правку и автор: текст в строке
             повторял бы шапку. */}
         <button type="button" className="row tappable" onClick={() => startTopicEdit(dateKey)}>
-          <span className="row-label">
-            Тема дня
-            <Collapse open={Boolean(day.agenda?.by)} as="span" ms={320} ease={E.crisp}>
-              {day.agenda?.by ? <span className="row-sublabel">{`поставил ${userLabel(day.agenda.by)}`}</span> : null}
+          <span className="row-label">{tr('Тема дня', 'Day topic')}<Collapse open={Boolean(day.agenda?.by)} as="span" ms={320} ease={E.crisp}>
+              {day.agenda?.by ? <span className="row-sublabel">{tr(`поставил ${userLabel(day.agenda.by)}`, `Set by ${userLabel(day.agenda.by)}`)}</span> : null}
             </Collapse>
           </span>
           <div className="row-right">
-            {day.agenda ? null : <span className="lock-reason">Добавить</span>}
+            {day.agenda ? null : <span className="lock-reason">{tr('Добавить', 'Add')}</span>}
             {icons.chevron()}
           </div>
         </button>
         {data!.me.isResident ? (
           <>
             <Sep inset="text" />
-            <SwitchRow on={Boolean(day.subscribed)} onToggle={toggleSub} label="Уведомления о дне" />
+            <SwitchRow on={Boolean(day.subscribed)} onToggle={toggleSub} label={tr('Уведомления о дне', 'Day notifications')} />
           </>
         ) : null}
         <Sep inset="text" />
-        <SwitchRow on={Boolean(lock)} onToggle={toggleLock} label="Закрыт для гостей" />
+        <SwitchRow on={Boolean(lock)} onToggle={toggleLock} label={tr('Закрыт для гостей', 'Closed to guests')} />
         {lock ? (
           <>
             <Sep inset="text" />
             <button type="button" className="row tappable" onClick={editReason}>
-              <span className="row-label">Причина</span>
+              <span className="row-label">{tr('Причина', 'Reason')}</span>
               <div className="row-right">
-                <span className="lock-reason">{lock.reason || 'Добавить'}</span>
+                <span className="lock-reason">{lock.reason || tr('Добавить', 'Add')}</span>
                 {icons.chevron()}
               </div>
             </button>
@@ -250,18 +249,16 @@ function DayCard({ day }: { day: DayData }) {
           <>
             <Sep inset="text" />
             <button type="button" className="row tappable cap-row" onClick={editCap}>
-              <span className="row-label">
-                Вместимость
-                {/* Последнюю заявку без хоста убрали своим тапом: строка сворачивается, а не
+              <span className="row-label">{tr('Вместимость', 'Capacity')}{/* Последнюю заявку без хоста убрали своим тапом: строка сворачивается, а не
                     пропадает рывком, который у низа страницы дёргал прокрутку. */}
                 <Collapse open={capacity.pending > 0} as="span">
-                  <span className="row-sublabel">{nb(`ещё ${requestsWord(capacity.pending)} без хоста`)}</span>
+                  <span className="row-sublabel">{nb(tr(`ещё ${requestsWord(capacity.pending)} без хоста`, `${requestsWord(capacity.pending)} without a host`))}</span>
                 </Collapse>
               </span>
               <div className="row-right">
                 <span className={'cap-value' + (over ? ' over' : full ? ' full' : '')}>
                   <Flip value={capacity.occupied} />
-                  {`\u00a0из\u00a0${capacity.cap}`}
+                  {tr(`\u00a0из\u00a0${capacity.cap}`, ` of ${capacity.cap}`)}
                 </span>
                 {icons.chevron()}
               </div>
@@ -271,7 +268,7 @@ function DayCard({ day }: { day: DayData }) {
               <>
                 <Sep inset="text" />
                 <button type="button" className="row tappable" onClick={resetCap}>
-                  <span className="row-label">Вернуть общую</span>
+                  <span className="row-label">{tr('Вернуть общую', 'Restore default')}</span>
                   <div className="row-right">
                     <span className="lock-reason">{String(capacity.defaultCap)}</span>
                   </div>
@@ -288,14 +285,14 @@ function DayCard({ day }: { day: DayData }) {
 /** «Вы, @lena_k и ещё 2»: кто придёт, вы первыми. Варианты от длинного к короткому. */
 const comingVariants = (names: string[]): string[] => {
   const [a, b] = names
-  const more = (n: number): string => `и\u00a0ещё\u00a0${n}`
+  const more = (n: number): string => tr(`и\u00a0ещё\u00a0${n}`, `and ${n} more`)
   const list =
     names.length === 0
-      ? ['Пока никого']
+      ? [tr('Пока никого', 'No one yet')]
       : names.length === 1
         ? [a!]
         : names.length === 2
-          ? [`${a} и ${b}`, `${a} ${more(1)}`]
+          ? [tr(`${a} и ${b}`, `${a} and ${b}`), `${a} ${more(1)}`]
           : [`${a}, ${b} ${more(names.length - 2)}`, `${a} ${more(names.length - 1)}`]
   return list.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
 }
@@ -471,7 +468,7 @@ export function ComingRow({
     )
   }, [coming, showMe])
 
-  const names = [...(coming ? ['вы'] : []), ...others.map((a) => userLabel(a))]
+  const names = [...(coming ? [tr('вы', 'you')] : []), ...others.map((a) => userLabel(a))]
   const faces = others.slice(0, 3)
 
   // Новое лицо в ряду сдвигает подпись на свою ширину. После своего тапа она доезжает
@@ -518,7 +515,7 @@ export function ComingRow({
       </div>
       <div className="dpg-coming-text" ref={textRef}>
         <div className="dpg-coming-k">
-          {'Придут · '}
+          {tr('Придут · ', 'Attending · ')}
           <Flip value={count} delay={140} />
         </div>
         <ComingNames names={names} flow />
@@ -527,16 +524,12 @@ export function ComingRow({
         type="button"
         className={'dpg-pill' + (coming ? ' on' : '')}
         aria-pressed={coming}
-        aria-label={coming ? 'Вы придёте' : 'Я приду'}
+        aria-label={coming ? tr('Вы придёте', 'You’re going') : tr('Я приду', 'I’ll be there')}
         onClick={onToggle}
       >
-        <span className="dpg-pill-l dpg-pill-off" aria-hidden="true">
-          Я приду
-        </span>
+        <span className="dpg-pill-l dpg-pill-off" aria-hidden="true">{tr('Я приду', 'I’ll be there')}</span>
         <span className="dpg-pill-l dpg-pill-on" aria-hidden="true">
-          {icons.check(14, '#fff', 2.6)}
-          Вы придёте
-        </span>
+          {icons.check(14, '#fff', 2.6)}{tr('Вы придёте', 'You’re going')}</span>
       </button>
     </div>
   )
@@ -674,9 +667,9 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
     <TimeField
       className="attend-time"
       value={myTime ?? ''}
-      placeholder="Ко скольки?"
-      question="Ко скольки придёте?"
-      prefix="к"
+      placeholder={tr('Ко скольки?', 'What time?')}
+      question={tr('Ко скольки придёте?', 'What time will you arrive?')}
+      prefix={tr('к', 'at')}
       fallback={attendTimeFor(day.dateKey)}
       min={isToday ? data!.nowTime : undefined}
       onChange={(v) => void setMyTime(v)}
@@ -691,8 +684,8 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
     <div className={'dpg-page' + (active ? ' active' : '')} ref={pageRef} inert={!active}>
       <div className="dpg-head" ref={headRef}>
         <Header
-          title={WEEKDAYS_FULL[weekdayIdx(day.dateKey)]}
-          subtitle={`${isToday ? 'Сегодня, ' : ''}${fmtDayMonth(day.dateKey)} · ${requestsWord(requests.length)}`}
+          title={weekdaysFull()[weekdayIdx(day.dateKey)]}
+          subtitle={`${isToday ? tr('Сегодня, ', 'Today, ') : ''}${fmtDayMonth(day.dateKey)} · ${requestsWord(requests.length)}`}
         />
         {/* Поставили тему своим тапом: строка вырастает в шапке, полоса под шапкой растёт
             вместе с ней (её меряет ResizeObserver листалки). */}
@@ -723,7 +716,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
             <div className="row-icon" style={{ background: 'var(--blue)' }}>
               {icons.personPlus('#fff')}
             </div>
-            <span className="row-label">Позвать в спейс</span>
+            <span className="row-label">{tr('Позвать в спейс', 'Invite to the space')}</span>
             <div className="row-right">{icons.chevron()}</div>
           </button>
           <Sep inset="icon" />
@@ -743,7 +736,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
                 <div className="row-icon" style={{ background: 'var(--green)' }}>
                   {icons.check(17, '#fff', 2.4)}
                 </div>
-                <span className="row-label">Кто пришёл</span>
+                <span className="row-label">{tr('Кто пришёл', 'Who came')}</span>
                 <div className="row-right">
                   {cameToday > 0 ? <span className="count-muted">{String(cameToday)}</span> : null}
                   {icons.chevron()}
@@ -754,11 +747,11 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
         </div>
         {requests.length === 0 && events.length === 0 ? (
           <div className="card" ref={growIn} data-dust-empty="">
-            <EmptyState title="Нет заявок гостей" text="На этот день пока никто не оставил заявку." />
+            <EmptyState title={tr('Нет заявок гостей', 'No guest requests')} text={tr('На этот день пока никто не оставил заявку.', 'No one has requested to visit on this day yet.')} />
           </div>
         ) : null}
         <RequestSection
-          title="Одобрены"
+          title={tr('Одобрены', 'Approved')}
           list={approved}
           count={approved.length}
           onHost={(r) => void host(r)}
@@ -768,7 +761,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
         {/* Последнюю ждущую захостили: строки остаются на месте, а заголовок «Ждут ответа»
             гаснет, иначе под ним стояли бы уже одобренные. */}
         <RequestSection
-          title={waiting > 0 || approved.length > 0 ? 'Ждут ответа' : 'Одобрены'}
+          title={waiting > 0 || approved.length > 0 ? tr('Ждут ответа', 'Pending') : tr('Одобрены', 'Approved')}
           list={pending}
           count={waiting > 0 || approved.length > 0 ? waiting : pending.length}
           onHost={(r) => void host(r)}
@@ -780,7 +773,7 @@ function DayPage({ day, active, headRef, pageRef }: DayPageProps) {
             строки, на которые человек смотрит. Своя строка вырастает следом за шапкой. */}
         <Collapse open={residents > 0} delay={200}>
           <SectionTitle>
-            {'Придут резиденты · '}
+            {tr('Придут резиденты · ', 'Residents attending · ')}
             <Flip value={residents} delay={200} />
           </SectionTitle>
           <div className="card">
@@ -855,7 +848,7 @@ export function DayPager({
   days,
   index,
   Page = DayPage,
-  backLabel = 'Ближайшие дни',
+  backLabel = tr('Ближайшие дни', 'Upcoming days'),
 }: {
   days: DayData[]
   index: number
@@ -1328,7 +1321,7 @@ export function DayPager({
               key={d.dateKey}
               type="button"
               className="dpg-dot"
-              aria-label={`${WEEKDAYS_FULL[weekdayIdx(d.dateKey)]}, ${fmtDayMonth(d.dateKey)}`}
+              aria-label={`${weekdaysFull()[weekdayIdx(d.dateKey)]}, ${fmtDayMonth(d.dateKey)}`}
               aria-current={k === index ? 'date' : undefined}
               onClick={() => go.current(k)}
             >
@@ -1361,8 +1354,8 @@ export function DayPager({
 /** День выпал из окна обзора, пока экран был открыт (прежде всего — через полночь). */
 export function DroppedDay({
   dateKey,
-  backLabel = 'Ближайшие дни',
-  backText = 'К ближайшим дням',
+  backLabel = tr('Ближайшие дни', 'Upcoming days'),
+  backText = tr('К ближайшим дням', 'Back to upcoming days'),
 }: {
   dateKey: string
   backLabel?: string
@@ -1371,12 +1364,12 @@ export function DroppedDay({
   return (
     <Screen>
       <BackRow label={backLabel} />
-      <Header title={WEEKDAYS_FULL[weekdayIdx(dateKey)]} subtitle={fmtDayMonth(dateKey)} />
+      <Header title={weekdaysFull()[weekdayIdx(dateKey)]} subtitle={fmtDayMonth(dateKey)} />
       <div className="card">
         <EmptyState
           icon={icons.calendar(26, sec(0.3))}
-          title="Этот день больше не в обзоре"
-          text={`Обзор показывает ближайшие семь дней, и ${fmtDayMonth(dateKey)} из них вышло.`}
+          title={tr('Этот день больше не в обзоре', 'This day is outside the overview')}
+          text={tr(`Обзор показывает ближайшие семь дней, и ${fmtDayMonth(dateKey)} из них вышло.`, `The overview shows the next seven days. ${fmtDayMonth(dateKey)} is outside that window.`)}
         />
         <div style={{ display: 'flex', justifyContent: 'center', padding: '0 20px 22px' }}>
           <button type="button" className="retry-btn" style={{ marginTop: 0 }} onClick={pop}>

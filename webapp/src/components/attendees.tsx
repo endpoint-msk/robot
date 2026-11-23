@@ -1,5 +1,6 @@
 // Список «кто придёт»: подтверждённые гости (без анонимных) + резиденты «я приду».
 
+import { tr } from '../i18n'
 import { Fragment, type ReactNode } from 'react'
 import type { Attendee, User } from '../types'
 import { Avatar, Profile } from './people'
@@ -16,7 +17,7 @@ export function AttendeeRow({ a, right }: { a: Attendee; right?: ReactNode }) {
     a.time || a.username ? (
       <div className="req-sub split">
         {a.username ? <span className="req-sub-nick">@{a.username}</span> : null}
-        {a.time ? <span className="req-sub-fixed">{(a.username ? ' · ' : '') + 'к ' + a.time}</span> : null}
+        {a.time ? <span className="req-sub-fixed">{(a.username ? ' · ' : '') + tr('к ', 'at ') + a.time}</span> : null}
       </div>
     ) : null
   return (
@@ -28,7 +29,7 @@ export function AttendeeRow({ a, right }: { a: Attendee; right?: ReactNode }) {
         </Profile>
         {subEl}
       </div>
-      {right ?? (a.resident ? <span className="resident-badge">резидент</span> : null)}
+      {right ?? (a.resident ? <span className="resident-badge">{tr('резидент', 'resident')}</span> : null)}
     </div>
   )
 }

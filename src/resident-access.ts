@@ -4,6 +4,7 @@ import { audit, auditUser } from './audit.js'
 import { loginFor, type AuthentikClient, type AuthentikUser } from './authentik.js'
 import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
+import { tr } from './i18n.js'
 import type { OutlineClient } from './outline.js'
 import { RESIDENT_TAG, readMemberState, revokeAdmin, setMemberTag, type AdminTarget } from './resident-admin.js'
 import type { ResidentDirectory } from './residents.js'
@@ -72,7 +73,10 @@ export const accountStatus = async (deps: AccessDeps, userId: number): Promise<A
 export type GrantResult = { kind: 'ok' } | { kind: 'taken'; login: string } | { kind: 'error'; reason: string }
 
 export const takenHint = (login: string, telegramId: number): string =>
-    `Логин «${login}» в Authentik уже занят. Если это его старый аккаунт, впиши ему атрибут telegram_id: ${telegramId}.`
+    tr(
+        `Логин «${login}» в Authentik уже занят. Если это его старый аккаунт, впиши ему атрибут telegram_id: ${telegramId}.`,
+        `The Authentik login “${login}” is already in use. If it’s their old account, set its telegram_id to ${telegramId}.`,
+    )
 
 /** Завести аккаунт или включить существующий. */
 export const grantAccess = async (

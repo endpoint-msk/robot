@@ -23,6 +23,7 @@ import { audit, auditUser } from './audit.js'
 import { requestTarget, webappAt } from './deeplink.js'
 import { syncHostingBoard } from './hosting-board.js'
 import { startHeartbeatInterval } from './health.js'
+import { tr, withUserLocale } from './i18n.js'
 import type { Storage } from './storage.js'
 import type { HostingRequest, VisitReminder, VisitReminderChoice } from './types.js'
 import { own } from './types.js'
@@ -131,8 +132,8 @@ const CB_CANCEL = 'visitremind:no:'
 /** «Пт, 17 июля» с пометкой, если это сегодня или завтра: напоминание читают наспех. */
 const whenLabel = (dateKey: string, tzOffsetMinutes: number): string => {
     const today = todayKey(tzOffsetMinutes)
-    if (dateKey === today) return 'сегодня'
-    if (dateKey === addDaysToKey(today, 1)) return 'завтра'
+    if (dateKey === today) return tr('сегодня', "today")
+    if (dateKey === addDaysToKey(today, 1)) return tr('завтра', "tomorrow")
     return formatDayKey(dateKey)
 }
 
@@ -142,30 +143,31 @@ const whenLabel = (dateKey: string, tzOffsetMinutes: number): string => {
  */
 export const notifyVisitReminder = async (
     client: TelegramClient,
+    storage: Storage,
     webappUrl: string,
     tzOffsetMinutes: number,
     request: HostingRequest,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, request.guest.userId, async () => {
     const when = whenLabel(request.dateKey, tzOffsetMinutes)
     const host = request.approvedBy
     const lines = host
         ? [
-            `🔔 Напоминаю: визит в спейс <b>${when} к ${request.time}</b>.`,
-            `Вас хостит ${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}.`,
-            'У двери откройте свой визит и нажмите «Я на месте».',
+            tr(`🔔 Напоминаю: визит в спейс <b>${when} к ${request.time}</b>.`, `🔔 Reminder: your visit to the space is <b>${when} at ${request.time}</b>.`),
+            tr(`Вас хостит ${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}.`, `Your host is ${html.escape(displayName(host.name))}${host.username ? ` (@${host.username})` : ''}.`),
+            tr('У двери откройте свой визит и нажмите «Я на месте».', "When you reach the door, open your visit and tap “I’m here”."),
         ]
         : [
-            `🔔 Напоминаю: вы собирались в спейс <b>${when} к ${request.time}</b>.`,
-            'Заявку пока никто не подтвердил — резиденты её видят.',
+            tr(`🔔 Напоминаю: вы собирались в спейс <b>${when} к ${request.time}</b>.`, `🔔 Reminder: you’re planning to visit the space <b>${when} at ${request.time}</b>.`),
+            tr('Заявку пока никто не подтвердил — резиденты её видят.', "Residents can see your request. It’s still awaiting confirmation."),
         ]
     await client.sendText(request.guest.userId, html(lines.join('<br>')), {
         replyMarkup: BotKeyboard.inline([
-            [BotKeyboard.callback('Не смогу прийти', `${CB_CANCEL}${request.id}`)],
-            [BotKeyboard.webView('Мои визиты', webappAt(webappUrl, requestTarget(request.id)))],
+            [BotKeyboard.callback(tr('Не смогу прийти', "I can’t make it"), `${CB_CANCEL}${request.id}`)],
+            [BotKeyboard.webView(tr('Мои визиты', "My visits"), webappAt(webappUrl, requestTarget(request.id)))],
         ]),
         disableWebPreview: true,
     })
-}
+})
 
 /**
  * Заявки, которым пора напомнить: срок настал, но визит ещё не безнадёжно прошёл.
@@ -200,7 +202,7 @@ export const startVisitReminderScheduler = (
         async () => {
             for (const request of dueReminders(storage, tzOffsetMinutes, Date.now())) {
                 try {
-                    await notifyVisitReminder(client, webappUrl, tzOffsetMinutes, request)
+                    await notifyVisitReminder(client, storage, webappUrl, tzOffsetMinutes, request)
                 } catch (err) {
                     console.warn(`[visit-reminder] не удалось напомнить ${request.guest.userId}:`, err)
                 }
@@ -235,13 +237,13 @@ export const registerVisitReminderHandlers = (
 
         const request = own(storage.get().hostingRequests, id)
         if (!request || request.guest.userId !== ctx.user.id) {
-            await ctx.answer({ text: 'Заявки уже нет.', alert: true })
+            await ctx.answer({ text: tr('Заявки уже нет.', "This request no longer exists."), alert: true })
             return
         }
         // Те же гейты, что у отмены в миниаппе: сообщение с кнопкой живёт в личке вечно,
         // и без них прошедший или уже отмеченный визит стирался бы задним числом.
         if (request.dateKey < todayKey(tzOffsetMinutes) || request.visit) {
-            await ctx.answer({ text: 'Этот визит уже прошёл или отмечен резидентом, отменить его нельзя.', alert: true })
+            await ctx.answer({ text: tr('Этот визит уже прошёл или отмечен резидентом, отменить его нельзя.', "This visit has passed or a resident has already recorded attendance. It can no longer be cancelled."), alert: true })
             return
         }
         await storage.update((s) => {
@@ -260,7 +262,7 @@ export const registerVisitReminderHandlers = (
         // которая правит свои сообщения во всех чатах, и правка напоминания ждёт до 10 с
         // или падает. С ответом последним шагом гость видел бы кнопку, которая молчит.
         try {
-            await ctx.answer({ text: 'Заявка отменена.', alert: true })
+            await ctx.answer({ text: tr('Заявка отменена.', "Request cancelled."), alert: true })
         } catch (err) {
             console.error('[visit-reminder] не удалось ответить на кнопку отмены:', err)
         }
@@ -268,14 +270,14 @@ export const registerVisitReminderHandlers = (
         // доски: её правки идут тем же методом и сами могут поставить этот под флуд.
         try {
             await ctx.editMessage({
-                text: html('Заявка отменена. Приходите в другой раз — заявку можно оставить заново.'),
+                text: html(tr('Заявка отменена. Приходите в другой раз — заявку можно оставить заново.', "Request cancelled. You’re welcome to request another visit.")),
                 replyMarkup: BotKeyboard.inline([]),
             })
         } catch (err) {
             console.error('[visit-reminder] не удалось переписать напоминание:', err)
         }
         if (request.status === 'approved') {
-            void notifyApproverCancelled(client, request)
+            void notifyApproverCancelled(client, storage, request)
                 .catch((err) => console.error('[visit-reminder] не удалось уведомить резидента об отмене визита:', err))
         }
         void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes)

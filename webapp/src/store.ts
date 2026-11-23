@@ -5,6 +5,7 @@
 
 import { useContext, useSyncExternalStore } from 'react'
 import { heroRow, heroScreen, heroScreenOf, heroSwap, pageSwap, settleHero, themeSwap, type HeroKind } from './hero'
+import { locale, setLocale } from './i18n'
 import { markOwnTap } from './motion'
 import { pruneRemote } from './remote'
 import { SnapContext } from './screenContext'
@@ -157,7 +158,8 @@ const HOLDS: ReadonlySet<ScreenName> = new Set<ScreenName>(['overview', 'day', '
  * Снимок, с которым встаёт экран записи: только после своего действия глубже. Чужое
  * изменение без своего приходит, как везде, без движения.
  */
-export const heldData = (e: NavEntry): Bootstrap | null => (e.own && e.snap && HOLDS.has(e.name) ? e.snap : null)
+export const heldData = (e: NavEntry): Bootstrap | null =>
+  (e.own && e.snap?.me.language === locale() && HOLDS.has(e.name) ? e.snap : null)
 
 /**
  * Своё действие на верхнем экране: экраны под ним, когда на них вернутся, сыграют смену.
@@ -365,9 +367,10 @@ export function setPerspective(p: Perspective): void {
 let dataAt = 0
 export const getDataAt = (): number => dataAt
 
-/** Обновление данных без навигации: экран не ремаунтится, скролл/фокус сохраняются. */
+/** При обновлении данных сохраняем скролл и фокус. Смена языка обновляет экран целиком. */
 export const setData = (data: Bootstrap): void => {
   dataAt = Date.now()
+  if (data.me.language !== locale()) setLocale(data.me.language)
   set({ data })
 }
 

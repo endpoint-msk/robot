@@ -3,6 +3,7 @@
 // готовит на касании кнопки, а не на входе в экран: за каждой стоит вызов Telegram, а к
 // щелчку она обычно уже готова. Клиент старше 8.0 получает ту же ссылку t.me в буфер.
 
+import { tr } from '../i18n'
 import { useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { api } from '../api'
 import { icons } from '../icons'
@@ -65,7 +66,7 @@ function useShare(target: ShareTarget) {
       card = await prepare()
     }
     if (!card) {
-      showAlert(failure.current ?? 'Не получилось подготовить карточку. Попробуйте ещё раз.')
+      showAlert(failure.current ?? tr('Не получилось подготовить карточку. Попробуйте ещё раз.', 'Couldn’t prepare the card. Please try again.'))
       return
     }
     const sent = await shareMessage(card.id)
@@ -92,7 +93,7 @@ function Label({ text, sent }: { text: string; sent: boolean }) {
       </span>
       <span className="hb-labels" aria-hidden="true">
         <MorphWord text={text} on={!sent} />
-        <MorphWord text="Отправлено" on={sent} />
+        <MorphWord text={tr('Отправлено', 'Sent')} on={sent} />
       </span>
     </>
   )
@@ -107,11 +108,11 @@ export function ShareButton({ target, style }: { target: ShareTarget; style?: CS
         type="button"
         className={'secondary-btn evv-cal-wide share-btn' + (s.sent ? ' sent' : '')}
         style={style}
-        aria-label={s.sent ? 'Отправлено' : 'Переслать'}
+        aria-label={s.sent ? tr('Отправлено', 'Sent') : tr('Переслать', 'Share')}
         onPointerDown={s.arm}
         onClick={(e) => void s.share(e)}
       >
-        <Label text="Переслать" sent={s.sent} />
+        <Label text={tr('Переслать', 'Share')} sent={s.sent} />
       </button>
       {s.toast}
     </>
@@ -127,8 +128,8 @@ export function ShareIconButton({ target, style }: { target: ShareTarget; style?
         type="button"
         className={'evv-cal share-btn' + (s.sent ? ' sent' : '')}
         style={style}
-        aria-label={s.sent ? 'Отправлено' : 'Переслать'}
-        title="Переслать"
+        aria-label={s.sent ? tr('Отправлено', 'Sent') : tr('Переслать', 'Share')}
+        title={tr('Переслать', 'Share')}
         onPointerDown={s.arm}
         onClick={(e) => void s.share(e)}
       >
@@ -150,7 +151,7 @@ export function ShareRow({ target, label }: { target: ShareTarget; label: string
       <button
         type="button"
         className="row tappable share-row"
-        aria-label={s.sent ? 'Отправлено' : label}
+        aria-label={s.sent ? tr('Отправлено', 'Sent') : label}
         onPointerDown={s.arm}
         onClick={(e) => void s.share(e)}
       >
@@ -160,7 +161,7 @@ export function ShareRow({ target, label }: { target: ShareTarget; label: string
         <span className="row-label">
           <span className="hb-labels share-row-labels" aria-hidden="true">
             <MorphWord text={label} on={!s.sent} />
-            <MorphWord text="Отправлено" on={s.sent} />
+            <MorphWord text={tr('Отправлено', 'Sent')} on={s.sent} />
           </span>
         </span>
       </button>

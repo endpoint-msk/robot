@@ -4,8 +4,9 @@
 // месяца, неделя начинается с понедельника, как везде в миниаппе. Месяцы листаются
 // пальцем, мышью и трекпадом, стрелки в шапке тоже.
 
+import { tr } from '../i18n'
 import { useLayoutEffect, useRef, useState } from 'react'
-import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, MONTHS_NOM, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
+import { addDays, dayNum, fmtDayMonth, keyToDate, monthIdx, monthsNom, weekdayIdx, weekdaysShort, yearOf } from '../dates'
 import { icons } from '../icons'
 import { Actions, Question, sheetPrompt } from '../modals'
 import { clamp, holdSelection, landing, PAGE_SPRING, pageTarget, reducedMotion, rubber, springAt, tracker } from '../motion'
@@ -25,12 +26,12 @@ const daysInMonth = (key: string): number => dayNum(addDays(addMonths(key, 1), -
 
 /** «Ср, 15 октября», с годом — только когда он не тот, в котором сейчас живём. */
 const label = (key: string, today: string): string => {
-  const base = `${WEEKDAYS_SHORT[weekdayIdx(key)]}, ${fmtDayMonth(key)}`
+  const base = `${weekdaysShort()[weekdayIdx(key)]}, ${fmtDayMonth(key)}`
   return yearOf(key) === yearOf(today) ? base : `${base} ${yearOf(key)}`
 }
 
 /** «Октябрь 2026»: подпись над сеткой. */
-const monthTitle = (key: string): string => `${MONTHS_NOM[monthIdx(key)]} ${yearOf(key)}`
+const monthTitle = (key: string): string => `${monthsNom()[monthIdx(key)]} ${yearOf(key)}`
 
 function MonthGrid({
   month,
@@ -366,18 +367,18 @@ function DateSheet({
       <Question text={question} />
       <div className="card dp-card">
         <div className="dp-head">
-          <button className="dp-nav" aria-label="Предыдущий месяц" disabled={!has(-1)} onClick={() => shift.current(-1)}>
+          <button className="dp-nav" aria-label={tr("Предыдущий месяц", "Previous month")} disabled={!has(-1)} onClick={() => shift.current(-1)}>
             <span className="dp-nav-back">{icons.chevron(accent())}</span>
           </button>
           <span className="dp-month" ref={titleRef}>
             {monthTitle(month)}
           </span>
-          <button className="dp-nav" aria-label="Следующий месяц" disabled={!has(1)} onClick={() => shift.current(1)}>
+          <button className="dp-nav" aria-label={tr("Следующий месяц", "Next month")} disabled={!has(1)} onClick={() => shift.current(1)}>
             {icons.chevron(accent())}
           </button>
         </div>
         <div className="dp-dows">
-          {WEEKDAYS_SHORT.map((d) => (
+          {weekdaysShort().map((d) => (
             <span className="dp-dow" key={d}>
               {d}
             </span>
@@ -398,7 +399,7 @@ function DateSheet({
           ))}
         </div>
       </div>
-      <Actions label="Готово" onConfirm={() => done(value)} cancel="Отмена" onCancel={() => done(null)} />
+      <Actions label={tr("Готово", "Done")} onConfirm={() => done(value)} cancel={tr("Отмена", "Cancel")} onCancel={() => done(null)} />
     </>
   )
 }
@@ -408,7 +409,7 @@ export function DateField({
   onChange,
   min,
   max,
-  question = 'Дата',
+  question = tr('Дата', "Date"),
 }: {
   value: string
   onChange: (value: string) => void
@@ -427,7 +428,7 @@ export function DateField({
   }
 
   return (
-    <button type="button" className="time-input time-field dp-field" aria-label={'Дата: ' + label(value, min)} onClick={() => void pick()}>
+    <button type="button" className="time-input time-field dp-field" aria-label={tr('Дата: ', "Date: ") + label(value, min)} onClick={() => void pick()}>
       {label(value, min)}
     </button>
   )

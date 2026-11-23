@@ -180,6 +180,7 @@ import {
 } from './dues.js'
 import { announceTargets, broadcastAnnouncement, buildDefaultAnnouncement, fetchLatestRelease } from './announce.js'
 import { buildCommit } from './build-info.js'
+import { syncPrivateLanguageCommands } from './bot-language-commands.js'
 import { isValidMac, normalizeMac } from './keenetic.js'
 import { isPresenceLogged, setPresenceNoLog } from './presence-log.js'
 import {
@@ -218,6 +219,7 @@ import {
 import { accountStatus, deleteAccount, grantAccess, takenHint } from './resident-access.js'
 import type { AuthentikClient } from './authentik.js'
 import type { OutlineClient } from './outline.js'
+import { languageChoiceOf, rememberTelegramLanguage, setUserLanguage, tr, userLocale, withLocale, withUserLocale } from './i18n.js'
 import type { Storage } from './storage.js'
 import type { DayAgenda, EventApplication, HostingRequest, HostingUser, RescheduleProposal, ResidentMacs, SpaceEvent, WalkIn } from './types.js'
 import { own } from './types.js'
@@ -250,7 +252,7 @@ export const parseWebappConfig = (env: {
 // Валидация initData (https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app)
 // ---------------------------------------------------------------------------
 
-export type WebappUser = HostingUser
+export type WebappUser = HostingUser & { languageCode?: string }
 
 /**
  * Проверяет подпись initData миниаппа и возвращает пользователя. null — подпись
@@ -282,12 +284,17 @@ export const validateInitData = (initData: string, botToken: string, now: Date =
     const userRaw = params.get('user')
     if (!userRaw) return null
     try {
-        const user = JSON.parse(userRaw) as { id?: number; first_name?: string; last_name?: string; username?: string; is_bot?: boolean }
+        const user = JSON.parse(userRaw) as {
+            id?: number; first_name?: string; last_name?: string; username?: string; is_bot?: boolean; language_code?: string
+        }
         if (typeof user.id !== 'number' || user.is_bot === true) return null
         // Имя чистим от невидимых символов сразу на входе: имя из одних zero-width/юникод-пробелов
         // выглядит в любом списке как пустое место. Не осталось ничего — берём ник, потом id.
         const name = cleanName([user.first_name, user.last_name].filter(Boolean).join(' ')) || (user.username ?? String(user.id))
-        return { userId: user.id, username: user.username ?? null, name }
+        return {
+            userId: user.id, username: user.username ?? null, name,
+            ...(typeof user.language_code === 'string' ? { languageCode: user.language_code } : {}),
+        }
     } catch {
         return null
     }
@@ -384,7 +391,7 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
  */
 const lastApiError = new WeakMap<ServerResponse, string>()
 
-/** Ошибка API с человекочитаемым (русским) текстом — фронт показывает message как есть. */
+/** Ошибка API с локализованным текстом — фронт показывает message как есть. */
 const sendError = (res: ServerResponse, status: number, error: string, message: string): void => {
     lastApiError.set(res, error)
     sendJson(res, status, { error, message })
@@ -392,7 +399,8 @@ const sendError = (res: ServerResponse, status: number, error: string, message: 
 
 /** Срок антиспама «Я на месте» словами: хардкод в тексте разъехался бы с ARRIVAL_COOLDOWN_MS. */
 const ARRIVAL_COOLDOWN_MINUTES = Math.round(ARRIVAL_COOLDOWN_MS / 60_000)
-const ARRIVAL_COOLDOWN_LABEL = `${ARRIVAL_COOLDOWN_MINUTES} ${plural(ARRIVAL_COOLDOWN_MINUTES, ['минуту', 'минуты', 'минут'])}`
+const minutesLabel = (minutes: number): string =>
+    `${minutes} ${tr(plural(minutes, ['минуту', 'минуты', 'минут']), minutes === 1 ? 'minute' : 'minutes')}`
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -400,7 +408,7 @@ const HOUR = 60 * MINUTE
 /** Сколько ручка `close` ждёт DM гостю, прежде чем ответить «доставку не знаем». */
 const CLOSE_DM_WAIT_MS = 5000
 
-const VISIT_DAY_CLOSED = `Отмечать, кто пришёл, можно только в день визита и ночью после него, до ${VISIT_MARK_GRACE_UNTIL}.`
+const visitDayClosed = (): string => tr(`Отмечать, кто пришёл, можно только в день визита и ночью после него, до ${VISIT_MARK_GRACE_UNTIL}.`, `You can record attendance on the day of the visit and until ${VISIT_MARK_GRACE_UNTIL} the next morning.`)
 
 /**
  * Полки лимитов вне `/api/*`. Ключ у всех, кроме `ip`/`authFail`, — userId из
@@ -461,6 +469,7 @@ const CLASS_LIMITS: Record<RateClass, RateRule> = {
  */
 const METHOD_CLASS: Record<string, RateClass> = {
     bootstrap: 'read',
+    'language.set': 'write',
     archive: 'read',
     'archive.week': 'read',
     'guests.search': 'read',
@@ -593,9 +602,8 @@ const METHOD_LIMITS: Record<string, RateRule> = {
 const INVITE_TARGET_LIMIT: RateRule = { limit: 3, windowMs: HOUR }
 
 const waitLabel = (seconds: number): string => {
-    if (seconds < 60) return `${seconds} ${plural(seconds, ['секунду', 'секунды', 'секунд'])}`
-    const minutes = Math.ceil(seconds / 60)
-    return `${minutes} ${plural(minutes, ['минуту', 'минуты', 'минут'])}`
+    if (seconds < 60) return `${seconds} ${tr(plural(seconds, ['секунду', 'секунды', 'секунд']), seconds === 1 ? 'second' : 'seconds')}`
+    return minutesLabel(Math.ceil(seconds / 60))
 }
 
 /**
@@ -618,7 +626,7 @@ const sendRateLimited = (res: ServerResponse, retryAfterMs: number, json = true)
     })
     res.end(JSON.stringify({
         error: 'rate_limited',
-        message: `Слишком часто. Попробуйте через ${waitLabel(seconds)}.`,
+        message: tr(`Слишком часто. Попробуйте через ${waitLabel(seconds)}.`, `Too many requests. Try again in ${waitLabel(seconds)}.`),
     }))
 }
 
@@ -740,7 +748,8 @@ export type WebappDeps = {
 }
 
 type ApiContext = WebappDeps & {
-    user: WebappUser
+    user: HostingUser
+    telegramLanguage?: string
     resident: boolean
     body: Record<string, unknown>
     res: ServerResponse
@@ -960,14 +969,14 @@ const eventView = (e: SpaceEvent, ctx: ApiContext) => {
     }
 }
 
-const EVENT_ERRORS: Record<EventError, string> = {
-    not_found: 'Ивент не найден — обновите экран.',
-    bad_date: 'Выберите день в пределах ближайшей недели.',
-    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-    past_time: 'Это время уже прошло.',
-    bad_title: 'Без названия ивент не понять — впиши его.',
-    not_yours: 'Править ивент может тот, кто его завёл.',
-}
+const eventErrors = (): Record<EventError, string> => ({
+    not_found: tr('Ивент не найден — обновите экран.', "Event not found. Refresh the page."),
+    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+    past_time: tr('Это время уже прошло.', "That time has already passed."),
+    bad_title: tr('Без названия ивент не понять — впиши его.', "Enter a title for the event."),
+    not_yours: tr('Править ивент может тот, кто его завёл.', "Only the event creator can edit it."),
+})
 
 /** Список афиш из тела: редактор присылает желаемый порядок целиком (см. `syncEventPhotos`). */
 const photosFrom = (body: Record<string, unknown>): string[] =>
@@ -1001,16 +1010,16 @@ const eventInputFrom = (body: Record<string, unknown>): EventInput => ({
 })
 
 /** Сообщения об ошибках заявки на ивент + HTTP-статусы. */
-const APP_ERRORS = {
-    not_found: 'Заявка не найдена — обновите экран.',
-    no_form: 'На этот ивент заявки не принимаются.',
-    not_visible: 'Ивент недоступен.',
-    past: 'Ивент уже прошёл.',
-    duplicate: 'Вы уже подали заявку на этот ивент.',
-    required: 'Заполните обязательные поля.',
-    not_pending: 'Заявку уже рассмотрели — правка недоступна.',
-} as const
-const APP_ERR_STATUS: Record<keyof typeof APP_ERRORS, number> = {
+const appErrors = () => ({
+    not_found: tr('Заявка не найдена — обновите экран.', "Request not found. Refresh the page."),
+    no_form: tr('На этот ивент заявки не принимаются.', "This event doesn’t accept applications."),
+    not_visible: tr('Ивент недоступен.', "This event is unavailable."),
+    past: tr('Ивент уже прошёл.', "This event has already taken place."),
+    duplicate: tr('Вы уже подали заявку на этот ивент.', "You’ve already applied for this event."),
+    required: tr('Заполните обязательные поля.', "Fill in the required fields."),
+    not_pending: tr('Заявку уже рассмотрели — правка недоступна.', "This application has already been reviewed and can no longer be edited."),
+})
+const APP_ERR_STATUS: Record<keyof ReturnType<typeof appErrors>, number> = {
     not_found: 404,
     no_form: 400,
     not_visible: 403,
@@ -1253,6 +1262,8 @@ const buildBootstrap = (ctx: ApiContext) => {
             name: user.name,
             isResident: resident,
             isDev: isDevUser(ctx),
+            language: userLocale(storage, user.userId, ctx.telegramLanguage),
+            languageChoice: languageChoiceOf(storage, user.userId),
             // Правила спейса гость принимает один раз, перед первой заявкой (см. `rules.accept`).
             acceptedRules: hasAcceptedRules(storage, user.userId),
         },
@@ -1632,24 +1643,24 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
     const { client, storage, allowedChats, residents, tzOffsetMinutes, config, githubRepo, user, resident, body, res } = ctx
 
     const requireResident = (): boolean => {
-        if (!resident) sendError(res, 403, 'not_resident', 'Доступно только резидентам.')
+        if (!resident) sendError(res, 403, 'not_resident', tr('Доступно только резидентам.', "Available to residents only."))
         return resident
     }
     const requireDev = (): boolean => {
         const dev = isDevUser(ctx)
-        if (!dev) sendError(res, 403, 'not_dev', 'Доступно только dev-аккаунтам из DEV_USER_IDS.')
+        if (!dev) sendError(res, 403, 'not_dev', tr('Доступно только dev-аккаунтам из DEV_USER_IDS.', "Available only to developer accounts listed in DEV_USER_IDS."))
         return dev
     }
     const findRequest = (): HostingRequest | null => {
         const id = typeof body.id === 'string' ? body.id : ''
         const request = own(storage.get().hostingRequests, id)
-        if (!request) sendError(res, 404, 'not_found', 'Заявка не найдена — возможно, её уже отменили.')
+        if (!request) sendError(res, 404, 'not_found', tr('Заявка не найдена — возможно, её уже отменили.', "The request couldn’t be found. It may have been cancelled."))
         return request ?? null
     }
     // Любая мутация заявок/отметок могла изменить доску «кто сегодня в спейсе» — сверяем её
     // в фоне (fire-and-forget), чтобы не задерживать ответ миниаппу.
     const syncBoard = (): void => {
-        void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes).catch((err) =>
+        void withLocale('ru', () => syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes)).catch((err) =>
             console.error('[hosting-board] не удалось обновить доску:', err),
         )
     }
@@ -1664,6 +1675,19 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             return
         }
 
+        case 'language.set': {
+            const choice = body.choice
+            if (choice !== 'auto' && choice !== 'ru' && choice !== 'en') {
+                sendError(res, 400, 'bad_language', tr('Выберите язык из списка.', 'Choose a language from the list.'))
+                return
+            }
+            await setUserLanguage(storage, user.userId, choice)
+            // Гость может открыть миниапп до первого /start, пока у бота ещё нет личного чата.
+            void syncPrivateLanguageCommands(client, storage, user.userId).catch(() => {})
+            sendJson(res, 200, withLocale(userLocale(storage, user.userId, ctx.telegramLanguage), () => buildBootstrap(ctx)))
+            return
+        }
+
         // «Вернуть» после обратимого действия (src/undo.ts): объект встаёт тем же, а
         // отложенная личка не уходит. Отсчёт кончился или за это время что-то изменилось -
         // действие остаётся в силе.
@@ -1671,11 +1695,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const token = typeof body.token === 'string' ? body.token : ''
             const result = await takeUndo(token, user.userId)
             if (result === 'gone') {
-                sendError(res, 410, 'undo_gone', 'Уже не вернуть: время вышло.')
+                sendError(res, 410, 'undo_gone', tr('Уже не вернуть: время вышло.', "Time’s up. This action can no longer be undone."))
                 return
             }
             if (result === 'stale') {
-                sendError(res, 409, 'undo_stale', 'Уже не вернуть: за это время всё изменилось.')
+                sendError(res, 409, 'undo_stale', tr('Уже не вернуть: за это время всё изменилось.', "This action can no longer be undone because the record has changed."))
                 return
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -1693,7 +1717,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Гейт правил стоит на сервере, а не только в навигации миниаппа: экран согласия
             // фронт может и обойти, а заявка без принятых правил не должна заводиться.
             if (!hasAcceptedRules(storage, user.userId)) {
-                sendError(res, 403, 'rules_required', 'Сначала примите правила спейса.')
+                sendError(res, 403, 'rules_required', tr('Сначала примите правила спейса.', "Accept the space rules first."))
                 return
             }
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
@@ -1708,11 +1732,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const created = await createHostingRequest(storage, tzOffsetMinutes, { guest: user, dateKey, time, purpose, anon, remind })
             if (!created.ok) {
                 const messages = {
-                    bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-                    past_time: 'Это время уже прошло — выбери время позже текущего.',
-                    duplicate: 'У вас уже есть заявка на этот день.',
-                    day_locked: 'В этот день спейс закрыт для гостей — выберите другой.',
+                    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+                    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+                    past_time: tr('Это время уже прошло — выбери время позже текущего.', "That time has already passed. Choose a later time."),
+                    duplicate: tr('У вас уже есть заявка на этот день.', "You already have a request for this day."),
+                    day_locked: tr('В этот день спейс закрыт для гостей — выберите другой.', "The space is closed to guests on this day. Choose another day."),
                 } as const
                 sendError(res, 400, created.error, messages[created.error])
                 return
@@ -1730,7 +1754,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const request = findRequest()
             if (!request) return
             if (request.guest.userId !== user.userId) {
-                sendError(res, 403, 'not_yours', 'Редактировать можно только свою заявку.')
+                sendError(res, 403, 'not_yours', tr('Редактировать можно только свою заявку.', "You can only edit your own request."))
                 return
             }
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
@@ -1756,13 +1780,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const edited = await editHostingRequest(storage, tzOffsetMinutes, request.id, user.userId, { dateKey, time, purpose, anon, remind })
             if (!edited.ok) {
                 const messages = {
-                    not_found: 'Заявка не найдена — возможно, её уже отменили.',
-                    not_pending: 'Заявку уже одобрили — измени её через отмену и новую заявку.',
-                    bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-                    past_time: 'Это время уже прошло — выбери время позже текущего.',
-                    duplicate: 'У вас уже есть заявка на этот день.',
-                    day_locked: 'В этот день спейс закрыт для гостей — выберите другой.',
+                    not_found: tr('Заявка не найдена — возможно, её уже отменили.', "The request couldn’t be found. It may have been cancelled."),
+                    not_pending: tr('Заявку уже одобрили — измени её через отмену и новую заявку.', "The request has been approved. Cancel it and submit a new one to make changes."),
+                    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+                    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+                    past_time: tr('Это время уже прошло — выбери время позже текущего.', "That time has already passed. Choose a later time."),
+                    duplicate: tr('У вас уже есть заявка на этот день.', "You already have a request for this day."),
+                    day_locked: tr('В этот день спейс закрыт для гостей — выберите другой.', "The space is closed to guests on this day. Choose another day."),
                 } as const
                 const status = edited.error === 'not_found' ? 404 : edited.error === 'not_pending' ? 409 : 400
                 sendError(res, status, edited.error, messages[edited.error])
@@ -1773,8 +1797,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (dropped) {
                 const agreed = dropped.dateKey === edited.request.dateKey && dropped.time === edited.request.time
                 const notify = agreed
-                    ? notifyProposalAccepted(client, dropped.residentId, config.publicUrl, edited.request, false, user)
-                    : notifyProposalDroppedByEdit(client, dropped.residentId, config.publicUrl, edited.request, dropped)
+                    ? notifyProposalAccepted(client, storage, dropped.residentId, config.publicUrl, edited.request, false, user)
+                    : notifyProposalDroppedByEdit(client, storage, dropped.residentId, config.publicUrl, edited.request, dropped)
                 void notify.catch((err) => console.error('[hosting] не удалось уведомить резидента о правке заявки:', err))
             }
             syncBoard()
@@ -1789,15 +1813,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const raw = body.choice
             const choice = raw === null || raw === 'off' ? null : isReminderChoice(raw) ? raw : undefined
             if (choice === undefined) {
-                sendError(res, 400, 'bad_choice', 'Не понял, за сколько напомнить.')
+                sendError(res, 400, 'bad_choice', tr('Не понял, за сколько напомнить.', "Choose when to receive the reminder."))
                 return
             }
             const result = await setVisitReminder(storage, tzOffsetMinutes, typeof body.id === 'string' ? body.id : '', user.userId, choice)
             if (!result.ok) {
                 const messages = {
-                    not_found: [404, 'Заявка не найдена — возможно, её уже отменили.'],
-                    not_yours: [403, 'Напоминание можно настроить только по своей заявке.'],
-                    too_late: [400, 'До визита осталось меньше этого срока — напоминание не успеет.'],
+                    not_found: [404, tr('Заявка не найдена — возможно, её уже отменили.', "The request couldn’t be found. It may have been cancelled.")],
+                    not_yours: [403, tr('Напоминание можно настроить только по своей заявке.', "You can only set reminders for your own requests.")],
+                    too_late: [400, tr('До визита осталось меньше этого срока — напоминание не успеет.', "There isn’t enough time before the visit to send this reminder.")],
                 } as const
                 const [status, message] = messages[result.error]
                 sendError(res, status, result.error, message)
@@ -1817,9 +1841,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const result = await setResidentAttendance(storage, tzOffsetMinutes, dateKey, user, coming, time)
             if (!result.ok) {
                 const messages = {
-                    bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-                    past_time: 'Это время уже прошло, выберите позже.',
+                    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+                    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+                    past_time: tr('Это время уже прошло, выберите позже.', "That time has passed. Choose a later time."),
                 } as const
                 sendError(res, 400, result.error, messages[result.error])
                 return
@@ -1844,12 +1868,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const locked = body.locked === true
             const reason = typeof body.reason === 'string' ? body.reason : ''
             if (reason.length > MAX_LOCK_REASON_LENGTH) {
-                sendError(res, 400, 'too_long', `Причина не длиннее ${MAX_LOCK_REASON_LENGTH} символов.`)
+                sendError(res, 400, 'too_long', tr(`Причина не длиннее ${MAX_LOCK_REASON_LENGTH} символов.`, `The reason can be up to ${MAX_LOCK_REASON_LENGTH} characters.`))
                 return
             }
             const result = await setDayLock(storage, tzOffsetMinutes, dateKey, locked, reason, user)
             if (!result.ok) {
-                sendError(res, 400, result.error, 'Закрыть можно только день из ближайшей недели.')
+                sendError(res, 400, result.error, tr('Закрыть можно только день из ближайшей недели.', "You can only close a day in the upcoming week."))
                 return
             }
             syncBoard()
@@ -1863,12 +1887,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const text = typeof body.text === 'string' ? body.text : ''
             if (text.length > MAX_AGENDA_LENGTH) {
-                sendError(res, 400, 'too_long', `Тема дня не длиннее ${MAX_AGENDA_LENGTH} символов.`)
+                sendError(res, 400, 'too_long', tr(`Тема дня не длиннее ${MAX_AGENDA_LENGTH} символов.`, `The agenda can be up to ${MAX_AGENDA_LENGTH} characters.`))
                 return
             }
             const result = await setDayAgenda(storage, tzOffsetMinutes, dateKey, text, user)
             if (!result.ok) {
-                sendError(res, 400, result.error, 'Тему дня можно поставить только на день из ближайшей недели.')
+                sendError(res, 400, result.error, tr('Тему дня можно поставить только на день из ближайшей недели.', "You can only set an agenda for a day in the upcoming week."))
                 return
             }
             syncBoard()
@@ -1886,8 +1910,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const result = await setDayCap(storage, tzOffsetMinutes, dateKey, cap, user)
             if (!result.ok) {
                 sendError(res, 400, result.error, result.error === 'bad_cap'
-                    ? `Вместимость — целое число от 1 до ${MAX_DAY_CAP}.`
-                    : 'Менять вместимость можно только у дня из ближайшей недели.')
+                    ? tr(`Вместимость — целое число от 1 до ${MAX_DAY_CAP}.`, `Capacity must be a whole number between 1 and ${MAX_DAY_CAP}.`)
+                    : tr('Менять вместимость можно только у дня из ближайшей недели.', "You can only change capacity for a day in the upcoming week."))
                 return
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -1901,7 +1925,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const on = body.on === true
             const result = await setDaySubscription(storage, tzOffsetMinutes, dateKey, user.userId, on)
             if (!result.ok) {
-                sendError(res, 400, result.error, 'Подписаться можно только на день из ближайшей недели.')
+                sendError(res, 400, result.error, tr('Подписаться можно только на день из ближайшей недели.', "You can only subscribe to a day in the upcoming week."))
                 return
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -1927,7 +1951,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const candidates = await listInviteCandidates(client, storage, residents, dateKey, user.userId)
             const target = candidates.find((c) => c.userId === targetId)
             if (!target) {
-                sendError(res, 404, 'not_found', 'Этого человека больше нет в списке — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Этого человека больше нет в списке — обновите экран.', "This person is no longer on the list. Refresh the page."))
                 return
             }
             // Полка на пару «кто зовёт → кого зовут»: общего лимита на зовы мало, он не
@@ -1938,11 +1962,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             )
             if (!sent.ok) {
                 const messages = {
-                    bad_date: 'Позвать можно только на ближайшую неделю.',
-                    blocked: 'Этот участник заблокирован.',
-                    self: 'Себя звать не нужно — просто отметься «я приду».',
-                    dm_closed: 'Не смог написать ему в личку: он не открывал чат с ботом.',
-                    day_locked: 'В этот день спейс закрыт для гостей — звать их некуда.',
+                    bad_date: tr('Позвать можно только на ближайшую неделю.', "You can only invite someone for a day in the upcoming week."),
+                    blocked: tr('Этот участник заблокирован.', "This person is blocked."),
+                    self: tr('Себя звать не нужно — просто отметься «я приду».', "Use “I’m coming” to mark yourself as attending."),
+                    dm_closed: tr('Не смог написать ему в личку: он не открывал чат с ботом.', "They haven’t started a chat with the bot, so it can’t message them."),
+                    day_locked: tr('В этот день спейс закрыт для гостей — звать их некуда.', "The space is closed to guests on this day."),
                 } as const
                 sendError(res, sent.error === 'dm_closed' ? 409 : 400, sent.error, messages[sent.error])
                 return
@@ -1968,11 +1992,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             })
             if (!created.ok) {
                 const messages = {
-                    bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-                    past_time: 'Это время уже прошло.',
-                    duplicate: 'У этого фейкового гостя уже есть заявка на день.',
-                    day_locked: 'Этот день закрыт для заявок — открой его или выбери другой.',
+                    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+                    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+                    past_time: tr('Это время уже прошло.', "That time has already passed."),
+                    duplicate: tr('У этого фейкового гостя уже есть заявка на день.', "This test guest already has a request for this day."),
+                    day_locked: tr('Этот день закрыт для заявок — открой его или выбери другой.', "Requests are closed for this day. Open it or choose another day."),
                 } as const
                 sendError(res, 400, created.error, messages[created.error])
                 return
@@ -1993,9 +2017,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const updated = await updateHostingRequest(storage, tzOffsetMinutes, id, { dateKey, time, purpose })
             if (!updated.ok) {
                 const messages = {
-                    bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-                    not_found: 'Заявка не найдена — возможно, её уже удалили.',
+                    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+                    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+                    not_found: tr('Заявка не найдена — возможно, её уже удалили.', "The request couldn’t be found. It may have been deleted."),
                 } as const
                 sendError(res, updated.error === 'not_found' ? 404 : 400, updated.error, messages[updated.error])
                 return
@@ -2009,7 +2033,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireDev()) return
             const id = typeof body.id === 'string' ? body.id : ''
             if (!(await deleteHostingRequest(storage, id))) {
-                sendError(res, 404, 'not_found', 'Заявка не найдена — возможно, её уже удалили.')
+                sendError(res, 404, 'not_found', tr('Заявка не найдена — возможно, её уже удалили.', "The request couldn’t be found. It may have been deleted."))
                 return
             }
             syncBoard()
@@ -2023,7 +2047,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!request) return
             if (request.status === 'approved' && request.approvedBy) {
                 const label = request.approvedBy.username ? `@${request.approvedBy.username}` : request.approvedBy.name
-                sendError(res, 409, 'already_approved', `Уже захостил ${label}.`)
+                sendError(res, 409, 'already_approved', tr(`Уже захостил ${label}.`, `${label} is already hosting this visit.`))
                 return
             }
             await storage.update((s) => {
@@ -2038,7 +2062,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             })
             const updated = own(storage.get().hostingRequests, request.id)
             if (updated) {
-                void notifyGuestApproved(client, config.publicUrl, updated)
+                void notifyGuestApproved(client, storage, config.publicUrl, updated)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя об одобрении:', err))
                 void notifySubsHosted(client, storage, config.publicUrl, updated, user)
                     .catch((err) => console.error('[hosting] не удалось уведомить подписчиков дня:', err))
@@ -2053,11 +2077,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const request = findRequest()
             if (!request) return
             if (request.status !== 'approved' || !request.approvedBy) {
-                sendError(res, 409, 'not_approved', 'Заявка и так ждёт ответа.')
+                sendError(res, 409, 'not_approved', tr('Заявка и так ждёт ответа.', "This request is already awaiting a response."))
                 return
             }
             if (request.approvedBy.userId !== user.userId) {
-                sendError(res, 403, 'not_yours', 'Отменить хостинг может только тот, кто его одобрил.')
+                sendError(res, 403, 'not_yours', tr('Отменить хостинг может только тот, кто его одобрил.', "Only the resident who approved the request can cancel the hosting."))
                 return
             }
             // Хоста больше нет — висящая просьба подхватить визит теряет смысл вместе с ним.
@@ -2087,10 +2111,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     const now = own(storage.get().hostingRequests, request.id)
                     if (!now || now.status !== 'pending') return
                     if (pendingTransfer) {
-                        await notifyTransferCancelled(client, now, pendingTransfer, true)
+                        await notifyTransferCancelled(client, storage, now, pendingTransfer, true)
                             .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
                     }
-                    await notifyGuestUnapproved(client, config.publicUrl, now)
+                    await notifyGuestUnapproved(client, storage, config.publicUrl, now)
                         .catch((err) => console.error('[hosting] не удалось уведомить гостя об отмене хостинга:', err))
                 },
             )
@@ -2103,18 +2127,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const request = findRequest()
             if (!request) return
             if (request.guest.userId !== user.userId) {
-                sendError(res, 403, 'not_yours', 'Отменить можно только свою заявку.')
+                sendError(res, 403, 'not_yours', tr('Отменить можно только свою заявку.', "You can only cancel your own request."))
                 return
             }
             // Отмена удаляет заявку, а вместе с ней и историю визита. Прошедший визит и
             // визит, который резидент уже отметил, - история: иначе неявку стирали бы
             // отменой задним числом.
             if (request.dateKey < todayKey(tzOffsetMinutes)) {
-                sendError(res, 409, 'past', 'Визит уже прошёл, отменять нечего.')
+                sendError(res, 409, 'past', tr('Визит уже прошёл, отменять нечего.', "This visit has already taken place."))
                 return
             }
             if (request.visit) {
-                sendError(res, 409, 'visit_marked', 'Резидент уже отметил этот визит, отменить его нельзя.')
+                sendError(res, 409, 'visit_marked', tr('Резидент уже отметил этот визит, отменить его нельзя.', "A resident has already recorded attendance for this visit, so it can’t be cancelled."))
                 return
             }
             const snapshot = structuredClone(request)
@@ -2132,7 +2156,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 },
                 request.status === 'approved'
                     ? () =>
-                          notifyApproverCancelled(client, request).catch((err) =>
+                          notifyApproverCancelled(client, storage, request).catch((err) =>
                               console.error('[hosting] не удалось уведомить резидента об отмене визита:', err),
                           )
                     : undefined,
@@ -2158,7 +2182,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 responsibles,
             })
             if (!created.ok) {
-                sendError(res, 400, created.error, EVENT_ERRORS[created.error])
+                sendError(res, 400, created.error, eventErrors()[created.error])
                 return
             }
             // Залитые в редакторе картинки (и афиша заготовки) переезжают под id ивента.
@@ -2171,7 +2195,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 .catch((err) => console.error('[events] не удалось разослать уведомления об ивенте:', err))
             // И анонс в общие чаты — там сидят те, кто в миниапп не заходит. Афишу берём
             // с диска уже после syncEventPhotos, иначе картинки ивента ещё нет.
-            void announceEventToChats(client, storage, allowedChats, tzOffsetMinutes, storage.path(), created.event)
+            void withLocale('ru', () => announceEventToChats(client, storage, allowedChats, tzOffsetMinutes, storage.path(), created.event))
                 .catch((err) => console.error('[events] не удалось анонсировать ивент в чаты:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
@@ -2183,11 +2207,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const existing = own(storage.get().events, id)
             if (!existing) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Ивент не найден — обновите экран.', "Event not found. Refresh the page."))
                 return
             }
             if (!canEditEvent(existing, user.userId, isDevUser(ctx))) {
-                sendError(res, 403, 'not_yours', 'Править ивент может тот, кто его завёл.')
+                sendError(res, 403, 'not_yours', tr('Править ивент может тот, кто его завёл.', "Only the event creator can edit it."))
                 return
             }
             // Слот снимаем ДО правки: `existing` - живая ссылка на объект стейта, после
@@ -2198,7 +2222,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             )
             const updated = await updateEvent(storage, tzOffsetMinutes, id, { ...eventInputFrom(body), responsibles })
             if (!updated.ok) {
-                sendError(res, 400, updated.error, EVENT_ERRORS[updated.error])
+                sendError(res, 400, updated.error, eventErrors()[updated.error])
                 return
             }
             await syncEventPhotos(storage, storage.path(), id, photosFrom(body), user.userId, toneFrom(body))
@@ -2215,11 +2239,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const existing = own(storage.get().events, id)
             if (!existing) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Ивент не найден — обновите экран.', "Event not found. Refresh the page."))
                 return
             }
             if (!canEditEvent(existing, user.userId, isDevUser(ctx))) {
-                sendError(res, 403, 'not_yours', 'Удалить ивент может тот, кто его завёл.')
+                sendError(res, 403, 'not_yours', tr('Удалить ивент может тот, кто его завёл.', "Only the event creator can delete it."))
                 return
             }
             // Снимок до удаления: после deleteEvent объекта в стейте уже нет.
@@ -2261,12 +2285,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.eventId === 'string' ? body.eventId : ''
             const event = own(storage.get().events, id)
             if (!event) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Ивент не найден — обновите экран.', "Event not found. Refresh the page."))
                 return
             }
             const result = await createApplication(storage, tzOffsetMinutes, event, user, body.answers, resident)
             if (!result.ok) {
-                sendError(res, APP_ERR_STATUS[result.error], result.error, APP_ERRORS[result.error])
+                sendError(res, APP_ERR_STATUS[result.error], result.error, appErrors()[result.error])
                 return
             }
             // DM рецензентам — в фоне, чтобы не держать ответ гостю.
@@ -2282,7 +2306,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const result = await editApplication(storage, id, user.userId, body.answers)
             if (!result.ok) {
-                sendError(res, APP_ERR_STATUS[result.error], result.error, APP_ERRORS[result.error])
+                sendError(res, APP_ERR_STATUS[result.error], result.error, appErrors()[result.error])
                 return
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -2294,7 +2318,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const app = await cancelApplication(storage, id, user.userId)
             if (!app) {
-                sendError(res, 404, 'not_found', 'Заявка не найдена — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Заявка не найдена — обновите экран.', "Request not found. Refresh the page."))
                 return
             }
             const event = own(storage.get().events, app.eventId)
@@ -2315,23 +2339,23 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const app = own(storage.get().eventApplications, id)
             if (!app) {
-                sendError(res, 404, 'not_found', 'Заявка не найдена — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Заявка не найдена — обновите экран.', "Request not found. Refresh the page."))
                 return
             }
             const event = own(storage.get().events, app.eventId)
             if (!event) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Ивент не найден — обновите экран.', "Event not found. Refresh the page."))
                 return
             }
             if (!canReviewEvent(event, user.userId, resident, isDevUser(ctx))) {
-                sendError(res, 403, 'not_reviewer', 'Рассматривать заявки этого ивента вам нельзя.')
+                sendError(res, 403, 'not_reviewer', tr('Рассматривать заявки этого ивента вам нельзя.', "You don’t have permission to review applications for this event."))
                 return
             }
             let undo: string | null = null
             if (method === 'event.app.approve') {
                 const guest = app.guest
                 await approveApplication(storage, id, user)
-                void notifyApplicantApproved(client, config.publicUrl, event, guest).catch((err) =>
+                void notifyApplicantApproved(client, storage, config.publicUrl, event, guest).catch((err) =>
                     console.error('[events] не удалось уведомить о принятии заявки:', err),
                 )
             } else {
@@ -2354,11 +2378,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.eventId === 'string' ? body.eventId : ''
             const event = own(storage.get().events, id)
             if (!event) {
-                sendError(res, 404, 'not_found', 'Ивент не найден — обновите экран.')
+                sendError(res, 404, 'not_found', tr('Ивент не найден — обновите экран.', "Event not found. Refresh the page."))
                 return
             }
             if (!canReviewEvent(event, user.userId, resident, isDevUser(ctx))) {
-                sendError(res, 403, 'not_reviewer', 'Заявки этого ивента вам недоступны.')
+                sendError(res, 403, 'not_reviewer', tr('Заявки этого ивента вам недоступны.', "You don’t have access to this event’s applications."))
                 return
             }
             const applications = applicationsForEvent(storage, id).map((a) => ({
@@ -2383,22 +2407,22 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Подтверждённый визит закрывает тот, кто его ведёт: остальные к нему не
             // прикасаются, как и в переносе. Ничей (pending) — любой резидент.
             if (request.approvedBy && request.approvedBy.userId !== user.userId) {
-                sendError(res, 403, 'not_allowed', 'Этот визит ведёт другой резидент — закрыть может только он.')
+                sendError(res, 403, 'not_allowed', tr('Этот визит ведёт другой резидент — закрыть может только он.', "Only the resident hosting this visit can close it."))
                 return
             }
             // Закрытие удаляет заявку, поэтому прошедший или уже отмеченный визит не
             // закрывается: это история, а не планы (тот же довод, что у отмены гостем).
             if (request.dateKey < todayKey(tzOffsetMinutes)) {
-                sendError(res, 409, 'past', 'Визит уже прошёл, закрывать нечего.')
+                sendError(res, 409, 'past', tr('Визит уже прошёл, закрывать нечего.', "This visit has already taken place."))
                 return
             }
             if (request.visit) {
-                sendError(res, 409, 'visit_marked', 'Визит уже отмечен, закрывать его поздно.')
+                sendError(res, 409, 'visit_marked', tr('Визит уже отмечен, закрывать его поздно.', "This visit has already been recorded and can no longer be closed."))
                 return
             }
             const raw = typeof body.comment === 'string' ? body.comment : ''
             if (raw.length > MAX_CLOSE_COMMENT_LENGTH) {
-                sendError(res, 400, 'too_long', `Комментарий не длиннее ${MAX_CLOSE_COMMENT_LENGTH} символов.`)
+                sendError(res, 400, 'too_long', tr(`Комментарий не длиннее ${MAX_CLOSE_COMMENT_LENGTH} символов.`, `The comment can be up to ${MAX_CLOSE_COMMENT_LENGTH} characters.`))
                 return
             }
             await deleteHostingRequest(storage, request.id)
@@ -2408,7 +2432,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // Telegram может задержать отправку надолго (FLOOD_WAIT), поэтому ждём не
             // дольше CLOSE_DM_WAIT_MS: дальше ответ «не знаем», а отправка доедет сама.
             const delivered = await Promise.race([
-                notifyGuestClosed(client, config.publicUrl, request, user, cleanCloseComment(raw)).catch((err) => {
+                notifyGuestClosed(client, storage, config.publicUrl, request, user, cleanCloseComment(raw)).catch((err) => {
                     console.error('[hosting] не удалось уведомить гостя о закрытии заявки:', err)
                     return false
                 }),
@@ -2429,12 +2453,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const marked = await markArrived(storage, tzOffsetMinutes, id, user.userId)
             if (!marked.ok) {
                 const messages: Record<string, [number, string]> = {
-                    not_yours: [404, 'Заявка не найдена - обновите экран.'],
-                    not_approved: [409, 'Визит ещё не подтверждён - сообщать некому.'],
-                    closed: [409, 'Сообщить, что вы на месте, можно за полчаса до визита и час после.'],
-                    cooldown: [429, `Резиденты уже знают. Сообщить ещё раз можно через ${ARRIVAL_COOLDOWN_LABEL} после первого сигнала.`],
+                    not_yours: [404, tr('Заявка не найдена - обновите экран.', "Request not found. Refresh the page.")],
+                    not_approved: [409, tr('Визит ещё не подтверждён - сообщать некому.', "This visit hasn’t been confirmed yet.")],
+                    closed: [409, tr('Сообщить, что вы на месте, можно за полчаса до визита и час после.', "You can report your arrival from 30 minutes before the visit until one hour after.")],
+                    cooldown: [429, tr(`Резиденты уже знают. Сообщить ещё раз можно через ${minutesLabel(ARRIVAL_COOLDOWN_MINUTES)} после первого сигнала.`, `The residents have been notified. You can let them know again ${minutesLabel(ARRIVAL_COOLDOWN_MINUTES)} after the first notification.`)],
                 }
-                const [status, message] = messages[marked.error] ?? [400, 'Не получилось.']
+                const [status, message] = messages[marked.error] ?? [400, tr('Не получилось.', "Something went wrong.")]
                 sendError(res, status, marked.error, message)
                 return
             }
@@ -2453,15 +2477,15 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const isGuest = request.guest.userId === user.userId
             const by: 'resident' | 'guest' | null = isGuest ? 'guest' : resident ? 'resident' : null
             if (!by) {
-                sendError(res, 403, 'not_allowed', 'Предлагать перенос может гость заявки или резидент.')
+                sendError(res, 403, 'not_allowed', tr('Предлагать перенос может гость заявки или резидент.', "Only the guest or a resident can suggest a different time."))
                 return
             }
             if (by === 'resident' && request.approvedBy && request.approvedBy.userId !== user.userId) {
-                sendError(res, 403, 'not_allowed', 'Перенести подтверждённый визит может только тот, кто его хостит.')
+                sendError(res, 403, 'not_allowed', tr('Перенести подтверждённый визит может только тот, кто его хостит.', "Only the host can reschedule a confirmed visit."))
                 return
             }
             if (by === 'guest' && request.status !== 'approved' && request.proposal?.by !== 'resident') {
-                sendError(res, 409, 'no_proposal', 'Отвечать своим вариантом можно только на предложение резидента.')
+                sendError(res, 409, 'no_proposal', tr('Отвечать своим вариантом можно только на предложение резидента.', "You can only counter a proposal from a resident."))
                 return
             }
             // Пока висит живое предложение, встревать в переговоры посторонний резидент не
@@ -2470,7 +2494,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (by === 'resident' && request.proposal) {
                 const sides = proposalSides(request, request.proposal, user.userId, resident)
                 if (!sides.isAuthor && !sides.isAddressee) {
-                    sendError(res, 403, 'not_allowed', 'Перенос по этой заявке обсуждает другой резидент.')
+                    sendError(res, 403, 'not_allowed', tr('Перенос по этой заявке обсуждает другой резидент.', "Another resident is handling the reschedule for this visit."))
                     return
                 }
             }
@@ -2486,14 +2510,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 if (!accepted.ok) {
                     const status = accepted.error === 'not_found' ? 404 : 409
                     sendError(res, status, accepted.error,
-                        accepted.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
+                        accepted.error === 'not_found' ? tr('Заявка не найдена.', "Request not found.") : tr('Предложение уже неактуально.', "This proposal is no longer active."))
                     return
                 }
                 if (counter.by === 'resident') {
-                    void notifyProposalAccepted(client, counter.user.userId, config.publicUrl, accepted.request, false, user)
+                    void notifyProposalAccepted(client, storage, counter.user.userId, config.publicUrl, accepted.request, false, user)
                         .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии переноса:', err))
                 } else {
-                    void notifyProposalAccepted(client, accepted.request.guest.userId, config.publicUrl, accepted.request, true, user)
+                    void notifyProposalAccepted(client, storage, accepted.request.guest.userId, config.publicUrl, accepted.request, true, user)
                         .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
                 }
                 syncBoard()
@@ -2516,21 +2540,21 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const result = await proposeReschedule(storage, tzOffsetMinutes, request.id, { dateKey, time, by, user })
             if (!result.ok) {
                 const messages = {
-                    not_found: 'Заявка не найдена — возможно, её уже отменили.',
-                    bad_date: 'Выберите день в пределах ближайшей недели.',
-                    bad_time: 'Укажите время в формате ЧЧ:ММ.',
-                    past_time: 'Это время уже прошло — выбери время позже текущего.',
-                    duplicate: 'У гостя уже есть заявка на этот день.',
-                    day_locked: 'Этот день закрыт для гостей — перенести визит туда нельзя.',
+                    not_found: tr('Заявка не найдена — возможно, её уже отменили.', "The request couldn’t be found. It may have been cancelled."),
+                    bad_date: tr('Выберите день в пределах ближайшей недели.', "Choose a day within the next week."),
+                    bad_time: tr('Укажите время в формате ЧЧ:ММ.', "Enter a time in HH:MM format."),
+                    past_time: tr('Это время уже прошло — выбери время позже текущего.', "That time has already passed. Choose a later time."),
+                    duplicate: tr('У гостя уже есть заявка на этот день.', "The guest already has a request for this day."),
+                    day_locked: tr('Этот день закрыт для гостей — перенести визит туда нельзя.', "The space is closed to guests on that day."),
                 } as const
                 sendError(res, result.error === 'not_found' ? 404 : 400, result.error, messages[result.error])
                 return
             }
             if (by === 'resident') {
-                void notifyGuestReschedule(client, config.publicUrl, result.request)
+                void notifyGuestReschedule(client, storage, config.publicUrl, result.request)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о предложении переноса:', err))
             } else if (result.recipientId != null) {
-                void notifyResidentRescheduleCountered(client, result.recipientId, config.publicUrl, result.request)
+                void notifyResidentRescheduleCountered(client, storage, result.recipientId, config.publicUrl, result.request)
                     .catch((err) => console.error('[hosting] не удалось уведомить резидента о встречном переносе:', err))
             }
             // Доску не трогаем: предложение меняет только `proposal`, а `dateKey`/`time`
@@ -2545,13 +2569,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!request) return
             const proposal = request.proposal
             if (!proposal) {
-                sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
+                sendError(res, 409, 'no_proposal', tr('Предложение уже неактуально.', "This proposal is no longer active."))
                 return
             }
             // Принимает только адресат: у предложения резидента это гость, у предложения
             // гостя — конкретный резидент (хост либо автор предыдущего предложения).
             if (!proposalSides(request, proposal, user.userId, resident).isAddressee) {
-                sendError(res, 403, 'not_allowed', 'Это предложение адресовано другой стороне.')
+                sendError(res, 403, 'not_allowed', tr('Это предложение адресовано другой стороне.', "This proposal is for the other person."))
                 return
             }
             // Слот до переноса: request — живая ссылка, acceptReschedule перезапишет его поля.
@@ -2561,18 +2585,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!result.ok) {
                 const status = result.error === 'not_found' ? 404 : 409
                 const message = result.error === 'not_found'
-                    ? 'Заявка не найдена.'
+                    ? tr('Заявка не найдена.', "Request not found.")
                     : result.error === 'stale'
-                        ? 'Предложенный день уже недоступен — предложение снято.'
-                        : 'Предложение уже неактуально.'
+                        ? tr('Предложенный день уже недоступен — предложение снято.', "The proposed day is no longer available, so the proposal was withdrawn.")
+                        : tr('Предложение уже неактуально.', "This proposal is no longer active.")
                 sendError(res, status, result.error, message)
                 return
             }
             if (proposal.by === 'resident') {
-                void notifyProposalAccepted(client, proposal.user.userId, config.publicUrl, result.request, false, user)
+                void notifyProposalAccepted(client, storage, proposal.user.userId, config.publicUrl, result.request, false, user)
                     .catch((err) => console.error('[hosting] не удалось уведомить резидента о принятии переноса:', err))
             } else {
-                void notifyProposalAccepted(client, result.request.guest.userId, config.publicUrl, result.request, true, user)
+                void notifyProposalAccepted(client, storage, result.request.guest.userId, config.publicUrl, result.request, true, user)
                     .catch((err) => console.error('[hosting] не удалось уведомить гостя о принятии переноса:', err))
             }
             if (result.request.dateKey !== prevDateKey || result.request.time !== prevTime) {
@@ -2590,12 +2614,12 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!request) return
             const proposal = request.proposal
             if (!proposal) {
-                sendError(res, 409, 'no_proposal', 'Предложение уже неактуально.')
+                sendError(res, 409, 'no_proposal', tr('Предложение уже неактуально.', "This proposal is no longer active."))
                 return
             }
             const isGuest = request.guest.userId === user.userId
             if (!isGuest && !resident) {
-                sendError(res, 403, 'not_allowed', 'Недоступно.')
+                sendError(res, 403, 'not_allowed', tr('Недоступно.', "Unavailable."))
                 return
             }
             // Снять предложение вправе его автор (отзыв) и адресат (отказ). Посторонний
@@ -2603,13 +2627,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // ничего не приходило, а гость читал «снимает своё предложение» про не того.
             const sides = proposalSides(request, proposal, user.userId, resident)
             if (!sides.isAuthor && !sides.isAddressee) {
-                sendError(res, 403, 'not_allowed', 'Перенос по этой заявке обсуждает другой резидент.')
+                sendError(res, 403, 'not_allowed', tr('Перенос по этой заявке обсуждает другой резидент.', "Another resident is handling the reschedule for this visit."))
                 return
             }
             const result = await clearReschedule(storage, request.id)
             if (!result.ok) {
                 sendError(res, result.error === 'not_found' ? 404 : 409, result.error,
-                    result.error === 'not_found' ? 'Заявка не найдена.' : 'Предложение уже неактуально.')
+                    result.error === 'not_found' ? tr('Заявка не найдена.', "Request not found.") : tr('Предложение уже неактуально.', "This proposal is no longer active."))
                 return
             }
             const proposed = { dateKey: proposal.dateKey, time: proposal.time }
@@ -2619,7 +2643,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // отзыв гостя доходит и на pending-заявке — раньше там адреса не было и DM молчал.
             if (sides.counterpartId !== null) {
                 void notifyProposalCancelled(
-                    client, sides.counterpartId, config.publicUrl, result.request, proposed,
+                    client, storage, sides.counterpartId, config.publicUrl, result.request, proposed,
                     sides.counterpartId === result.request.guest.userId, actor,
                 ).catch((err) => console.error('[hosting] не удалось уведомить о снятии предложения:', err))
             }
@@ -2638,17 +2662,17 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             // должно быть тем же, что видит адресат в своих списках.
             const target = (await residents.list()).users.find((u) => u.userId === targetId)
             if (!target) {
-                sendError(res, 404, 'not_found', 'Передать визит можно только резиденту.')
+                sendError(res, 404, 'not_found', tr('Передать визит можно только резиденту.', "You can only transfer hosting to a resident."))
                 return
             }
             const result = await offerTransfer(storage, request.id, target, user)
             if (!result.ok) {
                 const messages = {
-                    not_found: 'Заявка не найдена.',
-                    not_approved: 'Передать можно только подтверждённый визит.',
-                    not_host: 'Передать визит может только его хост.',
-                    self: 'Этот визит и так на вас.',
-                    busy: 'По этой заявке уже ждём ответа другого резидента.',
+                    not_found: tr('Заявка не найдена.', "Request not found."),
+                    not_approved: tr('Передать можно только подтверждённый визит.', "You can only transfer a confirmed visit."),
+                    not_host: tr('Передать визит может только его хост.', "Only the current host can transfer the visit."),
+                    self: tr('Этот визит и так на вас.', "You’re already hosting this visit."),
+                    busy: tr('По этой заявке уже ждём ответа другого резидента.', "Another resident has already been asked to take over this visit."),
                 } as const
                 const status = result.error === 'not_found' ? 404 : result.error === 'not_host' ? 403 : result.error === 'self' ? 400 : 409
                 sendError(res, status, result.error, messages[result.error])
@@ -2656,7 +2680,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             }
             const offered = result.request.transfer
             if (offered) {
-                void notifyTransferOffer(client, config.publicUrl, result.request, offered)
+                void notifyTransferOffer(client, storage, config.publicUrl, result.request, offered)
                     .catch((err) => console.error('[hosting] не удалось отправить просьбу о передаче:', err))
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -2670,21 +2694,21 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!request) return
             const transfer = request.transfer ?? null
             if (!transfer) {
-                sendError(res, 409, 'no_transfer', 'Эта просьба уже неактуальна.')
+                sendError(res, 409, 'no_transfer', tr('Эта просьба уже неактуальна.', "This request is no longer active."))
                 return
             }
             if (transfer.to.userId !== user.userId) {
-                sendError(res, 403, 'not_allowed', 'Эта просьба адресована другому резиденту.')
+                sendError(res, 403, 'not_allowed', tr('Эта просьба адресована другому резиденту.', "This request is for another resident."))
                 return
             }
             const result = await acceptTransfer(storage, request.id, user)
             if (!result.ok) {
-                sendError(res, result.error === 'not_found' ? 404 : 409, result.error, 'Эта просьба уже неактуальна.')
+                sendError(res, result.error === 'not_found' ? 404 : 409, result.error, tr('Эта просьба уже неактуальна.', "This request is no longer active."))
                 return
             }
-            void notifyTransferAccepted(client, result.request, user, result.from.userId)
+            void notifyTransferAccepted(client, storage, result.request, user, result.from.userId)
                 .catch((err) => console.error('[hosting] не удалось уведомить прежнего хоста о передаче:', err))
-            void notifyGuestHostChanged(client, config.publicUrl, result.request)
+            void notifyGuestHostChanged(client, storage, config.publicUrl, result.request)
                 .catch((err) => console.error('[hosting] не удалось уведомить гостя о смене хоста:', err))
             syncBoard()
             sendJson(res, 200, buildBootstrap(ctx))
@@ -2698,20 +2722,20 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!request) return
             const transfer = request.transfer ?? null
             if (!transfer) {
-                sendError(res, 409, 'no_transfer', 'Эта просьба уже неактуальна.')
+                sendError(res, 409, 'no_transfer', tr('Эта просьба уже неактуальна.', "This request is no longer active."))
                 return
             }
             const withdrawn = transfer.by.userId === user.userId
             if (!withdrawn && transfer.to.userId !== user.userId) {
-                sendError(res, 403, 'not_allowed', 'Эту передачу обсуждают два других резидента.')
+                sendError(res, 403, 'not_allowed', tr('Эту передачу обсуждают два других резидента.', "This transfer is between two other residents."))
                 return
             }
             const result = await clearTransfer(storage, request.id)
             if (!result.ok) {
-                sendError(res, result.error === 'not_found' ? 404 : 409, result.error, 'Эта просьба уже неактуальна.')
+                sendError(res, result.error === 'not_found' ? 404 : 409, result.error, tr('Эта просьба уже неактуальна.', "This request is no longer active."))
                 return
             }
-            void notifyTransferCancelled(client, result.request, result.transfer, withdrawn)
+            void notifyTransferCancelled(client, storage, result.request, result.transfer, withdrawn)
                 .catch((err) => console.error('[hosting] не удалось уведомить о снятии передачи:', err))
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -2724,14 +2748,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const request = findRequest()
             if (!request) return
             if (request.guest.userId === user.userId) {
-                sendError(res, 400, 'self', 'Себя блокировать нельзя.')
+                sendError(res, 400, 'self', tr('Себя блокировать нельзя.', "You can’t block yourself."))
                 return
             }
             // Резидента заблокировать нельзя. Заявку он завести может (гейта резидентства
             // на `create` нет, да и в резиденты повышают уже после визита), а вот бан во
             // всех чатах по свайпу — с откатом только через дева — это не тот вес.
             if (await residents.isResident(request.guest.userId)) {
-                sendError(res, 400, 'resident', 'Это резидент — блокировка не для своих. Разбирайтесь в чате.')
+                sendError(res, 400, 'resident', tr('Это резидент — блокировка не для своих. Разбирайтесь в чате.', "Residents can’t be blocked here. Discuss this in the chat."))
                 return
             }
             await blockUser(client, storage, allowedChats, request.guest, user)
@@ -2749,11 +2773,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const targetId = typeof body.userId === 'number' ? body.userId : Number(body.userId)
             const text = typeof body.text === 'string' ? body.text : ''
             if (!Number.isSafeInteger(targetId) || targetId === 0) {
-                sendError(res, 400, 'bad_user', 'Некорректный участник.')
+                sendError(res, 400, 'bad_user', tr('Некорректный участник.', "Invalid user."))
                 return
             }
             if (text.length > MAX_NOTE_LENGTH) {
-                sendError(res, 400, 'too_long', `Заметка не должна быть длиннее ${MAX_NOTE_LENGTH} символов.`)
+                sendError(res, 400, 'too_long', tr(`Заметка не должна быть длиннее ${MAX_NOTE_LENGTH} символов.`, `The note can be up to ${MAX_NOTE_LENGTH} characters.`))
                 return
             }
             const prev = guestNoteFor(storage, targetId)
@@ -2772,7 +2796,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireDev()) return
             const targetId = typeof body.userId === 'number' ? body.userId : Number(body.userId)
             if (!Number.isSafeInteger(targetId)) {
-                sendError(res, 400, 'bad_user', 'Некорректный участник.')
+                sendError(res, 400, 'bad_user', tr('Некорректный участник.', "Invalid user."))
                 return
             }
             await unblockUser(client, storage, allowedChats, targetId)
@@ -2815,7 +2839,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                       ? Object.hasOwn(state.events, id) && (resident || !own(state.events, id)!.residentsOnly)
                       : false
             if (!kind || !visible) {
-                sendError(res, 404, 'not_found', kind === 'event' ? 'Ивент не найден.' : 'Заявка не найдена.')
+                sendError(res, 404, 'not_found', kind === 'event' ? tr('Ивент не найден.', "Event not found.") : tr('Заявка не найдена.', "Request not found."))
                 return
             }
             const exp = Math.floor(Date.now() / 1000) + ICS_LINK_TTL_SEC
@@ -2836,11 +2860,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     // Ивент «только резидентам» не пересылается и резидентом: карточка уходит в
                     // чаты, где её читают гости, по тому же правилу, что анонс и доска.
                     if (!event || event.residentsOnly) {
-                        sendError(res, 404, 'not_found', 'Этот ивент нельзя переслать.')
+                        sendError(res, 404, 'not_found', tr('Этот ивент нельзя переслать.', "This event can’t be shared."))
                         return
                     }
                     if (isPastSlot(event.dateKey, event.time, tzOffsetMinutes)) {
-                        sendError(res, 400, 'past', 'Ивент уже прошёл.')
+                        sendError(res, 400, 'past', tr('Ивент уже прошёл.', "This event has already taken place."))
                         return
                     }
                     sendJson(res, 200, await prepareEventShare(client, storage.path(), tzOffsetMinutes, event, user.userId))
@@ -2852,8 +2876,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     const prepared = await prepareDayShare(client, storage, tzOffsetMinutes, botLinkBase(), dateKey, user.userId)
                     if (!prepared.ok) {
                         const messages = {
-                            bad_date: 'Позвать можно только на ближайшую неделю.',
-                            day_locked: 'В этот день спейс закрыт для гостей: звать их некуда.',
+                            bad_date: tr('Позвать можно только на ближайшую неделю.', "You can only invite someone for a day in the upcoming week."),
+                            day_locked: tr('В этот день спейс закрыт для гостей: звать их некуда.', "The space is closed to guests on this day."),
                         } as const
                         sendError(res, 400, prepared.error, messages[prepared.error])
                         return
@@ -2863,10 +2887,10 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 }
             } catch (err) {
                 console.error('[webapp] не удалось подготовить карточку для пересылки:', err)
-                sendError(res, 502, 'share_failed', 'Telegram не принял карточку. Попробуйте ещё раз.')
+                sendError(res, 502, 'share_failed', tr('Telegram не принял карточку. Попробуйте ещё раз.', "Telegram rejected the share card. Try again."))
                 return
             }
-            sendError(res, 400, 'bad_kind', 'Непонятно, что пересылать.')
+            sendError(res, 400, 'bad_kind', tr('Непонятно, что пересылать.', "Choose what to share."))
             return
         }
 
@@ -2918,7 +2942,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             if (!isValidDayKey(dateKey)) {
-                sendError(res, 400, 'bad_date', 'Непонятный день.')
+                sendError(res, 400, 'bad_date', tr('Непонятный день.', "Invalid day."))
                 return
             }
             const view = await buildStatsDay(storage, tzOffsetMinutes, dateKey)
@@ -2931,7 +2955,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const userId = typeof body.userId === 'number' ? body.userId : 0
             if (!Number.isFinite(userId) || userId === 0) {
-                sendError(res, 400, 'bad_user', 'Непонятно, о ком спрашиваешь.')
+                sendError(res, 400, 'bad_user', tr('Непонятно, о ком спрашиваешь.', "Choose a person."))
                 return
             }
             const view = await buildStatsPerson(
@@ -2952,13 +2976,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireDev()) return
             const userId = typeof body.userId === 'number' ? body.userId : 0
             if (!Number.isFinite(userId) || userId === 0) {
-                sendError(res, 400, 'bad_user', 'Непонятно, о ком речь.')
+                sendError(res, 400, 'bad_user', tr('Непонятно, о ком речь.', "Choose a person."))
                 return
             }
             const raw = typeof body.dateKey === 'string' ? body.dateKey : ''
             // Пусто — сброс к расчёту по журналу; дата из будущего это опечатка.
             if (raw && raw !== RESIDENT_SINCE_ORIGIN && (!isValidDayKey(raw) || raw > todayKey(tzOffsetMinutes))) {
-                sendError(res, 400, 'bad_date', 'Дата должна быть сегодняшней или прошедшей.')
+                sendError(res, 400, 'bad_date', tr('Дата должна быть сегодняшней или прошедшей.', "Choose today or an earlier date."))
                 return
             }
             await setResidentSince(storage, userId, raw || null)
@@ -2972,7 +2996,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const view = await buildWrapView(storage, user.userId, tzOffsetMinutes)
             if (!view) {
-                sendError(res, 404, 'no_wrap', 'За прошлый месяц итогов нет.')
+                sendError(res, 404, 'no_wrap', tr('За прошлый месяц итогов нет.', "There’s no recap for last month."))
                 return
             }
             if (view.companion) discloseUser(view.companion.userId)
@@ -2993,7 +3017,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const rawMac = typeof body.mac === 'string' ? body.mac : ''
             const label = (typeof body.label === 'string' ? body.label : '').trim().slice(0, 50)
             if (!isValidMac(rawMac)) {
-                sendError(res, 400, 'invalid_mac', 'Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF.')
+                sendError(res, 400, 'invalid_mac', tr('Это не похоже на MAC-адрес. Формат: AA:BB:CC:DD:EE:FF.', "Enter a MAC address in the format AA:BB:CC:DD:EE:FF."))
                 return
             }
             const mac = normalizeMac(rawMac)
@@ -3001,11 +3025,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 (b) => b.userId !== user.userId && b.macs.some((e) => e.mac === mac),
             )
             if (owner) {
-                sendError(res, 409, 'taken', 'Этот MAC уже привязан к другому резиденту.')
+                sendError(res, 409, 'taken', tr('Этот MAC уже привязан к другому резиденту.', "This MAC address is already linked to another resident."))
                 return
             }
             if (storage.get().macBindings[String(user.userId)]?.macs.some((e) => e.mac === mac)) {
-                sendError(res, 409, 'duplicate', 'Этот MAC уже привязан к вам.')
+                sendError(res, 409, 'duplicate', tr('Этот MAC уже привязан к вам.', "This MAC address is already linked to you."))
                 return
             }
             await storage.update((s) => {
@@ -3036,7 +3060,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const mac = normalizeMac(rawMac)
             const cur = storage.get().macBindings[String(user.userId)]
             if (!cur || !cur.macs.some((e) => e.mac === mac)) {
-                sendError(res, 404, 'not_found', 'Такой MAC к вам не привязан.')
+                sendError(res, 404, 'not_found', tr('Такой MAC к вам не привязан.', "This MAC address isn’t linked to you."))
                 return
             }
             const before = structuredClone(cur)
@@ -3073,7 +3097,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const anon = body.anon === true
             if (!storage.get().macBindings[String(user.userId)]) {
-                sendError(res, 400, 'no_macs', 'Сначала привяжите хотя бы один MAC.')
+                sendError(res, 400, 'no_macs', tr('Сначала привяжите хотя бы один MAC.', "Link at least one MAC address first."))
                 return
             }
             await storage.update((s) => {
@@ -3132,11 +3156,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const code = normalizeDoorCode(typeof body.code === 'string' ? body.code : '')
             const note = (typeof body.note === 'string' ? body.note : '').replace(/\s+/g, ' ').trim()
             if (code && !isValidDoorCode(code)) {
-                sendError(res, 400, 'bad_code', 'Код: цифры и буквы клавиш панели, до 16 символов.')
+                sendError(res, 400, 'bad_code', tr('Код: цифры и буквы клавиш панели, до 16 символов.', "Enter up to 16 characters using the digits and letters on the keypad."))
                 return
             }
             if (note.length > MAX_DOOR_NOTE_LENGTH) {
-                sendError(res, 400, 'bad_note', `Подсказка: не длиннее ${MAX_DOOR_NOTE_LENGTH} символов.`)
+                sendError(res, 400, 'bad_note', tr(`Подсказка: не длиннее ${MAX_DOOR_NOTE_LENGTH} символов.`, `The hint can be up to ${MAX_DOOR_NOTE_LENGTH} characters.`))
                 return
             }
             await setDoorCode(storage, code, note, user)
@@ -3149,7 +3173,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'lock.open':
         case 'lock.close': {
             if (!ctx.lock) {
-                sendError(res, 404, 'no_lock', 'Замок не подключён.')
+                sendError(res, 404, 'no_lock', tr('Замок не подключён.', "The lock isn’t connected."))
                 return
             }
             if (!resident && !isDevUser(ctx)) {
@@ -3160,7 +3184,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 await ctx.lock.set(method === 'lock.open' ? 'unlocked' : 'locked', user)
             } catch (err) {
                 console.warn('[lock] Home Assistant не выполнил команду:', err instanceof Error ? err.message : err)
-                sendError(res, 502, 'lock_failed', 'Замок не ответил. Попробуйте ещё раз.')
+                sendError(res, 502, 'lock_failed', tr('Замок не ответил. Попробуйте ещё раз.', "The lock didn’t respond. Try again."))
                 return
             }
             console.log(`[lock] ${method === 'lock.open' ? 'открыл' : 'закрыл'} ${user.userId}`)
@@ -3184,7 +3208,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const dues = duesOf(storage)
             const period = activeDuesPeriod(dues)
             if (!dues.enabled || !period) {
-                sendError(res, 400, 'no_period', 'Сбор сейчас не идёт.')
+                sendError(res, 400, 'no_period', tr('Сбор сейчас не идёт.', "There’s no active dues collection."))
                 return
             }
             // Ростер освежаем: резидентом могли сделать уже после открытия сбора.
@@ -3192,16 +3216,16 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const claimed = await claimDues(storage, period.periodKey, user.userId)
             if (!claimed.ok) {
                 const messages = {
-                    already: 'Взнос за этот месяц уже отмечен.',
-                    not_member: 'Тебя нет в списке плательщиков этого месяца.',
-                    no_period: 'Сбор сейчас не идёт.',
-                    no_mark: 'Отметки нет.',
-                    disabled: 'Взносы выключены.',
+                    already: tr('Взнос за этот месяц уже отмечен.', "This month’s payment has already been recorded."),
+                    not_member: tr('Тебя нет в списке плательщиков этого месяца.', "You’re not on this month’s dues list."),
+                    no_period: tr('Сбор сейчас не идёт.', "There’s no active dues collection."),
+                    no_mark: tr('Отметки нет.', "No payment is recorded."),
+                    disabled: tr('Взносы выключены.', "Dues are disabled."),
                 } as const
                 sendError(res, 400, claimed.error, messages[claimed.error])
                 return
             }
-            void notifyDevsAboutClaim(client, ctx.devUserIds, duesOf(storage), period.periodKey, claimed.member)
+            void notifyDevsAboutClaim(client, storage, ctx.devUserIds, duesOf(storage), period.periodKey, claimed.member)
                 .catch((err) => console.error('[dues] не удалось уведомить дева о заявке:', err))
             sendJson(res, 200, buildBootstrap(ctx))
             return
@@ -3215,14 +3239,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const periodKey = typeof body.periodKey === 'string' && body.periodKey ? body.periodKey : activeDuesPeriod(dues)?.periodKey
             const targetId = Number(body.userId)
             if (!periodKey || !own(dues.periods, periodKey) || !Number.isFinite(targetId)) {
-                sendError(res, 400, 'no_period', 'Период не найден.')
+                sendError(res, 400, 'no_period', tr('Период не найден.', "Period not found."))
                 return
             }
             const result = method === 'dues.confirm'
                 ? await confirmDues(storage, periodKey, targetId, user.userId)
                 : await clearDuesMark(storage, periodKey, targetId)
             if (!result.ok) {
-                sendError(res, 400, result.error, result.error === 'no_mark' ? 'Отметки и так нет.' : 'Человека нет в списке этого месяца.')
+                sendError(res, 400, result.error, result.error === 'no_mark' ? tr('Отметки и так нет.', "No payment is recorded.") : tr('Человека нет в списке этого месяца.', "This person isn’t on this month’s list."))
                 return
             }
             sendJson(res, 200, buildBootstrap(ctx))
@@ -3235,13 +3259,13 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const targetId = Number(body.userId)
             const kind = body.kind
             if (!Number.isFinite(targetId) || (kind !== 'common' && kind !== 'student' && kind !== 'custom')) {
-                sendError(res, 400, 'bad_request', 'Не понял ставку.')
+                sendError(res, 400, 'bad_request', tr('Не понял ставку.', "Choose a valid rate."))
                 return
             }
             if (kind === 'custom') {
                 const amount = Number(body.amount)
                 if (!Number.isFinite(amount) || amount < 0) {
-                    sendError(res, 400, 'bad_amount', 'Сумма должна быть неотрицательным числом.')
+                    sendError(res, 400, 'bad_amount', tr('Сумма должна быть неотрицательным числом.', "The amount must be zero or greater."))
                     return
                 }
                 await setDuesRate(storage, targetId, Math.round(amount))
@@ -3260,14 +3284,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireDev()) return
             const day = body.day === undefined ? undefined : Number(body.day)
             if (day !== undefined && (!Number.isInteger(day) || day < MIN_DUES_DAY || day > MAX_DUES_DAY)) {
-                sendError(res, 400, 'bad_day', `День сбора это число от ${MIN_DUES_DAY} до ${MAX_DUES_DAY}.`)
+                sendError(res, 400, 'bad_day', tr(`День сбора это число от ${MIN_DUES_DAY} до ${MAX_DUES_DAY}.`, `Choose a collection day from ${MIN_DUES_DAY} to ${MAX_DUES_DAY}.`))
                 return
             }
             const amount = body.amount === undefined ? undefined : Number(body.amount)
             const studentAmount = body.studentAmount === undefined ? undefined : Number(body.studentAmount)
             for (const value of [amount, studentAmount]) {
                 if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
-                    sendError(res, 400, 'bad_amount', 'Ставка должна быть неотрицательным числом.')
+                    sendError(res, 400, 'bad_amount', tr('Ставка должна быть неотрицательным числом.', "The rate must be zero or greater."))
                     return
                 }
             }
@@ -3301,7 +3325,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const periodKey = typeof body.periodKey === 'string' ? body.periodKey : ''
             const snapshot = duesSnapshot(ctx, periodKey)
             if (!snapshot) {
-                sendError(res, 404, 'not_found', 'Такого периода нет.')
+                sendError(res, 404, 'not_found', tr('Такого периода нет.', "Period not found."))
                 return
             }
             sendJson(res, 200, snapshot)
@@ -3355,7 +3379,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 }
             }
             if (!member) {
-                sendError(res, 404, 'not_found', 'Человека нет ни в одном периоде.')
+                sendError(res, 404, 'not_found', tr('Человека нет ни в одном периоде.', "This person isn’t listed in any period."))
                 return
             }
             discloseUser(member.userId)
@@ -3403,8 +3427,9 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         case 'dues.export': {
             if (!requireResident()) return
             const dues = duesOf(storage)
-            if (periodKeysOf(dues).length === 0) {
-                sendError(res, 400, 'empty', 'Выгружать нечего: сборов ещё не было.')
+            const count = periodKeysOf(dues).length
+            if (count === 0) {
+                sendError(res, 400, 'empty', tr('Выгружать нечего: сборов ещё не было.', "There are no dues records to export yet."))
                 return
             }
             // BOM (U+FEFF) — чтобы Excel открыл кириллицу в UTF-8 без «крякозябр» (как в /export).
@@ -3414,11 +3439,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     fileName: 'dues.csv',
                     fileMime: 'text/csv',
                     caption: html(
-                        `Взносы за ${periodKeysOf(dues).length} ${plural(periodKeysOf(dues).length, ['период', 'периода', 'периодов'])}.`,
+                        tr(
+                            `Взносы за ${count} ${plural(count, ['период', 'периода', 'периодов'])}.`,
+                            `Dues for ${count} ${count === 1 ? 'period' : 'periods'}.`,
+                        ),
                     ),
                 }))
             } catch {
-                sendError(res, 409, 'dm_closed', 'Не могу написать в личку. Откройте чат с ботом и нажмите /start.')
+                sendError(res, 409, 'dm_closed', tr('Не могу написать в личку. Откройте чат с ботом и нажмите /start.', "The bot can’t message you. Open its chat and send /start."))
                 return
             }
             sendJson(res, 200, { ok: true })
@@ -3443,7 +3471,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const userId = typeof body.userId === 'number' ? body.userId : 0
             const profile = userId > 0 || isFakeUserId(userId) ? guestProfile(storage, userId, todayKey(tzOffsetMinutes)) : null
             if (!profile) {
-                sendError(res, 404, 'not_found', 'Об этом человеке записей уже нет.')
+                sendError(res, 404, 'not_found', tr('Об этом человеке записей уже нет.', "There are no records for this person."))
                 return
             }
             sendJson(res, 200, {
@@ -3467,7 +3495,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             if (!isValidDayKey(dateKey) || dateKey > todayKey(tzOffsetMinutes)) {
-                sendError(res, 400, 'bad_date', 'Кто пришёл, видно только за сегодня и прошедшие дни.')
+                sendError(res, 400, 'bad_date', tr('Кто пришёл, видно только за сегодня и прошедшие дни.', "Attendance is available for today and earlier dates."))
                 return
             }
             sendJson(res, 200, visitsDayView(ctx, dateKey))
@@ -3479,16 +3507,16 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const id = typeof body.id === 'string' ? body.id : ''
             const came = body.came === true ? true : body.came === false ? false : body.came === null ? null : undefined
             if (came === undefined) {
-                sendError(res, 400, 'bad_mark', 'Не понял отметку.')
+                sendError(res, 400, 'bad_mark', tr('Не понял отметку.', "Choose a valid attendance status."))
                 return
             }
             const marked = await markVisit(storage, tzOffsetMinutes, id, came, user)
             if (!marked.ok) {
                 const messages = {
-                    not_found: [404, 'Заявка не найдена, возможно, её уже отменили.'],
-                    bad_day: [400, VISIT_DAY_CLOSED],
-                    not_approved: [409, 'Эту заявку никто не брал: если гость пришёл, добавьте его гостем без заявки.'],
-                    too_early: [409, 'Визит ещё не начался: неявку можно отметить после его времени.'],
+                    not_found: [404, tr('Заявка не найдена, возможно, её уже отменили.', "The request couldn’t be found. It may have been cancelled.")],
+                    bad_day: [400, visitDayClosed()],
+                    not_approved: [409, tr('Эту заявку никто не брал: если гость пришёл, добавьте его гостем без заявки.', "No one hosted this request. If the guest arrived, add them as a walk-in.")],
+                    too_early: [409, tr('Визит ещё не начался: неявку можно отметить после его времени.', "You can only mark a no-show once the visit’s start time has passed.")],
                 } as const
                 const [status, message] = messages[marked.error]
                 sendError(res, status, marked.error, message)
@@ -3503,7 +3531,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             const marked = await markAllVisits(storage, tzOffsetMinutes, dateKey, user)
             if (!marked.ok) {
-                sendError(res, 400, marked.error, VISIT_DAY_CLOSED)
+                sendError(res, 400, marked.error, visitDayClosed())
                 return
             }
             sendJson(res, 200, { ...buildBootstrap(ctx), visitsDay: visitsDayView(ctx, dateKey) })
@@ -3514,7 +3542,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             const dateKey = typeof body.dateKey === 'string' ? body.dateKey : ''
             if (!isVisitDayEditable(dateKey, tzOffsetMinutes)) {
-                sendError(res, 400, 'bad_day', VISIT_DAY_CLOSED)
+                sendError(res, 400, 'bad_day', visitDayClosed())
                 return
             }
             const people = await walkInCandidates(ctx, dateKey)
@@ -3531,14 +3559,14 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (typeof body.userId === 'number') {
                 const found = (await walkInCandidates(ctx, dateKey)).find((p) => p.userId === body.userId)
                 if (!found) {
-                    sendError(res, 404, 'not_found', 'Этого человека больше нет в списке, обновите экран.')
+                    sendError(res, 404, 'not_found', tr('Этого человека больше нет в списке, обновите экран.', "This person is no longer on the list. Refresh the page."))
                     return
                 }
                 guest = { userId: found.userId, username: found.username, name: found.name }
             } else if (typeof body.username === 'string') {
                 const username = body.username.trim().replace(/^@/, '')
                 if (!/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(username)) {
-                    sendError(res, 400, 'bad_username', 'Ник: от 4 до 32 латинских букв, цифр и _.')
+                    sendError(res, 400, 'bad_username', tr('Ник: от 4 до 32 латинских букв, цифр и _.', "Use 4 to 32 Latin letters, digits or underscores for the username."))
                     return
                 }
                 let found: User | null = null
@@ -3548,18 +3576,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     // ник не занят или не разбирается: для резидента это одно «не нашёл»
                 }
                 if (!found || found.isBot) {
-                    sendError(res, 404, 'no_user', `Не нашёл @${username} в Telegram.`)
+                    sendError(res, 404, 'no_user', tr(`Не нашёл @${username} в Telegram.`, `Couldn’t find @${username} on Telegram.`))
                     return
                 }
                 if (await residents.isResident(found.id)) {
-                    sendError(res, 400, 'resident', 'Это резидент: его визиты видны по отметкам присутствия.')
+                    sendError(res, 400, 'resident', tr('Это резидент: его визиты видны по отметкам присутствия.', "This person is a resident. Their visits are recorded through check-ins."))
                     return
                 }
                 guest = { userId: found.id, username: found.username, name: cleanName(found.displayName) || found.username || String(found.id) }
             } else {
                 const name = typeof body.name === 'string' ? cleanName(body.name) : ''
                 if (name.length > MAX_WALK_IN_NAME_LENGTH) {
-                    sendError(res, 400, 'too_long', `Имя не длиннее ${MAX_WALK_IN_NAME_LENGTH} символов.`)
+                    sendError(res, 400, 'too_long', tr(`Имя не длиннее ${MAX_WALK_IN_NAME_LENGTH} символов.`, `The name can be up to ${MAX_WALK_IN_NAME_LENGTH} characters.`))
                     return
                 }
                 guest = { userId: 0, username: null, name }
@@ -3567,11 +3595,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const added = await addWalkIn(storage, tzOffsetMinutes, dateKey, guest, user)
             if (!added.ok) {
                 const messages = {
-                    bad_day: [400, VISIT_DAY_CLOSED],
-                    bad_name: [400, 'Впишите имя.'],
-                    has_request: [409, 'У него есть заявка на этот день: отметьте её в списке.'],
-                    duplicate: [409, 'Он уже в списке этого дня.'],
-                    blocked: [403, 'Этот участник заблокирован.'],
+                    bad_day: [400, visitDayClosed()],
+                    bad_name: [400, tr('Впишите имя.', "Enter a name.")],
+                    has_request: [409, tr('У него есть заявка на этот день: отметьте её в списке.', "They have a request for this day. Mark their attendance on that request.")],
+                    duplicate: [409, tr('Он уже в списке этого дня.', "They’re already on this day’s list.")],
+                    blocked: [403, tr('Этот участник заблокирован.', "This person is blocked.")],
                 } as const
                 const [status, message] = messages[added.error]
                 sendError(res, status, added.error, message)
@@ -3586,8 +3614,8 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const removed = await removeWalkIn(storage, tzOffsetMinutes, typeof body.id === 'string' ? body.id : '')
             if (!removed.ok) {
                 sendError(res, removed.error === 'not_found' ? 404 : 400, removed.error, removed.error === 'not_found'
-                    ? 'Этой записи уже нет, обновите экран.'
-                    : VISIT_DAY_CLOSED)
+                    ? tr('Этой записи уже нет, обновите экран.', "This record no longer exists. Refresh the page.")
+                    : visitDayClosed())
                 return
             }
             sendJson(res, 200, { ...buildBootstrap(ctx), visitsDay: visitsDayView(ctx, removed.walkIn.dateKey) })
@@ -3599,7 +3627,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const weekStart = typeof body.weekStart === 'string' ? body.weekStart : ''
             const currentWeek = weekStartOf(todayKey(tzOffsetMinutes))
             if (!isValidDayKey(weekStart) || weekStartOf(weekStart) !== weekStart || weekStart > currentWeek) {
-                sendError(res, 400, 'bad_week', 'Неделя недоступна в архиве.')
+                sendError(res, 400, 'bad_week', tr('Неделя недоступна в архиве.', "This week isn’t available in the archive."))
                 return
             }
             const days = []
@@ -3636,11 +3664,11 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const text = (typeof body.text === 'string' ? body.text : '').trim()
             const version = typeof body.version === 'string' ? body.version : ''
             if (!text) {
-                sendError(res, 400, 'empty_text', 'Текст анонса пуст.')
+                sendError(res, 400, 'empty_text', tr('Текст анонса пуст.', "Enter an announcement."))
                 return
             }
             if (announceTargets(storage, allowedChats).length === 0) {
-                sendError(res, 400, 'no_targets', 'Нет чатов для рассылки (все замьючены или ALLOWED_CHATS пуст).')
+                sendError(res, 400, 'no_targets', tr('Нет чатов для рассылки (все замьючены или ALLOWED_CHATS пуст).', "There are no eligible chats. They’re all muted or ALLOWED_CHATS is empty."))
                 return
             }
             const result = await broadcastAnnouncement(client, storage, allowedChats, text)
@@ -3671,7 +3699,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireDev()) return
             const targetUser = Number(body.userId)
             if (!Number.isSafeInteger(targetUser) || targetUser <= 0) {
-                sendError(res, 400, 'bad_user', 'Не указан пользователь.')
+                sendError(res, 400, 'bad_user', tr('Не указан пользователь.', "Choose a user."))
                 return
             }
             sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
@@ -3686,24 +3714,24 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const targetKey = typeof body.target === 'string' ? body.target : ''
             const target = ctx.adminTargets.find((t) => t.key === targetKey)
             if (!Number.isSafeInteger(targetUser) || targetUser <= 0 || !target) {
-                sendError(res, 400, 'bad_target', 'Неизвестная цель или пользователь.')
+                sendError(res, 400, 'bad_target', tr('Неизвестная цель или пользователь.', "Unknown target or user."))
                 return
             }
             const state = await readMemberState(client, target.chatId, targetUser)
             if (state.error) {
-                sendError(res, 502, 'telegram_error', `Не удалось узнать статус в «${target.label}» (${state.error}). Бот должен быть админом цели.`)
+                sendError(res, 502, 'telegram_error', tr(`Не удалось узнать статус в «${target.label}» (${state.error}). Бот должен быть админом цели.`, `Couldn’t check membership in “${target.label}” (${state.error}). The bot must be an admin there.`))
                 return
             }
             if (!state.present) {
-                sendError(res, 409, 'not_in_chat', `Резидента нет в «${target.label}» — попросите его зайти и повторите.`)
+                sendError(res, 409, 'not_in_chat', tr(`Резидента нет в «${target.label}» — попросите его зайти и повторите.`, `The resident isn’t in “${target.label}”. Ask them to join and try again.`))
                 return
             }
             if (state.creator) {
-                sendError(res, 409, 'is_creator', 'Это владелец чата — его права меняет только Telegram.')
+                sendError(res, 409, 'is_creator', tr('Это владелец чата — его права меняет только Telegram.', "Only Telegram can change the chat owner’s permissions."))
                 return
             }
             if (!state.canEdit) {
-                sendError(res, 409, 'not_editable', `Админку в «${target.label}» выдал не бот — поменять её может только тот, кто выдал, или владелец.`)
+                sendError(res, 409, 'not_editable', tr(`Админку в «${target.label}» выдал не бот — поменять её может только тот, кто выдал, или владелец.`, `Only the admin who granted these permissions in “${target.label}” or the chat owner can change them.`))
                 return
             }
             try {
@@ -3711,7 +3739,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 else await revokeAdmin(client, target, targetUser)
             } catch (err) {
                 console.error('[admin] не удалось изменить права:', err)
-                sendError(res, 502, 'telegram_error', 'Telegram отклонил операцию. Бот должен быть админом цели с правом добавлять админов.')
+                sendError(res, 502, 'telegram_error', tr('Telegram отклонил операцию. Бот должен быть админом цели с правом добавлять админов.', "Telegram rejected the change. The bot must be an admin with permission to add admins."))
                 return
             }
             sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
@@ -3724,23 +3752,23 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             const targetUser = Number(body.userId)
             const target = ctx.adminTargets.find((t) => t.canTag)
             if (!Number.isSafeInteger(targetUser) || targetUser <= 0 || !target) {
-                sendError(res, 400, 'bad_target', 'Тег ставить некуда: не задан MAIN_CHAT_ID.')
+                sendError(res, 400, 'bad_target', tr('Тег ставить некуда: не задан MAIN_CHAT_ID.', "Set MAIN_CHAT_ID before assigning tags."))
                 return
             }
             const state = await readMemberState(client, target.chatId, targetUser)
             if (state.error) {
-                sendError(res, 502, 'telegram_error', `Не удалось узнать статус в «${target.label}» (${state.error}). Бот должен быть админом цели.`)
+                sendError(res, 502, 'telegram_error', tr(`Не удалось узнать статус в «${target.label}» (${state.error}). Бот должен быть админом цели.`, `Couldn’t check membership in “${target.label}” (${state.error}). The bot must be an admin there.`))
                 return
             }
             if (!state.present) {
-                sendError(res, 409, 'not_in_chat', `Резидента нет в «${target.label}» — попросите его зайти и повторите.`)
+                sendError(res, 409, 'not_in_chat', tr(`Резидента нет в «${target.label}» — попросите его зайти и повторите.`, `The resident isn’t in “${target.label}”. Ask them to join and try again.`))
                 return
             }
             try {
                 await setMemberTag(client, target.chatId, targetUser, body.on === true ? RESIDENT_TAG : null)
             } catch (err) {
                 console.error('[admin] не удалось изменить тег:', err)
-                sendError(res, 502, 'telegram_error', 'Telegram отклонил операцию. Боту нужно право «изменение тегов участников».')
+                sendError(res, 502, 'telegram_error', tr('Telegram отклонил операцию. Боту нужно право «изменение тегов участников».', "Telegram rejected the change. The bot needs permission to edit member tags."))
                 return
             }
             sendJson(res, 200, await adminStatusPayload(ctx, targetUser))
@@ -3755,18 +3783,18 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireDev()) return
             const targetUser = Number(body.userId)
             if (!Number.isSafeInteger(targetUser) || targetUser <= 0) {
-                sendError(res, 400, 'bad_user', 'Не указан пользователь.')
+                sendError(res, 400, 'bad_user', tr('Не указан пользователь.', "Choose a user."))
                 return
             }
             // Статус без Authentik - не ошибка: карточка просто не покажет раздел.
             if (!ctx.authentik && method !== 'account.status') {
-                sendError(res, 409, 'no_authentik', 'Authentik не подключён: задайте AUTHENTIK_URL и AUTHENTIK_TOKEN.')
+                sendError(res, 409, 'no_authentik', tr('Authentik не подключён: задайте AUTHENTIK_URL и AUTHENTIK_TOKEN.', "Authentik isn’t connected. Set AUTHENTIK_URL and AUTHENTIK_TOKEN."))
                 return
             }
             if (method === 'account.create') {
                 // Группа открывает сервисы резидентов: не резиденту её выдавать нельзя.
                 if (!(await residents.isResident(targetUser))) {
-                    sendError(res, 409, 'not_resident', 'Его нет в чате резидентов, аккаунт ему не положен.')
+                    sendError(res, 409, 'not_resident', tr('Его нет в чате резидентов, аккаунт ему не положен.', "Only members of the residents’ chat can get an account."))
                     return
                 }
                 // Состав кэшируется на пять минут, и вступившего только что в нём может не быть.
@@ -3793,7 +3821,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                 if (result.kind === 'error') {
                     // Не [access]: дев видит отказ на экране, в личку его дублировать незачем.
                     console.error(`[account] не удалось выдать аккаунт ${targetUser}: ${result.reason}`)
-                    sendError(res, 502, 'authentik_error', `Authentik отклонил операцию (${result.reason}).`)
+                    sendError(res, 502, 'authentik_error', tr(`Authentik отклонил операцию (${result.reason}).`, `Authentik rejected the change (${result.reason}).`))
                     return
                 }
             }
@@ -3802,7 +3830,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
                     await deleteAccount(ctx, targetUser)
                 } catch (err) {
                     console.error(`[account] не удалось удалить аккаунт ${targetUser}:`, err)
-                    sendError(res, 502, 'authentik_error', 'Authentik отклонил удаление. Токену нужно право удалять пользователей.')
+                    sendError(res, 502, 'authentik_error', tr('Authentik отклонил удаление. Токену нужно право удалять пользователей.', "Authentik rejected the deletion. The API token needs permission to delete users."))
                     return
                 }
             }
@@ -3811,7 +3839,7 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
         }
 
         default:
-            sendError(res, 404, 'unknown_method', 'Неизвестный метод API.')
+            sendError(res, 404, 'unknown_method', tr('Неизвестный метод API.', "Unknown API method."))
     }
 }
 
@@ -4103,27 +4131,27 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 if (userId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
-                        .end('Ссылка устарела — открой миниапп заново.')
+                        .end(tr('Ссылка устарела — открой миниапп заново.', "This link has expired. Reopen the Mini App."))
                     return
                 }
                 // Полка до `residents.access`: на холодном кэше он ходит в Telegram.
                 if (!allow(res, 'ics', userId, LIMITS.ics, false)) return
                 if (isBlocked(deps.storage, userId) || (await deps.residents.access(userId)).banned) {
-                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
+                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Доступ закрыт.', "Access denied."))
                     return
                 }
                 const requests = deps.storage.get().hostingRequests
                 const request = Object.hasOwn(requests, id) ? requests[id] : undefined
                 // Только свой визит: в файле цель визита и кто хостит.
                 if (!request || request.guest.userId !== userId) {
-                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Заявка не найдена.')
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Заявка не найдена.', "Request not found."))
                     return
                 }
                 res.writeHead(200, {
                     'Content-Type': 'text/calendar; charset=utf-8',
                     'Content-Disposition': 'attachment; filename="visit.ics"',
                     'Cache-Control': 'no-store',
-                }).end(buildVisitIcs(request, deps.tzOffsetMinutes))
+                }).end(withUserLocale(deps.storage, userId, () => buildVisitIcs(request, deps.tzOffsetMinutes)))
                 return
             }
 
@@ -4140,26 +4168,26 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 if (userId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
                     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' })
-                        .end('Ссылка устарела - открой миниапп заново.')
+                        .end(tr('Ссылка устарела - открой миниапп заново.', "This link has expired. Reopen the Mini App."))
                     return
                 }
                 if (!allow(res, 'ics', userId, LIMITS.ics, false)) return
                 const access = await deps.residents.access(userId)
                 if (isBlocked(deps.storage, userId) || access.banned) {
-                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
+                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Доступ закрыт.', "Access denied."))
                     return
                 }
                 const events = deps.storage.get().events
                 const event = Object.hasOwn(events, id) ? events[id] : undefined
                 if (!event || (event.residentsOnly && !access.resident)) {
-                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ивент не найден.')
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Ивент не найден.', "Event not found."))
                     return
                 }
                 res.writeHead(200, {
                     'Content-Type': 'text/calendar; charset=utf-8',
                     'Content-Disposition': 'attachment; filename="event.ics"',
                     'Cache-Control': 'no-store',
-                }).end(buildEventIcs(event, deps.tzOffsetMinutes))
+                }).end(withUserLocale(deps.storage, userId, () => buildEventIcs(event, deps.tzOffsetMinutes)))
                 return
             }
 
@@ -4179,7 +4207,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 const userId = feedUserId(deps.storage, token)
                 if (userId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
-                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ссылка не найдена.')
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Ссылка не найдена.', "Link not found."))
                     return
                 }
                 if (!allow(res, 'feed', userId, LIMITS.feed, false)) return
@@ -4189,7 +4217,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 // инъекция в ответ.
                 const host = (req.headers.host ?? '').trim()
                 if (!/^[A-Za-z0-9.\-]+(:\d+)?$/.test(host)) {
-                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Неизвестный адрес.')
+                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Неизвестный адрес.', "Unknown address."))
                     return
                 }
                 res.writeHead(302, {
@@ -4213,7 +4241,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 const userId = feedUserId(deps.storage, token)
                 if (userId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, false)) return
-                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Ссылка не найдена.')
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Ссылка не найдена.', "Link not found."))
                     return
                 }
                 if (!allow(res, 'feed', userId, LIMITS.feed, false)) return
@@ -4222,18 +4250,18 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 // календарь стучится сам и по расписанию. Своей записи в blockedUsers
                 // хватает — публичных ивентов заблокированный и так не лишён.
                 if (isBlocked(deps.storage, userId)) {
-                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Доступ закрыт.')
+                    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end(tr('Доступ закрыт.', "Access denied."))
                     return
                 }
                 res.writeHead(200, {
                     'Content-Type': 'text/calendar; charset=utf-8',
                     'Cache-Control': 'no-store',
                 }).end(
-                    buildEventsFeedIcs(
+                    withUserLocale(deps.storage, userId, () => buildEventsFeedIcs(
                         feedEvents(deps.storage, deps.tzOffsetMinutes),
                         feedVisits(deps.storage, userId, deps.tzOffsetMinutes),
                         deps.tzOffsetMinutes,
-                    ),
+                    )),
                 )
                 return
             }
@@ -4247,8 +4275,9 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 }
                 // Заливка (POST) считается отдельно от показа: она пишет до 4 МБ на диск.
                 const uploading = req.method === 'POST'
+                const verified = uploading ? validateInitData(initDataFromHeader(req), deps.botToken) : null
                 const viewerId = uploading
-                    ? (validateInitData(initDataFromHeader(req), deps.botToken)?.userId ?? null)
+                    ? verified?.userId ?? null
                     : verifyLink(deps.botToken, 'media', url.searchParams.get('t') ?? '')
                 if (viewerId === null) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail, uploading)) return
@@ -4257,33 +4286,35 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                 }
                 const viewer = { userId: viewerId }
                 const photoRule = uploading ? LIMITS.photoUpload : LIMITS.photo
-                if (!allow(res, uploading ? 'photo.upload' : 'photo', viewer.userId, photoRule, uploading)) return
-                const access = await deps.residents.access(viewer.userId)
-                if (isBlocked(deps.storage, viewer.userId) || access.banned) {
+                if (!allow(res, uploading ? 'photo.upload' : 'photo', viewerId, photoRule, uploading)) return
+                const access = await deps.residents.access(viewerId)
+                if (isBlocked(deps.storage, viewerId) || access.banned) {
                     res.writeHead(403).end()
                     return
                 }
                 // Заливка афиши из редактора. Тело — картинка, поэтому не /api/ (там JSON
                 // и потолок в 64 КБ): подпись и проверки те же, id файла возвращаем в JSON.
                 if (req.method === 'POST') {
-                    if (!access.resident) {
-                        sendError(res, 403, 'not_resident', 'Заводить ивенты могут резиденты.')
-                        return
-                    }
-                    let bytes: Buffer
-                    try {
-                        bytes = await readBinaryBody(req, MAX_EVENT_PHOTO_BYTES)
-                    } catch {
-                        sendError(res, 413, 'too_large', 'Картинка слишком большая.')
-                        return
-                    }
-                    if (!isJpeg(bytes)) {
-                        sendError(res, 400, 'bad_image', 'Не получилось прочитать картинку — попробуйте другую.')
-                        return
-                    }
-                    const photoId = stagedPhotoId(viewer.userId)
-                    await saveEventPhoto(deps.storage.path(), photoId, bytes)
-                    sendJson(res, 200, { id: photoId })
+                    await withLocale(userLocale(deps.storage, viewerId, verified?.languageCode), async () => {
+                        if (!access.resident) {
+                            sendError(res, 403, 'not_resident', tr('Заводить ивенты могут резиденты.', "Only residents can create events."))
+                            return
+                        }
+                        let bytes: Buffer
+                        try {
+                            bytes = await readBinaryBody(req, MAX_EVENT_PHOTO_BYTES)
+                        } catch {
+                            sendError(res, 413, 'too_large', tr('Картинка слишком большая.', "The image is too large."))
+                            return
+                        }
+                        if (!isJpeg(bytes)) {
+                            sendError(res, 400, 'bad_image', tr('Не получилось прочитать картинку — попробуйте другую.', "Couldn’t read the image. Try another one."))
+                            return
+                        }
+                        const photoId = stagedPhotoId(viewerId)
+                        await saveEventPhoto(deps.storage.path(), photoId, bytes)
+                        sendJson(res, 200, { id: photoId })
+                    })
                     return
                 }
                 const id = url.searchParams.get('id') ?? ''
@@ -4374,7 +4405,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
 
             if (pathname.startsWith('/api/')) {
                 if (req.method !== 'POST') {
-                    sendError(res, 405, 'method_not_allowed', 'Только POST.')
+                    sendError(res, 405, 'method_not_allowed', tr('Только POST.', "Only POST requests are supported."))
                     return
                 }
                 let body: Record<string, unknown>
@@ -4383,45 +4414,49 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
                     body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
                 } catch (err) {
                     if ((err as { code?: string }).code === 'body_too_large') {
-                        sendError(res, 413, 'too_large', 'Тело запроса слишком большое.')
+                        sendError(res, 413, 'too_large', tr('Тело запроса слишком большое.', "The request body is too large."))
                     } else {
-                        sendError(res, 400, 'bad_json', 'Некорректное тело запроса.')
+                        sendError(res, 400, 'bad_json', tr('Некорректное тело запроса.', "Invalid request body."))
                     }
                     return
                 }
                 const initData = typeof body.initData === 'string' ? body.initData : ''
-                const user = validateInitData(initData, deps.botToken)
-                if (!user) {
+                const verified = validateInitData(initData, deps.botToken)
+                if (!verified) {
                     if (!allow(res, 'authFail', ip, LIMITS.authFail)) return
-                    sendError(res, 401, 'bad_init_data', 'Откройте миниапп заново — сессия устарела.')
+                    sendError(res, 401, 'bad_init_data', tr('Откройте миниапп заново — сессия устарела.', "Your session has expired. Reopen the Mini App."))
                     return
                 }
-                const method = pathname.slice('/api/'.length).replace(/\/+$/, '').replaceAll('/', '.')
-                // Три полки подряд: общий потолок на человека, полка класса метода и
-                // персональная полка самых дорогих методов. Всё до `residents.access` —
-                // на холодном кэше он сам ходит в Telegram по всем allowlist-чатам.
-                if (!allow(res, 'api', user.userId, LIMITS.user)) return
-                const rateClass = METHOD_CLASS[method] ?? 'write'
-                if (!allow(res, `api.${rateClass}`, user.userId, CLASS_LIMITS[rateClass])) return
-                const methodLimit = METHOD_LIMITS[method]
-                if (methodLimit && !allow(res, `api.${method}`, user.userId, methodLimit)) return
-                // Заблокированный участник не имеет доступа к миниаппу — глухой отказ.
-                // Источников бана два: своя запись в blockedUsers (блокировка из миниаппа)
-                // и живой статус в allowlist-чатах — забаненного руками в Телеграме, минуя
-                // миниапп, в blockedUsers нет, но внутрь его пускать всё равно нельзя.
-                const { resident, banned } = await deps.residents.access(user.userId)
-                if (banned || isBlocked(deps.storage, user.userId)) {
-                    sendError(res, 403, 'blocked', 'Доступ закрыт.')
-                    return
-                }
-                const apiCtx: ApiContext = { ...deps, user, resident, body, res }
-                // Снимок для журнала — до вызова: close/cancel/event.delete стирают объект.
-                const before = auditBefore(apiCtx, method)
-                try {
-                    await handleApi(apiCtx, method)
-                } finally {
-                    if (before) logApiAudit(apiCtx, method, before)
-                }
+                const { languageCode, ...user } = verified
+                await withLocale(userLocale(deps.storage, user.userId, languageCode), async () => {
+                    const method = pathname.slice('/api/'.length).replace(/\/+$/, '').replaceAll('/', '.')
+                    // Три полки подряд: общий потолок на человека, полка класса метода и
+                    // персональная полка самых дорогих методов. Всё до `residents.access` —
+                    // на холодном кэше он сам ходит в Telegram по всем allowlist-чатам.
+                    if (!allow(res, 'api', user.userId, LIMITS.user)) return
+                    const rateClass = METHOD_CLASS[method] ?? 'write'
+                    if (!allow(res, `api.${rateClass}`, user.userId, CLASS_LIMITS[rateClass])) return
+                    const methodLimit = METHOD_LIMITS[method]
+                    if (methodLimit && !allow(res, `api.${method}`, user.userId, methodLimit)) return
+                    // Заблокированный участник не имеет доступа к миниаппу — глухой отказ.
+                    // Источников бана два: своя запись в blockedUsers (блокировка из миниаппа)
+                    // и живой статус в allowlist-чатах — забаненного руками в Телеграме, минуя
+                    // миниапп, в blockedUsers нет, но внутрь его пускать всё равно нельзя.
+                    const { resident, banned } = await deps.residents.access(user.userId)
+                    if (banned || isBlocked(deps.storage, user.userId)) {
+                        sendError(res, 403, 'blocked', tr('Доступ закрыт.', "Access denied."))
+                        return
+                    }
+                    rememberTelegramLanguage(deps.storage, user.userId, languageCode)
+                    const apiCtx: ApiContext = { ...deps, user, telegramLanguage: languageCode, resident, body, res }
+                    // Снимок для журнала — до вызова: close/cancel/event.delete стирают объект.
+                    const before = auditBefore(apiCtx, method)
+                    try {
+                        await handleApi(apiCtx, method)
+                    } finally {
+                        if (before) logApiAudit(apiCtx, method, before)
+                    }
+                })
                 return
             }
 
@@ -4432,7 +4467,7 @@ export const startWebappServer = (deps: WebappDeps): { server: Server; stop: () 
             await serveStatic(req, pathname, res)
         })().catch((err) => {
             console.error('[webapp] ошибка обработки запроса:', err)
-            if (!res.headersSent) sendError(res, 500, 'internal', 'Внутренняя ошибка сервера.')
+            if (!res.headersSent) sendError(res, 500, 'internal', tr('Внутренняя ошибка сервера.', "Internal server error."))
             else res.end()
         })
     })

@@ -1,3 +1,4 @@
+import { tr, withUserLocale } from './i18n.js'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -649,16 +650,21 @@ export const notifyReviewersNewApplication = async (
     app: EventApplication,
 ): Promise<void> => {
     const ids = await reviewerIdsFor(event, directory)
-    const text = [
-        `Новая заявка на ивент: <b>${html.escape(event.title)}</b>`,
-        `${formatDayKey(event.dateKey)} к ${event.time}.`,
-        `От: ${await mentionLabel(client, app.guest)}.`,
-    ].join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть заявки', webappAt(webappUrl, eventAppsTarget(event.id)))]])
+    const guest = await mentionLabel(client, app.guest)
+    const title = html.escape(event.title)
     for (const userId of ids) {
         if (userId === app.guest.userId) continue
         try {
-            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+            await withUserLocale(storage, userId, () => {
+                const date = formatDayKey(event.dateKey)
+                const text = [
+                    tr(`Новая заявка на ивент: <b>${title}</b>`, `New event application: <b>${title}</b>`),
+                    tr(`${date} к ${event.time}.`, `${date} at ${event.time}.`),
+                    tr(`От: ${guest}.`, `From: ${guest}.`),
+                ].join('<br>')
+                const keyboard = BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть заявки', 'View applications'), webappAt(webappUrl, eventAppsTarget(event.id)))]])
+                return client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+            })
         } catch {
             /* рецензент не открывал личку — молча пропускаем */
         }
@@ -671,21 +677,22 @@ export const notifyReviewersNewApplication = async (
  */
 export const notifyApplicantApproved = async (
     client: TelegramClient,
+    storage: Storage,
     webappUrl: string,
     event: SpaceEvent,
     guest: HostingUser,
-): Promise<void> => {
+): Promise<void> => withUserLocale(storage, guest.userId, async () => {
     const text = [
-        `Заявка на ивент принята: <b>${html.escape(event.title)}</b>`,
-        `Ждём вас ${formatDayKey(event.dateKey)} к ${event.time}.`,
+        tr(`Заявка на ивент принята: <b>${html.escape(event.title)}</b>`, `Event application accepted: <b>${html.escape(event.title)}</b>`),
+        tr(`Ждём вас ${formatDayKey(event.dateKey)} к ${event.time}.`, `See you on ${formatDayKey(event.dateKey)} at ${event.time}.`),
     ].join('<br>')
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappAt(webappUrl, eventTarget(event.id)))]])
+    const keyboard = BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть ивенты', "View events"), webappAt(webappUrl, eventTarget(event.id)))]])
     try {
         await client.sendText(guest.userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
     } catch {
         /* гость не открывал личку — молча пропускаем */
     }
-}
+})
 
 // ---------------------------------------------------------------------------
 // Уведомления резидентам
@@ -723,21 +730,24 @@ export const notifyResidentsAboutEvent = async (
     event: SpaceEvent,
 ): Promise<void> => {
     const isForToday = event.dateKey === todayKey(tzOffsetMinutes)
-    const lines = [
-        `Новый ивент: <b>${html.escape(event.title)}</b>`,
-        `${formatDayKey(event.dateKey)} к ${event.time}${isForToday ? ' (сегодня)' : ''}.`,
-        `Организатор: ${await mentionLabel(client, event.host)}.`,
-    ]
-    if (event.residentsOnly) lines.push('Только для резидентов — гостям не показывается.')
-    if (event.description) {
-        const short =
-            event.description.length > NOTIFY_DESCRIPTION_LIMIT
-                ? `${event.description.slice(0, NOTIFY_DESCRIPTION_LIMIT).trimEnd()}…`
-                : event.description
-        // Переносы внутри описания живут только как <br>: html() схлопывает \n в пробел.
-        lines.push('', ...short.split('\n').map((line) => html.escape(line)))
+    const host = await mentionLabel(client, event.host)
+    const title = html.escape(event.title)
+    const description = event.description.length > NOTIFY_DESCRIPTION_LIMIT
+        ? `${event.description.slice(0, NOTIFY_DESCRIPTION_LIMIT).trimEnd()}…`
+        : event.description
+    const text = () => {
+        const date = formatDayKey(event.dateKey)
+        const today = isForToday ? tr(' (сегодня)', ' (today)') : ''
+        const lines = [
+            tr(`Новый ивент: <b>${title}</b>`, `New event: <b>${title}</b>`),
+            tr(`${date} к ${event.time}${today}.`, `${date} at ${event.time}${today}.`),
+            tr(`Организатор: ${host}.`, `Organizer: ${host}.`),
+        ]
+        if (event.residentsOnly) lines.push(tr('Только для резидентов — гостям не показывается.', 'Visible to residents only.'))
+        if (description) lines.push('', ...description.split('\n').map((line) => html.escape(line)))
+        return lines.join('<br>')
     }
-    await broadcastEventNotice(client, storage, directory, lines.join('<br>'), webappUrl, eventTarget(event.id), isForToday, event.host.userId)
+    await broadcastEventNotice(client, storage, directory, text, webappUrl, eventTarget(event.id), isForToday, event.host.userId)
 }
 
 /**
@@ -749,21 +759,23 @@ const broadcastEventNotice = async (
     client: TelegramClient,
     storage: Storage,
     directory: ResidentDirectory,
-    text: string,
+    text: () => string,
     webappUrl: string,
     target: string,
     isForToday: boolean,
     skipUserId: number,
 ): Promise<void> => {
     const residents = await directory.listIds()
-    const keyboard = BotKeyboard.inline([[BotKeyboard.webView('Открыть ивенты', webappAt(webappUrl, target))]])
     for (const userId of residents) {
         if (userId === skipUserId) continue
         const prefs = eventNotifyPrefsFor(storage, userId)
         if (!prefs.enabled) continue
         if (prefs.mode === 'today' && !isForToday) continue
         try {
-            await client.sendText(userId, html(text), { replyMarkup: keyboard, disableWebPreview: true })
+            await withUserLocale(storage, userId, () => client.sendText(userId, html(text()), {
+                replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть ивенты', 'View events'), webappAt(webappUrl, target))]]),
+                disableWebPreview: true,
+            }))
         } catch {
             // резидент не открывал личку с ботом — молча пропускаем
         }
@@ -816,8 +828,8 @@ const eventTitleHtml = (event: SpaceEvent): string =>
 /** Слот, организатор и начало описания: общее у анонса в чатах и карточки «Переслать». */
 const eventCardLines = (event: SpaceEvent, tzOffsetMinutes: number): string[] => {
     const lines = [
-        `${formatDayKey(event.dateKey)} к ${event.time}${event.dateKey === todayKey(tzOffsetMinutes) ? ' (сегодня)' : ''}`,
-        `Организатор: ${hostLabel(event.host)}`,
+        tr(`${formatDayKey(event.dateKey)} к ${event.time}${event.dateKey === todayKey(tzOffsetMinutes) ? ' (сегодня)' : ''}`, `${formatDayKey(event.dateKey)} at ${event.time}${event.dateKey === todayKey(tzOffsetMinutes) ? ' (сегодня)' : ''}`),
+        tr(`Организатор: ${hostLabel(event.host)}`, `Organizer: ${hostLabel(event.host)}`),
     ]
     if (event.description) {
         const short =
@@ -853,9 +865,9 @@ export const announceEventToChats = async (
     const targets = eventAnnounceTargets(storage, allowedChats)
     if (targets.length === 0) return
 
-    const text = [`📅 Новый ивент: ${eventTitleHtml(event)}`, ...eventCardLines(event, tzOffsetMinutes)].join('<br>')
+    const text = [tr(`📅 Новый ивент: ${eventTitleHtml(event)}`, `📅 New event: ${eventTitleHtml(event)}`), ...eventCardLines(event, tzOffsetMinutes)].join('<br>')
     const markup = eventAnnounceLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))]])
+        ? BotKeyboard.inline([[BotKeyboard.url(tr('🚪 Хочу прийти', "🚪 Request a visit"), startappAt(eventAnnounceLink, eventTarget(event.id)))]])
         : undefined
 
     // Афиша — первая: анонс с картинкой в ленте чата заметнее, а разводить ради этого
@@ -905,7 +917,7 @@ export const prepareEventShare = async (
 ): Promise<PreparedShare> => {
     const text = html([eventTitleHtml(event), ...eventCardLines(event, tzOffsetMinutes)].join('<br>'))
     const button = eventAnnounceLink
-        ? BotKeyboard.url('🚪 Хочу прийти', startappAt(eventAnnounceLink, eventTarget(event.id)))
+        ? BotKeyboard.url(tr('🚪 Хочу прийти', "🚪 Request a visit"), startappAt(eventAnnounceLink, eventTarget(event.id)))
         : null
     const photoId = eventPhotoIds(event)[0]
     let fileId = photoId ? (sharedPhotoIds.get(photoId) ?? null) : null
@@ -934,7 +946,7 @@ export const prepareEventShare = async (
             id: resultId,
             type: 'article',
             title: event.title,
-            description: `${formatDayKey(event.dateKey)} к ${event.time}`,
+            description: tr(`${formatDayKey(event.dateKey)} к ${event.time}`, `${formatDayKey(event.dateKey)} at ${event.time}`),
             sendMessage: {
                 _: 'inputBotInlineMessageText',
                 noWebpage: true,
@@ -964,7 +976,7 @@ const eventVevent = (event: SpaceEvent, tzOffsetMinutes: number, now: Date): str
     const description: string[] = []
     if (event.description) description.push(event.description)
     description.push(
-        `Организатор: ${displayName(event.host.name)}${event.host.username ? ` (@${event.host.username})` : ''}`,
+        tr(`Организатор: ${displayName(event.host.name)}${event.host.username ? ` (@${event.host.username})` : ''}`, `Organizer: ${displayName(event.host.name)}${event.host.username ? ` (@${event.host.username})` : ''}`),
     )
     return [
         'BEGIN:VEVENT',
@@ -1000,7 +1012,7 @@ export const buildEventIcs = (event: SpaceEvent, tzOffsetMinutes: number, now: D
  * Имя календаря у подписчика. Клиенты берут его в момент подписки, поэтому у тех, кто
  * подписался раньше, остаётся прежнее.
  */
-const FEED_NAME = 'Хакспейс: ивенты и визиты'
+const feedName = (): string => tr('Хакспейс: ивенты и визиты', 'Hackerspace events and visits')
 
 /** Как часто календарю стоит перечитывать фид: подсказка, а не гарантия. */
 const FEED_REFRESH = 'PT1H'
@@ -1030,14 +1042,15 @@ export const buildEventsFeedIcs = (
     tzOffsetMinutes: number,
     now: Date = new Date(),
 ): string => {
+    const name = icsEscape(feedName())
     const lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
         'PRODID:-//endpoint//events//RU',
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH',
-        `NAME:${icsEscape(FEED_NAME)}`,
-        `X-WR-CALNAME:${icsEscape(FEED_NAME)}`,
+        `NAME:${name}`,
+        `X-WR-CALNAME:${name}`,
         `REFRESH-INTERVAL;VALUE=DURATION:${FEED_REFRESH}`,
         `X-PUBLISHED-TTL:${FEED_REFRESH}`,
         ...events.flatMap((e) => eventVevent(e, tzOffsetMinutes, now)),
@@ -1086,10 +1099,10 @@ export const notifyEventMoved = async (
 ): Promise<void> => {
     if (before.dateKey === event.dateKey && before.time === event.time) return
     const isForToday = event.dateKey === todayKey(tzOffsetMinutes) || before.dateKey === todayKey(tzOffsetMinutes)
-    const text = [
-        `Ивент перенесён: <b>${html.escape(event.title)}</b>`,
-        `Было ${formatDayKey(before.dateKey)} к ${before.time}.`,
-        `Стало ${formatDayKey(event.dateKey)} к ${event.time}.`,
+    const text = () => [
+        tr(`Ивент перенесён: <b>${html.escape(event.title)}</b>`, `Event rescheduled: <b>${html.escape(event.title)}</b>`),
+        tr(`Было ${formatDayKey(before.dateKey)} к ${before.time}.`, `Previously: ${formatDayKey(before.dateKey)} at ${before.time}.`),
+        tr(`Стало ${formatDayKey(event.dateKey)} к ${event.time}.`, `New time: ${formatDayKey(event.dateKey)} at ${event.time}.`),
     ].join('<br>')
     await broadcastEventNotice(client, storage, directory, text, webappUrl, eventTarget(event.id), isForToday, byUserId)
 }
@@ -1104,9 +1117,9 @@ export const notifyEventCancelled = async (
     event: SpaceEvent,
     byUserId: number,
 ): Promise<void> => {
-    const text = [
-        `Ивент отменён: <b>${html.escape(event.title)}</b>`,
-        `${formatDayKey(event.dateKey)} к ${event.time} - не состоится.`,
+    const text = () => [
+        tr(`Ивент отменён: <b>${html.escape(event.title)}</b>`, `Event cancelled: <b>${html.escape(event.title)}</b>`),
+        tr(`${formatDayKey(event.dateKey)} к ${event.time} - не состоится.`, `The event at ${event.time} on ${formatDayKey(event.dateKey)} won’t take place.`),
     ].join('<br>')
     // Ивента больше нет: кнопка ведёт в день, где он был.
     await broadcastEventNotice(

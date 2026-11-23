@@ -1,9 +1,10 @@
 // Один день журнала: сколько спейс был открыт и кто когда внутри был.
 // Таймлайн строится по сырым сессиям, поэтому доступен, пока живут месячные файлы.
 
+import { plural, tr } from '../i18n'
 import { useRef, useState, type ReactNode } from 'react'
 import { api, prefetchOnTouch } from '../api'
-import { fmtWeekdayDate, plural } from '../dates'
+import { fmtWeekdayDate } from '../dates'
 import { nb } from '../format'
 import { clamp } from '../motion'
 import { useRemote } from '../remote'
@@ -149,7 +150,7 @@ function DayTimeline({ data }: { data: StatsDayView }) {
     if (!line || !pill) return
     const lx = g.track + frac * g.width
     line.style.transform = `translateX(${lx.toFixed(1)}px)`
-    pill.textContent = `${clock(m)} · ${ids.length > 0 ? `внутри ${ids.length}` : 'никого'}`
+    pill.textContent = `${clock(m)} · ${ids.length > 0 ? tr(`внутри ${ids.length}`, `${ids.length} inside`) : tr('никого', 'nobody')}`
     const w = pill.offsetWidth
     pill.style.transform = `translate(${clamp(lx - w / 2, g.track - 6, g.area - w).toFixed(1)}px, -6px)`
   }
@@ -183,7 +184,7 @@ function DayTimeline({ data }: { data: StatsDayView }) {
 
   return (
     <div className="card stats-card">
-      <div className="stats-card-title">Кто когда был</div>
+      <div className="stats-card-title">{tr('Кто когда был', 'Who was here and when')}</div>
       <div
         className={'tl-scrub' + (scrub ? ' scrubbing' : '') + (inside ? ' lit' : '')}
         data-scrub=""
@@ -221,7 +222,7 @@ function DayTimeline({ data }: { data: StatsDayView }) {
                 userId: p.userId,
                 // Карточки этого дня листаются в порядке дорожек.
                 people: people.map((x) => ({ userId: x.userId, label: x.label, username: x.username })),
-                backLabel: 'Назад',
+                backLabel: tr('Назад', 'Back'),
               })
             }
           >
@@ -261,16 +262,16 @@ function DayTimeline({ data }: { data: StatsDayView }) {
       <div className="tl-legend">
         <span>
           <i className="tl-swatch" />
-          отметился сам
+          {tr('отметился сам', 'checked in manually')}
         </span>
         <span>
           <i className="tl-swatch mac" />
-          по MAC
+          {tr('по MAC', 'automatic check-in')}
         </span>
         {shownGaps.length > 0 ? (
           <span>
             <i className="tl-swatch gap" />
-            роутер был недоступен
+            {tr('роутер был недоступен', 'router unavailable')}
           </span>
         ) : null}
       </div>
@@ -293,7 +294,7 @@ const SK_BARS = [
 /** Скелет: итог дня и таймлайн — те же две карточки, что и с данными. */
 function DaySkeleton() {
   return (
-    <div aria-busy="true" aria-label="Загружаем день">
+    <div aria-busy="true" aria-label={tr('Загружаем день', 'Loading day')}>
       <div className="card stats-card">
         <SkBlock w={132} h={28} />
         <SkBlock w="52%" style={{ display: 'block', marginTop: 12 }} />
@@ -310,7 +311,7 @@ function DaySkeleton() {
         </div>
       </div>
 
-      <SkCard title="Кто когда был">
+      <SkCard title={tr('Кто когда был', 'Who was here and when')}>
         {/* Строка подписей пустая: место под ось держим, а часы выдумывать нечем — они
             считаются по самим визитам. */}
         <div className="tl-ticks">
@@ -356,7 +357,7 @@ export function StatsDay() {
   const frame = (body: ReactNode) => (
     <Screen>
       <BackRow />
-      <Header title={fmtWeekdayDate(dateKey)} subtitle="Журнал присутствия" />
+      <Header title={fmtWeekdayDate(dateKey)} subtitle={tr('Журнал присутствия', 'Check-in log')} />
       <Swap loading={loading && !data} skeleton={pending ? <DaySkeleton /> : null}>
         {body}
       </Swap>
@@ -368,13 +369,16 @@ export function StatsDay() {
   if (!data || data.rows.length === 0) {
     return frame(
       <div className="card">
-        <EmptyState title="В этот день отметок не было" />
+        <EmptyState title={tr('В этот день отметок не было', 'No check-ins this day')} />
       </div>,
     )
   }
 
-  const gapSpans = gapRanges(data.gaps).map((g) => nb(`с ${clock(g.from)} до ${clock(g.to)}`))
+  const gapSpans = gapRanges(data.gaps).map((g) => nb(tr(`с ${clock(g.from)} до ${clock(g.to)}`, `${clock(g.from)} to ${clock(g.to)}`)))
 
+  const gapSummary = gapSpans.length > 1
+    ? gapSpans.slice(0, -1).join(', ') + tr(' и ', ' and ') + gapSpans[gapSpans.length - 1]
+    : gapSpans[0]
   return frame(
     <>
       <div className="card stats-card">
@@ -383,16 +387,16 @@ export function StatsDay() {
             <Units text={fmtDuration(data.openMinutes)} />
           </span>
         </div>
-        <div className="stats-note">{nb(`Открыт с ${data.from} до ${dayEnd(data.to)}`)}</div>
+        <div className="stats-note">{nb(tr(`Открыт с ${data.from} до ${dayEnd(data.to)}`, `Open from ${data.from} to ${dayEnd(data.to)}`))}</div>
         <div className="sep" style={{ margin: '14px 0 12px' }} />
         <div className="stats-pair">
           <div>
             <div className="sp-num">{data.people}</div>
-            <div className="sp-label">{`${plural(data.people, 'человек', 'человека', 'человек')} за день`}</div>
+            <div className="sp-label">{plural(data.people, ['человек за день', 'человека за день', 'человек за день'], ['person that day', 'people that day'])}</div>
           </div>
           <div>
             <div className="sp-num">{data.peak}</div>
-            <div className="sp-label">пик одновременно</div>
+            <div className="sp-label">{tr('пик одновременно', 'peak at once')}</div>
           </div>
         </div>
       </div>
@@ -401,9 +405,10 @@ export function StatsDay() {
 
       {gapSpans.length > 0 ? (
         <Footnote>
-          {`Часть дня данных не было: роутер не отвечал в ${gapSpans.length > 1 ? 'промежутках' : 'промежутке'} ${
-            gapSpans.length > 1 ? `${gapSpans.slice(0, -1).join(', ')} и ${gapSpans[gapSpans.length - 1]}` : gapSpans[0]
-          }. Отметок в это время могло быть больше.`}
+          {tr(
+            `Часть дня данных не было: роутер не отвечал в ${gapSpans.length > 1 ? 'промежутках' : 'промежутке'} ${gapSummary}. Отметок в это время могло быть больше.`,
+            `The router was offline during ${gapSummary}. Some check-ins may be missing.`,
+          )}
         </Footnote>
       ) : null}
     </>,

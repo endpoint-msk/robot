@@ -23,6 +23,7 @@ import {
 import { dayTarget, newRequestTarget, startappAt, webappAt } from './deeplink.js'
 import { syncHostingBoard } from './hosting-board.js'
 import type { ResidentDirectory } from './residents.js'
+import { tr, withUserLocale } from './i18n.js'
 import type { Storage } from './storage.js'
 import type { HostingUser } from './types.js'
 
@@ -86,7 +87,7 @@ export const sendHostingInvite = async (
     dateKey: string,
     target: InviteCandidate,
     from: HostingUser,
-): Promise<{ ok: true } | { ok: false; error: InviteError }> => {
+): Promise<{ ok: true } | { ok: false; error: InviteError }> => withUserLocale(storage, target.userId, async () => {
     const today = todayKey(tzOffsetMinutes)
     const maxDay = addDaysToKey(today, HOSTING_DAYS_AHEAD - 1)
     if (!isValidDayKey(dateKey) || dateKey < today || dateKey > maxDay) return { ok: false, error: 'bad_date' }
@@ -100,17 +101,17 @@ export const sendHostingInvite = async (
     const who = from.username
         ? `${html.escape(displayName(from.name))} (@${from.username})`
         : html.escape(displayName(from.name))
-    const when = `${formatDayKey(dateKey)}${dateKey === today ? ' (сегодня)' : ''}`
+    const when = `${formatDayKey(dateKey)}${dateKey === today ? tr(' (сегодня)', " (today)") : ''}`
     const text = isResident
-        ? `👋 ${who} зовёт тебя в спейс: <b>${when}</b>.`
-        : `👋 ${who} зовёт вас в спейс: <b>${when}</b>.<br>Оставьте заявку на визит — резиденты увидят её и подтвердят.`
+        ? tr(`👋 ${who} зовёт тебя в спейс: <b>${when}</b>.`, `👋 ${who} invited you to the space on <b>${when}</b>.`)
+        : tr(`👋 ${who} зовёт вас в спейс: <b>${when}</b>.<br>Оставьте заявку на визит — резиденты увидят её и подтвердят.`, `👋 ${who} invited you to the space on <b>${when}</b>.<br>Send a visit request so a resident can confirm it.`)
     const keyboard = BotKeyboard.inline(
         isResident
             ? [
-                [BotKeyboard.callback('✅ Приду', `${CB_COME}${dateKey}`)],
-                [BotKeyboard.webView('Открыть хостинг', webappAt(webappUrl, dayTarget(dateKey)))],
+                [BotKeyboard.callback(tr('✅ Приду', "✅ I’m coming"), `${CB_COME}${dateKey}`)],
+                [BotKeyboard.webView(tr('Открыть хостинг', "Open visits"), webappAt(webappUrl, dayTarget(dateKey)))],
             ]
-            : [[BotKeyboard.webView('Оставить заявку', webappAt(webappUrl, newRequestTarget(dateKey)))]],
+            : [[BotKeyboard.webView(tr('Оставить заявку', "Request a visit"), webappAt(webappUrl, newRequestTarget(dateKey)))]],
     )
 
     try {
@@ -119,7 +120,7 @@ export const sendHostingInvite = async (
     } catch {
         return { ok: false, error: 'dm_closed' }
     }
-}
+})
 
 /**
  * Карточка «Позвать из Telegram» для выбора чата (`WebApp.shareMessage`): так резидент
@@ -140,15 +141,15 @@ export const prepareDayShare = async (
     // Карточка зовёт оставить заявку, а в закрытый день её не примут.
     if (isDayLocked(storage, dateKey)) return { ok: false, error: 'day_locked' }
 
-    const when = `${formatDayKey(dateKey)}${dateKey === today ? ' (сегодня)' : ''}`
-    const text = html(`👋 Зову в спейс: <b>${when}</b>.<br>Оставьте заявку на визит по кнопке, и резиденты её подтвердят.`)
+    const when = `${formatDayKey(dateKey)}${dateKey === today ? tr(' (сегодня)', " (today)") : ''}`
+    const text = html(tr(`👋 Зову в спейс: <b>${when}</b>.<br>Оставьте заявку на визит по кнопке, и резиденты её подтвердят.`, `👋 You’re invited to the space on <b>${when}</b>.<br>Tap below to request a visit so a resident can confirm it.`))
     const replyMarkup = botLink
-        ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(botLink, newRequestTarget(dateKey)))]])
+        ? BotKeyboard.inline([[BotKeyboard.url(tr('🚪 Хочу прийти', "🚪 Request a visit"), startappAt(botLink, newRequestTarget(dateKey)))]])
         : undefined
     const prepared = await client.prepareInlineMessage({
         userId,
         result: BotInline.article(newRequestTarget(dateKey), {
-            title: 'Позвать в спейс',
+            title: tr('Позвать в спейс', "Invite to the space"),
             description: when,
             message: BotInlineMessage.text(text, { disableWebPreview: true, replyMarkup }),
         }),
@@ -178,7 +179,7 @@ export const registerHostingInviteHandlers = (
         const dateKey = ctx.dataStr.slice(CB_COME.length)
 
         if (!(await residents.isResident(ctx.user.id))) {
-            await ctx.answer({ text: 'Отметка «я приду» доступна только резидентам.', alert: true })
+            await ctx.answer({ text: tr('Отметка «я приду» доступна только резидентам.', "Only residents can use “I’m coming”."), alert: true })
             return
         }
         const user: HostingUser = {
@@ -188,7 +189,7 @@ export const registerHostingInviteHandlers = (
         }
         const result = await setResidentAttendance(storage, tzOffsetMinutes, dateKey, user, true)
         if (!result.ok) {
-            await ctx.answer({ text: 'Этот день уже прошёл или выпал из ближайшей недели.', alert: true })
+            await ctx.answer({ text: tr('Этот день уже прошёл или выпал из ближайшей недели.', "This day has passed or is outside the upcoming week."), alert: true })
             return
         }
         void syncHostingBoard(client, storage, allowedChats, tzOffsetMinutes).catch((err) =>
@@ -198,12 +199,12 @@ export const registerHostingInviteHandlers = (
         // (само по себе безвредно — setResidentAttendance идемпотентен).
         try {
             await ctx.editMessage({
-                text: html(`✅ Отметил: ты придёшь <b>${formatDayKey(dateKey)}</b>. Передумаешь — сними отметку в миниаппе.`),
+                text: html(tr(`✅ Отметил: ты придёшь <b>${formatDayKey(dateKey)}</b>. Передумаешь — сними отметку в миниаппе.`, `✅ You’re on the list for <b>${formatDayKey(dateKey)}</b>. You can remove yourself in the Mini App if your plans change.`)),
                 replyMarkup: BotKeyboard.inline([]),
             })
         } catch (err) {
             console.warn('[hosting] не удалось переписать сообщение зова:', err)
         }
-        await ctx.answer({ text: 'Отметил' })
+        await ctx.answer({ text: tr('Отметил', "Marked as coming") })
     })
 }

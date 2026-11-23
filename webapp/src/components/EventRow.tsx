@@ -1,7 +1,8 @@
 // Строка ивента в списке — одна и та же на экране дня и в списке «Позже».
 
+import { tr } from '../i18n'
 import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import { dayNum, monthIdx, MONTHS_ABBR, weekdayIdx, WEEKDAYS_SHORT, yearOf } from '../dates'
+import { dayNum, monthIdx, monthsAbbr, weekdayIdx, weekdaysShort, yearOf } from '../dates'
 import { icons } from '../icons'
 import { eventPhotoUrl } from '../links'
 import { toneColors } from '../motion'
@@ -76,7 +77,7 @@ export function EventRow({
     <button type="button" className="row tappable" onClick={() => push('event', { event, ...(backLabel ? { backLabel } : {}) })}>
       {tile ? (
         <div className="ev-tile small" aria-hidden="true" style={toneVars(eventTone(event))}>
-          <span>{MONTHS_ABBR[monthIdx(event.dateKey)]}</span>
+          <span>{monthsAbbr()[monthIdx(event.dateKey)]}</span>
           <b>{dayNum(event.dateKey)}</b>
         </div>
       ) : (
@@ -87,9 +88,9 @@ export function EventRow({
       <div className="ev-row-main">
         <div className="ev-row-title-line">
           <span className="ev-row-title">{event.title}</span>
-          {event.residentsOnly ? <span className="ev-chip">резидентам</span> : null}
+          {event.residentsOnly ? <span className="ev-chip">{tr('резидентам', 'residents only')}</span> : null}
         </div>
-        <div className="ev-row-sub">{[dateLabel, `в\u00a0${event.time}`, host].filter(Boolean).join(' · ')}</div>
+        <div className="ev-row-sub">{[dateLabel, tr(`в\u00a0${event.time}`, `at ${event.time}`), host].filter(Boolean).join(' · ')}</div>
       </div>
       <div className="row-right">{icons.chevron()}</div>
     </button>
@@ -106,11 +107,13 @@ export function LaterEvents({ backLabel }: { backLabel: string }) {
   const events = data!.laterEvents ?? []
   if (events.length === 0) return null
   const thisYear = yearOf(data!.todayKey)
-  const label = (event: SpaceEvent): string =>
-    WEEKDAYS_SHORT[weekdayIdx(event.dateKey)]!.toLowerCase() + (yearOf(event.dateKey) === thisYear ? '' : ` ${yearOf(event.dateKey)}`)
+  const label = (event: SpaceEvent): string => {
+    const weekday = weekdaysShort()[weekdayIdx(event.dateKey)]!
+    return tr(weekday.toLowerCase(), weekday) + (yearOf(event.dateKey) === thisYear ? '' : ` ${yearOf(event.dateKey)}`)
+  }
   return (
     <>
-      <SectionTitle>Позже</SectionTitle>
+      <SectionTitle>{tr('Позже', 'Later')}</SectionTitle>
       <div className="card">
         {events.map((event, i) => (
           <Fragment key={event.id}>

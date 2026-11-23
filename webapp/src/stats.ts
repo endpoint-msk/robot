@@ -2,14 +2,14 @@
 // тепловой карты. Цвета считаются в JS, потому что в градиент и в inline-стиль
 // ячейки CSS-переменную темы подставить нельзя.
 
+import { locale, plural, tr } from './i18n'
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
-import { plural } from './dates'
 
 /** Часы одним числом: «148», «7,5». Для крупных цифр в карточках. */
 export const hoursNum = (minutes: number): string => {
   const hours = minutes / 60
   if (hours >= 10) return String(Math.round(hours))
-  return (Math.round(hours * 10) / 10).toString().replace('.', ',')
+  return (Math.round(hours * 10) / 10).toString().replace('.', tr(',', '.'))
 }
 
 /**
@@ -20,21 +20,23 @@ export const hoursNum = (minutes: number): string => {
  */
 export const hoursNumWord = (minutes: number): string => {
   const shown = Number(hoursNum(minutes).replace(',', '.'))
-  return Number.isInteger(shown) ? plural(shown, 'час', 'часа', 'часов') : 'часа'
+  return locale() === 'ru' && !Number.isInteger(shown) ? 'часа' : hourWord(shown)
 }
+
+const hourWord = (n: number): string => plural(n, ['час', 'часа', 'часов'], ['hour', 'hours'])
 
 export const hoursWord = (minutes: number): string => {
   const n = Math.round(minutes / 60)
-  return `${n}\u00a0${plural(n, 'час', 'часа', 'часов')}`
+  return `${n}\u00a0${hourWord(n)}`
 }
 
 /** «3 ч 20 мин», «45 мин» — длительность визита в строке списка. */
 export const fmtDuration = (minutes: number): string => {
   const m = Math.max(0, Math.round(minutes))
   const h = Math.floor(m / 60)
-  if (h === 0) return `${m}\u00a0мин`
+  if (h === 0) return tr(`${m}\u00a0мин`, `${m} min`)
   const rest = m % 60
-  return rest > 0 ? `${h}\u00a0ч\u00a0${rest}\u00a0мин` : `${h}\u00a0ч`
+  return rest > 0 ? tr(`${h}\u00a0ч\u00a0${rest}\u00a0мин`, `${h} h ${rest} min`) : tr(`${h}\u00a0ч`, `${h} h`)
 }
 
 /** Минуты от полуночи → 'HH:MM'. */
@@ -77,7 +79,12 @@ export const heatCell = (
 }
 
 /** Человекочасы ячейки словами: «1,3 чел.». Без единицы цифра в подсказке нечитаема. */
-export const heatValue = (v: number): string => `${(Math.round(v * 10) / 10).toString().replace('.', ',')}\u00a0чел.`
+export const heatValue = (v: number): string => {
+  const n = Math.round(v * 10) / 10
+  return locale() === 'ru'
+    ? `${String(n).replace('.', ',')}\u00a0чел.`
+    : `${n}\u00a0${n === 1 ? 'person' : 'people'}`
+}
 
 /** Двухчасовой интервал ячейки: «14–16». */
 export const heatSlot = (bucket: number): string =>
@@ -90,7 +97,7 @@ export const heatSlot = (bucket: number): string =>
 export const statsAvatarUser = (p: { userId: number; username: string | null }) => ({
   userId: p.userId,
   username: p.username,
-  name: p.username ?? 'Без ника',
+  name: p.username ?? tr('Без ника', 'Anonymous'),
 })
 
 // --- Ведение пальцем по графикам ---------------------------------------------

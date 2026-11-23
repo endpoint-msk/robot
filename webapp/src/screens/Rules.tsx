@@ -2,6 +2,7 @@
 // (см. me.acceptedRules). Согласие - сама кнопка, а сервер всё равно не даст создать заявку
 // без него (403 rules_required).
 
+import { tr } from '../i18n'
 import { Fragment, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
@@ -36,12 +37,12 @@ const ruleIcon = {
   ),
 }
 
-const RULES: { text: string; tone: string; icon: ReactElement }[] = [
-  { text: 'Не приходите без одобренной заявки', tone: 'green', icon: ruleIcon.request },
-  { text: 'Ведите себя адекватно', tone: 'blue', icon: ruleIcon.smile },
-  { text: 'Не трогайте чужие вещи без прямого согласия резидента или владельца', tone: 'orange', icon: ruleIcon.box },
+const localizedRules = (): { text: string; tone: string; icon: ReactElement }[] => [
+  { text: tr('Не приходите без одобренной заявки', 'Visit only once your request is approved'), tone: 'green', icon: ruleIcon.request },
+  { text: tr('Ведите себя адекватно', 'Be considerate'), tone: 'blue', icon: ruleIcon.smile },
+  { text: tr('Не трогайте чужие вещи без прямого согласия резидента или владельца', 'Ask a resident or the owner for permission before touching someone else’s belongings'), tone: 'orange', icon: ruleIcon.box },
   {
-    text: 'Не рушьте духовный порядок места: если вы чем-то воспользовались, верните на место',
+    text: tr('Не рушьте духовный порядок места: если вы чем-то воспользовались, верните на место', 'Respect the space and put things back where you found them'),
     tone: 'purple',
     icon: icons.undo(18, '#fff'),
   },
@@ -53,6 +54,7 @@ const TICK_MS = 300
 
 function RulesSheet({ done }: SheetBodyProps<boolean>) {
   const [ticked, setTicked] = useState(false)
+  const rules = localizedRules()
   // Согласие записано, лист вот-вот уйдёт: повторный тап по кнопке ничего не шлёт.
   const accepted = useRef(false)
   // Значки по очереди становятся зелёными галочками, пока идёт ответ сервера: видно, с чем
@@ -63,7 +65,7 @@ function RulesSheet({ done }: SheetBodyProps<boolean>) {
     if (accepted.current) return
     const still = reducedMotion()
     if (!still) setTicked(true)
-    const shown = new Promise((r) => setTimeout(r, still ? 0 : (RULES.length - 1) * TICK_STEP_MS + TICK_MS))
+    const shown = new Promise((r) => setTimeout(r, still ? 0 : (rules.length - 1) * TICK_STEP_MS + TICK_MS))
     if (!(await action('rules.accept', {}, { quiet: true }))) {
       setTicked(false)
       return
@@ -77,11 +79,11 @@ function RulesSheet({ done }: SheetBodyProps<boolean>) {
   return (
     <>
       <div className="rules-head">
-        <div className="rules-title">Правила спейса</div>
-        <div className="rules-sub">Прочитайте перед первой заявкой</div>
+        <div className="rules-title">{tr('Правила спейса', 'Space rules')}</div>
+        <div className="rules-sub">{tr('Прочитайте перед первой заявкой', 'Read before your first request')}</div>
       </div>
       <div className={'card rules-list' + (ticked ? ' ticked' : '')}>
-        {RULES.map((r, i) => (
+        {rules.map((r, i) => (
           <Fragment key={r.text}>
             {i > 0 ? <Sep inset="icon" /> : null}
             <div className="row rule-row">
@@ -98,14 +100,12 @@ function RulesSheet({ done }: SheetBodyProps<boolean>) {
       </div>
       <div className="card rules-wiki">
         <button type="button" className="row tappable" onClick={() => openUrl(WIKI_URL)}>
-          <span className="row-label">Все правила на вики</span>
+          <span className="row-label">{tr('Все правила на вики', 'Full rules on the wiki')}</span>
           <div className="row-right">{icons.external()}</div>
         </button>
       </div>
       <div className="card modal-actions">
-        <ActionButton className="modal-btn primary" onClick={accept}>
-          Принимаю правила
-        </ActionButton>
+        <ActionButton className="modal-btn primary" onClick={accept}>{tr('Принимаю правила', 'I accept the rules')}</ActionButton>
       </div>
     </>
   )

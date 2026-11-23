@@ -1,6 +1,7 @@
 // Лист привязки телефона для авто-отметки: где найти MAC на своей платформе и поле для
 // него. Открывается из знакомства и из настроек.
 
+import { tr } from '../i18n'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { action } from '../api'
 import { icons } from '../icons'
@@ -28,68 +29,68 @@ type How = {
 
 // Подписи сверены с системными: у Apple «Частный адрес Wi-Fi» с вариантами
 // «Постоянный» и «Чередующийся», у Windows «Случайные аппаратные адреса».
-const HOW: Record<Os, How> = {
+const platformGuide = (): Record<Os, How> => ({
   ios: {
     tab: 'iPhone',
     path: (
       <>
-        <b>Настройки</b> › Wi-Fi › ⓘ у сети Endpoint
+        <b>{tr('Настройки', 'Settings')}</b>{tr(' › Wi-Fi › ⓘ у сети Endpoint', ' › Wi-Fi › ⓘ next to Endpoint')}
       </>
     ),
-    k1: 'Частный адрес Wi-Fi',
-    v1: 'Постоянный',
-    k2: 'Адрес Wi-Fi',
+    k1: tr('Частный адрес Wi-Fi', 'Private Wi-Fi Address'),
+    v1: tr('Постоянный', 'Fixed'),
+    k2: tr('Адрес Wi-Fi', 'Wi-Fi Address'),
     v2: 'a4:83:e7:1c:0f:92',
-    note: '«Чередующийся» не подойдёт: адрес будет меняться раз в две недели.',
-    random: 'Это частный адрес. Подойдёт, если он «Постоянный».',
+    note: tr('«Чередующийся» не подойдёт: адрес будет меняться раз в две недели.', 'A rotating address changes every two weeks. Choose “Fixed”.'),
+    random: tr('Это частный адрес. Подойдёт, если он «Постоянный».', 'A private address works with “Fixed” selected.'),
     label: 'iPhone',
   },
   android: {
     tab: 'Android',
     path: (
       <>
-        <b>Настройки</b> › Wi-Fi › ⚙ у сети Endpoint
+        <b>{tr('Настройки', 'Settings')}</b>{tr(' › Wi-Fi › ⚙ у сети Endpoint', ' › Wi-Fi › ⚙ next to Endpoint')}
       </>
     ),
-    k1: 'Конфиденциальность',
-    v1: 'MAC-адрес устройства',
-    k2: 'MAC-адрес',
+    k1: tr('Конфиденциальность', 'Privacy'),
+    v1: tr('MAC-адрес устройства', 'Device MAC'),
+    k2: tr('MAC-адрес', 'MAC address'),
     v2: 'a4:83:e7:1c:0f:92',
-    note: 'Пункт может называться «Тип MAC-адреса»: нужен адрес устройства, а не случайный.',
-    random: 'Это случайный адрес. Подойдёт, только если он не меняется при переподключении.',
-    label: 'Телефон',
+    note: tr('Пункт может называться «Тип MAC-адреса»: нужен адрес устройства, а не случайный.', 'This setting may be called “MAC address type”. Choose the device MAC address.'),
+    random: tr('Это случайный адрес. Подойдёт, только если он не меняется при переподключении.', 'A randomized address works if it stays the same when you reconnect.'),
+    label: tr('Телефон', 'Phone'),
   },
   mac: {
     tab: 'Mac',
     path: (
       <>
-        <b>Системные настройки</b> › Wi-Fi › Подробнее у сети Endpoint
+        <b>{tr('Системные настройки', 'System Settings')}</b>{tr(' › Wi-Fi › Подробнее у сети Endpoint', ' › Wi-Fi › Details next to Endpoint')}
       </>
     ),
-    k1: 'Частный адрес Wi-Fi',
-    v1: 'Постоянный',
-    k2: 'Адрес Wi-Fi',
+    k1: tr('Частный адрес Wi-Fi', 'Private Wi-Fi Address'),
+    v1: tr('Постоянный', 'Fixed'),
+    k2: tr('Адрес Wi-Fi', 'Wi-Fi Address'),
     v2: 'a4:83:e7:1c:0f:92',
-    note: '«Чередующийся» не подойдёт: адрес будет меняться раз в две недели.',
-    random: 'Это частный адрес. Подойдёт, если он «Постоянный».',
+    note: tr('«Чередующийся» не подойдёт: адрес будет меняться раз в две недели.', 'A rotating address changes every two weeks. Choose “Fixed”.'),
+    random: tr('Это частный адрес. Подойдёт, если он «Постоянный».', 'A private address works with “Fixed” selected.'),
     label: 'Mac',
   },
   win: {
     tab: 'Windows',
     path: (
       <>
-        <b>Параметры</b> › Сеть и Интернет › Wi-Fi › Свойства Endpoint
+        <b>{tr('Параметры', 'Settings')}</b>{tr(' › Сеть и Интернет › Wi-Fi › Свойства Endpoint', ' › Network & internet › Wi-Fi › Endpoint properties')}
       </>
     ),
-    k1: 'Случайные аппаратные адреса',
-    v1: 'Откл.',
-    k2: 'Физический адрес (MAC)',
+    k1: tr('Случайные аппаратные адреса', 'Random hardware addresses'),
+    v1: tr('Откл.', 'Off'),
+    k2: tr('Физический адрес (MAC)', 'Physical address (MAC)'),
     v2: 'A4-83-E7-1C-0F-92',
-    note: 'Адрес с дефисами подойдёт, бот сам приведёт его к одному виду.',
-    random: 'Это случайный адрес. Выключите «Случайные аппаратные адреса», иначе он будет меняться.',
-    label: 'Ноутбук',
+    note: tr('Адрес с дефисами подойдёт, бот сам приведёт его к одному виду.', 'The bot accepts addresses with hyphens and normalizes the format.'),
+    random: tr('Это случайный адрес. Выключите «Случайные аппаратные адреса», иначе он будет меняться.', 'A randomized address changes over time. Turn off “Random hardware addresses”.'),
+    label: tr('Ноутбук', 'Laptop'),
   },
-}
+})
 
 const OS_ORDER: Os[] = ['ios', 'android', 'mac', 'win']
 
@@ -114,16 +115,16 @@ type Check = { ok: boolean; msg: string; tone: '' | 'err' | 'warn' }
  * случайный»: сохранить его можно (постоянный частный адрес Apple именно такой),
  * но человек должен понимать, что на ротации отметка отвалится.
  */
-const checkMac = (raw: string, os: Os): Check => {
+const checkMac = (raw: string, randomAddressHint: string): Check => {
   const value = raw.trim()
   if (!value) return { ok: false, msg: '', tone: '' }
   const hex = value.replace(/[^0-9a-f]/gi, '')
   if (hex.length !== 12 || /[^0-9a-f:\-.\s]/i.test(value)) {
-    return { ok: false, msg: 'Нужно 12 символов 0-9 и a-f, например a4:83:e7:1c:0f:92', tone: 'err' }
+    return { ok: false, msg: tr('Нужно 12 символов 0-9 и a-f, например a4:83:e7:1c:0f:92', 'Enter 12 characters from 0–9 or a–f, for example a4:83:e7:1c:0f:92.'), tone: 'err' }
   }
   const pretty = (hex.toLowerCase().match(/../g) ?? []).join(':')
-  if (parseInt(hex.charAt(1), 16) & 2) return { ok: true, msg: HOW[os].random, tone: 'warn' }
-  return { ok: true, msg: pretty === value ? '' : 'Сохранится как ' + pretty, tone: '' }
+  if (parseInt(hex.charAt(1), 16) & 2) return { ok: true, msg: randomAddressHint, tone: 'warn' }
+  return { ok: true, msg: pretty === value ? '' : tr('Сохранится как ', 'Saves as ') + pretty, tone: '' }
 }
 
 const canPaste = (): boolean => typeof navigator.clipboard?.readText === 'function'
@@ -136,16 +137,17 @@ const canPaste = (): boolean => typeof navigator.clipboard?.readText === 'functi
 function MacBody({ done }: { done: (bound: boolean | null) => void }) {
   const [os, setOs] = useState<Os>(defaultOs)
   const [mac, setMac] = useState('')
-  const [label, setLabel] = useState(() => HOW[defaultOs()].label)
+  const guide = platformGuide()
+  const [label, setLabel] = useState(() => guide[os].label)
   const labelTouched = useRef(false)
   const [sending, setSending] = useState(false)
   const macRef = useRef<HTMLInputElement>(null)
-  const check = checkMac(mac, os)
-  const how = HOW[os]
+  const how = guide[os]
+  const check = checkMac(mac, how.random)
 
   const pickOs = (next: Os): void => {
     setOs(next)
-    if (!labelTouched.current) setLabel(HOW[next].label)
+    if (!labelTouched.current) setLabel(guide[next].label)
   }
 
   const paste = async (): Promise<void> => {
@@ -171,9 +173,9 @@ function MacBody({ done }: { done: (bound: boolean | null) => void }) {
 
   return (
     <>
-      <Question text="Привязка телефона" />
+      <Question text={tr('Привязка телефона', 'Link phone')} />
       <div className="mac-body">
-        <div className="segmented ob-seg4" role="tablist" aria-label="Платформа">
+        <div className="segmented ob-seg4" role="tablist" aria-label={tr('Платформа', 'Platform')}>
           <i className="seg-thumb" style={{ transform: `translateX(${OS_ORDER.indexOf(os) * 100}%)` }} />
           {OS_ORDER.map((key) => (
             <button
@@ -184,7 +186,7 @@ function MacBody({ done }: { done: (bound: boolean | null) => void }) {
               className={'seg' + (os === key ? ' on' : '')}
               onClick={() => pickOs(key)}
             >
-              {HOW[key].tab}
+              {guide[key].tab}
             </button>
           ))}
         </div>
@@ -207,7 +209,7 @@ function MacBody({ done }: { done: (bound: boolean | null) => void }) {
         </div>
         <div className="card ob-field-card">
           <label className="ob-field">
-            <span className="vh">MAC-адрес</span>
+            <span className="vh">{tr('MAC-адрес', 'MAC address')}</span>
             <input
               ref={macRef}
               className="text-input mono"
@@ -220,16 +222,16 @@ function MacBody({ done }: { done: (bound: boolean | null) => void }) {
             />
             {canPaste() ? (
               <button type="button" className="ob-paste" onClick={() => void paste()}>
-                Вставить
+                {tr('Вставить', 'Paste')}
               </button>
             ) : null}
           </label>
           <Sep inset="text" />
           <label className="ob-field">
-            <span className="vh">Название</span>
+            <span className="vh">{tr('Название', 'Name')}</span>
             <input
               className="text-input"
-              placeholder="Название, например iPhone"
+              placeholder={tr('Название, например iPhone', 'Name, e.g. iPhone')}
               autoComplete="off"
               maxLength={50}
               value={label}
@@ -242,7 +244,7 @@ function MacBody({ done }: { done: (bound: boolean | null) => void }) {
         </div>
         <div className={'ob-field-msg' + (check.tone ? ' ' + check.tone : '')}>{check.msg}</div>
       </div>
-      <Actions label="Привязать" disabled={!check.ok || sending} onConfirm={() => void submit()} cancel="Отмена" onCancel={() => done(null)} />
+      <Actions label={tr('Привязать', 'Link')} disabled={!check.ok || sending} onConfirm={() => void submit()} cancel={tr('Отмена', 'Cancel')} onCancel={() => done(null)} />
     </>
   )
 }

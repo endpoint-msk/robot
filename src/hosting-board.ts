@@ -17,6 +17,7 @@ import {
 import { newRequestTarget, startappAt } from './deeplink.js'
 import { eventsForDay } from './events.js'
 import { startHeartbeatInterval } from './health.js'
+import { tr, withLocale } from './i18n.js'
 import { insideBoardLines } from './presence.js'
 import type { Storage } from './storage.js'
 
@@ -43,7 +44,7 @@ export const boardMarkup = (dateKey: string, locked = false) =>
     locked
         ? BotKeyboard.inline([])
         : hostingBoardLink
-            ? BotKeyboard.inline([[BotKeyboard.url('🚪 Хочу прийти', startappAt(hostingBoardLink, newRequestTarget(dateKey)))]])
+            ? BotKeyboard.inline([[BotKeyboard.url(tr('🚪 Хочу прийти', '🚪 Request a visit'), startappAt(hostingBoardLink, newRequestTarget(dateKey)))]])
             : undefined
 
 const escapeHtml = (s: string): string =>
@@ -101,6 +102,7 @@ export const activeDayForBoard = (storage: Storage, tzOffsetMinutes: number): st
  */
 export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMinutes: number): string => {
     const isToday = dateKey === todayKey(tzOffsetMinutes)
+    const day = formatDayKey(dateKey) + (isToday ? tr(' (сегодня)', ' (today)') : '')
     // Закрытый день доску не заводит (`dayHasActivity`), но уже висящая на него попадает:
     // если активности впереди нет, `syncChatBoard` откатывается на сегодня. Звать в чат
     // «приходите» в день, когда спейс не берёт гостей, нельзя — поэтому у такого дня свой
@@ -112,7 +114,7 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     // повестка идёт сразу под заголовком: это первое, что о нём надо знать.
     const agenda = dayAgendaFor(storage, dateKey)
     if (lock) {
-        const closed = [`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> — спейс закрыт для гостей`]
+        const closed = [tr(`🚪 <b>${day}</b> — спейс закрыт для гостей`, `🚪 <b>${day}</b> — closed to guests`)]
         if (lock.reason) closed.push(escapeHtml(lock.reason))
         if (agenda && agenda.text !== lock.reason) closed.push(escapeHtml(agenda.text))
         if (isToday) {
@@ -127,7 +129,7 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
     const approved = requests.filter((r) => r.status === 'approved').length
 
     const lines: string[] = []
-    lines.push(`🚪 <b>${formatDayKey(dateKey)}${isToday ? ' (сегодня)' : ''}</b> в спейсе`)
+    lines.push(tr(`🚪 <b>${day}</b> в спейсе`, `🚪 At the space on <b>${day}</b>`))
     if (agenda) lines.push(escapeHtml(agenda.text))
     lines.push('')
     // Ивенты — первым блоком: это главное, что происходит в этот день. Резидентские
@@ -140,7 +142,7 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
             const title = e.sourceUrl
                 ? `<a href="${escapeHtml(e.sourceUrl)}">${escapeHtml(e.title)}</a>`
                 : `<b>${escapeHtml(e.title)}</b>`
-            lines.push(`📅 ${title} в ${e.time}`)
+            lines.push(tr(`📅 ${title} в ${e.time}`, `📅 ${title} at ${e.time}`))
         }
         lines.push('')
     }
@@ -153,16 +155,19 @@ export const buildBoardMessage = (storage: Storage, dateKey: string, tzOffsetMin
         }
     }
     if (attendees.length > 0) {
-        lines.push('<b>Придут:</b>')
+        lines.push(tr('<b>Придут:</b>', '<b>Attending:</b>'))
         for (const a of attendees) {
-            const mark = `${a.time ? ` к ${a.time}` : ''}${a.resident ? ' (резидент)' : ''}`
+            const time = a.time ? tr(` к ${a.time}`, ` at ${a.time}`) : ''
+            const resident = a.resident ? tr(' (резидент)', ' (resident)') : ''
+            const mark = time + resident
             lines.push(`• ${attendeeLabel(a)}${mark}`)
         }
     } else {
-        lines.push('Пока никого в открытом списке.')
+        lines.push(tr('Пока никого в открытом списке.', 'No one is on the public list yet.'))
     }
     lines.push('')
-    lines.push(`Заявок на день: <b>${total}</b>${approved > 0 ? `, одобрено ${approved}` : ''}`)
+    const approvedLabel = approved > 0 ? tr(`, одобрено ${approved}`, `, ${approved} confirmed`) : ''
+    lines.push(tr(`Заявок на день: <b>${total}</b>`, `Visit requests: <b>${total}</b>`) + approvedLabel)
     return lines.join('<br>')
 }
 
@@ -312,7 +317,7 @@ export const syncHostingBoard = (
     allowedChats: ReadonlySet<number>,
     tzOffsetMinutes: number,
 ): Promise<void> => {
-    const run = syncChain.then(() => doSync(client, storage, allowedChats, tzOffsetMinutes))
+    const run = syncChain.then(() => withLocale('ru', () => doSync(client, storage, allowedChats, tzOffsetMinutes)))
     syncChain = run.catch(() => {})
     return run
 }

@@ -1,3 +1,4 @@
+import { tr } from './i18n.js'
 import { BotInline, BotInlineMessage, BotKeyboard, html, type InputInlineResult } from '@mtcute/node'
 import type { Dispatcher } from '@mtcute/dispatcher'
 import {
@@ -35,7 +36,7 @@ export const setInlineMiniappLink = (link: string | null): void => {
 }
 
 const requestMarkup = (id: string) =>
-    miniappLink ? BotKeyboard.inline([[BotKeyboard.url('🚪 Открыть заявки', startappAt(miniappLink, requestTarget(id)))]]) : undefined
+    miniappLink ? BotKeyboard.inline([[BotKeyboard.url(tr('🚪 Открыть заявки', "🚪 Open visit requests"), startappAt(miniappLink, requestTarget(id)))]]) : undefined
 
 /** Подстрока запроса в любом из полей; пустой запрос совпадает со всем. */
 const matches = (query: string, ...fields: (string | null)[]): boolean => {
@@ -71,28 +72,28 @@ const openRequests = (storage: Storage, tzOffsetMinutes: number): HostingRequest
  */
 const publicGuestLabel = (r: HostingRequest): string =>
     r.anon
-        ? 'инкогнито'
+        ? tr('инкогнито', "anonymous")
         : `${html.escape(displayName(r.guest.name))}${r.guest.username ? ` (@${r.guest.username})` : ''}`
 
 /** Детали заявки для отправки в чат: день, время, гость, цель. */
 const renderRequest = (r: HostingRequest): string => {
     const lines = [
-        '🚪 <b>Заявка на визит</b>',
+        tr('🚪 <b>Заявка на визит</b>', "🚪 <b>Visit request</b>"),
         `${formatDayKey(r.dateKey)}, ${r.time}`,
-        `Гость: ${publicGuestLabel(r)}`,
+        tr(`Гость: ${publicGuestLabel(r)}`, `Guest: ${publicGuestLabel(r)}`),
     ]
-    if (r.purpose.trim() !== '') lines.push(`Цель: ${html.escape(r.purpose.trim())}`)
+    if (r.purpose.trim() !== '') lines.push(tr(`Цель: ${html.escape(r.purpose.trim())}`, `Purpose: ${html.escape(r.purpose.trim())}`))
     lines.push('')
-    lines.push('Пока никто не взялся хостить.')
+    lines.push(tr('Пока никто не взялся хостить.', "No one has offered to host yet."))
     return lines.join('<br>')
 }
 
 /** Короткая подпись доски в выдаче: сколько придут и сколько всего заявок. */
 const boardSummary = (storage: Storage, dateKey: string): string => {
-    if (isDayLocked(storage, dateKey)) return 'закрыт для гостей'
+    if (isDayLocked(storage, dateKey)) return tr('закрыт для гостей', "closed to guests")
     const attendees = attendeesForDay(storage, dateKey).length
     const requests = requestsForDay(storage, dateKey).filter((r) => !isFakeUserId(r.guest.userId)).length
-    return `придут: ${attendees}, заявок: ${requests}`
+    return tr(`придут: ${attendees}, заявок: ${requests}`, `Attending: ${attendees}, requests: ${requests}`)
 }
 
 /**
@@ -117,7 +118,7 @@ export const registerInlineHandlers = (
             await query.answer([], {
                 cacheTime: 0,
                 private: true,
-                switchPm: { text: 'Инлайн доступен резидентам', parameter: 'inline' },
+                switchPm: { text: tr('Инлайн доступен резидентам', "Inline mode is available to residents"), parameter: 'inline' },
             })
             return
         }
@@ -126,10 +127,10 @@ export const registerInlineHandlers = (
         const results: InputInlineResult[] = []
 
         const boardDay = activeDayForBoard(storage, tzOffsetMinutes) ?? todayKey(tzOffsetMinutes)
-        if (matches(text, 'доска', 'board', 'спейс', formatDayKey(boardDay))) {
+        if (matches(text, 'доска', 'board', 'спейс', 'space', formatDayKey(boardDay))) {
             results.push(
                 BotInline.article(BOARD_ID, {
-                    title: `Доска: ${formatDayKey(boardDay)}`,
+                    title: tr(`Доска: ${formatDayKey(boardDay)}`, `Space board: ${formatDayKey(boardDay)}`),
                     description: boardSummary(storage, boardDay),
                     message: BotInlineMessage.text(html(buildBoardMessage(storage, boardDay, tzOffsetMinutes)), {
                         disableWebPreview: true,
@@ -152,7 +153,7 @@ export const registerInlineHandlers = (
             results.push(
                 BotInline.article(`${REQUEST_PREFIX}${r.id}`, {
                     title: `${formatDayKey(r.dateKey)}, ${r.time} — ${name}`,
-                    description: `${r.anon ? 'инкогнито · ' : ''}${purpose || 'цель не указана'}`,
+                    description: `${r.anon ? tr('инкогнито · ', "anonymous · ") : ''}${purpose || tr('цель не указана', "no purpose given")}`,
                     message: BotInlineMessage.text(html(renderRequest(r)), {
                         disableWebPreview: true,
                         replyMarkup: requestMarkup(r.id),

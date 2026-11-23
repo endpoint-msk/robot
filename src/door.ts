@@ -1,3 +1,4 @@
+import { tr } from './i18n.js'
 import type { Storage } from './storage.js'
 import type { DoorCode, HostingUser } from './types.js'
 
@@ -22,4 +23,5 @@ export const setDoorCode = async (storage: Storage, code: string, note: string, 
 
 /** Текст всплывающего окна кнопки «Домофон» в боте. */
 export const doorAlertText = (door: DoorCode): string =>
-    door.note ? `Код домофона: ${door.code}\n${door.note}` : `Код домофона: ${door.code}`
+    door.note ? tr(`Код домофона: ${door.code}\n${door.note}`, `Intercom code: ${door.code}
+${door.note}`) : tr(`Код домофона: ${door.code}`, `Intercom code: ${door.code}`)

@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { Fragment, useState } from 'react'
 import { action } from '../api'
 import { fmtShortDate } from '../dates'
@@ -31,12 +32,12 @@ function DoorSection() {
 
   return (
     <>
-      <SectionTitle>Домофон</SectionTitle>
+      <SectionTitle>{tr('Домофон', 'Intercom')}</SectionTitle>
       <div className="card">
         <div className="row">
           <input
             className="text-input mono"
-            placeholder="Код с панели"
+            placeholder={tr('Код с панели', 'Entry code')}
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
@@ -49,7 +50,7 @@ function DoorSection() {
         <div className="row">
           <input
             className="text-input"
-            placeholder="Подсказка: подъезд, панель"
+            placeholder={tr('Подсказка: подъезд, панель', 'Hint: entrance or keypad')}
             autoComplete="off"
             maxLength={60}
             value={note}
@@ -58,21 +59,21 @@ function DoorSection() {
         </div>
         <div className="inline-form-actions">
           <button className="small-btn blue" disabled={!dirty} onClick={() => void save(code, note)}>
-            Сохранить
+            {tr('Сохранить', 'Save')}
           </button>
           {door ? (
             <button
               className="small-btn gray"
               onClick={async () => {
-                const ok = await confirmDialog('Убрать код домофона? Строка пропадёт с главной и из меню бота.', {
-                  confirmLabel: 'Убрать код',
-                  cancelLabel: 'Оставить',
+                const ok = await confirmDialog(tr('Убрать код домофона? Строка пропадёт с главной и из меню бота.', 'Remove the entry code? It will disappear from the home screen and the bot menu.'), {
+                  confirmLabel: tr('Убрать код', 'Remove code'),
+                  cancelLabel: tr('Оставить', 'Keep'),
                   destructive: true,
                 })
                 if (ok) await save('', '')
               }}
             >
-              Убрать
+              {tr('Убрать', 'Remove')}
             </button>
           ) : null}
         </div>
@@ -92,7 +93,7 @@ export function Dev() {
 
   const submit = async (): Promise<void> => {
     if (!time) {
-      showAlert('Укажите время.')
+      showAlert(tr('Укажите время.', 'Choose a time.'))
       return
     }
     const res = await action('dev.seed', { dateKey: selected, time, purpose })
@@ -109,41 +110,41 @@ export function Dev() {
   return (
     <Screen hasBottomBar>
       <BackRow />
-      <Header title="Dev" subtitle="Тестовые данные - резиденты не будут уведомлены" />
-      <SectionTitle>Резиденты</SectionTitle>
+      <Header title="Dev" subtitle={tr('Тестовые данные - резиденты не будут уведомлены', "Test data – residents won't be notified")} />
+      <SectionTitle>{tr('Резиденты', 'Residents')}</SectionTitle>
       <div className="card">
         <button type="button" className="row tappable" onClick={() => push('residents')}>
           <span className="row-label">
-            Резиденты
-            <span className="row-sublabel">Выдать админку в чатах и тег «resident»</span>
+            {tr('Резиденты', 'Residents')}
+            <span className="row-sublabel">{tr('Выдать админку в чатах и тег «resident»', 'Manage chat admins and the “resident” tag')}</span>
           </span>
           {icons.chevron()}
         </button>
       </div>
-      <SectionTitle>Рассылка</SectionTitle>
+      <SectionTitle>{tr('Рассылка', 'Broadcast')}</SectionTitle>
       <div className="card">
         <button type="button" className="row tappable" onClick={() => push('announce')}>
           <span className="row-label">
-            Анонс новой версии
-            <span className="row-sublabel">Разослать обновление или объявление в чаты</span>
+            {tr('Анонс новой версии', 'Release announcement')}
+            <span className="row-sublabel">{tr('Разослать обновление или объявление в чаты', 'Send an update or announcement to chats')}</span>
           </span>
           {icons.chevron()}
         </button>
       </div>
       <DoorSection />
-      <SectionTitle>День</SectionTitle>
+      <SectionTitle>{tr('День', 'Day')}</SectionTitle>
       <DayChips days={days} selected={selected} onSelect={setSelected} />
-      <SectionTitle>Детали</SectionTitle>
+      <SectionTitle>{tr('Детали', 'Details')}</SectionTitle>
       <div className="card">
         <div className="row time-row">
-          <span style={{ fontSize: 16 }}>Придёт к</span>
+          <span style={{ fontSize: 16 }}>{tr('Придёт к', 'Arrival time')}</span>
           <TimeField value={time} onChange={setTime} />
         </div>
         <Sep inset="text" />
         <div className="kv-block">
           <textarea
             className="purpose-input"
-            placeholder="Цель визита (по умолчанию — «Фейковая заявка (dev)»)"
+            placeholder={tr('Цель визита (по умолчанию — «Фейковая заявка (dev)»)', 'Purpose of visit (defaults to “Test request (dev)”)')}
             rows={2}
             maxLength={300}
             value={purpose}
@@ -151,10 +152,10 @@ export function Dev() {
           />
         </div>
       </div>
-      <SectionTitle>Все заявки</SectionTitle>
+      <SectionTitle>{tr('Все заявки', 'All requests')}</SectionTitle>
       <div className="card">
         {all.length === 0 ? (
-          <EmptyState title="Заявок нет" text="Создайте фейковую — появится здесь." />
+          <EmptyState title={tr('Заявок нет', 'No requests')} text={tr('Создайте фейковую — появится здесь.', 'Create a test request and it will appear here.')} />
         ) : (
           all.map((r, i) => (
             <Fragment key={r.id}>
@@ -163,19 +164,19 @@ export function Dev() {
                 <span className="row-label">
                   {r.guest.name}
                   <span className="row-sublabel">
-                    {`${fmtShortDate(r.dateKey)} · ${r.time}${r.status === 'approved' ? ' · одобрена' : ''}`}
+                    {`${fmtShortDate(r.dateKey)} · ${r.time}${r.status === 'approved' ? tr(' · одобрена', ' · approved') : ''}`}
                   </span>
                 </span>
                 <button
                   className="remove-btn"
-                  aria-label="Удалить заявку"
+                  aria-label={tr('Удалить заявку', 'Delete request')}
                   onClick={async (e) => {
                     e.stopPropagation() // иначе откроется правка
-                    const ok = await confirmDialog('Удалить заявку?', {
-                      confirmLabel: 'Удалить заявку',
-                      cancelLabel: 'Оставить',
+                    const ok = await confirmDialog(tr('Удалить заявку?', 'Delete this request?'), {
+                      confirmLabel: tr('Удалить заявку', 'Delete request'),
+                      cancelLabel: tr('Оставить', 'Keep'),
                       destructive: true,
-                      subject: { user: r.guest, line: `${fmtShortDate(r.dateKey)} к\u00a0${r.time}` },
+                      subject: { user: r.guest, line: tr(`${fmtShortDate(r.dateKey)} к\u00a0${r.time}`, `${fmtShortDate(r.dateKey)} at ${r.time}`) },
                     })
                     if (ok) {
                       await action('dev.delete', { id: r.id })
@@ -192,10 +193,10 @@ export function Dev() {
           ))
         )}
       </div>
-      <SectionTitle>Заблокированные</SectionTitle>
+      <SectionTitle>{tr('Заблокированные', 'Blocked users')}</SectionTitle>
       <div className="card">
         {blocked.length === 0 ? (
-          <EmptyState title="Никто не заблокирован" text="Резидент может заблокировать гостя из его заявки." />
+          <EmptyState title={tr('Никто не заблокирован', 'Nobody is blocked')} text={tr('Резидент может заблокировать гостя из его заявки.', 'Residents can block guests from their visit requests.')} />
         ) : (
           blocked.map((b, i) => (
             <Fragment key={b.userId}>
@@ -204,15 +205,15 @@ export function Dev() {
                 <span className="row-label">
                   {b.name}
                   <span className="row-sublabel">
-                    {(b.username ? '@' + b.username + ' · ' : '') + 'заблокировал ' + b.by.name}
+                    {(b.username ? '@' + b.username + ' · ' : '') + tr('заблокировал ', 'blocked by ') + b.by.name}
                   </span>
                 </span>
                 <button
                   className="small-btn gray"
                   onClick={async () => {
-                    const ok = await confirmDialog('Разблокировать? Бот снимет бан во всех чатах.', {
-                      confirmLabel: 'Разблокировать',
-                      cancelLabel: 'Оставить блокировку',
+                    const ok = await confirmDialog(tr('Разблокировать? Бот снимет бан во всех чатах.', 'Unblock this user? The bot will lift the ban in all chats.'), {
+                      confirmLabel: tr('Разблокировать', 'Unblock'),
+                      cancelLabel: tr('Оставить блокировку', 'Keep blocked'),
                       subject: { user: b, line: b.username ? '@' + b.username : undefined },
                     })
                     if (ok) {
@@ -221,7 +222,7 @@ export function Dev() {
                     }
                   }}
                 >
-                  Разблокировать
+                  {tr('Разблокировать', 'Unblock')}
                 </button>
               </div>
             </Fragment>
@@ -230,9 +231,9 @@ export function Dev() {
       </div>
       <BottomBar>
         <button className="primary-btn" onClick={submit}>
-          Создать фейковую заявку
+          {tr('Создать фейковую заявку', 'Create test request')}
         </button>
-        <div className="bar-hint">Заявка от случайного фейкового гостя</div>
+        <div className="bar-hint">{tr('Заявка от случайного фейкового гостя', 'Request from a random test guest')}</div>
       </BottomBar>
     </Screen>
   )

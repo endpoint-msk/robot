@@ -474,6 +474,8 @@ export type Me = {
   name: string
   isResident: boolean
   isDev: boolean
+  language: import('./i18n').Language
+  languageChoice: import('./i18n').LanguageChoice
   /** Согласился с правилами спейса: спрашивается один раз, перед первой заявкой. */
   acceptedRules: boolean
 }

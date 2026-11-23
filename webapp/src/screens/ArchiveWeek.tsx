@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { Fragment } from 'react'
 import { api } from '../api'
 import { addDays, fmtRange, requestsWord } from '../dates'
@@ -22,7 +23,7 @@ const SK_DAYS = 5
  */
 function WeekSkeleton() {
   return (
-    <div className="card sk-list" aria-busy="true" aria-label="Загружаем неделю">
+    <div className="card sk-list" aria-busy="true" aria-label={tr('Загружаем неделю', 'Loading the week')}>
       {Array.from({ length: SK_DAYS }, (_, i) => (
         <div className="sk-row" key={i} style={{ animationDelay: `${i * 90}ms` }}>
           <div className="day-col">
@@ -55,7 +56,7 @@ export function ArchiveWeek() {
   if (!weeks || index < 0 || weeks.length < 2) {
     return (
       <Screen>
-        <BackRow label="Архив" />
+        <BackRow label={tr('Архив', 'Archive')} />
         <WeekPage weekStart={weekStart} />
       </Screen>
     )
@@ -68,7 +69,7 @@ export function ArchiveWeek() {
         keyOf={(w) => w}
         onCommit={(i) => setTopParams({ ...params, weekStart: weeks[i]! })}
         tone={() => stageTint('gray')}
-        top={<BackRow label="Архив" />}
+        top={<BackRow label={tr('Архив', 'Archive')} />}
         renderPage={(w) => <WeekPage weekStart={w} />}
       />
     </Screen>
@@ -98,13 +99,13 @@ function WeekPage({ weekStart }: { weekStart: string }) {
     const all = data.flatMap((d) => d.requests)
     const approvedCount = all.filter((r) => r.status === 'approved').length
     const came = all.filter((r) => r.visit?.status === 'came').length + data.reduce((n, d) => n + d.walkIns.length, 0)
-    sub = nb(`${requestsWord(all.length)} · ${approvedCount} одобрено · пришли ${came}`)
+    sub = nb(tr(`${requestsWord(all.length)} · ${approvedCount} одобрено · пришли ${came}`, `${requestsWord(all.length)} · ${approvedCount} approved · ${came} attended`))
     // День с одними гостями без заявки - тоже день архива: в спейсе кто-то был.
     const nonEmpty = data.filter((d) => d.requests.length > 0 || d.walkIns.length > 0 || d.dateKey === grace)
     if (nonEmpty.length === 0) {
       body = (
         <div className="card">
-          <EmptyState title="Заявок не было" text="На этой неделе никто не оставлял заявки." />
+          <EmptyState title={tr('Заявок не было', 'No requests')} text={tr('На этой неделе никто не оставлял заявки.', 'No one submitted a visit request this week.')} />
         </div>
       )
     } else {

@@ -1,6 +1,7 @@
 // API и мутации. api() — низкоуровневый POST /api/*; action() — мутация,
 // возвращающая свежий bootstrap: обновляет стор и перерисовывает экран.
 
+import { locale, tr } from './i18n'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { left as cooldownLeft, startCooldown } from './cooldown'
 import { backOnline, setNetState } from './net'
@@ -11,7 +12,7 @@ import { ApiError, type Bootstrap, type OnboardingPeople } from './types'
 
 /** Сбой сети — такая же ошибка приложения, как и отказ сервера: без этого наружу
     летел техтекст браузера («Failed to fetch») и попадал прямо в алерт. */
-const NETWORK_ERROR = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.'
+const networkError = (): string => tr('Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.', "Can’t reach the server. Check your connection and try again.")
 
 /** Когда сервер последний раз ответил хоть чем-то: по нему повтор после сбоя сети решает, ждать ли. */
 let reachedAt = 0
@@ -26,7 +27,7 @@ async function request<T>(method: string, params?: Record<string, unknown>, sign
       signal,
     })
   } catch {
-    throw new ApiError(NETWORK_ERROR, 'network')
+    throw new ApiError(networkError(), 'network')
   }
   reachedAt = performance.now()
   return readApi<T>(res)
@@ -51,7 +52,7 @@ const EARLY_TTL_MS = 10_000
 /** Палец должен простоять столько, прежде чем запрос уйдёт: лента под пальцем шлёт pointerdown на каждой строке. */
 const EARLY_ARM_MS = 50
 const early = new Map<string, { at: number; res: Promise<unknown>; abort: AbortController }>()
-const earlyKey = (method: string, params?: Record<string, unknown>): string => `${method}\u0001${JSON.stringify(params ?? {})}`
+const earlyKey = (method: string, params?: Record<string, unknown>): string => `${locale()}\u0001${method}\u0001${JSON.stringify(params ?? {})}`
 
 function prefetch(method: string, params?: Record<string, unknown>): () => void {
   const key = earlyKey(method, params)
@@ -145,8 +146,17 @@ async function readApi<T>(res: Response): Promise<T> {
   if (!res.ok) {
     // Сервер отдаёт секунды в Retry-After (см. ratelimit.ts). Заголовка нет —
     // минута: полки короткие, и лучше подождать лишнего, чем долбить сервер.
-    if (res.status === 429) startCooldown(Number(res.headers.get('Retry-After')) || 60)
-    throw new ApiError(data?.message || 'Что-то пошло не так. Попробуйте ещё раз.', data?.error)
+    if (res.status === 429) {
+      const wait = Number(res.headers.get('Retry-After')) || 60
+      startCooldown(wait)
+      if (data?.error === 'rate_limited') {
+        throw new ApiError(tr(`Слишком часто. Попробуйте через ${wait} с.`, `Too many requests. Try again in ${wait} s.`), 'rate_limited')
+      }
+    }
+    if (data?.error === 'bad_init_data') {
+      throw new ApiError(tr('Откройте миниапп заново — сессия устарела.', 'Your session has expired. Reopen the Mini App.'), 'bad_init_data')
+    }
+    throw new ApiError(data?.message || tr('Что-то пошло не так. Попробуйте ещё раз.', "Something went wrong. Try again."), data?.error)
   }
   return data as T
 }
@@ -166,7 +176,7 @@ export async function uploadEventPhoto(blob: Blob): Promise<string> {
       body: blob,
     })
   } catch {
-    throw new ApiError(NETWORK_ERROR, 'network')
+    throw new ApiError(networkError(), 'network')
   }
   let data: any = {}
   try {
@@ -175,7 +185,7 @@ export async function uploadEventPhoto(blob: Blob): Promise<string> {
     /* не-JSON — ниже упадём в generic */
   }
   if (!res.ok) {
-    throw new ApiError(data?.message || 'Не получилось загрузить фото. Попробуйте ещё раз.', data?.error)
+    throw new ApiError(data?.message || tr('Не получилось загрузить фото. Попробуйте ещё раз.', "Couldn’t upload the photo. Try again."), data?.error)
   }
   return String(data.id)
 }
@@ -218,7 +228,7 @@ export async function mutate<T = Bootstrap>(method: string, params?: Record<stri
   const wait = cooldownLeft()
   if (wait > 0) {
     haptic.notify('warning')
-    showAlert(`Слишком часто. Попробуйте через ${wait}\u00a0с.`)
+    showAlert(tr(`Слишком часто. Попробуйте через ${wait}\u00a0с.`, `Too many requests. Try again in ${wait} s.`))
     return null
   }
   try {
@@ -257,6 +267,7 @@ export async function mutate<T = Bootstrap>(method: string, params?: Record<stri
 // которым повтор не страшен: они ставят значение, а не прибавляют и не пишут людям.
 
 const RETRY_SAFE = new Set([
+  'language.set',
   'attend',
   'notify',
   'notify.events',

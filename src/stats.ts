@@ -6,6 +6,7 @@
 // сейчас: их сессии ещё не закрыты и в журнал не попали.
 
 import { addDaysToKey, dayKeyOf, hostedGuestCount, todayKey, weekStartOf, weekdayOfKey } from './hosting.js'
+import { locale, tr } from './i18n.js'
 import {
     BUCKETS_PER_DAY,
     BUCKET_MINUTES,
@@ -26,6 +27,8 @@ const MONTHS_NOM = [
     'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 ]
 const MONTHS_ABBR = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+const EN_MONTH_YEAR = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+const EN_DAY_MONTH_YEAR = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
 
 /** Недель в графике «3 месяца»: тринадцать календарных, последняя — текущая. */
 const QUARTER_WEEKS = 13
@@ -204,9 +207,14 @@ const chartOf = (
 }
 
 const periodLabelOf = (period: StatsPeriod, from: string, to: string): string => {
-    if (period === 'month') return `${MONTHS_NOM[Number(to.slice(5, 7)) - 1] ?? ''} ${to.slice(0, 4)}`.trim()
-    if (period === 'quarter') return 'За 3 месяца'
-    return from ? `С ${Number(from.slice(8, 10))} ${MONTHS_ABBR[Number(from.slice(5, 7)) - 1] ?? ''} ${from.slice(0, 4)}` : 'За всё время'
+    if (period === 'month') {
+        if (locale() === 'en') return EN_MONTH_YEAR.format(new Date(`${to}T12:00:00Z`))
+        return `${MONTHS_NOM[Number(to.slice(5, 7)) - 1] ?? ''} ${to.slice(0, 4)}`.trim()
+    }
+    if (period === 'quarter') return tr('За 3 месяца', 'Last 3 months')
+    if (!from) return tr('За всё время', 'All time')
+    if (locale() === 'en') return `Since ${EN_DAY_MONTH_YEAR.format(new Date(`${from}T12:00:00Z`))}`
+    return `С ${Number(from.slice(8, 10))} ${MONTHS_ABBR[Number(from.slice(5, 7)) - 1] ?? ''} ${from.slice(0, 4)}`
 }
 
 /** Границы окна. `from` пустой — данных нет вовсе. */
@@ -255,7 +263,7 @@ const labelsFromVisits = (visits: PresenceVisit[]): Map<number, string | null> =
     return out
 }
 
-const labelOf = (username: string | null | undefined): string => (username ? `@${username}` : 'Без ника')
+const labelOf = (username: string | null | undefined): string => (username ? `@${username}` : tr('Без ника', 'Anonymous'))
 
 /**
  * Запасной источник ника: MAC-привязка человека.

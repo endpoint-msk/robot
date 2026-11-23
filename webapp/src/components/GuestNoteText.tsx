@@ -3,6 +3,7 @@
 // отдельного экрана нет. Пустой текст на «Готово» удаляет заметку: текст рассыпается,
 // внизу «Вернуть».
 
+import { tr } from '../i18n'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { action, mutate } from '../api'
@@ -74,7 +75,7 @@ const save = async (place: string, userId: number, text: string, current: string
   if (edit.pending?.userId === userId) emit({ pending: null })
   if (!res) return
   setData(res)
-  offerUndo('Заметка удалена', res.undo, (data) => setData(data))
+  offerUndo(tr('Заметка удалена', 'Note deleted'), res.undo, (data) => setData(data))
 }
 
 /**
@@ -91,8 +92,8 @@ export function GuestNoteText({ place, guest, note, empty }: { place: string; gu
         <InPlaceField
           initial={current}
           maxLength={MAX_NOTE}
-          placeholder="Что стоит помнить об этом госте"
-          label="Заметка о госте"
+          placeholder={tr('Что стоит помнить об этом госте', 'What should residents know about this guest?')}
+          label={tr('Заметка о госте', 'Guest note')}
           className="gnote-t gnote-in"
           fieldRef={(el) => {
             if (el) fields.set(place, el)

@@ -1,3 +1,4 @@
+import { rememberTelegramLanguage, tr, userLocale, withLocale } from './i18n.js'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type Dispatcher } from '@mtcute/dispatcher'
 import type { ResidentDirectory } from './residents.js'
@@ -13,10 +14,10 @@ export const ONBOARDING_VERSION = 1
 /** Как часто пробуем включить знакомство, если на старте состав резидентов не прочитался. */
 const SEED_RETRY_MS = 10 * 60_000
 
-const INVITE_TEXT = [
-    '<b>Ты теперь резидент Endpoint.</b>',
+const inviteText = () => [
+    tr('<b>Ты теперь резидент Endpoint.</b>', "<b>You're now an Endpoint resident.</b>"),
     '',
-    'Резиденты открывают спейс, встречают гостей и заводят ивенты. В миниаппе покажу, как это устроено, и настроим авто-отметку по телефону. Пара минут.',
+    tr('Резиденты открывают спейс, встречают гостей и заводят ивенты. В миниаппе покажу, как это устроено, и настроим авто-отметку по телефону. Пара минут.', "Residents open the space, host guests, and organize events. The mini app shows you how it works and helps you set up automatic check-in from your phone. It takes a couple of minutes."),
 ].join('<br>')
 
 const emptyRecord = (): ResidentOnboarding => ({ joinedAt: null, invitedAt: null, version: 0, doneAt: null })
@@ -50,9 +51,9 @@ export const markOnboardingDone = async (storage: Storage, userId: number): Prom
  */
 const sendInvite = async (client: TelegramClient, storage: Storage, userId: number, webappUrl: string): Promise<boolean> => {
     try {
-        await client.sendText(userId, html(INVITE_TEXT), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView('Открыть знакомство', `${webappUrl}?onboarding=1`)]]),
-        })
+        await withLocale(userLocale(storage, userId), () => client.sendText(userId, html(inviteText()), {
+            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть знакомство', "Start the walkthrough"), `${webappUrl}?onboarding=1`)]]),
+        }))
     } catch {
         return false
     }
@@ -103,6 +104,7 @@ export const registerOnboardingHandlers = (
         if (upd.chat.id !== residentsChatId) return PropagationAction.Continue
         const user = upd.user
         if (user.isBot) return
+        rememberTelegramLanguage(storage, user.id, user.language)
         // До вступления человек мог открыть миниапп гостем, и «не резидент» лежит в
         // кэше директории ещё минуту - а приглашение ведёт именно туда.
         residents.invalidate(user.id)

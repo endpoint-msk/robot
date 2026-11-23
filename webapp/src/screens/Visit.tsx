@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { action, mutate } from '../api'
 import { fmtDayMonth, fmtShortDate, visitDayWord } from '../dates'
@@ -24,7 +25,7 @@ import { usePullDismiss } from '../components/usePullDismiss'
 import { heroRunning } from '../hero'
 import { UnderContext } from '../screenContext'
 import { useRemind } from './NewRequest'
-import { ADDRESS, ENTRANCE } from './Route'
+import { address, entrance } from './Route'
 
 /** 'HH:MM' → минуты от полуночи. -1, если строка не разбирается. */
 export function minuteOfDay(hhmm: string): number {
@@ -36,8 +37,8 @@ export function minuteOfDay(hhmm: string): number {
 const untilText = (min: number): string => {
   const h = Math.floor(min / 60)
   const m = min % 60
-  if (h === 0) return `${m}\u00a0мин`
-  return m > 0 ? `${h}\u00a0ч ${m}\u00a0мин` : `${h}\u00a0ч`
+  if (h === 0) return tr(`${m}\u00a0мин`, `${m} min`)
+  return m > 0 ? tr(`${h}\u00a0ч ${m}\u00a0мин`, `${h} h ${m} min`) : tr(`${h}\u00a0ч`, `${h} h`)
 }
 
 /** Антиспам повторного «Я на месте». Столько же держит сервер (ARRIVAL_COOLDOWN_MS). */
@@ -107,7 +108,7 @@ function ArrivalButton({ id, arrivedAt }: { id: string; arrivedAt?: string | nul
       <span className={'arrival-ic' + (pop ? ' pop' : '')}>{sent ? icons.check(18, 'currentColor', 2.2) : icons.pin(18, 'currentColor')}</span>
       {/* Отсчёт не в XText: после своего тапа тот перетекал бы на каждой секунде. */}
       <span>
-        <XText text={waiting ? 'Сообщили · ещё раз через' : sent ? 'Сообщить ещё раз' : 'Я на месте'} />
+        <XText text={waiting ? tr('Сообщили · ещё раз через', 'Sent · retry in') : sent ? tr('Сообщить ещё раз', 'Notify again') : tr('Я на месте', 'I’m here')} />
         {waiting ? `\u00a0${countdown(left)}` : null}
       </span>
     </ActionButton>
@@ -152,12 +153,12 @@ function VisitPurpose({ r, editable }: { r: HostingRequest; editable: boolean })
       <Sep inset="text" />
       {editing ? (
         <div className="kv-block">
-          <div className="kv-cap">Цель визита</div>
+          <div className="kv-cap">{tr('Цель визита', 'Reason for visiting')}</div>
           <InPlaceField
             initial={shown}
             maxLength={300}
-            placeholder="Зачем придёте"
-            label="Цель визита"
+            placeholder={tr('Зачем придёте', 'What brings you here?')}
+            label={tr('Цель визита', 'Reason for visiting')}
             className="kv-text kv-in"
             fieldRef={(el) => {
               field.current = el
@@ -168,12 +169,12 @@ function VisitPurpose({ r, editable }: { r: HostingRequest; editable: boolean })
         </div>
       ) : editable ? (
         <button type="button" className="kv-block kv-tap" onClick={start}>
-          <div className="kv-cap">Цель визита</div>
-          <div className={'kv-text' + (shown ? '' : ' kv-empty')}>{shown || 'Добавить'}</div>
+          <div className="kv-cap">{tr('Цель визита', 'Reason for visiting')}</div>
+          <div className={'kv-text' + (shown ? '' : ' kv-empty')}>{shown || tr('Добавить', 'Add')}</div>
         </button>
       ) : (
         <div className="kv-block">
-          <div className="kv-cap">Цель визита</div>
+          <div className="kv-cap">{tr('Цель визита', 'Reason for visiting')}</div>
           <div className="kv-text">{linkedText(shown)}</div>
         </div>
       )}
@@ -256,7 +257,7 @@ export function Visit() {
   const sendSlot = async (): Promise<void> => {
     if (!draft) return
     if (isPastForToday(draft.day, draft.time)) {
-      showAlert('Это время уже прошло, выберите время позже текущего.')
+      showAlert(tr('Это время уже прошло, выберите время позже текущего.', 'That time has passed. Choose a later time.'))
       return
     }
     haptic.impact('medium')
@@ -270,7 +271,7 @@ export function Visit() {
     }
   }
   const slotText = (s: Slot): string => nb(`${fmtShortDate(s.day)} · ${s.time}`)
-  const sendLabel = !proposing ? `Перенести на ${slotText(draft ?? base)}` : `Попросить ${slotText(draft ?? base)}`
+  const sendLabel = !proposing ? tr(`Перенести на ${slotText(draft ?? base)}`, `Move to ${slotText(draft ?? base)}`) : tr(`Попросить ${slotText(draft ?? base)}`, `Request ${slotText(draft ?? base)}`)
   // Слот с днём, если предложенный день отличается от текущего дня заявки; иначе только время.
   const slotLabel = (dateKey: string, time: string): string =>
     p && p.dateKey !== r.dateKey ? `${fmtShortDate(dateKey)} · ${time}` : time
@@ -287,15 +288,15 @@ export function Visit() {
         <div className="status-card-body">
           <Avatar user={r.approvedBy!} className="host-avatar" profile />
           <div className="host-main">
-            <div className="host-kicker">Вас хостит</div>
+            <div className="host-kicker">{tr('Вас хостит', 'Your host')}</div>
             <Profile user={r.approvedBy!} className="host-name">
               {r.approvedBy!.name}
             </Profile>
             <div className="host-sub">
-              {(r.approvedBy!.username ? '@' + r.approvedBy!.username + ' · ' : '') + 'резидент'}
+              {(r.approvedBy!.username ? '@' + r.approvedBy!.username + ' · ' : '') + tr('резидент', 'resident')}
             </div>
           </div>
-          <span className="ob-tag green">подтверждён</span>
+          <span className="ob-tag green">{tr('подтверждён', 'confirmed')}</span>
         </div>
       </div>
     )
@@ -307,7 +308,7 @@ export function Visit() {
         <div className="status-card-head">
           <div className="status-card-icon">{icons.clock(15, sec(0.55), p.time)}</div>
           <span className="status-card-title">
-            {p.dateKey !== r.dateKey ? 'Резидент предлагает другой день' : 'Резидент предлагает другое время'}
+            {p.dateKey !== r.dateKey ? tr('Резидент предлагает другой день', 'A resident suggests another day') : tr('Резидент предлагает другое время', 'A resident suggests another time')}
           </span>
         </div>
         <div className="propose-time-big">
@@ -322,12 +323,8 @@ export function Visit() {
               markOwnTap()
               await action('proposal.accept', { id: r.id }, { quiet: true })
             }}
-          >
-            Принять
-          </ActionButton>
-          <button className="chip-btn" onClick={() => openWhen({ day: p.dateKey, time: p.time })}>
-            Своё
-          </button>
+          >{tr('Принять', 'Accept')}</ActionButton>
+          <button className="chip-btn" onClick={() => openWhen({ day: p.dateKey, time: p.time })}>{tr('Своё', 'Suggest another')}</button>
         </div>
         <ActionButton
           className="link-btn ptb-keep"
@@ -336,8 +333,7 @@ export function Visit() {
             markOwnTap()
             await action('proposal.decline', { id: r.id }, { quiet: true })
           }}
-        >
-          Оставить как есть ({slotLabel(r.dateKey, r.time)})
+        >{tr('Оставить как есть (', 'Keep the original (')}{slotLabel(r.dateKey, r.time)})
         </ActionButton>
       </div>
     )
@@ -347,17 +343,15 @@ export function Visit() {
       <div className="status-card proposal">
         <div className="status-card-head">
           <div className="status-card-icon">{icons.clock(15, sec(0.55), p.time)}</div>
-          <span className="status-card-title">Ждём ответа резидента</span>
+          <span className="status-card-title">{tr('Ждём ответа резидента', 'Waiting for a resident’s reply')}</span>
         </div>
         <div className="propose-time-big">
           <span className="ptb-new">{slotLabel(p.dateKey, p.time)}</span>
           <span className="ptb-old">{slotLabel(r.dateKey, r.time)}</span>
         </div>
-        <div className="status-card-note">Вы предложили этот вариант. Резидент примет его или предложит другой.</div>
+        <div className="status-card-note">{tr('Вы предложили этот вариант. Резидент примет его или предложит другой.', 'You suggested this time. A resident can accept it or suggest another.')}</div>
         <div className="propose-actions">
-          <button className="chip-btn" onClick={() => openWhen()}>
-            Изменить
-          </button>
+          <button className="chip-btn" onClick={() => openWhen()}>{tr('Изменить', 'Edit')}</button>
           <ActionButton
             className="chip-btn"
             onClick={async () => {
@@ -365,9 +359,7 @@ export function Visit() {
               markOwnTap()
               await action('proposal.decline', { id: r.id }, { quiet: true })
             }}
-          >
-            Отозвать
-          </ActionButton>
+          >{tr('Отозвать', 'Withdraw')}</ActionButton>
         </div>
       </div>
     )
@@ -379,15 +371,11 @@ export function Visit() {
         <div data-hero-part="cta-body">
           <div className="status-card-head">
             <div className="status-card-icon">{icons.clock(15, sec(0.55), r.time)}</div>
-            <span className="status-card-title">Заявка ждёт ответа</span>
+            <span className="status-card-title">{tr('Заявка ждёт ответа', 'Request pending')}</span>
           </div>
-          <div className="status-card-note">
-            Резиденты видят вашу заявку.
-            <br />
+          <div className="status-card-note">{tr('Резиденты видят вашу заявку.', 'Residents can see your request.')}<br />
             <span className="note-warn">
-              {icons.warning()}
-              Одобрение заявки обязательно для посещения.
-            </span>
+              {icons.warning()}{tr('Одобрение заявки обязательно для посещения.', 'Wait for approval before visiting.')}</span>
           </div>
         </div>
       </div>
@@ -418,12 +406,12 @@ export function Visit() {
     const res = await removeRow(dustRow(key), request)
     if (!res) return
     setData(res.data)
-    offerUndo('Заявка отменена', res.data.undo, (data) => bringBack(key, res.dust, () => setData(data)))
+    offerUndo(tr('Заявка отменена', 'Request canceled'), res.data.undo, (data) => bringBack(key, res.dust, () => setData(data)))
   }
 
   return (
     <Screen>
-      <BackRow label="Мои визиты" />
+      <BackRow label={tr('Мои визиты', 'My visits')} />
       {/* Только что отправленная заявка: форма погасла, и визит поднимается на её месте. */}
       <div className={rise ? 'visit-rise' : undefined} ref={rootRef}>
       <Header
@@ -432,21 +420,21 @@ export function Visit() {
         }
         subtitle={
           <>
-            <XText text={nb(`${fmtDayMonth(shown.day)} · к ${shown.time}`)} delay={120} />
+            <XText text={nb(tr(`${fmtDayMonth(shown.day)} · к ${shown.time}`, `${fmtDayMonth(shown.day)} · at ${shown.time}`))} delay={120} />
             {/* Минута меняется без движения: это часы, а не ответ на тап. */}
-            {left > 0 ? nb(` · через ${untilText(left)}`) : null}
+            {left > 0 ? nb(tr(` · через ${untilText(left)}`, ` · in ${untilText(left)}`)) : null}
           </>
         }
       />
       {arrivalOpen ? <ArrivalButton id={r.id} arrivedAt={r.arrivedAt} /> : null}
       {isPast ? null : statusCard}
       <Collapse open={!isPast && Boolean(proposalCard)}>{proposalCard}</Collapse>
-      <SectionTitle>Детали</SectionTitle>
+      <SectionTitle>{tr('Детали', 'Details')}</SectionTitle>
       <div className="nt-host" ref={remindUi.hostRef}>
       <div className="card">
         {isPast ? (
           <div className="row">
-            <span className="kv-key">Когда</span>
+            <span className="kv-key">{tr('Когда', 'When')}</span>
             <span className="kv-val">{`${fmtShortDate(r.dateKey)} · ${r.time}`}</span>
           </div>
         ) : (
@@ -457,7 +445,7 @@ export function Visit() {
               aria-expanded={whenOpen}
               onClick={() => (whenOpen ? setWhenOpen(false) : openWhen())}
             >
-              <span className="kv-key">Когда</span>
+              <span className="kv-key">{tr('Когда', 'When')}</span>
               <div className="row-right">
                 <span className="kv-val" style={{ marginLeft: 0 }}>
                   <XText text={slotText(shown)} delay={120} />
@@ -500,12 +488,12 @@ export function Visit() {
           <SwitchRow
             on={r.anon}
             onToggle={() => action('edit', editBody(r, { anon: !r.anon }), { quiet: true })}
-            label="Не показывать другим гостям"
+            label={tr('Не показывать другим гостям', 'Hide from other guests')}
           />
         ) : (
           <div className="row">
-            <span className="kv-key">Видимость</span>
-            <span className="kv-val">{r.anon ? 'Анонимно' : 'Обычная'}</span>
+            <span className="kv-key">{tr('Видимость', 'Visibility')}</span>
+            <span className="kv-val">{r.anon ? tr('Анонимно', 'Anonymous') : tr('Обычная', 'Public')}</span>
           </div>
         )}
         {/* Напоминание правится и у подтверждённого визита, где сама заявка уже не правится. */}
@@ -521,11 +509,11 @@ export function Visit() {
           <>
             <Sep inset="text" />
             <button type="button" className="row tappable" onClick={() => push('route')}>
-              <span className="kv-key">Где</span>
+              <span className="kv-key">{tr('Где', 'Where')}</span>
               <div className="row-right">
                 <span className="kv-val" style={{ marginLeft: 0 }}>
-                  {ADDRESS}
-                  <span className="kv-sub">{ENTRANCE}</span>
+                  {address()}
+                  <span className="kv-sub">{entrance()}</span>
                 </span>
                 {icons.chevron()}
               </div>
@@ -544,7 +532,7 @@ export function Visit() {
               системный браузер, а оттуда файл уходит в календарь. */}
           <button type="button" className="row tappable" onClick={() => void openIcs()}>
             <span className="act-ico">{icons.calendarPlus(19, 'currentColor')}</span>
-            <span className="add-row-label">Добавить в календарь</span>
+            <span className="add-row-label">{tr('Добавить в календарь', 'Add to calendar')}</span>
           </button>
           {/* Отмеченный резидентом визит - уже история: сервер отмену не примет. */}
           {r.visit?.source === 'mark' ? null : (
@@ -552,7 +540,7 @@ export function Visit() {
               <Sep inset={22} />
               <button type="button" className="row tappable" onClick={() => void cancelVisit()}>
                 <span className="act-ico danger">{icons.xmark(19, 'currentColor')}</span>
-                <span className="add-row-label danger">Отменить заявку</span>
+                <span className="add-row-label danger">{tr('Отменить заявку', 'Cancel request')}</span>
               </button>
             </>
           )}
