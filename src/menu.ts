@@ -13,6 +13,7 @@ import type { ResidentDirectory } from './residents.js'
 import { newRequestTarget, webappAt } from './deeplink.js'
 import { doorAlertText, doorCodeOf } from './door.js'
 import { inviteOnStart } from './onboarding.js'
+import type { CreateIssuesInvite } from './issues.js'
 import {
     ACTIVE_STATES,
     fetchPrinterStatus,
@@ -243,12 +244,13 @@ export const registerMenuHandlers = (
         residents: ResidentDirectory
         printerUrl: string | null
         printerAuth: string | null
+        createIssuesInvite: CreateIssuesInvite | null
         /** Публичный URL миниаппа хостинга. null — миниапп не настроен. */
         webappUrl: string | null
     },
 ): void => {
-    const { client, storage, residents, printerUrl, printerAuth, webappUrl } = deps
-    const hasPrinter = printerUrl !== null
+    const { client, storage, residents, printerUrl, printerAuth, webappUrl, createIssuesInvite } = deps
+    const keyboardFor = (userId: number) => rootKeyboard(storage, userId, printerUrl !== null, webappUrl)
 
     type MenuMessage = Parameters<Parameters<Dispatcher['onNewMessage']>[1]>[0]
 
@@ -286,23 +288,23 @@ export const registerMenuHandlers = (
         }
     }
 
-    const openMenu = async (msg: MenuMessage) => {
+    const openMenu = async (msg: MenuMessage, welcome: boolean) => {
         if (!msg.sender || msg.sender.type !== 'user') return
-        const adminChats = await residents.presenceChats(msg.sender.id)
-        if (adminChats.length === 0) {
+        const userId = msg.sender.id
+        if (!(await residents.isResident(userId))) {
             const screen = guestScreen(webappUrl)
             await msg.answerText(screen.text, { replyMarkup: screen.keyboard })
             return
         }
-        await inviteOnStart(client, storage, msg.sender.id, webappUrl)
         const section = msg.text.trim().split(/\s+/)[1] ?? ''
-        if (section && (await openSection(msg, msg.sender.id, section))) return
-        await msg.answerText(rootText(), { replyMarkup: rootKeyboard(storage, msg.sender.id, hasPrinter, webappUrl) })
+        if (welcome) await inviteOnStart(client, storage, userId, webappUrl, createIssuesInvite)
+        if (section && (await openSection(msg, userId, section))) return
+        await msg.answerText(rootText(), { replyMarkup: keyboardFor(userId) })
     }
 
     // /start и /menu в личке открывают один и тот же хаб. В группах /start — алиас /help.
-    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('start')), openMenu)
-    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('menu')), openMenu)
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('start')), (msg) => openMenu(msg, true))
+    dp.onNewMessage(filters.and(filters.chat('user'), filters.command('menu')), (msg) => openMenu(msg, false))
     dp.onNewMessage(filters.and(filters.chat('user'), filters.command('language')), async (msg) => {
         if (msg.sender?.type !== 'user') return
         const screen = languageScreen(storage, msg.sender.id)
@@ -352,7 +354,7 @@ export const registerMenuHandlers = (
 
         switch (data) {
             case CB_ROOT: {
-                await replaceScreen(ctx, { kind: 'text', text: rootText(), keyboard: rootKeyboard(storage, userId, hasPrinter, webappUrl) })
+                await replaceScreen(ctx, { kind: 'text', text: rootText(), keyboard: keyboardFor(userId) })
                 await ctx.answer({})
                 return
             }

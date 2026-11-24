@@ -204,6 +204,7 @@ import {
 } from './door.js'
 import type { LockClient } from './lock.js'
 import { markOnboardingDone, onboardingOf, shouldShowOnboarding } from './onboarding.js'
+import type { CreateIssuesInvite } from './issues.js'
 import { rateLimit, retryAfterSeconds, type RateRule } from './ratelimit.js'
 import { ANON_LABEL, isMacOnline, removePresence } from './presence.js'
 import type { ResidentDirectory } from './residents.js'
@@ -485,6 +486,7 @@ const METHOD_CLASS: Record<string, RateClass> = {
     'dues.person': 'read',
     'event.apps': 'read',
     'onboarding.done': 'write',
+    'issues.invite': 'heavy',
     'door.set': 'write',
     // Поход в Home Assistant, а за ним радио до замка.
     'lock.open': 'heavy',
@@ -737,6 +739,7 @@ export type WebappDeps = {
     adminTargets: AdminTarget[]
     /** Подключён ли принтер (PRINTER_URL): без него знакомство не зовёт в /printer. */
     hasPrinter: boolean
+    createIssuesInvite: CreateIssuesInvite | null
     /** Умный замок через Home Assistant (HASS_*). null - строки замка нет. */
     lock: LockClient | null
     /** Аккаунты резидентов (AUTHENTIK_*). null - раздел «Аккаунт» и кабинет скрыты. */
@@ -1308,6 +1311,7 @@ const buildBootstrap = (ctx: ApiContext) => {
                     show: shouldShowOnboarding(storage, user.userId),
                     joinedAt: onboardingOf(storage, user.userId)?.joinedAt ?? null,
                     printer: ctx.hasPrinter,
+                    issuesChannel: ctx.createIssuesInvite !== null,
                     bot: ctx.bot.username,
                     botName: ctx.bot.name,
                 },
@@ -1642,8 +1646,10 @@ const restoreMacBinding = async (storage: Storage, before: ResidentMacs, mac: st
 const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
     const { client, storage, allowedChats, residents, tzOffsetMinutes, config, githubRepo, user, resident, body, res } = ctx
 
+    const denyNonResident = (): void =>
+        sendError(res, 403, 'not_resident', tr('Доступно только резидентам.', 'Available to residents only.'))
     const requireResident = (): boolean => {
-        if (!resident) sendError(res, 403, 'not_resident', tr('Доступно только резидентам.', "Available to residents only."))
+        if (!resident) denyNonResident()
         return resident
     }
     const requireDev = (): boolean => {
@@ -3146,6 +3152,23 @@ const handleApi = async (ctx: ApiContext, method: string): Promise<void> => {
             if (!requireResident()) return
             await markOnboardingDone(storage, user.userId)
             sendJson(res, 200, buildBootstrap(ctx))
+            return
+        }
+
+        case 'issues.invite': {
+            if (!requireResident()) return
+            if (!ctx.createIssuesInvite) {
+                sendError(res, 404, 'issues_disabled', tr('Канал «ищью» не подключён.', 'The Issues channel is unavailable.'))
+                return
+            }
+            try {
+                const url = await ctx.createIssuesInvite(user.userId)
+                if (url === null) return denyNonResident()
+                sendJson(res, 200, { url })
+            } catch (err) {
+                console.error('[issues] не удалось создать приглашение из миниаппа:', err)
+                sendError(res, 503, 'issues_unavailable', tr('Не удалось получить приглашение. Попробуйте ещё раз позже.', 'Could not get an invite. Please try again later.'))
+            }
             return
         }
 

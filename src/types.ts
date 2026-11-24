@@ -178,6 +178,8 @@ export type State = {
      * Прогресс внутри знакомства сюда не пишется: он живёт во фронте.
      */
     residentOnboarding: Record<string, ResidentOnboarding>
+    /** Past access is retained for missed departures. Keys are channelId#userId. */
+    issuesChannelAccess: Record<string, true>
     /**
      * Когда знакомство включили (ISO). Все, кто был резидентом к этому моменту,
      * записаны прошедшими: иначе оно разом открылось бы у всего спейса. Пусто -
@@ -943,6 +945,7 @@ export const emptyState = (): State => ({
     presenceStats: { days: {} },
     residentSince: {},
     residentOnboarding: {},
+    issuesChannelAccess: {},
     onboardingSince: '',
     door: null,
 })

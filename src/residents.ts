@@ -27,6 +27,8 @@ export type ResidentRoster = {
 export interface ResidentDirectory {
     /** Является ли пользователь резидентом (проходит ли identity-проверку вообще). */
     isResident(userId: number): Promise<boolean>
+    /** Bypasses the cache and propagates lookup errors before changing channel permissions. */
+    confirmResidency(userId: number): Promise<boolean>
 
     /**
      * Все резиденты с именами — состав чата резидентов.
@@ -229,6 +231,19 @@ export const createTelegramResidentDirectory = (
         return isMemberStatus(await statusIn(residentsChatId, userId))
     }
 
+    const confirmResidency = async (userId: number): Promise<boolean> => {
+        if (residentsChatId !== null) {
+            const member = await client.getChatMember({ chatId: residentsChatId, userId })
+            return Boolean(member?.isMember && isMemberStatus(member.status))
+        }
+        for (const chatId of allowedChats) {
+            const member = await client.getChatMember({ chatId, userId })
+            if (member && isAdminStatus(member.status)) return true
+        }
+        if (allowedChats.size === 0) throw new Error('Не настроен источник резидентства')
+        return false
+    }
+
     // Присутствие показываем во всех чатах, где бот работает: резидентство больше не
     // привязано к конкретному чату, а доска и списки живут в allowlist-чатах.
     const presenceChats = async (userId: number): Promise<number[]> =>
@@ -351,5 +366,5 @@ export const createTelegramResidentDirectory = (
         }
     }
 
-    return { isResident, list, listIds, joinedAt, presenceChats, isChatAdmin, isMember, access, invalidate }
+    return { isResident, confirmResidency, list, listIds, joinedAt, presenceChats, isChatAdmin, isMember, access, invalidate }
 }

@@ -112,15 +112,18 @@ export const haptic = {
 
 /** Ссылку наружу открывает клиент Telegram: t.me — внутри приложения
     (openTelegramLink), остальное — во внешнем браузере. Вне Telegram — вкладка. */
-export function openUrl(url: string): void {
+export function openUrl(url: string, browserTarget: '_blank' | '_self' = '_blank'): void {
   try {
-    if (/^https:\/\/t\.me\//i.test(url)) tg!.openTelegramLink(url)
-    else tg!.openLink(url)
-    return
+    if (tg && (browserTarget === '_blank' || tg.platform !== 'unknown')) {
+      if (/^https:\/\/t\.me\//i.test(url)) tg.openTelegramLink(url)
+      else tg.openLink(url)
+      return
+    }
   } catch {
     /* не в Telegram или старый клиент */
   }
-  window.open(url, '_blank', 'noopener')
+  if (browserTarget === '_self') window.location.assign(url)
+  else window.open(url, '_blank', 'noopener')
 }
 
 /** Раздел бота по диплинку `t.me/<бот>?start=<раздел>`: параметр разбирает меню бота (src/menu.ts). */

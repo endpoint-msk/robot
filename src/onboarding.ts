@@ -1,6 +1,7 @@
 import { rememberTelegramLanguage, tr, userLocale, withLocale } from './i18n.js'
 import { BotKeyboard, html, type TelegramClient } from '@mtcute/node'
 import { filters, PropagationAction, type Dispatcher } from '@mtcute/dispatcher'
+import { issuesDescription, issuesInviteButton, issuesInviteTerms, type CreateIssuesInvite } from './issues.js'
 import type { ResidentDirectory } from './residents.js'
 import type { Storage } from './storage.js'
 import type { ResidentOnboarding } from './types.js'
@@ -14,11 +15,7 @@ export const ONBOARDING_VERSION = 1
 /** Как часто пробуем включить знакомство, если на старте состав резидентов не прочитался. */
 const SEED_RETRY_MS = 10 * 60_000
 
-const inviteText = () => [
-    tr('<b>Ты теперь резидент Endpoint.</b>', "<b>You're now an Endpoint resident.</b>"),
-    '',
-    tr('Резиденты открывают спейс, встречают гостей и заводят ивенты. В миниаппе покажу, как это устроено, и настроим авто-отметку по телефону. Пара минут.', "Residents open the space, host guests, and organize events. The mini app shows you how it works and helps you set up automatic check-in from your phone. It takes a couple of minutes."),
-].join('<br>')
+const pendingWelcomes = new Set<number>()
 
 const emptyRecord = (): ResidentOnboarding => ({ joinedAt: null, invitedAt: null, version: 0, doneAt: null })
 
@@ -44,24 +41,58 @@ export const markOnboardingDone = async (storage: Storage, userId: number): Prom
     })
 }
 
-/**
- * Приглашение в личку с кнопкой в миниапп. false - не доставлено: бот не может
- * начать переписку, пока человек сам не открыл личку. Тогда то же сообщение уйдёт
- * на его первый /start (`inviteOnStart`).
- */
-const sendInvite = async (client: TelegramClient, storage: Storage, userId: number, webappUrl: string): Promise<boolean> => {
-    try {
-        await withLocale(userLocale(storage, userId), () => client.sendText(userId, html(inviteText()), {
-            replyMarkup: BotKeyboard.inline([[BotKeyboard.webView(tr('Открыть знакомство', "Start the walkthrough"), `${webappUrl}?onboarding=1`)]]),
-        }))
-    } catch {
-        return false
+const welcomeMessage = (webappUrl: string | null, issuesUrl: string | null | undefined) => {
+    const paragraphs = [tr('<b>Ты теперь резидент Endpoint.</b>', "<b>You're now an Endpoint resident.</b>")]
+    const rows = []
+    if (webappUrl) {
+        paragraphs.push(tr('Резиденты открывают спейс, встречают гостей и заводят ивенты. В миниаппе покажу, как это устроено, и настроим авто-отметку по телефону. Пара минут.', "Residents open the space, host guests, and organize events. The mini app shows you how it works and helps you set up automatic check-in from your phone. It takes a couple of minutes."))
+        rows.push([BotKeyboard.webView(tr('Открыть знакомство', 'Start the walkthrough'), `${webappUrl}?onboarding=1`)])
     }
-    await storage.update((s) => {
-        const key = String(userId)
-        s.residentOnboarding[key] = { ...(s.residentOnboarding[key] ?? emptyRecord()), invitedAt: new Date().toISOString() }
-    })
-    return true
+    if (issuesUrl !== undefined) {
+        const terms = issuesUrl ? issuesInviteTerms() : tr('Сейчас не удалось создать ссылку.', 'The invite link is unavailable right now.')
+        const nextInvite = webappUrl
+            ? tr('Новую ссылку можно получить в настройках миниаппа.', 'You can get a fresh link in the Mini App settings.')
+            : tr('За новой ссылкой напиши /issues.', 'Send /issues for a fresh link.')
+        paragraphs.push(`${issuesDescription()} ${terms} ${nextInvite}`)
+        if (issuesUrl) rows.push([issuesInviteButton(issuesUrl)])
+    }
+    return { text: html(paragraphs.join('<br><br>')), replyMarkup: rows.length ? BotKeyboard.inline(rows) : undefined }
+}
+
+const sendInvite = async (
+    client: TelegramClient,
+    storage: Storage,
+    userId: number,
+    webappUrl: string | null,
+    createIssuesInvite: CreateIssuesInvite | null,
+): Promise<void> => {
+    const rec = onboardingOf(storage, userId)
+    if (passed(rec) || rec?.invitedAt || pendingWelcomes.has(userId)) return
+    pendingWelcomes.add(userId)
+    try {
+        let invite: string | null | undefined
+        if (createIssuesInvite) {
+            try {
+                invite = await createIssuesInvite(userId)
+                if (invite === null) return
+            } catch (err) {
+                console.error('[onboarding] не удалось создать приглашение в канал ищью:', err)
+                invite = null
+            }
+        }
+        const { text, replyMarkup } = withLocale(userLocale(storage, userId), () => welcomeMessage(webappUrl, invite))
+        try {
+            await client.sendText(userId, text, { replyMarkup })
+        } catch {
+            return
+        }
+        await storage.update((s) => {
+            const key = String(userId)
+            s.residentOnboarding[key] = { ...(s.residentOnboarding[key] ?? emptyRecord()), invitedAt: new Date().toISOString() }
+        })
+    } finally {
+        pendingWelcomes.delete(userId)
+    }
 }
 
 /**
@@ -74,11 +105,11 @@ export const inviteOnStart = async (
     storage: Storage,
     userId: number,
     webappUrl: string | null,
+    createIssuesInvite: CreateIssuesInvite | null = null,
 ): Promise<void> => {
-    if (webappUrl === null || storage.get().onboardingSince === '') return
-    const rec = onboardingOf(storage, userId)
-    if (passed(rec) || rec?.invitedAt) return
-    await sendInvite(client, storage, userId, webappUrl)
+    if (webappUrl === null && createIssuesInvite === null) return
+    if (storage.get().onboardingSince === '' && !(createIssuesInvite && onboardingOf(storage, userId)?.joinedAt)) return
+    await sendInvite(client, storage, userId, webappUrl, createIssuesInvite)
 }
 
 /**
@@ -94,11 +125,12 @@ export const registerOnboardingHandlers = (
         storage: Storage
         residents: ResidentDirectory
         residentsChatId: number | null
-        webappUrl: string
+        webappUrl: string | null
+        createIssuesInvite: CreateIssuesInvite | null
     },
 ): void => {
-    const { client, storage, residents, residentsChatId, webappUrl } = deps
-    if (residentsChatId === null) return
+    const { client, storage, residents, residentsChatId, webappUrl, createIssuesInvite } = deps
+    if (residentsChatId === null || (!webappUrl && !createIssuesInvite)) return
 
     dp.onChatMemberUpdate(filters.chatMember(['joined', 'added']), async (upd) => {
         if (upd.chat.id !== residentsChatId) return PropagationAction.Continue
@@ -115,8 +147,9 @@ export const registerOnboardingHandlers = (
         await storage.update((s) => {
             s.residentOnboarding[key] = { ...(s.residentOnboarding[key] ?? emptyRecord()), joinedAt: new Date().toISOString() }
         })
-        if (storage.get().onboardingSince === '') return
-        await sendInvite(client, storage, user.id, webappUrl)
+        if (!createIssuesInvite && storage.get().onboardingSince === '') return
+        if (createIssuesInvite && !(await residents.isResident(user.id))) return
+        await sendInvite(client, storage, user.id, webappUrl, createIssuesInvite)
     })
 }
 

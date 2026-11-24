@@ -42,6 +42,7 @@ import type { Bootstrap, NotifyPrefs, OnboardingPerson, User } from '../types'
 import { NotifyIcon, Sep, SwitchRow } from '../components/common'
 import { AnimContext } from '../components/Screen'
 import { bindPhone } from '../components/MacSheet'
+import { IssuesChannelRow } from '../components/IssuesChannelRow'
 import {
   BotScene,
   CoverScene,
@@ -1068,7 +1069,14 @@ export function Onboarding() {
       case 'bot':
         return (
           <>
-            {text(tr('Бот в личке', 'Bot in private chat'), tr('Для быстрых дел открывать миниапп не нужно.', 'Use the bot directly for quick tasks.'))}
+            {text(info?.issuesChannel ? tr('Канал и бот', 'Channel and bot') : tr('Бот в личке', 'Bot in private chat'), info?.issuesChannel
+              ? tr('В приватном канале «ищью» резиденты обсуждают дела спейса. Опубликуйте свой вопрос отдельным постом, обсудите его в комментариях и добавьте решение в исходный пост.', 'Residents use the private Issues channel to discuss the space. Publish a post about one topic, discuss it in the comments, then edit your post to record the outcome.')
+              : tr('Для быстрых дел открывать миниапп не нужно.', 'Use the bot directly for quick tasks.'))}
+            {info?.issuesChannel && (
+              <div className="ob-extra">
+                <div className="card"><IssuesChannelRow /></div>
+              </div>
+            )}
             {bot ? (
               <div className="ob-extra">
                 <div className="card">

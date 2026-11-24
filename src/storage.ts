@@ -156,6 +156,7 @@ export class Storage {
             presenceStats: { days: parsed.presenceStats?.days ?? {} },
             residentSince: parsed.residentSince ?? {},
             residentOnboarding: parsed.residentOnboarding ?? {},
+            issuesChannelAccess: parsed.issuesChannelAccess ?? {},
             onboardingSince: typeof parsed.onboardingSince === 'string' ? parsed.onboardingSince : '',
             door: parsed.door ?? null,
         }

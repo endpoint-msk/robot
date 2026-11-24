@@ -547,6 +547,7 @@ export type OnboardingInfo = {
   joinedAt: string | null
   /** Подключён ли принтер: только тогда шаг «Бот» зовёт в /printer. */
   printer: boolean
+  issuesChannel?: boolean
   /** Ник бота для диплинков. */
   bot: string | null
   /** Имя бота, как его видно в чате. */

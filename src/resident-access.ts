@@ -1,13 +1,15 @@
-import type { TelegramClient } from '@mtcute/node'
+import type { TelegramClient, User } from '@mtcute/node'
 import { filters, PropagationAction, type Dispatcher } from '@mtcute/dispatcher'
 import { audit, auditUser } from './audit.js'
 import { loginFor, type AuthentikClient, type AuthentikUser } from './authentik.js'
 import { startHeartbeatInterval } from './health.js'
 import { displayName } from './hosting.js'
 import { tr } from './i18n.js'
+import { grantIssuesPosting, knownIssuesUser, rememberIssuesUser, removeFormerIssuesMember } from './issues-access.js'
 import type { OutlineClient } from './outline.js'
 import { RESIDENT_TAG, readMemberState, revokeAdmin, setMemberTag, type AdminTarget } from './resident-admin.js'
 import type { ResidentDirectory } from './residents.js'
+import type { Storage } from './storage.js'
 
 /**
  * Доступы резидента за пределами бота: аккаунт Authentik с группой, вики и права в чатах
@@ -216,15 +218,61 @@ const LEFT = ['left', 'kicked', 'demoted_kicked'] as const
  */
 const HANDLER_GROUP = 1
 
-export const registerResidentAccessHandlers = (dp: Dispatcher, deps: AccessDeps & { residentsChatId: number }): void => {
-    const { residents, residentsChatId } = deps
+export const registerResidentAccessHandlers = (
+    dp: Dispatcher,
+    deps: AccessDeps & { residentsChatId: number | null; issuesChannelId: number | null; storage: Storage },
+): void => {
+    const { client, residents, residentsChatId, issuesChannelId, storage } = deps
     const joined: readonly string[] = JOINED
+    const rememberIssuesMember = async (channelId: number, user: User): Promise<void> => {
+        try {
+            await rememberIssuesUser(storage, channelId, user.id)
+        } catch (err) {
+            const error = reason(err)
+            audit({ action: 'issues.remember', actor: auditUser(user), text: 'не удалось сохранить участника для сверки', ok: false, error })
+            console.error(`[access] не удалось сохранить id ${user.id} для сверки канала «ищью»: ${error}`)
+        }
+    }
+    const revokeIssuesOnExit = async (user: User): Promise<string | null> => {
+        if (issuesChannelId === null) return null
+        await rememberIssuesMember(issuesChannelId, user)
+        try {
+            await removeFormerIssuesMember(client, residents, issuesChannelId, user.id)
+            return null
+        } catch (err) {
+            return `канал «ищью»: ${reason(err)}`
+        }
+    }
     dp.onChatMemberUpdate(
         filters.chatMember([...JOINED, ...LEFT]),
         async (upd) => {
-            if (upd.chat.id !== residentsChatId) return PropagationAction.Continue
+            if (upd.chat.id !== residentsChatId && upd.chat.id !== issuesChannelId) return PropagationAction.Continue
             const user = upd.user
             if (user.isBot) return
+            if (issuesChannelId !== null && upd.chat.id === issuesChannelId) {
+                if (!joined.includes(upd.type)) return PropagationAction.Continue
+                let action = 'issues.grant'
+                const actor = auditUser(user)
+                try {
+                    const viaBotLink = upd.inviteLink?.isMyLink === true
+                    if (viaBotLink) await rememberIssuesMember(issuesChannelId, user)
+                    if (await grantIssuesPosting(client, residents, issuesChannelId, user.id)) {
+                        if (!viaBotLink) await rememberIssuesMember(issuesChannelId, user)
+                        audit({ action, actor, text: 'получил право публиковать в канале «ищью»' })
+                        return
+                    }
+                    if (!viaBotLink && !knownIssuesUser(storage, issuesChannelId, user.id)) return
+                    action = 'issues.remove'
+                    if (await removeFormerIssuesMember(client, residents, issuesChannelId, user.id)) {
+                        audit({ action, actor, text: 'исключён из канала «ищью» после проверки резидентства' })
+                    }
+                } catch (err) {
+                    const error = reason(err)
+                    audit({ action, actor, text: 'проверка доступа к каналу «ищью» не завершена', ok: false, error })
+                    console.error(`[access] не удалось обновить доступ к каналу «ищью» для id ${user.id}: ${error}`)
+                }
+                return
+            }
             residents.invalidate(user.id)
             const who = user.username ? `@${user.username}` : `id ${user.id}`
             if (joined.includes(upd.type)) {
@@ -249,8 +297,12 @@ export const registerResidentAccessHandlers = (dp: Dispatcher, deps: AccessDeps 
             }
             // Бан того, кого в чате не было, mtcute тоже называет `kicked`, а blockUser банит гостя
             // во всех allowlist-чатах. Снимать с него нечего.
-            if (!upd.oldMember) return
-            const failures = await revokeAccess(deps, user.id)
+            if (!upd.oldMember?.isMember || upd.oldMember.status === 'banned') return
+            const [failures, issuesFailure] = await Promise.all([
+                revokeAccess(deps, user.id),
+                revokeIssuesOnExit(user),
+            ])
+            if (issuesFailure !== null) failures.push(issuesFailure)
             audit({
                 action: 'access.revoke',
                 actor: auditUser(user),

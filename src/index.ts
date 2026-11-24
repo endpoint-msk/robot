@@ -10,6 +10,9 @@ import { registerLiveChatGuard } from './livechat.js'
 import { registerEventIntake } from './event-intake.js'
 import { registerMenuHandlers } from './menu.js'
 import { registerOnboardingHandlers, startOnboardingSeeder } from './onboarding.js'
+import { createIssuesInvite, registerIssuesHandlers } from './issues.js'
+import { rememberIssuesUser } from './issues-access.js'
+import { startIssuesReconciler } from './issues-sync.js'
 import {
     normalizePrinterUrl,
     parsePrinterAuth,
@@ -121,6 +124,7 @@ const main = async () => {
     const liveChatId = parseChatId(process.env.LIVE_CHAT_ID)
     // Канал анонсов: пересланный оттуда пост бот предлагает превратить в ивент.
     const announceChannelId = parseChatId(process.env.ANNOUNCE_CHANNEL_ID)
+    const issuesChannelId = parseChatId(process.env.ISSUES_CHANNEL_ID)
     // Цели выдачи прав резиденту (dev-меню миниаппа): «чат» (супергруппа) + канал анонсов
     // + лайв-канал. LIVE_CHANNEL_ID — отдельная сущность, не путать с LIVE_CHAT_ID-гардом.
     const mainChatId = parseChatId(process.env.MAIN_CHAT_ID)
@@ -129,6 +133,9 @@ const main = async () => {
     // Чат резидентов: его участники и есть резиденты. Не задан — откат на прежнее
     // правило «админ любого allowlist-чата», иначе забытая переменная выключила бы полбота.
     const residentsChatId = parseChatId(process.env.RESIDENTS_CHAT_ID)
+    if (issuesChannelId !== null && (issuesChannelId === residentsChatId || (residentsChatId === null && allowedChats.has(issuesChannelId)))) {
+        throw new Error('ISSUES_CHANNEL_ID совпадает с чатом, который определяет резидентство')
+    }
     // Аккаунты резидентов в Authentik: заводятся на вступлении в чат резидентов и
     // выключаются на выходе. Без URL и токена бот снимает на выходе только права в чатах.
     const authentikConfig = parseAuthentikConfig({
@@ -227,6 +234,13 @@ const main = async () => {
     // Единый источник правды «кто резидент/админ». Сейчас поверх Telegram
     // (участник чата резидентов); при переходе на Authentik меняется только эта реализация.
     const residents = createTelegramResidentDirectory(tg, allowedChats, residentsChatId)
+    const issuesInvite = issuesChannelId === null ? null : async (userId: number) => {
+        if (!(await residents.confirmResidency(userId))) return null
+        const link = await createIssuesInvite(tg, issuesChannelId)
+        await rememberIssuesUser(storage, issuesChannelId, userId)
+        return link
+    }
+    const webappUrl = webappConfig?.publicUrl ?? null
 
     const dp = new LocalizedDispatcher(tg, storage)
     // Единый обработчик ошибок: логируем (а console.error форвардит в личку dev'ам)
@@ -244,8 +258,12 @@ const main = async () => {
     // presence-хендлеры регистрируем РАНЬШЕ — чтобы /start в личке ловил presence,
     // а групповой /start (алиас /help) — общий обработчик ниже
     registerPresenceHandlers(dp, { client: tg, storage, residents })
-    registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl: webappConfig?.publicUrl ?? null })
-    registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl: webappConfig?.publicUrl ?? null })
+    registerMenuHandlers(dp, { client: tg, storage, residents, printerUrl, printerAuth, webappUrl, createIssuesInvite: issuesInvite })
+    registerHandlers(dp, { client: tg, storage, allowedChats, residents, webappUrl })
+    if (issuesInvite) registerIssuesHandlers(dp, { client: tg, residents, createInvite: issuesInvite })
+    if (webappUrl || issuesInvite) {
+        registerOnboardingHandlers(dp, { client: tg, storage, residents, residentsChatId, webappUrl, createIssuesInvite: issuesInvite })
+    }
     // Кнопка «Приду» из зова в личку — часть подсистемы хостинга, живёт только с миниаппом.
     if (webappConfig !== null) {
         registerHostingInviteHandlers(dp, { client: tg, storage, residents, allowedChats, tzOffsetMinutes: hostingTzOffset })
@@ -255,13 +273,11 @@ const main = async () => {
         registerVisitReminderHandlers(dp, { client: tg, storage, allowedChats, tzOffsetMinutes: hostingTzOffset })
         // Инлайн резидента: доска спейса и ничьи заявки — отправкой в любой чат.
         registerInlineHandlers(dp, { storage, residents, tzOffsetMinutes: hostingTzOffset })
-        // Вступил в чат резидентов - бот сам зовёт в знакомство, оно живёт в миниаппе.
-        registerOnboardingHandlers(dp, { client: tg, storage, residents, residentsChatId, webappUrl: webappConfig.publicUrl })
     }
     // Вступил в чат резидентов - аккаунт Authentik, вышел - доступы сняты отовсюду.
     // Права в чатах снимаются и без Authentik: выдаёт их dev-экран миниаппа.
-    if (residentsChatId !== null && (authentik !== null || adminTargets.length > 0)) {
-        registerResidentAccessHandlers(dp, { client: tg, residents, adminTargets, authentik, outline, residentsChatId })
+    if ((residentsChatId !== null && (authentik !== null || adminTargets.length > 0)) || issuesChannelId !== null) {
+        registerResidentAccessHandlers(dp, { client: tg, storage, residents, adminTargets, authentik, outline, residentsChatId, issuesChannelId })
     }
     // Пересланный из канала анонсов пост → заготовка ивента. Редактор живёт в миниаппе,
     // поэтому без WEBAPP_URL приёмник бесполезен.
@@ -325,6 +341,7 @@ const main = async () => {
             authentik,
             outline,
             hasPrinter: printerUrl !== null,
+            createIssuesInvite: issuesInvite,
             lock,
             bot: { username: self.username ?? null, name: self.displayName },
         })
@@ -444,7 +461,8 @@ const main = async () => {
         : null
     // Знакомство живёт в миниаппе. Включается один раз: всех нынешних резидентов
     // записываем прошедшими, иначе оно разом открылось бы у всего спейса.
-    const onboardingSeeder = webappConfig !== null ? startOnboardingSeeder(storage, residents) : null
+    const onboardingSeeder = webappUrl || issuesInvite ? startOnboardingSeeder(storage, residents) : null
+    const issuesReconciler = issuesChannelId !== null ? startIssuesReconciler(tg, residents, storage, issuesChannelId) : null
     // Страховка на выход из чата, проспанный ботом: сверка аккаунтов с составом раз в час.
     const accessReconciler =
         authentik !== null && residentsChatId !== null
@@ -581,6 +599,7 @@ const main = async () => {
         visitReminders?.stop()
         attendAlerts?.stop()
         onboardingSeeder?.stop()
+        issuesReconciler?.stop()
         accessReconciler?.stop()
         printerWatcher?.stop()
         cameraMotion?.stop()

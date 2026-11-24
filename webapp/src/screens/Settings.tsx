@@ -9,6 +9,7 @@ import { botCanWrite, haptic, openUrl, requestWriteAccess } from '../telegram'
 import type { Settings as SettingsData, ThemeChoice } from '../types'
 import { BackRow, Header, NotifyIcon, RadioCheck, SectionTitle, Sep, SwitchRow } from '../components/common'
 import { bindPhone } from '../components/MacSheet'
+import { IssuesChannelRow } from '../components/IssuesChannelRow'
 import { MorphValue } from '../components/MorphWord'
 import { MenuItems, useRowMenu } from '../components/RowMenu'
 import { Notification } from '../components/OnboardingScenes'
@@ -436,6 +437,12 @@ export function Settings() {
           </span>
           <div className="row-right">{icons.chevron()}</div>
         </button>
+        {data?.onboarding?.issuesChannel && (
+          <>
+            <Sep inset="text" />
+            <IssuesChannelRow />
+          </>
+        )}
       </div>
       <LanguageSection />
       <PresenceCard s={s} />
