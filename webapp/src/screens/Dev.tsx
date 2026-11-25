@@ -233,7 +233,6 @@ export function Dev() {
         <button className="primary-btn" onClick={submit}>
           {tr('Создать фейковую заявку', 'Create test request')}
         </button>
-        <div className="bar-hint">{tr('Заявка от случайного фейкового гостя', 'Request from a random test guest')}</div>
       </BottomBar>
     </Screen>
   )

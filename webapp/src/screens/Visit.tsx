@@ -373,9 +373,10 @@ export function Visit() {
             <div className="status-card-icon">{icons.clock(15, sec(0.55), r.time)}</div>
             <span className="status-card-title">{tr('Заявка ждёт ответа', 'Request pending')}</span>
           </div>
-          <div className="status-card-note">{tr('Резиденты видят вашу заявку.', 'Residents can see your request.')}<br />
+          <div className="status-card-note">
             <span className="note-warn">
-              {icons.warning()}{tr('Одобрение заявки обязательно для посещения.', 'Wait for approval before visiting.')}</span>
+              {icons.warning()}{tr('Приходите после одобрения заявки.', 'Wait for approval before visiting.')}
+            </span>
           </div>
         </div>
       </div>

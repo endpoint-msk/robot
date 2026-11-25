@@ -84,7 +84,11 @@ export function EventApply() {
     offerUndo(readOnly ? tr('Участие отменено', 'Attendance canceled') : tr('Заявка отменена', 'Application withdrawn'), done.undo)
   }
 
-  const title = app ? (readOnly ? tr('Вы участвуете', 'You’re attending') : tr('Ваша заявка', 'Your request')) : tr('Заявка на ивент', 'Event application')
+  const title = readOnly
+    ? tr('Вы участвуете', 'You’re attending')
+    : app
+      ? tr('Заявка на рассмотрении', 'Application pending')
+      : tr('Заявка на ивент', 'Event application')
   const weekday = weekdaysFull()[weekdayIdx(event.dateKey)]!
   const until = untilWord(data!.todayKey, event.dateKey)
   const when = tr(`${weekday.toLowerCase()}, в ${event.time}, ${until}`, `${weekday} at ${event.time} · ${until}`)
@@ -104,15 +108,7 @@ export function EventApply() {
         </div>
       </div>
 
-      {app ? (
-        <Footnote>
-          {readOnly
-            ? tr('Заявка принята — вы в списке участников. Можно отменить участие.', 'Your application was accepted and you’re on the guest list. You can cancel your attendance.')
-            : tr('Заявка на рассмотрении. Пока её не приняли, ответы можно менять.', 'Your application is pending. You can edit your answers until it’s accepted.')}
-        </Footnote>
-      ) : (
-        <Footnote>{tr('Заполните форму организатора — резиденты рассмотрят заявку и ответят в личке.', 'Fill out the organizer’s form. Residents will review your application and reply in a private message.')}</Footnote>
-      )}
+      {!app ? <Footnote>{tr('Ответ придёт в личку.', 'You’ll get a reply in a private message.')}</Footnote> : null}
 
       <SectionTitle>{tr('Форма', 'Application form')}</SectionTitle>
       <div className="card">

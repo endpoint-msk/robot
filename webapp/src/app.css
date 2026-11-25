@@ -285,7 +285,7 @@ body {
    text-wrap заодно задаёт text-wrap-mode, как и white-space. Поэтому блок стоит выше
    правил компонентов: nowrap компонента должен перебивать его, а не наоборот. */
 .title, .ob-title, .stats-card-title, .status-card-title, .wb-title, .lb-title,
-.es-title, .es-text, .be-title, .be-text, .modal-text, .modal-num-hint, .bar-hint, .build-sign {
+.es-title, .es-text, .be-title, .be-text, .modal-text, .modal-num-hint, .build-sign {
     text-wrap: balance;
 }
 .ob-lead, .rule-text, .rules-wiki, .footnote, .hint-text,
@@ -1955,7 +1955,7 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 .host-sub { font-size: 13px; color: var(--text-2); }
 .status-card.pending .status-card-note,
 .status-card.proposal .status-card-note { margin-top: 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
-.note-warn { display: inline-block; margin-top: 6px; color: var(--text); font-weight: 600; }
+.note-warn { display: inline-block; color: var(--text); font-weight: 600; }
 
 /* «Ответственные» листом вопроса (ResponsiblePicker.tsx): список прокручивается сам, а
    «Готово» стоит под ним. Высота от видимой области: с клавиатурой поиска лист ужимается
@@ -2605,7 +2605,6 @@ html.sheet-recede .tab-bar { bottom: calc(100% - var(--sheet-vb, 100%)); }
 }
 .primary-btn:active { transform: scale(0.985); }
 .primary-btn[disabled] { opacity: 0.55; }
-.bar-hint { font-size: 13px; text-align: center; color: var(--text-2); margin-top: 10px; }
 
 .destructive-btn {
     width: 100%;
@@ -3575,6 +3574,7 @@ button.evv-when:active .evv-when-text { opacity: 0.6; }
 .dues-main { min-width: 0; flex: 1; }
 .dues-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dues-name { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dues-name.exempt { white-space: normal; overflow-wrap: anywhere; }
 .dues-sub-line { margin-top: 2px; font-size: 13px; color: var(--text-2); }
 .dues-sub-line.attn { color: var(--orange); font-weight: 600; }
 .dues-sub-line.crit { color: var(--red); font-weight: 600; }
@@ -3583,7 +3583,6 @@ button.evv-when:active .evv-when-text { opacity: 0.6; }
 .row-value.muted { color: var(--text-3); font-weight: 500; }
 
 .dues-amount { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.dues-amount.muted { color: var(--text-3); font-weight: 500; }
 .dues-amount.paid { color: var(--ok-fg); }
 
 /* Метка просрочки. Два тона: месяц пропуска оранжевый, два и больше красный, как у

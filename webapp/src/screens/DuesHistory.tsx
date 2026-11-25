@@ -12,7 +12,7 @@ import { useRemote } from '../remote'
 import { push, setBusy } from '../store'
 import { haptic } from '../telegram'
 import { ApiError, type DuesHistory as DuesHistoryData } from '../types'
-import { BackRow, BottomBar, EmptyState, ErrorState, Footnote, Header, SectionTitle, Sep } from '../components/common'
+import { BackRow, BottomBar, EmptyState, ErrorState, Header, SectionTitle, Sep } from '../components/common'
 import { Screen } from '../components/Screen'
 import { Swap } from '../components/Swap'
 import { SkBlock, SkRows } from '../components/skeleton'
@@ -122,12 +122,11 @@ export function DuesHistory() {
         })}
       </div>
 
-      <Footnote>{tr('В таблице строка на человека, столбец на месяц, суммы и итоги. Файл придёт в личку от бота.', 'The spreadsheet has one row per person and one column per month, with amounts and totals. The bot will send the file in a private message.')}</Footnote>
       {/* Панель уезжает порталом наружу экрана — слой подмены её не задевает. */}
       <BottomBar>
         <button className="primary-btn" onClick={() => void exportCsv()}>
           {icons.doc(18, '#fff')}
-          {tr('Выгрузить таблицу', 'Export spreadsheet')}
+          {tr('Получить таблицу в личку', 'Get spreadsheet in Telegram')}
         </button>
       </BottomBar>
     </>,

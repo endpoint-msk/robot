@@ -459,9 +459,6 @@ export function PersonPage({
               </>
             ) : null}
           </div>
-          <Footnote>
-            {tr('По умолчанию берётся вступление в чат резидентов, а если Telegram даты не отдал — первый визит в журнале. Ручная дата нужна тем, кто пришёл в спейс раньше и того и другого, а «с самого начала» — тем, с кого спейс начинался.', "By default, this is when the resident joined the chat. If Telegram doesn't provide that date, the bot uses their first logged visit. Enter a date for someone who joined sooner, or choose “Since the beginning” for a founding resident.")}
-          </Footnote>
         </>
       ) : null}
     </>,

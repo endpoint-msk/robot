@@ -49,7 +49,7 @@ export function DuesSettings() {
       initial: dues.day,
       min: MIN_DAY,
       max: MAX_DAY,
-      hint: tr(`Число от ${MIN_DAY} до ${MAX_DAY}: 29, 30 и 31 есть не в каждом месяце.`, `Enter a number from ${MIN_DAY} to ${MAX_DAY}. Some months have fewer than 29 days.`),
+      hint: tr(`Число от ${MIN_DAY} до ${MAX_DAY}.`, `Enter a number from ${MIN_DAY} to ${MAX_DAY}.`),
     })
     if (picked === null) return
     await save({ day: picked })
@@ -105,7 +105,7 @@ export function DuesSettings() {
         </button>
       </div>
       <Footnote>
-        {tr('Новая ставка действует на текущий и будущие месяцы. Уже подтверждённые суммы не пересчитываются. Своя ставка по договорённости ставится на карточке человека.', "New rates apply to the current month and future months. Confirmed payments keep their original amounts. Set custom rates in each resident's profile.")}
+        {tr('Новые ставки действуют с текущего месяца. Подтверждённые суммы сохраняются.', 'New rates take effect this month. Confirmed payments keep their original amounts.')}
       </Footnote>
 
       <SectionTitle>{tr('Реквизиты', 'Payment details')}</SectionTitle>
@@ -145,7 +145,7 @@ export function DuesSettings() {
         ) : null}
       </div>
       <Footnote>
-        {tr('Уходят в личку каждому вместе с суммой и стоят в плашке «Мой взнос». Пусто, значит строки про реквизиты нигде нет.', "These details appear with the amount in each resident's private message and under “My dues”. Leave this blank to hide payment details.")}
+        {tr('Реквизиты видны в личных напоминаниях и в карточке «Мой взнос».', 'Payment details appear in private reminders and under “My dues”.')}
       </Footnote>
 
       <SectionTitle>{tr('Уведомления', 'Notifications')}</SectionTitle>
@@ -156,13 +156,12 @@ export function DuesSettings() {
               {icons.bell()}
             </div>
           }
-          label={tr('Напоминать о сборе', 'Remind me about dues')}
+          label={tr('Напоминать мне о сборе', 'Remind me about dues')}
           sub={tr('В личку, с кнопкой «Я внёс»', "Private message with an “I've paid” button")}
           on={dues.notify}
           onToggle={() => action('dues.notify', { enabled: !dues.notify }, { quiet: true })}
         />
       </div>
-      <Footnote>{tr('Тумблер личный: у каждого резидента свой, по умолчанию включён.', "Each resident can change this setting. It's on by default.")}</Footnote>
     </Screen>
   )
 }

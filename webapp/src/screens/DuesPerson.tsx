@@ -12,7 +12,7 @@ import { markOwnTap, mixc, ownTapRecent, palette, reducedMotion } from '../motio
 import { setTopParams, useParams } from '../store'
 import { haptic } from '../telegram'
 import { ApiError, type DuesPerson as DuesPersonData, type DuesRateKind } from '../types'
-import { ActionButton, BackRow, ErrorState, Footnote, Header, RadioCheck, SectionTitle, Sep } from '../components/common'
+import { ActionButton, BackRow, ErrorState, Header, RadioCheck, SectionTitle, Sep } from '../components/common'
 import { Collapse } from '../components/Collapse'
 import { avatarTone, userLabel } from '../components/people'
 import { Pager } from '../components/Pager'
@@ -268,8 +268,8 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
                         : r.kind === 'student'
                           ? tr(`${money(data.studentAmount, data.currency)}, следует за настройкой спейса`, `${money(data.studentAmount, data.currency)}, follows the space's student rate`)
                           : data.rate.kind === 'custom'
-                            ? tr(`${money(data.rate.amount, data.currency)} по договорённости`, `${money(data.rate.amount, data.currency)}, as agreed`)
-                            : tr('Сумма по договорённости', 'Agreed amount')}
+                            ? tr(`${money(data.rate.amount, data.currency)}, фиксированная сумма`, `${money(data.rate.amount, data.currency)}, fixed amount`)
+                            : tr('Фиксированная сумма', 'Fixed amount')}
                     </span>
                   </span>
                   <RadioCheck on={data.rate.kind === r.kind} />
@@ -277,7 +277,6 @@ function DuesPage({ userId, known }: { userId: number; known: DuesRef | null }) 
               </Fragment>
             ))}
           </div>
-          <Footnote>{tr('«Своя» это фиксированное число: общая и студенческая ставки на неё больше не влияют.', 'A custom rate stays fixed when the standard or student rate changes.')}</Footnote>
         </>
       ) : null}
 

@@ -59,6 +59,7 @@ const DuesOrderContext = createContext<DuesRef[]>([])
 function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow; snap: DuesSnapshot; mark: Mark; meId: number; flash?: boolean }) {
   const order = useContext(DuesOrderContext)
   const open = (): void => push('duesPerson', { userId: row.userId, people: order })
+  const exempt = isExempt(row)
   const left =
     row.status === 'paid' ? (
       <div className="dues-mark ok">{icons.check(13, '#fff', 2.2)}</div>
@@ -73,11 +74,9 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
       ? `${fmtIsoDay(row.at)}${row.by ? tr(` · подтвердил ${userLabel(row.by)}`, ` · confirmed by ${userLabel(row.by)}`) : ''}`
       : row.status === 'claimed' && row.at
         ? tr(`заявил ${fmtIsoDay(row.at)}`, `claimed ${fmtIsoDay(row.at)}`)
-        : isExempt(row)
-          ? ''
-          : row.missed >= 2
-            ? tr('Крайний срок неуплаты', 'Payment deadline')
-            : ''
+        : !exempt && row.missed >= 2
+          ? tr('Крайний срок неуплаты', 'Payment deadline')
+          : ''
 
   const body = (
     <button
@@ -88,22 +87,20 @@ function DuesPersonRow({ row, snap, mark, meId, flash = false }: { row: DuesRow;
       {left}
       <div className="dues-main">
         <div className="dues-name-line">
-          <span className="dues-name">{userLabel(row)}</span>
-          {isExempt(row) ? null : <DebtBadge missed={row.missed} />}
-          {isExempt(row) ? (
-            <span className="rate-chip">{tr('не платит', 'exempt')}</span>
-          ) : row.rate !== 'common' ? (
+          <span className={'dues-name' + (exempt ? ' exempt' : '')}>{userLabel(row)}</span>
+          {!exempt && <DebtBadge missed={row.missed} />}
+          {!exempt && row.rate !== 'common' && (
             <span className="rate-chip">{RATE_LABEL[row.rate]}</span>
-          ) : null}
+          )}
         </div>
         {sub ? (
           <div className={'dues-sub-line' + (row.status === 'none' && row.missed >= 2 ? ' crit' : '')}>{sub}</div>
         ) : null}
       </div>
       <div className="row-right">
-        <span className={'dues-amount' + (row.status === 'paid' ? ' paid' : isExempt(row) ? ' muted' : '')}>
-          {isExempt(row) ? tr('освобождён', 'exempt') : money(row.amount, snap.currency)}
-        </span>
+        {!exempt && (
+          <span className={'dues-amount' + (row.status === 'paid' ? ' paid' : '')}>{money(row.amount, snap.currency)}</span>
+        )}
         {icons.chevron()}
       </div>
     </button>
@@ -537,7 +534,7 @@ export function DuesScreen() {
   const sections: ReactNode[] = snap.canEdit
     ? [section(tr('Ждут подтверждения', 'Awaiting confirmation'), claimed, true), section(tr('Не внесли', 'Unpaid'), unpaid), section(tr('Внесли', 'Paid'), paid)]
     : [section(tr('Не внесли', 'Unpaid'), unpaid), section(tr('Ждут подтверждения', 'Awaiting confirmation'), claimed), section(tr('Внесли', 'Paid'), paid)]
-  sections.push(section(tr('Не платят', 'Exempt'), exempt))
+  sections.push(section(tr('Освобождены от взносов', 'Exempt from dues'), exempt))
   const order: DuesRef[] = [...(snap.canEdit ? [claimed, unpaid, paid] : [unpaid, claimed, paid]), exempt]
     .flat()
     .filter((it) => !it.leaving)
